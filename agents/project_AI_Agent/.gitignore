@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# legacy local SQLite files, pre-MySQL migration
+capstone.db
+checkpoints.sqlite
+checkpoints.sqlite-shm
+checkpoints.sqlite-wal
+uploads/
+*.log
+frontend.zip

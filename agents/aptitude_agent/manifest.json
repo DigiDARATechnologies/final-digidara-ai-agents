@@ -1,0 +1,19 @@
+{
+  "agent_name": "aptitude_agent",
+  "version": "v1.0.0",
+  "description": "Adaptive aptitude assessments, category practice, mixed tests, hints, analytics, history, and PDF reports.",
+  "owner": "DigiDARA",
+  "plan_tier": "free",
+  "host": "127.0.0.1",
+  "port": 5000,
+  "path": "/api/invoke",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": { "type": "string", "enum": ["health", "ensure_session", "dashboard", "history", "analytics", "usage_summary", "profile", "mixed_test_config", "save_mixed_test_config", "create_test", "status", "question", "answer", "hint", "abandon", "results", "download_report"] },
+      "payload": { "type": "object" }
+    },
+    "required": ["action"]
+  },
+  "output_schema": { "type": "object" }
+}

@@ -1,0 +1,44 @@
+{
+  "agent_name": "certificate_agent",
+  "version": "v1.0.0",
+  "description": "AI-powered certification exam generator, interactive chat assessment, leaderboard, and PDF certificate issuing system.",
+  "owner": "DigiDARA",
+  "plan_tier": "free",
+  "host": "127.0.0.1",
+  "port": 8008,
+  "path": "/api/invoke",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "health",
+          "ensure_profile",
+          "me",
+          "start_exam",
+          "submit_exam",
+          "get_history",
+          "get_leaderboard",
+          "get_exam_detail",
+          "get_chat_session_questions",
+          "get_my_certificates",
+          "download_certificate",
+          "start_chat",
+          "send_chat_message",
+          "get_chat_sessions",
+          "get_chat_session"
+        ]
+      },
+      "payload": {
+        "type": "object"
+      }
+    },
+    "required": [
+      "action"
+    ]
+  },
+  "output_schema": {
+    "type": "object"
+  }
+}

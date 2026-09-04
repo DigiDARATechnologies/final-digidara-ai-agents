@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 176" role="img" aria-labelledby="title desc">
+  <title id="title">DigiDARA Technologies</title>
+  <desc id="desc">DigiDARA Technologies wordmark with the tagline Learn, Lead and Transform Together.</desc>
+  <rect width="760" height="176" fill="#ffffff"/>
+  <g fill="#0756b8" text-anchor="middle">
+    <text x="380" y="72" font-family="Georgia, 'Times New Roman', serif" font-size="82" font-weight="700" letter-spacing="10">DigiDARA</text>
+    <text x="380" y="130" font-family="Georgia, 'Times New Roman', serif" font-size="54" font-weight="700" letter-spacing="14">TECHNOLOGIES</text>
+    <text x="380" y="162" font-family="Georgia, 'Times New Roman', serif" font-size="22" font-weight="700" letter-spacing="10">LEARN, LEAD AND TRANSFORM TOGETHER</text>
+  </g>
+</svg>

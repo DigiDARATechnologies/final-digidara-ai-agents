@@ -1,0 +1,24 @@
+fastapi
+uvicorn[standard]
+langchain
+langchain-openai
+langchain-groq
+openai>=1.99.0
+zhipuai
+langgraph
+mysql-connector-python
+pydantic
+pydantic-settings
+python-dotenv
+reportlab
+Pillow
+requests
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+aiofiles
+email-validator
+# Production/Docker process target — this repo's other FastAPI agents
+# (orchestrator, capstone, agent_template) run the same way; run.py's own
+# `uvicorn.run(..., reload=True)` stays for local dev.
+gunicorn==23.0.0

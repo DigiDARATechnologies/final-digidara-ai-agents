@@ -1,0 +1,11 @@
+ALTER TABLE speaking_sessions ADD COLUMN session_date DATE NULL;
+ALTER TABLE speaking_sessions ADD COLUMN total_questions INT NULL;
+ALTER TABLE speaking_sessions ADD COLUMN current_question INT NULL;
+ALTER TABLE speaking_sessions ADD COLUMN daily_questions_json TEXT NULL;
+ALTER TABLE speaking_sessions ADD COLUMN daily_vocabulary_json TEXT NULL;
+ALTER TABLE speaking_sessions ADD COLUMN daily_vocab_used_json TEXT NULL;
+ALTER TABLE speaking_sessions ADD COLUMN clarity_score FLOAT NULL;
+ALTER TABLE speaking_turns ADD COLUMN reaction TEXT NULL;
+ALTER TABLE speaking_turns ADD COLUMN natural_version TEXT NULL;
+ALTER TABLE speaking_turns ADD COLUMN explanation TEXT NULL;
+ALTER TABLE speaking_turns ADD COLUMN clarity_score FLOAT NULL;

@@ -1,0 +1,22 @@
+{
+  "agent_name": "capstone_project_agent",
+  "version": "v1.0.0",
+  "description": "Generates a capstone project for any language, role, or topic the student names, monitors deadlines, validates submissions, and returns grading feedback.",
+  "owner": "DigiDARA",
+  "plan_tier": "free",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "path": "/api/invoke",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["health", "eligible_courses", "clarify_topic_request", "check_eligibility", "check_eligibility_free", "choose_topic", "confirm_timer", "status", "upload_submission", "usage_summary"]
+      },
+      "payload": { "type": "object" }
+    },
+    "required": ["action"]
+  },
+  "output_schema": { "type": "object" }
+}

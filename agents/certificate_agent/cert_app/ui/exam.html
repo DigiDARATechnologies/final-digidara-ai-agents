@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Exam — Career Agent Certification</title>
+    <link rel="stylesheet" href="/cert/static/css/styles.css" />
+    <style>
+        .page {
+            padding-top: 80px;
+        }
+
+        .exam-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .exam-topic {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.25rem;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .progress-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .q-counter {
+            color: var(--text-primary);
+            font-weight: 600;
+            font-size: .9rem;
+        }
+
+        .timer {
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .question-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin-bottom: 20px;
+            min-height: 200px;
+            box-shadow: var(--shadow);
+        }
+
+        .q-difficulty {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: .75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .5px;
+            margin-bottom: 16px;
+        }
+
+        .diff-beginner {
+            background: rgba(16, 185, 129, .1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, .2);
+        }
+
+        .diff-intermediate {
+            background: rgba(245, 158, 11, .1);
+            color: var(--warning);
+            border: 1px solid rgba(245, 158, 11, .2);
+        }
+
+        .diff-advanced {
+            background: rgba(239, 68, 68, .1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, .2);
+        }
+
+        .q-text {
+            font-size: 1.1rem;
+            font-weight: 500;
+            line-height: 1.6;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+        }
+
+        .options-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .option-btn {
+            width: 100%;
+            text-align: left;
+            padding: 16px 20px;
+            background: #ffffff;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .option-btn:hover {
+            background: #f4f4f5;
+            border-color: #a1a1aa;
+        }
+
+        .option-btn.selected {
+            background: #e4e4e7;
+            border-color: #09090b;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .option-btn.correct-option {
+            background: rgba(16, 185, 129, .1);
+            border-color: var(--success);
+            color: var(--success);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .option-btn.wrong-option {
+            background: rgba(239, 68, 68, .1);
+            border-color: var(--danger);
+            color: var(--danger);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .ai-feedback-box {
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: 6px;
+            background: #f9f9f9;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            border: 1px solid var(--border);
+            border-left: 4px solid var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .nav-btns {
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .q-dots {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .q-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #e4e4e7;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .q-dot.answered {
+            background: #71717a;
+        }
+
+        .q-dot.current {
+            background: #09090b;
+            transform: scale(1.4);
+        }
+
+        .submit-zone {
+            text-align: center;
+            padding: 32px;
+            background: #f9f9f9;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            margin-top: 20px;
+        }
+
+        .submit-title {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-primary);
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .submit-sub {
+            color: var(--text-muted);
+            margin: 8px 0 20px;
+            font-size: .9rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-anim"></div>
+
+    <nav class="navbar">
+        <a class="nav-brand" href="/dashboard">🎓 Career Agent Certifications</a>
+        <div class="nav-links">
+            <span class="nav-user" id="navUser">👤 —</span>
+            <a href="/dashboard">Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="page">
+        <div class="container" style="padding-top:24px; padding-bottom:60px; max-width:860px;">
+
+            <!-- Exam Header -->
+            <div class="exam-header">
+                <div>
+                    <div class="exam-topic" id="examTopic">Loading exam...</div>
+                    <div style="color:var(--text-muted);font-size:.85rem;margin-top:4px;" id="examMeta"></div>
+                </div>
+                <div class="progress-info">
+                    <div class="timer" id="timer">⏱ 00:00</div>
+                    <div class="q-counter" id="qCounter">Q — / —</div>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-bar-wrap" style="margin-bottom:24px;">
+                <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+            </div>
+
+            <!-- Question Dots -->
+            <div class="q-dots" id="qDots" style="margin-bottom:20px;"></div>
+
+            <!-- Question Card -->
+            <div id="questionArea">
+                <div class="question-card">
+                    <div class="spinner"></div>
+                    <p style="text-align:center;color:var(--text-muted)">Generating questions with AI... This may take a
+                        moment.</p>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="nav-btns">
+                <button class="btn btn-secondary" id="prevBtn" onclick="navigate(-1)" disabled>← Previous</button>
+                <button class="btn btn-secondary" id="nextBtn" onclick="navigate(1)">Next →</button>
+            </div>
+
+            <!-- Submit Zone -->
+            <div class="submit-zone" id="submitZone" style="display:none;">
+                <div class="submit-title">🎯 Ready to Submit?</div>
+                <p class="submit-sub" id="submitStatus">All questions answered. Submit for AI evaluation.</p>
+                <button class="btn btn-primary" onclick="submitExam()" id="submitBtn"
+                    style="font-size:1.05rem;padding:14px 36px;">
+                    Submit Exam & Get Results 🚀
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="/cert/static/js/auth.js"></script>
+    <script>
+        (async function checkCodeHandoff() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            if (code) {
+                try {
+                    const res = await fetch('/api/auth/exchange', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code: code })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        Auth.save(data.access_token, data.user);
+                        urlParams.delete('code');
+                        const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+                        window.history.replaceState({}, document.title, newUrl);
+                    }
+                } catch (e) {
+                    console.error('Exchange error:', e);
+                }
+            }
+        })();
+
+        // ====== Auth Guard ======
+        if (!requireAuth()) {
+            // requireAuth() will redirect to / if not logged in
+        }
+
+        // Get parameters from URL (topic, student, mode)
+        const urlParams = new URLSearchParams(window.location.search);
+        const studentFromUrl = urlParams.get('student');
+        const topicFromUrl = urlParams.get('topic');
+        const modeFromUrl = urlParams.get('mode');
+
+        // Get username for display
+        const certUser = Auth.user();
+        const careerUsername = (certUser && certUser.name) ? certUser.name : (studentFromUrl || 'Student');
+
+        // Display user in navbar
+        document.getElementById('navUser').textContent = '👤 ' + careerUsername;
+
+        let examId = null;
+        let questions = [];
+        let answers = {};
+        let currentQ = 0;
+        let timerSecs = 0;
+        let timerInterval = null;
+        let isReviewMode = false;
+        let questionTimerSecs = 180;
+        let tabSwitchCount = 0;
+
+        // ─── Tab Switch Prevention
+        function initTabSwitchDetection() {
+            if (isReviewMode) return;
+            
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') {
+                    tabSwitchCount++;
+                    if (tabSwitchCount >= 3) {
+                        alert("🚨 Exam Auto-Submitted!\n\nYou have switched tabs 3 times. Your exam has been automatically submitted.");
+                        submitExam(true); // force submit
+                    } else {
+                        alert(`⚠️ Warning: Tab switch detected! (Warning ${tabSwitchCount} of 3).\n\nLeaving this tab 3 times will automatically submit your exam.`);
+                    }
+                }
+            });
+        }
+
+        // ─── Timer
+        function startTimer() {
+            initTabSwitchDetection();
+            timerInterval = setInterval(() => {
+                timerSecs++;
+                if (!isReviewMode) {
+                    questionTimerSecs--;
+                    const m = String(Math.floor(questionTimerSecs / 60)).padStart(2, '0');
+                    const s = String(questionTimerSecs % 60).padStart(2, '0');
+                    document.getElementById('timer').textContent = `⏱ ${m}:${s}`;
+                    
+                    if (questionTimerSecs <= 0) {
+                        handleQuestionTimeout();
+                    }
+                } else {
+                    document.getElementById('timer').style.display = 'none';
+                }
+            }, 1000);
+        }
+
+        function handleQuestionTimeout() {
+            showToast("⏱ Time's up for Question " + (currentQ + 1) + "! Skipping...", "error");
+            
+            if (currentQ < questions.length - 1) {
+                navigate(1);
+            } else {
+                showToast("All questions completed or timed out. Submitting exam...", "success");
+                submitExam(true);
+            }
+        }
+
+        // ─── Load Exam
+        async function loadExam() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const reviewId = urlParams.get('review');
+            const chatSessionId = urlParams.get('session_id');
+
+            // ── Review Mode (past exam replay) ──────────────────────────────
+            if (reviewId) {
+                isReviewMode = true;
+                showLoading('Loading exam review details...');
+                try {
+                    const data = await API.get('/api/cert/exam/' + reviewId, true);
+                    examId = data.id;
+                    questions = data.questions;
+                    document.getElementById('examTopic').textContent = '📋 Review: ' + data.topic;
+                    questions.forEach(q => { answers[q.id] = q.user_answer; });
+                    document.getElementById('examMeta').textContent =
+                        `${data.total_questions} questions · Score: ${data.score_percentage}%`;
+                    hideLoading();
+                    buildDots();
+                    renderQuestion(0);
+                    document.getElementById('timer').style.display = 'none';
+                } catch (e) {
+                    hideLoading();
+                    showToast(e.message, 'error');
+                    setTimeout(() => window.location.href = '/dashboard', 2500);
+                }
+                return;
+            }
+
+            // ── Chat-Session Mode: load pre-generated questions ─────────────
+            if (chatSessionId) {
+                const topic = topicFromUrl || sessionStorage.getItem('examTopic') || 'Certification Exam';
+                document.getElementById('examTopic').textContent = '📚 ' + topic;
+                showLoading('⚡ Loading your pre-generated exam questions...');
+                try {
+                    const data = await API.get(`/api/exam/chat-session/${chatSessionId}/questions`, true);
+                    examId = data.exam_id;
+                    questions = data.questions;
+                    document.getElementById('examTopic').textContent = '📚 ' + (data.topic || topic);
+                    document.getElementById('examMeta').textContent =
+                        `${data.total_questions} questions · Pass: 70% · From chat session`;
+                    // Store topic so result page knows it
+                    sessionStorage.setItem('examTopic', data.topic || topic);
+                    sessionStorage.setItem('chatSessionId', chatSessionId);
+                    hideLoading();
+                    buildDots();
+                    renderQuestion(0);
+                    startTimer();
+                    showToast(`Exam loaded! ${data.total_questions} questions ready. Good luck 🍀`, 'success');
+                } catch (e) {
+                    hideLoading();
+                    showToast(e.message || 'Could not load exam. Generating new questions instead...', 'error');
+                    // Fallback: generate fresh exam using topic
+                    await startFreshExam(topic);
+                }
+                return;
+            }
+
+            // ── Standard Mode: generate new questions ───────────────────────
+            const topic = topicFromUrl || sessionStorage.getItem('examTopic');
+            if (!topic) {
+                showToast('Error: No exam topic specified', 'error');
+                setTimeout(() => window.parent.postMessage({ type: 'closeModal' }, '*'), 2000);
+                return;
+            }
+            sessionStorage.setItem('examTopic', topic);
+            await startFreshExam(topic);
+        }
+
+        async function startFreshExam(topic) {
+            document.getElementById('examTopic').textContent = '📚 ' + topic;
+            showLoading('🤖 AI is generating ' + topic + ' questions...');
+            try {
+                const data = await API.post('/api/exam/start', { topic }, true);
+                examId = data.exam_id;
+                questions = data.questions;
+                document.getElementById('examMeta').textContent =
+                    `${data.total_questions} questions · ${data.attempts_remaining} attempt(s) remaining`;
+                hideLoading();
+                buildDots();
+                renderQuestion(0);
+                startTimer();
+                showToast('Exam started! Good luck 🍀', 'success');
+            } catch (e) {
+                hideLoading();
+                showToast(e.message, 'error');
+                setTimeout(() => window.location.href = '/dashboard', 2500);
+            }
+        }
+
+        // ─── Build dots
+        function buildDots() {
+            const container = document.getElementById('qDots');
+            container.innerHTML = questions.map((_, i) =>
+                `<div class="q-dot" id="dot-${i}" onclick="navigate(0,${i})" title="Q${i + 1}"></div>`
+            ).join('');
+        }
+
+        // ─── Render Question
+        function renderQuestion(idx) {
+            if (idx < 0 || idx >= questions.length) return;
+            saveCurrentAnswer();
+            currentQ = idx;
+            const q = questions[idx];
+            questionTimerSecs = 180;
+
+            document.getElementById('qCounter').textContent = `Q ${idx + 1} / ${questions.length}`;
+            const pct = ((idx + 1) / questions.length * 100).toFixed(0);
+            document.getElementById('progressFill').style.width = pct + '%';
+
+            // Dots
+            document.querySelectorAll('.q-dot').forEach((d, i) => {
+                d.className = 'q-dot' + (answers[questions[i]?.id] ? ' answered' : '') + (i === idx ? ' current' : '');
+            });
+
+            const diffClass = 'diff-' + (q.difficulty || 'beginner');
+            const savedAnswer = answers[q.id] || '';
+            const optionsHtml = (q.options || []).map((opt, i) => {
+                let btnHtml = '';
+                if (isReviewMode) {
+                    const isSelected = savedAnswer === opt;
+                    const isCorrect = opt === q.correct_answer;
+                    let btnClass = isSelected ? 'selected' : '';
+                    let icon = '';
+
+                    if (isCorrect) {
+                        btnClass += ' correct-option';
+                        icon = ' <span style="float:right">✅ Correct</span>';
+                    } else if (isSelected && !isCorrect) {
+                        btnClass += ' wrong-option';
+                        icon = ' <span style="float:right">❌ Your Answer</span>';
+                    }
+
+                    btnHtml = `<button class="option-btn ${btnClass}" disabled style="opacity:1">${escapeHtml(opt)}${icon}</button>`;
+                } else {
+                    const isSelected = savedAnswer === opt;
+                    btnHtml = `<button class="option-btn ${isSelected ? 'selected' : ''}" onclick="onOptionSelect('${escapeHtml(opt.replace(/'/g, "\\'"))}')">${escapeHtml(opt)}</button>`;
+                }
+                return btnHtml;
+            }).join('');
+
+            const feedbackHtml = (isReviewMode && q.ai_feedback) ? `<div class="ai-feedback-box"><strong>Explanation:</strong> ${q.ai_feedback}</div>` : '';
+
+            document.getElementById('questionArea').innerHTML = `
+      <div class="question-card">
+        <span class="q-difficulty ${diffClass}">${q.difficulty || 'beginner'}</span>
+        <p class="q-text">${idx + 1}. ${q.question_text}</p>
+        <div class="options-grid">
+            ${optionsHtml}
+        </div>
+        ${feedbackHtml}
+      </div>
+    `;
+
+            document.getElementById('prevBtn').disabled = idx === 0;
+            document.getElementById('nextBtn').textContent = idx === questions.length - 1 ? 'Review →' : 'Next →';
+
+            updateSubmitZone();
+        }
+
+        function saveCurrentAnswer() {
+            // Options are saved instantly on click now, no need to read DOM on navigate.
+        }
+
+        function onOptionSelect(selectedOption) {
+            if (questions[currentQ]) {
+                answers[questions[currentQ].id] = selectedOption;
+                const dot = document.getElementById('dot-' + currentQ);
+                if (dot) dot.className = 'q-dot answered current';
+
+                // Re-render buttons visually
+                const btns = document.querySelectorAll('.option-btn');
+                btns.forEach(btn => {
+                    if (btn.textContent === selectedOption) btn.classList.add('selected');
+                    else btn.classList.remove('selected');
+                });
+
+                updateSubmitZone();
+
+            }
+        }
+
+        function navigate(dir, target = null) {
+            saveCurrentAnswer();
+            const next = target !== null ? target : currentQ + dir;
+            if (next >= 0 && next < questions.length) renderQuestion(next);
+            else if (dir > 0 && next >= questions.length) updateSubmitZone(true);
+        }
+
+        function updateSubmitZone(forceShow = false) {
+            if (isReviewMode) return;
+            const answered = Object.values(answers).filter(v => v).length;
+            const total = questions.length;
+            const zone = document.getElementById('submitZone');
+            const status = document.getElementById('submitStatus');
+            if (forceShow || answered === total || currentQ === total - 1) {
+                zone.style.display = 'block';
+                status.textContent = `${answered}/${total} answered. ${answered < total ? 'Unanswered questions will score 0.' : 'All questions answered ✅'}`;
+            }
+        }
+
+        async function submitExam(force = false) {
+            saveCurrentAnswer();
+            const answered = Object.values(answers).filter(v => v).length;
+            if (!force && answered < questions.length * 0.5) {
+                if (!confirm(`Only ${answered}/${questions.length} answered. Submit anyway?`)) return;
+            }
+
+            const payload = {
+                exam_id: examId,
+                answers: questions.map(q => ({ question_id: q.id, answer: answers[q.id] || '' }))
+            };
+
+            clearInterval(timerInterval);
+            showLoading('🤖 AI is evaluating your answers...');
+            document.getElementById('submitBtn').disabled = true;
+
+            try {
+                const result = await API.post('/api/exam/submit', payload, true);
+                sessionStorage.setItem('examResult', JSON.stringify({ ...result, timeTaken: timerSecs }));
+                sessionStorage.removeItem('examTopic');
+                window.location.href = '/result';
+            } catch (e) {
+                hideLoading();
+                showToast(e.message, 'error');
+                document.getElementById('submitBtn').disabled = false;
+            }
+        }
+
+        loadExam();
+    </script>
+</body>
+
+</html>

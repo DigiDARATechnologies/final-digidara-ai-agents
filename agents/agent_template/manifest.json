@@ -1,0 +1,23 @@
+{
+  "agent_name": "echo_agent",
+  "version": "v1.0.0",
+  "description": "Echoes back whatever text you send it, with its length. Template/example agent — replace with your real one.",
+  "owner": "digidara-demo",
+  "plan_tier": "free",
+  "host": "127.0.0.1",
+  "port": 8201,
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string", "description": "The text to echo back" }
+    },
+    "required": ["text"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "echoed": { "type": "string" },
+      "length": { "type": "integer" }
+    }
+  }
+}

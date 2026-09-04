@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Career Agent — AI Certifications</title>
+  <meta name="description" content="Login or register to take AI-powered certification exams and earn verified certificates."/>
+  <link rel="stylesheet" href="/cert/static/css/styles.css"/>
+  <style>
+    .auth-wrapper {
+      min-height:100vh; display:flex; align-items:center; justify-content:center;
+      padding:24px;
+    }
+    .auth-card {
+      width:100%; max-width:440px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding:40px 36px;
+      box-shadow: var(--shadow);
+    }
+    .auth-logo {
+      font-family:'Inter',sans-serif;
+      font-size:1.4rem; font-weight:700; text-align:center; margin-bottom:6px;
+      color: var(--text-primary);
+    }
+    .auth-tagline {
+      text-align:center; color: var(--text-muted); font-size:.85rem; margin-bottom:32px;
+    }
+    .tab-switcher {
+      display:flex; background: #f4f4f5;
+      border: 1px solid var(--border);
+      border-radius:6px; padding:4px; margin-bottom:28px; gap:4px;
+    }
+    .tab-btn {
+      flex:1; padding:8px; border:none; border-radius:4px;
+      background:transparent; color: var(--text-muted);
+      font-family:'Inter',sans-serif; font-size:.9rem; font-weight:600;
+      cursor:pointer; transition:all .2s;
+    }
+    .tab-btn.active {
+      background: #0f0f11;
+      color:#fff;
+    }
+    .form-panel { display:none; }
+    .form-panel.active { display:block; }
+    .auth-btn {
+      width:100%; padding:12px; margin-top:8px;
+      background: #0f0f11;
+      border:none; border-radius:6px; color:#fff;
+      font-family:'Inter',sans-serif; font-size:0.95rem; font-weight:600;
+      cursor:pointer; transition:all .2s;
+    }
+    .auth-btn:hover { background: #27272a; }
+    .auth-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+    .divider { text-align:center; color: var(--text-muted); font-size:.8rem; margin:20px 0; }
+    .features { margin-top:36px; display:grid; gap:12px; }
+    .feature-item {
+      display:flex; align-items:center; gap:12px;
+      background: #f9f9f9; padding:12px 16px; border-radius:6px;
+      border:1px solid var(--border);
+    }
+    .feature-icon { font-size:1.3rem; flex-shrink:0; }
+    .feature-text { font-size:.85rem; color: var(--text-muted); }
+    .feature-text strong { color: var(--text-primary); display:block; font-size:.9rem; }
+  </style>
+</head>
+<body>
+<div class="bg-anim"></div>
+
+<div class="auth-wrapper">
+  <div>
+    <div class="auth-card">
+      <div class="auth-logo">🎓 Career Agent Certifications</div>
+      <p class="auth-tagline">AI-Powered Certification Exams</p>
+
+      <div class="tab-switcher">
+        <button class="tab-btn active" onclick="switchTab('login')" id="loginTab">Login</button>
+        <button class="tab-btn" onclick="switchTab('register')" id="registerTab">Register</button>
+      </div>
+
+      <!-- Login Form -->
+      <div class="form-panel active" id="loginPanel">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input class="form-input" type="email" id="loginEmail" placeholder="you@example.com"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="loginPassword" placeholder="••••••••"
+                 onkeydown="if(event.key==='Enter')doLogin()"/>
+        </div>
+        <button class="auth-btn" id="loginBtn" onclick="doLogin()">Login →</button>
+      </div>
+
+      <!-- Register Form -->
+      <div class="form-panel" id="registerPanel">
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input class="form-input" type="text" id="regName" placeholder="John Doe"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input class="form-input" type="email" id="regEmail" placeholder="you@example.com"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input class="form-input" type="password" id="regPassword" placeholder="Min 6 characters"
+                 onkeydown="if(event.key==='Enter')doRegister()"/>
+        </div>
+        <button class="auth-btn" id="registerBtn" onclick="doRegister()">Create Account →</button>
+      </div>
+    </div>
+
+    <!-- Feature highlights -->
+    <div class="features" style="max-width:440px;margin-top:20px;">
+      <div class="feature-item">
+        <div class="feature-icon">🤖</div>
+        <div class="feature-text"><strong>AI-Generated Exams</strong>30 adaptive questions via LLaMA 3</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">🏅</div>
+        <div class="feature-text"><strong>Verified Certificates</strong>Instant PDF on passing 70%</div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon">📊</div>
+        <div class="feature-text"><strong>Track Progress</strong>Analytics, history & leaderboard</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/cert/static/js/auth.js"></script>
+<script>
+  (async function checkCareerAgentToken() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const codeFromUrl = urlParams.get('code');
+    const tokenFromUrl = urlParams.get('token');
+    const topicFromUrl = urlParams.get('topic');
+    const studentFromUrl = urlParams.get('student');
+    const modeFromUrl = urlParams.get('mode');
+
+    if (codeFromUrl) {
+      try {
+        console.log('✅ Handoff code detected - exchanging code for session');
+        const res = await fetch('/api/auth/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: codeFromUrl })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          Auth.save(data.access_token, data.user || { name: studentFromUrl || 'Student' });
+          const targetTopic = data.topic || topicFromUrl || '';
+          const examUrl = `/exam?topic=${encodeURIComponent(targetTopic)}&mode=${modeFromUrl || 'exam'}`;
+          window.location.href = examUrl;
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to exchange handoff code:', e);
+      }
+    }
+
+    if (tokenFromUrl && topicFromUrl) {
+      // Token provided from Career Agent - store and redirect to exam
+      console.log('✅ Career Agent authentication detected - bypassing login');
+      Auth.save(tokenFromUrl, {
+        name: studentFromUrl || 'Student',
+        email: `${studentFromUrl}@careerAgent.local`,
+        role: 'student',
+        fromCareerAgent: true
+      });
+      
+      // Redirect to exam page with parameters
+      const examUrl = `/exam?topic=${encodeURIComponent(topicFromUrl)}&mode=${modeFromUrl || 'exam'}&student=${encodeURIComponent(studentFromUrl)}`;
+      window.location.href = examUrl;
+      return; // Stop further execution
+    }
+  })();
+  
+  redirectIfLoggedIn();
+
+  function switchTab(tab) {
+    document.getElementById('loginPanel').classList.toggle('active', tab==='login');
+    document.getElementById('registerPanel').classList.toggle('active', tab==='register');
+    document.getElementById('loginTab').classList.toggle('active', tab==='login');
+    document.getElementById('registerTab').classList.toggle('active', tab==='register');
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) return showToast('Please fill all fields','error');
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true; btn.textContent = 'Signing in...';
+    try {
+      const data = await API.post('/api/auth/login', {email, password});
+      Auth.save(data.access_token, data.user);
+      showToast('Welcome back, '+data.user.name+'!','success');
+      setTimeout(()=>window.location.href='/dashboard', 800);
+    } catch(e) {
+      showToast(e.message,'error');
+    } finally {
+      btn.disabled=false; btn.textContent='Login →';
+    }
+  }
+
+  async function doRegister() {
+    const name = document.getElementById('regName').value.trim();
+    const email = document.getElementById('regEmail').value.trim();
+    const password = document.getElementById('regPassword').value;
+    if (!name||!email||!password) return showToast('Please fill all fields','error');
+    if (password.length<6) return showToast('Password must be at least 6 characters','error');
+    const btn = document.getElementById('registerBtn');
+    btn.disabled=true; btn.textContent='Creating account...';
+    try {
+      const data = await API.post('/api/auth/register', {name, email, password});
+      Auth.save(data.access_token, data.user);
+      showToast('Account created! Welcome, '+data.user.name,'success');
+      setTimeout(()=>window.location.href='/dashboard', 800);
+    } catch(e) {
+      showToast(e.message,'error');
+    } finally {
+      btn.disabled=false; btn.textContent='Create Account →';
+    }
+  }
+</script>
+</body>
+</html>

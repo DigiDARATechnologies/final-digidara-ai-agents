@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+import type { User } from "../types";
+import type { AptitudeFlowState } from "../lib/aptitudeFlow";
+import { getAptitudeDashboard } from "../lib/aptitudeApi";
+
+export default function AptitudeDashboard({ user, state, onClose }: { user: User; state: AptitudeFlowState; onClose: () => void }) {
+  const [dashboard, setDashboard] = useState<Record<string, any> | null>(null);
+  useEffect(() => { if (state.sessionToken) getAptitudeDashboard(state.sessionToken).then(setDashboard).catch(() => setDashboard(null)); }, [state.sessionToken, state.step, state.score]);
+  const progress = state.totalQuestions ? ((state.question?.sequence || state.totalQuestions) / state.totalQuestions) * 100 : 0;
+  return <aside className="agent-dashboard"><div className="dashboard-head"><div><span>Aptitude agent</span><h2>Performance dashboard</h2></div><button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button></div><div className="dashboard-status-card"><div className="dashboard-status-row"><strong>{state.step === "completed" ? "Test completed" : state.question ? `Question ${state.question.sequence}` : "Ready to practice"}</strong><span>{state.totalQuestions ? `${Math.round(progress)}%` : "—"}</span></div><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><p>Adaptive tests, category practice, hints, explanations, and learner analytics.</p></div><div className="dashboard-section"><h3>Learner</h3><dl><div><dt>Name</dt><dd>{user.name}</dd></div><div><dt>Email</dt><dd>{user.email}</dd></div></dl></div><div className="dashboard-section"><h3>Current test</h3><dl><div><dt>Mode</dt><dd>{state.mode === "category_practice" ? "Category Practice" : state.mode === "mixed" ? "Mixed Test" : "Not started"}</dd></div><div><dt>Category</dt><dd>{state.category ?? "All categories"}</dd></div><div><dt>Language</dt><dd>{state.technicalLanguage ?? "Python"}</dd></div><div><dt>Hints left</dt><dd>{state.hintsRemaining ?? "—"}</dd></div></dl></div>{dashboard && <div className="dashboard-result"><span>Completed tests</span><strong>{dashboard.tests_completed ?? 0}</strong><p>Average score: {dashboard.average_score ?? 0}% · Best: {dashboard.best_score ?? 0}%</p></div>}</aside>;
+}

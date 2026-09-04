@@ -1,0 +1,12 @@
+CREATE TABLE llm_usage (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  provider VARCHAR(50) NOT NULL,
+  model_name VARCHAR(100) NOT NULL,
+  prompt_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+  completion_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+  total_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+  request_type VARCHAR(64) NOT NULL DEFAULT 'unspecified',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_llm_usage_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

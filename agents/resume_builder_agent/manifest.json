@@ -1,0 +1,19 @@
+{
+  "agent_name": "resume_builder_agent",
+  "version": "v1.0.0",
+  "description": "AI-powered resume creation, import review, ATS scoring, templates, preview, and PDF export",
+  "owner": "DigiDARA",
+  "plan_tier": "free",
+  "host": "127.0.0.1",
+  "port": 5010,
+  "path": "/api/invoke",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {"type": "string", "enum": ["health", "ensure_profile", "create_resume", "get_resumes", "get_resume", "update_resume", "delete_resume", "analyze_upload", "create_import_draft", "analyze_resume", "generate_resume", "generate_summary", "generate_bullets", "generate_project_bullets", "improve_bullet", "suggest_skills", "analyze_job_description", "generate_declaration", "tailor_to_job", "select_template", "list_templates", "get_template", "preview_resume", "export_pdf"]},
+      "payload": {"type": "object"}
+    },
+    "required": ["action"]
+  },
+  "output_schema": {"type": "object"}
+}

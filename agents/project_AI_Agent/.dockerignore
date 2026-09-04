@@ -1,0 +1,11 @@
+.venv
+venv
+__pycache__
+*.pyc
+.env
+.env.local
+.git
+*.sqlite*
+uploads
+frontend
+node_modules

@@ -1,0 +1,1 @@
+"""Registry-resolved REST gateway."""

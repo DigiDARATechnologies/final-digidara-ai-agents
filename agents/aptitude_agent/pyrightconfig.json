@@ -1,0 +1,7 @@
+{
+  "include": ["app.py", "worker.py", "backend/app", "backend/tests"],
+  "exclude": ["backend/migrations"],
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false,
+  "pythonVersion": "3.12"
+}

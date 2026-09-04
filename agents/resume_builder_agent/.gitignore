@@ -1,0 +1,44 @@
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python environments, bytecode, test caches, and coverage output
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.venv*/
+venv/
+venv*/
+.pytest_cache/
+.codex-pytest-cache/
+.codex-pytest-tmp/
+.coverage
+coverage.xml
+htmlcov/
+
+# Frontend dependencies and generated builds
+node_modules/
+dist/
+build/
+.vite/
+
+# Local runtime data and generated resume files (may contain personal data)
+instance/
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+uploads/
+exports/
+generated/
+
+# Runtime logs and operating-system/editor files
+*.log
+*.log.*
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,32 @@
+# Environment variables & secrets
+.env
+*.env
+
+# Python & Virtual Environments
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Generated Artifacts & Certificates
+certificates/*.pdf
+attached_assets/certificates/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Scratch & Debug
+scratch_*.py
+walkthrough.md
+implementation_plan.md
+*.log
+logs/
+

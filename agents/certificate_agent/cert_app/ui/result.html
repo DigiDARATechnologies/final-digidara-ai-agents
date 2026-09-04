@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Result — CertifyAI</title>
+    <link rel="stylesheet" href="/cert/static/css/styles.css" />
+    <style>
+        .page {
+            padding-top: 80px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .result-wrap {
+            max-width: 700px;
+            width: 100%;
+            padding: 24px;
+        }
+
+        .score-ring-wrap {
+            position: relative;
+            width: 180px;
+            height: 180px;
+            margin: 0 auto 32px;
+        }
+
+        .score-ring {
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: conic-gradient(var(--color) var(--pct), rgba(0, 0, 0, .05) 0);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .score-ring::before {
+            content: '';
+            position: absolute;
+            inset: 12px;
+            border-radius: 50%;
+            background: #ffffff;
+        }
+
+        .score-inner {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+        }
+
+        .score-num {
+            font-family: 'Inter', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .score-label {
+            font-size: .75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .result-badge {
+            text-align: center;
+            font-size: 4rem;
+            margin-bottom: 12px;
+            animation: bounceIn .5s ease;
+        }
+
+        .result-title {
+            font-family: 'Inter', sans-serif;
+            font-size: 2rem;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .result-sub {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        @media(max-width:500px) {
+            .stats-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .result-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        /* Confetti */
+        .confetti-piece {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            animation: confettiFall 3s linear forwards;
+        }
+
+        @keyframes confettiFall {
+            0% {
+                transform: translateY(-100px) rotate(0deg);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(110vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes bounceIn {
+            0% {
+                transform: scale(.3)
+            }
+
+            60% {
+                transform: scale(1.1)
+            }
+
+            80% {
+                transform: scale(.95)
+            }
+
+            100% {
+                transform: scale(1)
+            }
+        }
+
+        @keyframes countUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        .animate-up {
+            animation: countUp .6s ease forwards;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-anim"></div>
+
+    <nav class="navbar">
+        <a class="nav-brand" href="#">&#x1F393; Certification Results</a>
+        <div class="nav-links">
+            <button class="btn btn-secondary btn-sm" onclick="closeAndReturn()" style="cursor:pointer;">&#x2190; Back to Certifications</button>
+        </div>
+    </nav>
+
+    <div class="page">
+        <div class="result-wrap" id="resultWrap">
+            <div class="spinner"></div>
+            <p style="text-align:center;color:var(--text-muted)">Loading result...</p>
+        </div>
+    </div>
+
+    <script src="/cert/static/js/auth.js"></script>
+    <script>
+        // Auth is handled server-side via Flask JWT cookies — no client-side check needed
+        const result = JSON.parse(sessionStorage.getItem('examResult') || 'null');
+        if (!result) {
+            if (window.parent !== window) window.parent.postMessage({type: 'closeModal'}, '*');
+            else window.location.href = '/dashboard';
+        }
+
+        function formatTime(secs) {
+            const m = Math.floor(secs / 60), s = secs % 60;
+            return `${m}m ${s}s`;
+        }
+
+        function launchConfetti() {
+            const colors = ['#FFD700', '#00ffcc', '#7c3aed', '#ff6b6b', '#48cae4', '#90e0ef'];
+            for (let i = 0; i < 80; i++) {
+                setTimeout(() => {
+                    const el = document.createElement('div');
+                    el.className = 'confetti-piece';
+                    el.style.cssText = `
+          left:${Math.random() * 100}vw;
+          background:${colors[Math.floor(Math.random() * colors.length)]};
+          animation-duration:${2.5 + Math.random() * 2}s;
+          animation-delay:${Math.random() * 0.5}s;
+          width:${6 + Math.random() * 8}px;
+          height:${6 + Math.random() * 8}px;
+          border-radius:${Math.random() > .5 ? '50%' : '2px'};
+        `;
+                    document.body.appendChild(el);
+                    setTimeout(() => el.remove(), 5000);
+                }, i * 30);
+            }
+        }
+
+        function renderResult() {
+            const passed = result.passed;
+            const score = result.score_percentage;
+            const color = passed ? 'var(--success)' : 'var(--danger)';
+            const pct = `${(score / 100 * 360).toFixed(1)}deg`;
+
+            document.getElementById('resultWrap').innerHTML = `
+      <div class="result-badge animate-up">${passed ? '🏆' : '📚'}</div>
+      <div class="result-title animate-up" style="color:${color}">${passed ? 'PASSED!' : 'FAILED'}</div>
+      <p class="result-sub">${passed ? 'Congratulations! You passed the certification exam.' : 'Keep practicing and try again.'}</p>
+
+      <div class="score-ring-wrap animate-up">
+        <div class="score-ring" style="--color:${color};--pct:${pct}">
+          <div class="score-inner">
+            <div class="score-num" style="color:${color}">${score.toFixed(1)}%</div>
+            <div class="score-label">Your Score</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-row animate-up">
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:1.5rem">${result.correct_answers}</div>
+          <div class="stat-label">Correct Answers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:1.5rem">${result.total_questions}</div>
+          <div class="stat-label">Total Questions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:1.5rem">${result.timeTaken ? formatTime(result.timeTaken) : '—'}</div>
+          <div class="stat-label">Time Taken</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;text-align:center;">
+        <div style="color:var(--text-muted);font-size:.85rem;margin-bottom:4px;">Topic</div>
+        <div style="font-size:1.2rem;font-weight:700;color:var(--cyan)">${result.topic}</div>
+        <div style="margin-top:8px;">
+          <span class="badge badge-${passed ? 'success' : 'danger'}">${result.status.toUpperCase()}</span>
+        </div>
+        ${result.certificate_number ? `
+          <div style="margin-top:12px;padding:10px;background:rgba(255,215,0,.08);border-radius:10px;border:1px solid rgba(255,215,0,.2);">
+            <div style="color:var(--gold);font-weight:600;margin-bottom:4px;">🏅 Certificate Issued</div>
+            <div style="font-family:monospace;color:var(--text-muted);font-size:.85rem;">#${result.certificate_number}</div>
+          </div>
+        ` : ''}
+      </div>
+
+      <div class="result-actions">
+        ${result.certificate_id ? `
+          <a href="/api/certificate/download/${result.certificate_id}?token=${encodeURIComponent(Auth.token() || '')}" target="_blank" class="btn btn-primary">
+            ⬇ Download Certificate
+          </a>
+        ` : ''}
+        <button class="btn btn-secondary" onclick="closeAndReturn()">&#x2190; Back to Dashboard</button>
+        <button class="btn btn-secondary" onclick="retryExam()">&#x21BA; Try Again</button>
+      </div>
+    `;
+
+            if (passed) setTimeout(launchConfetti, 300);
+        }
+
+        function retryExam() {
+            sessionStorage.setItem('examTopic', result.topic);
+            window.location.href = '/exam?topic=' + encodeURIComponent(result.topic);
+        }
+
+        function closeAndReturn() {
+            sessionStorage.removeItem('examResult');
+            if (window.parent !== window) {
+                window.parent.postMessage({type: 'closeModal'}, '*');
+            } else {
+                window.location.href = '/dashboard';
+            }
+        }
+
+        renderResult();
+
+        // ========== INTEGRATION: Send result to Career Agent (Parent Window) ==========
+        // If opened in iframe, notify parent window of exam completion
+        if (window.parent !== window) {
+            if (result.passed) {
+                window.parent.postMessage({
+                    type: 'EXAM_COMPLETED',
+                    passed: true,
+                    topic: result.topic,
+                    score: result.score_percentage,
+                    certificateNumber: result.certificate_number,
+                    certificateId: result.certificate_id,
+                    timestamp: new Date().toISOString()
+                }, '*'); // In production, specify exact origin: 'http://localhost:5000'
+            } else {
+                window.parent.postMessage({
+                    type: 'EXAM_FAILED',
+                    passed: false,
+                    topic: result.topic,
+                    score: result.score_percentage,
+                    attemptsRemaining: 3 - (result.attempt_count || 1),
+                    timestamp: new Date().toISOString()
+                }, '*'); // In production, specify exact origin: 'http://localhost:5000'
+            }
+        }
+    </script>
+</body>
+
+</html>

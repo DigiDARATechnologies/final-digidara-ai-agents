@@ -1,0 +1,57 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.venv/
+dist
+dist-ssr
+*.local
+
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python virtual environments, bytecode, and test caches
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+venv*/
+.pytest_cache/
+.codex-pytest-cache/
+.codex-pytest-tmp/
+.coverage
+htmlcov/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Source zips (uploaded agent submissions, not the tracked codebase)
+agents/*.zip
+
+# Learner-uploaded files (any agent's own uploads/ dir)
+uploads/
+
+# A stray/corrupted nested .git from an earlier copy of project_AI_Agent
+agents/project_AI_Agent/.git/
+# Preserved metadata from the imported certificate agent repository. The
+# source itself is tracked by this main repository.
+agents/certificate_agent/.git.nested-backup/
+__pycache__/
+*.py[cod]
+.pytest_cache/

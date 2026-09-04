@@ -1,0 +1,157 @@
+import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+
+const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
+
+function invoke<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  return invokeAgent<T>(INVOKE_URL, action, payload);
+}
+
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {
+      // Keep the HTTP status text when an upstream response is not JSON.
+    }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+export async function checkCapstoneHealth(): Promise<boolean> {
+  try {
+    const result = await invoke<{ status: string }>("health");
+    return result.status === "ok";
+  } catch {
+    return false;
+  }
+}
+
+export interface TopicOption {
+  id: string;
+  title: string;
+  summary: string;
+  medium: string;
+  skills_applied: string[];
+}
+
+export interface EligibleCourse {
+  id: string;
+  name: string;
+  medium: string;
+}
+
+export interface EligibleCoursesResult {
+  student_found: boolean;
+  courses: EligibleCourse[];
+}
+
+export function getEligibleCourses(phone: string) {
+  return invoke<EligibleCoursesResult>("eligible_courses", { phone });
+}
+
+export interface EligibilityCheckResult {
+  thread_id: string;
+  eligible: boolean;
+  eligibility_reason: string;
+  topic_options: TopicOption[] | null;
+}
+
+export function checkEligibility(name: string, email: string, phone: string, course_name: string) {
+  return invoke<EligibilityCheckResult>("check_eligibility", { name, email, phone, course_name });
+}
+
+export type ProjectDifficulty = "easy" | "medium" | "hard";
+
+/** Skips the certificate/enrollment gate entirely — course_name doubles as
+ * whatever language, role, or topic the student typed. */
+export function checkEligibilityFree(name: string, email: string, phone: string, topic: string, difficulty: ProjectDifficulty = "easy") {
+  return invoke<EligibilityCheckResult>("check_eligibility_free", { name, email, phone, course_name: topic, difficulty });
+}
+
+export interface TopicClarifyResult {
+  ready: boolean;
+  clarifying_question: string | null;
+}
+
+/** Stateless pre-check run before checkEligibilityFree: does this free-text
+ * request already say enough (company/role/stack) to generate two genuinely
+ * targeted topics, or should the student be asked one clarifying question
+ * first? See capstoneFlow.ts's awaiting_topic_request handling. */
+export function clarifyTopicRequest(description: string) {
+  return invoke<TopicClarifyResult>("clarify_topic_request", { description });
+}
+
+export interface TopicChooseResult {
+  thread_id: string;
+  chosen_topic: Record<string, unknown>;
+  requirements: Record<string, any>;
+}
+
+export function chooseTopic(thread_id: string, topic_id: string) {
+  return invoke<TopicChooseResult>("choose_topic", { thread_id, topic_id });
+}
+
+export interface TimerConfirmResult {
+  thread_id: string;
+  deadline_at: string;
+  submission_guide: Record<string, any>;
+}
+
+export function confirmTimer(thread_id: string) {
+  return invoke<TimerConfirmResult>("confirm_timer", { thread_id });
+}
+
+export interface CodeQualityScore {
+  structure_score?: number;
+  syntax_score?: number;
+  maintainability_score?: number;
+  completeness_score?: number;
+  total_code_score?: number;
+  strengths?: string[];
+  weaknesses?: string[];
+  specific_line_feedback?: string[];
+}
+
+export interface SubmissionResult {
+  thread_id: string;
+  status: string;
+  revision_notes?: string | null;
+  final_score?: number | null;
+  passed?: boolean | null;
+  feedback?: string | null;
+  score_reasoning?: string | null;
+  code_quality_score?: CodeQualityScore | null;
+}
+
+export interface ThreadStatus {
+  thread_id: string;
+  status?: string | null;
+  final_score?: number | null;
+  passed?: boolean | null;
+  feedback?: string | null;
+  revision_notes?: string | null;
+  score_reasoning?: string | null;
+  code_quality_score?: CodeQualityScore | null;
+}
+
+export function getThreadStatus(thread_id: string) {
+  return invoke<ThreadStatus>("status", { thread_id });
+}
+
+export async function uploadSubmission(thread_id: string, docxFile: File, zipFile: File) {
+  const form = new FormData();
+  form.append("action", "upload_submission");
+  form.append("thread_id", thread_id);
+  form.append("docx_file", docxFile);
+  form.append("zip_file", zipFile);
+  const platformToken = localStorage.getItem("digidara_token");
+  const response = await fetch(INVOKE_URL, {
+    method: "POST",
+    headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
+    body: form,
+  });
+  return parseResponse<SubmissionResult>(response);
+}

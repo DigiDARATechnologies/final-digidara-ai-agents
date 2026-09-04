@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Dashboard — CertifyAI</title>
+    <link rel="stylesheet" href="/cert/static/css/styles.css" />
+    <style>
+        .page {
+            padding-top: 80px;
+        }
+
+        .dash-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        @media(max-width:900px) {
+            .dash-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media(max-width:500px) {
+            .dash-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .start-banner {
+            background: #f9f9f9;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .banner-title {
+            font-family: 'Inter', sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .banner-sub {
+            color: var(--text-muted);
+            margin-top: 6px;
+        }
+
+        .start-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .cert-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .cert-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            transition: all .2s;
+        }
+
+        .cert-card:hover {
+            transform: translateY(-2px);
+            border-color: #a1a1aa;
+        }
+
+        .cert-card::before {
+            content: '🏅';
+            position: absolute;
+            right: 16px;
+            top: 16px;
+            font-size: 2rem;
+            opacity: .2;
+        }
+
+        .cert-topic {
+            font-weight: 700;
+            color: var(--text-primary);
+            font-size: 1.05rem;
+            margin-bottom: 6px;
+            padding-right: 40px;
+        }
+
+        .cert-score {
+            color: var(--primary-orange);
+            font-size: .9rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .cert-num {
+            color: var(--text-muted);
+            font-size: .75rem;
+            font-family: monospace;
+        }
+
+        .lb-rank {
+            font-family: 'Inter', sans-serif;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .lb-name {
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        /* Course Hub Styles */
+        .hub-section {
+            margin-top: 40px;
+            margin-bottom: 48px;
+        }
+
+        .hub-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .dept-select {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            cursor: pointer;
+            outline: none;
+            transition: all .2s;
+        }
+
+        .dept-select:hover {
+            border-color: #09090b;
+        }
+
+        .course-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .course-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            text-align: center;
+            transition: all .2s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 130px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            color: var(--text-primary);
+        }
+
+        .course-card:hover {
+            transform: translateY(-3px);
+            background: #f9f9f9;
+            border-color: #a1a1aa;
+        }
+
+        .course-card::after {
+            content: '\2192';
+            position: absolute;
+            top: 12px;
+            right: 14px;
+            font-size: 1rem;
+            color: var(--text-primary);
+            opacity: 0;
+            transition: opacity .2s;
+        }
+
+        .course-card:hover::after {
+            opacity: 1;
+        }
+
+        .course-title {
+            font-weight: 600;
+            color: var(--text-primary);
+            font-size: 1rem;
+            line-height: 1.4;
+        }
+
+        .course-badge {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: block;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="bg-anim"></div>
+
+    <nav class="navbar">
+        <a class="nav-brand" href="/dashboard">🎓 Career Certifications</a>
+        <div class="nav-links">
+            <span class="nav-user" id="navUser">👤 Student</span>
+            <a href="/chat" style="color:var(--primary-orange);font-weight:600;">AI Chat Exam ⚡</a>
+            <a href="#" onclick="Auth.logout()">Logout</a>
+        </div>
+    </nav>
+
+    <div class="page">
+        <div class="container" style="padding-top:24px; padding-bottom:60px;">
+
+            <!-- Start Exam Banner -->
+            <div class="start-banner">
+                <div>
+                    <div class="banner-title">🚀 Start a New Exam</div>
+                    <div class="banner-sub">AI generates 30 questions. Score 70%+ to earn a certificate.</div>
+                </div>
+                <div class="start-form">
+                    <input class="form-input" id="topicInput" placeholder="Enter topic (e.g., Python, SQL...)"
+                        style="width:280px" onkeydown="if(event.key==='Enter')startExam()" />
+                    <button class="btn btn-primary" onclick="startExam()">Start Exam ⚡</button>
+                    <a href="/chat" class="btn btn-secondary">AI Chat Exam 💬</a>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="dash-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statTotal">—</div>
+                    <div class="stat-label">Total Exams</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statPassed">—</div>
+                    <div class="stat-label">Exams Passed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statCerts">—</div>
+                    <div class="stat-label">Certificates</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statBest">—</div>
+                    <div class="stat-label">Best Score</div>
+                </div>
+            </div>
+
+            <!-- Course Hub -->
+            <div class="hub-section">
+                <div class="hub-header">
+                    <div class="section-title" style="margin-bottom:0">🎯 Course Hub</div>
+                    <select class="dept-select" id="deptSelector" onchange="filterCourses()">
+                        <option value="AI&DS">AI&DS</option>
+                        <option value="IT">IT</option>
+                        <option value="CSE">CSE</option>
+                        <option value="ECE">ECE</option>
+                        <option value="EEE">EEE</option>
+                        <option value="Mechanical Engineer">Mechanical Engineer</option>
+                        <option value="Civil Engineer">Civil Engineer</option>
+                    </select>
+                </div>
+                <div class="course-grid" id="courseGrid">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- Exam History -->
+            <div class="card" style="margin-bottom:28px;">
+                <div class="section-title">📋 Exam History</div>
+                <div class="table-wrap">
+                    <table id="historyTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Topic</th>
+                                <th>Score</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyBody">
+                            <tr>
+                                <td colspan="6">
+                                    <div class="loading-text" style="text-align:center;padding:20px;">Loading...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Certificates -->
+            <div class="section-title">🏅 My Certificates</div>
+            <div class="cert-grid" id="certGrid">
+                <div class="empty-state">
+                    <div class="icon">⏳</div>Loading certificates...
+                </div>
+            </div>
+
+            <!-- Leaderboard -->
+            <div class="card" style="margin-top:28px;">
+                <div class="section-title">🏆 Global Leaderboard</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Name</th>
+                                <th>Best Score</th>
+                                <th>Topics Passed</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leaderboardBody">
+                            <tr>
+                                <td colspan="4">
+                                    <div style="text-align:center;padding:16px;color:var(--text-muted);">Loading...
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script src="/cert/static/js/auth.js"></script>
+    <script>
+        const courseData = {
+            "AI&DS": [
+                "Artificial Intelligence", "Data Science with Python", "Machine Learning",
+                "Deep Learning", "Natural Language Processing", "Computer Vision",
+                "Big Data Analytics", "Robotics & Automation", "Statistical Modeling", "AI Ethics"
+            ],
+            "IT": [
+                "Web Development", "Cloud Computing", "Cybersecurity", "Database Systems",
+                "Software Engineering", "Mobile App Development", "DevOps & CI/CD",
+                "Internet of Things", "IT Project Management", "Network Security"
+            ],
+            "CSE": [
+                "Data Structures", "Operating Systems", "Computer Architecture",
+                "Compiler Design", "Theory of Computation", "Distributed Systems",
+                "Parallel Computing", "Computer Graphics", "Java Programming", "C++ Advanced"
+            ],
+            "ECE": [
+                "Digital Logic Design", "Microprocessors", "Signal Processing",
+                "VLSI Design", "Embedded Systems", "Wireless Communication",
+                "Antennas", "Control Systems", "Optical Fibers", "Analog Circuits"
+            ],
+            "EEE": [
+                "Electric Circuits", "Power Systems", "Electrical Machines",
+                "Power Electronics", "Renewable Energy", "Smart Grid",
+                "High Voltage Engineering", "Instrumentation", "Control Engineering", "Circuit Theory"
+            ],
+            "Mechanical Engineer": [
+                "Thermodynamics", "Fluid Mechanics", "Strength of Materials",
+                "Manufacturing Technology", "Machine Design", "Heat Transfer",
+                "CAD/CAM", "Automobile Engineering", "Mechatronics", "IC Engines"
+            ],
+            "Civil Engineer": [
+                "Structural Engineering", "Geotechnical Engineering", "Transportation Engineering",
+                "Hydraulics", "Surveying", "Construction Management",
+                "Environmental Engineering", "Concrete Technology", "Hydrology", "Building Materials"
+            ]
+        };
+
+        function filterCourses() {
+            const dept = document.getElementById('deptSelector').value;
+            const grid = document.getElementById('courseGrid');
+            const courses = courseData[dept] || [];
+
+            grid.innerHTML = courses.map(c => `
+                <div class="course-card" onclick="startCourseExam('${c}')">
+                    <span class="course-badge">${dept}</span>
+                    <div class="course-title">${c}</div>
+                </div>
+            `).join('');
+        }
+
+        function startCourseExam(topic) {
+            window.location.href = '/chat?topic=' + encodeURIComponent(topic);
+        }
+
+        function startExam() {
+            const topic = document.getElementById('topicInput').value.trim();
+            if (!topic) return showToast('Please enter a topic', 'error');
+            window.location.href = '/chat?topic=' + encodeURIComponent(topic);
+        }
+
+        if (requireAuth()) {
+            const user = Auth.user();
+            if (user && user.name) {
+                document.getElementById('navUser').textContent = '👤 ' + user.name;
+            }
+
+            async function loadDashboard() {
+                const [examsRes, certsRes, lbRes] = await Promise.allSettled([
+                    API.get('/api/exam/history', true),
+                    API.get('/api/certificate/my-certificates', true),
+                    API.get('/api/exam/leaderboard', true)
+                ]);
+
+                const exams = examsRes.status === 'fulfilled' ? (examsRes.value || []) : [];
+                const certs = certsRes.status === 'fulfilled' ? (certsRes.value || []) : [];
+                const lb = lbRes.status === 'fulfilled' ? (lbRes.value || []) : [];
+
+                renderStats(exams, certs);
+
+                if (examsRes.status === 'fulfilled') {
+                    renderHistory(exams);
+                } else {
+                    renderHistoryError(examsRes.reason?.message || 'Failed to load exam history');
+                }
+
+                if (certsRes.status === 'fulfilled') {
+                    renderCerts(certs);
+                } else {
+                    renderCertsError(certsRes.reason?.message || 'Failed to load certificates');
+                }
+
+                if (lbRes.status === 'fulfilled') {
+                    renderLeaderboard(lb);
+                } else {
+                    renderLeaderboardError(lbRes.reason?.message || 'Failed to load leaderboard');
+                }
+            }
+
+            function renderStats(exams, certs) {
+                const passed = (exams || []).filter(e => e.status === 'passed' || e.status === 'completed').length;
+                const best = (exams || []).length ? Math.max(...exams.map(e => e.score_percentage || 0)).toFixed(1) + '%' : '—';
+                document.getElementById('statTotal').textContent = (exams || []).length;
+                document.getElementById('statPassed').textContent = passed;
+                document.getElementById('statCerts').textContent = (certs || []).length;
+                document.getElementById('statBest').textContent = best;
+            }
+
+            function renderHistory(exams) {
+                const tbody = document.getElementById('historyBody');
+                if (!exams || !exams.length) {
+                    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="icon">📝</div>No exams taken yet. Start your first exam above!</div></td></tr>';
+                    return;
+                }
+                tbody.innerHTML = exams.map((e, i) => `
+          <tr>
+            <td style="color:var(--text-muted)">${i + 1}</td>
+            <td style="font-weight:600">${escapeHtml(e.topic)}</td>
+            <td style="color:${(e.score_percentage || 0) >= 70 ? 'var(--success)' : 'var(--danger)'}">${(e.score_percentage || 0).toFixed(1)}%</td>
+            <td><span class="badge badge-${(e.status === 'passed' || e.status === 'completed') ? 'success' : 'danger'}">${escapeHtml(e.status)}</span></td>
+            <td style="color:var(--text-muted);font-size:.8rem">${e.started_at ? new Date(e.started_at).toLocaleDateString() : ''}</td>
+            <td><a href="/exam?review=${e.id}" class="btn btn-primary btn-sm">Results</a></td>
+          </tr>
+        `).join('');
+            }
+
+            function renderHistoryError(msg) {
+                const tbody = document.getElementById('historyBody');
+                tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="color:var(--danger)"><div class="icon">⚠️</div>Failed to load exam history: ${escapeHtml(msg)}</div></td></tr>`;
+            }
+
+            function renderCerts(certs) {
+                const grid = document.getElementById('certGrid');
+                if (!certs || !certs.length) {
+                    grid.innerHTML = '<div class="empty-state"><div class="icon">🏅</div><p>Pass an exam with 70%+ to earn your first certificate!</p></div>';
+                    return;
+                }
+                grid.innerHTML = certs.map(c => `
+          <div class="cert-card">
+            <div class="cert-topic">${escapeHtml(c.topic)}</div>
+            <div class="cert-score">Score: ${(c.score_percentage || 0).toFixed(1)}%</div>
+            <div class="cert-num">Cert #${escapeHtml(c.certificate_number)}</div>
+            <div style="margin-top:14px;">
+              <a href="/api/certificate/download/${c.id}?token=${encodeURIComponent(Auth.token() || '')}" target="_blank" class="btn btn-primary btn-sm">⬇ Download PDF</a>
+            </div>
+          </div>
+        `).join('');
+            }
+
+            function renderCertsError(msg) {
+                const grid = document.getElementById('certGrid');
+                grid.innerHTML = `<div class="empty-state" style="color:var(--danger)"><div class="icon">⚠️</div>Failed to load certificates: ${escapeHtml(msg)}</div>`;
+            }
+
+            function renderLeaderboard(lb) {
+                const tbody = document.getElementById('leaderboardBody');
+                if (!lb || !lb.length) {
+                    tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="icon">🏆</div>No leaderboard scores recorded yet. Be the first to pass an exam!</div></td></tr>';
+                    return;
+                }
+                const medals = ['🥇', '🥈', '🥉'];
+                tbody.innerHTML = lb.map((l, i) => `
+          <tr>
+            <td class="lb-rank">${medals[i] || '#' + (i + 1)}</td>
+            <td class="lb-name">${escapeHtml(l.name)}</td>
+            <td style="color:var(--accent-dark);font-weight:600">${(l.best_score || 0).toFixed(1)}%</td>
+            <td style="color:var(--primary-orange);font-weight:600">${l.topics_passed || 0}</td>
+          </tr>
+        `).join('');
+            }
+
+            function renderLeaderboardError(msg) {
+                const tbody = document.getElementById('leaderboardBody');
+                tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state" style="color:var(--danger)"><div class="icon">⚠️</div>Failed to load leaderboard: ${escapeHtml(msg)}</div></td></tr>`;
+            }
+
+            // Initialize Grid & Dashboard
+            filterCourses();
+            loadDashboard();
+        }
+    </script>
+</body>
+
+</html>

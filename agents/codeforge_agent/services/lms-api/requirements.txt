@@ -1,0 +1,7 @@
+Flask==3.1.2
+PyMySQL[rsa]==1.1.2
+waitress==3.0.2
+requests==2.32.3
+# Production process manager target (see ecosystem.config.js) — not used by
+# waitress in local dev (run.py), and doesn't run as a server on Windows.
+gunicorn==23.0.0

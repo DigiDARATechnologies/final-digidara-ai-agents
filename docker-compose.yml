@@ -1,0 +1,138 @@
+# DigiDARA AI Agents Platform — local/dev container stack.
+# See README-docker.md for usage (bring the whole stack up, rebuild one
+# service, view logs, health-check everything).
+#
+# Judge0 already ships its own docker-compose.yml (agents/codeforge_agent/judge0/)
+# and is deliberately left untouched — `include:` folds its services (server,
+# worker, db, redis) into this same project so `docker compose up -d` starts
+# everything with one command, on the same default network as the services
+# below, without editing anything inside judge0/.
+include:
+  - agents/codeforge_agent/judge0/docker-compose.yml
+
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    env_file:
+      - docker/mysql/.env
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # $$MYSQL_ROOT_PASSWORD (double $$) is intentional: it must expand
+      # inside the container's own shell at healthcheck time, using the
+      # value env_file injected there — not at compose-parse time, where
+      # docker/mysql/.env isn't visible for ${...} interpolation.
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  orchestrator:
+    build:
+      context: ./agents/orchestrator
+    restart: unless-stopped
+    env_file:
+      - ./agents/orchestrator/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  capstone-agent:
+    build:
+      context: ./agents/project_AI_Agent
+    restart: unless-stopped
+    env_file:
+      - ./agents/project_AI_Agent/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+      # Judge0's own compose file defines no healthcheck for `server`, so
+      # this can only gate on "started", not "actually accepting requests
+      # yet". That's fine here: this agent treats Judge0 being unreachable
+      # as best-effort ("no execution evidence"), never a hard failure.
+      server:
+        condition: service_started
+
+  codeforge-agent:
+    build:
+      context: ./agents/codeforge_agent/services/lms-api
+    restart: unless-stopped
+    env_file:
+      - ./agents/codeforge_agent/services/lms-api/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+      server:
+        condition: service_started
+
+  communication-agent:
+    build:
+      context: ./agents/communication-ai-agent/backend
+    restart: unless-stopped
+    env_file:
+      - ./agents/communication-ai-agent/backend/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
+  aptitude-agent:
+    build:
+      context: ./agents/aptitude_agent
+    restart: unless-stopped
+    env_file:
+      - ./agents/aptitude_agent/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
+  resume-builder-agent:
+    build:
+      context: ./agents/resume_builder_agent/backend
+    restart: unless-stopped
+    env_file:
+      - ./agents/resume_builder_agent/backend/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
+  certificate-agent:
+    build:
+      context: ./agents/certificate_agent
+    restart: unless-stopped
+    env_file:
+      - ./agents/certificate_agent/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_GATEWAY_API_URL: ""
+        VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+
+volumes:
+  mysql_data:

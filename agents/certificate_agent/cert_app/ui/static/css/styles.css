@@ -1,0 +1,1005 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* ===== CHATGPT-STYLE CLEAN LIGHT MODE ===== */
+:root {
+  /* Minimalist Palette */
+  --primary-cream: #ffffff;       /* Pure white background */
+  --primary-beige: #f9f9f9;       /* Light gray sidebar/accent background */
+  --primary-gold: #d97706;        /* Golden amber (readable dark gold) */
+  --primary-yellow: #fbbf24;      /* Amber yellow */
+  --primary-orange: #0f0f11;      /* Charcoal black for primary actions */
+  
+  --accent-dark: #09090b;         /* Charcoal primary text */
+  --accent-gray: #71717a;         /* Zinc-500 gray text */
+  --accent-light-gray: #e4e4e7;   /* Zinc-200 border */
+  --accent-white: #ffffff;        /* White background */
+  
+  /* Exam System Specific */
+  --bg-primary: #ffffff;          /* White body background */
+  --bg-secondary: #f9f9f9;        /* Light gray sidebar background */
+  --bg-card: #ffffff;             /* Card background */
+  --border: #e4e4e7;              /* Thin border */
+  --gold: #d97706;
+  --gold-light: #fbbf24;
+  --orange: #27272a;              /* Zinc-800 */
+  --text-primary: #09090b;        /* Near black text */
+  --text-muted: #71717a;          /* Gray text */
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --radius: 8px;                  /* Minimalist corner radius */
+  --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.06); /* Very soft shadow */
+  
+  /* Solid colors for buttons / No glowing gradients */
+  --gradient-warm: linear-gradient(180deg, #27272a 0%, #09090b 100%);
+  --gradient-gold: linear-gradient(180deg, #fbbf24 0%, #d97706 100%);
+  --cyan: #0284c7;
+  --purple: #4f46e5;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--primary-cream);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+}
+
+/* Page Layout Freeze (Fixed Height Viewport) */
+body.body-fixed-layout {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Minimalist Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #e4e4e7;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+
+/* ─── Animated background (Match Career Agent) ─────────────────── */
+.bg-anim {
+  position: fixed; inset: 0; z-index: -1;
+  background: #ffffff;
+}
+.bg-anim::before, .bg-anim::after {
+  display: none; /* Removed all colorful floating blobs */
+}
+
+/* ─── Navbar (Match Career Agent) ───────────────────────────────── */
+.navbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 32px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.03);
+  height: 70px;
+}
+.nav-brand {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.15rem; font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  letter-spacing: -0.2px;
+}
+.nav-links { display:flex; gap:8px; align-items:center; }
+.nav-links a {
+  color: var(--text-muted); text-decoration:none; font-size:.9rem;
+  padding: 8px 14px; border-radius: 6px; transition: all .2s;
+  font-weight: 500;
+}
+.nav-links a:hover { color: var(--text-primary); background: #f4f4f5; }
+.nav-user { color: var(--text-primary); font-size:.85rem; font-weight:600; padding:6px 14px; }
+
+/* ─── Card (Match Career Agent) ───────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.card:hover { 
+  border-color: #a1a1aa;
+}
+
+/* ─── Buttons (Match Career Agent) ──────────────────────────────── */
+.btn {
+  display: inline-flex; align-items:center; gap:8px; justify-content: center;
+  padding: 10px 20px; border-radius: 6px; border: none;
+  font-family: 'Inter', sans-serif; font-size: .95rem; font-weight: 500;
+  cursor: pointer; transition: all .2s; text-decoration: none;
+}
+.btn-primary {
+  background: #0f0f11;
+  color: #ffffff;
+  border: 1px solid #0f0f11;
+}
+.btn-primary:hover {
+  background: #27272a;
+  border-color: #27272a;
+}
+.btn-secondary {
+  background: #ffffff;
+  border: 1px solid #d1d5db; color: var(--text-primary);
+}
+.btn-secondary:hover { background: #f9f9f9; border-color: #a1a1aa; }
+.btn-danger {
+  background: #ffffff;
+  border: 1px solid var(--danger); color: var(--danger);
+}
+.btn-danger:hover { background: rgba(239,68,68,.05); }
+.btn-sm { padding: 6px 14px; font-size:.85rem; }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+
+/* ─── Form Elements (Match Career Agent) ─────────────────────────── */
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; margin-bottom: 8px;
+  font-size: .85rem; color: var(--text-muted); font-weight: 500;
+}
+.form-input {
+  width: 100%; padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px; color: var(--text-primary);
+  font-family: 'Inter', sans-serif; font-size: 16px; /* 16px base font size prevents zoom on iOS */
+  transition: border-color .2s, box-shadow .2s;
+  outline: none;
+}
+.form-input:focus {
+  border-color: #09090b;
+  box-shadow: 0 0 0 2px rgba(9, 9, 11, 0.05);
+}
+.form-input::placeholder { color: #a1a1aa; }
+
+/* ─── Badges ───────────────────────────────── */
+.badge {
+  display: inline-block; padding: 4px 10px; border-radius: 4px;
+  font-size: .75rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px;
+}
+.badge-success { background: rgba(16,185,129,.1); color: var(--success); border:1px solid rgba(16,185,129,.2); }
+.badge-danger  { background: rgba(239,68,68,.1);  color: var(--danger);  border:1px solid rgba(239,68,68,.2); }
+.badge-warning { background: rgba(245,158,11,.1); color: var(--warning); border:1px solid rgba(245,158,11,.2); }
+.badge-info    { background: rgba(2,132,199,.1);   color: var(--cyan);    border:1px solid rgba(2,132,199,.2); }
+
+/* ─── Stats Card (Match Career Agent) ───────────────────────────── */
+.stat-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px; text-align:center;
+  transition: all .2s;
+}
+.stat-card:hover { border-color: #a1a1aa; }
+.stat-value {
+  font-family: 'Inter', sans-serif;
+  font-size: 2rem; font-weight: 700;
+  color: var(--text-primary);
+}
+.stat-label { color: var(--text-muted); font-size: .85rem; margin-top: 6px; }
+
+/* ─── Table (Match Career Agent) ───────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table { width:100%; border-collapse:collapse; }
+th, td { padding:12px 16px; text-align:left; }
+th { color: var(--text-muted); font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid var(--border); }
+td { border-bottom:1px solid var(--border); font-size:.9rem; }
+tr:hover td { background: #f9f9f9; }
+
+/* ─── Progress Bar (Match Career Agent) ─────────────────────────── */
+.progress-bar-wrap {
+  background: #f4f4f5; border-radius:4px; height:6px; overflow:hidden;
+}
+.progress-bar-fill {
+  height:100%; border-radius:4px;
+  background: #09090b;
+  transition: width .5s ease;
+}
+
+/* ─── Alert / Toast ──────────────────────────── */
+.toast {
+  position: fixed; top:24px; right:24px; z-index:9999;
+  padding: 14px 20px; border-radius: 8px; min-width: 280px;
+  font-size:.9rem; font-weight:500;
+  animation: slideIn .3s ease;
+  display: flex; align-items:center; gap:10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  background: #ffffff;
+  border: 1px solid var(--border);
+}
+.toast-success { border-left: 4px solid var(--success); color:var(--text-primary); }
+.toast-error   { border-left: 4px solid var(--danger);  color:var(--text-primary); }
+.toast-info    { border-left: 4px solid var(--cyan);    color:var(--text-primary); }
+@keyframes slideIn { from {transform:translateX(100%); opacity:0;} to {transform:translateX(0); opacity:1;} }
+
+/* ─── Loading Spinner (Match Career Agent) ─────────────────────────── */
+.spinner {
+  width:32px; height:32px; border-radius:50%;
+  border:2.5px solid #f3f3f3;
+  border-top:2.5px solid #0f0f11;
+  animation: spin .8s linear infinite;
+  margin: 20px auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-overlay {
+  position:fixed; inset:0; z-index:9998;
+  background:rgba(255,255,255,.95);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+}
+.loading-text { color:var(--text-primary); font-size:1rem; font-weight:500; }
+
+/* ─── Section heading ───────────────────────── */
+.section-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem; font-weight:700;
+  color: var(--text-primary); margin-bottom: 18px;
+  display:flex; align-items:center; gap:10px;
+}
+.section-title::after {
+  content:''; flex:1; height:1px;
+  background: var(--border);
+}
+
+/* ─── Page layout ───────────────────────────── */
+.page { padding-top: 70px; min-height:100vh; }
+.container { max-width:1000px; margin:0 auto; padding:0 24px; }
+
+/* ─── Chat Interface Layout ────────────────────────────────────────── */
+.chat-layout {
+  display: flex;
+  height: calc(100vh - 70px);
+  margin-top: 70px;
+  overflow: hidden;
+}
+
+.chat-sidebar {
+  width: 260px;
+  background: #09090b; /* Deep dark charcoal black */
+  border-right: 1px solid #1f1f23;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 16px;
+  color: #f4f4f5;
+}
+
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sidebar-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #a1a1aa; /* Zinc-400 */
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chat-sidebar .btn-primary {
+  background: #ffffff;
+  color: #09090b;
+  border: 1px solid #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.chat-sidebar .btn-primary:hover {
+  background: #e4e4e7;
+  border-color: #e4e4e7;
+  transform: translateY(-1px);
+}
+
+.session-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Sidebar scrollbar customization */
+.chat-sidebar::-webkit-scrollbar-thumb {
+  background: #27272a;
+}
+.chat-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+.session-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all .2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.session-item:hover {
+  background: #18181b; /* Zinc-900 */
+}
+
+.session-item.active {
+  background: #27272a; /* Zinc-800 */
+  border-color: #3f3f46;
+}
+
+.session-item-title {
+  font-size: .85rem;
+  font-weight: 500;
+  color: #f4f4f5; /* Light text */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .75rem;
+  color: #71717a; /* Zinc-500 */
+}
+
+/* Main Chat Panel */
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  position: relative;
+}
+
+.chat-messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.message-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+}
+
+.message-wrapper.assistant {
+  align-self: flex-start;
+  max-width: 90%;
+}
+
+.message-wrapper.user {
+  align-self: flex-end;
+  max-width: 75%;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: .95rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ChatGPT Style Bubbleless Assistant */
+.message-wrapper.assistant .message-bubble {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  box-shadow: none;
+  padding: 12px 0;
+  border-radius: 0;
+}
+
+/* ChatGPT Style Light Gray User Bubble */
+.message-wrapper.user .message-bubble {
+  background: #f4f4f5;
+  color: var(--text-primary);
+  border-bottom-right-radius: 4px;
+}
+
+.message-time {
+  font-size: .7rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.message-wrapper.user .message-time {
+  align-self: flex-end;
+}
+
+/* MCQ Options Chips */
+.mcq-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mcq-chip {
+  padding: 12px 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 16px; /* Prevents auto-zoom */
+  cursor: pointer;
+  transition: all .15s;
+  text-align: left;
+}
+
+.mcq-chip:hover {
+  background: #f4f4f5;
+  border-color: #a1a1aa;
+}
+
+/* Certificate Card */
+.certificate-card {
+  margin-top: 12px;
+  padding: 24px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.certificate-card.passed {
+  border: 1.5px solid var(--gold);
+  background: #fffdf9;
+}
+
+.certificate-card.failed {
+  border: 1.5px solid var(--danger);
+  background: #fffbfa;
+}
+
+.certificate-card-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.certificate-card.passed .certificate-card-title {
+  color: var(--text-primary);
+}
+
+.certificate-card.failed .certificate-card-title {
+  color: var(--danger);
+}
+
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: transparent;
+  width: fit-content;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #71717a;
+  animation: typingBounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes typingBounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1.2); opacity: 1; }
+}
+
+/* Bottom Chat Input Bar */
+.chat-input-bar {
+  padding: 16px 48px;
+  background: #ffffff;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.chat-input-form .form-input {
+  flex: 1;
+  margin-bottom: 0;
+  border-radius: 20px; /* Rounded pill input like ChatGPT */
+  padding: 12px 20px;
+}
+
+/* ─── Topic Quick-Select Chips ─────────────────────────────────────── */
+.topic-chip {
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  color: var(--text-primary);
+  font-size: .85rem;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all .15s;
+}
+.topic-chip:hover {
+  background: #f4f4f5;
+  border-color: #a1a1aa;
+}
+
+/* ─── Take Exam Card ────────────────────────────────────────────────── */
+.take-exam-card {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 24px;
+  margin-top: 4px;
+  box-shadow: var(--shadow);
+  max-width: 420px;
+}
+
+.take-exam-card-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.take-exam-card-icon {
+  font-size: 1.6rem;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  flex-shrink: 0;
+  color: #09090b;
+}
+
+.take-exam-card-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.take-exam-card-subtitle {
+  font-size: .8rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.take-exam-card-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: #f9f9f9;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+}
+
+.take-exam-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 52px;
+}
+
+.take-exam-stat-value {
+  font-family: 'Inter', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.take-exam-stat-label {
+  font-size: .7rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: center;
+}
+
+.take-exam-btn {
+  width: 100%;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  background: #0f0f11;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+}
+
+.take-exam-btn:hover {
+  background: #27272a;
+}
+
+/* Typing indicator text tweak */
+.typing-indicator {
+  gap: 6px;
+}
+
+/* ─── Responsive & Zoom Fixes ─────────────────────────────────── */
+/* Mobile Chat Header - Hidden on Desktop */
+.chat-header-mobile {
+  display: none;
+}
+
+/* Blinking Terminal Cursor for Typewriter Effect */
+.typed-text-content.typing::after {
+  content: '▊';
+  display: inline-block;
+  margin-left: 2px;
+  animation: cursorBlink 0.8s steps(2, start) infinite;
+  color: var(--text-primary);
+  font-size: 0.9em;
+  vertical-align: middle;
+}
+@keyframes cursorBlink {
+  to { opacity: 0; }
+}
+
+@media(max-width:768px){
+  .navbar { padding:14px 16px; }
+  .container { padding:0 16px; }
+  .stat-value { font-size:1.6rem; }
+  
+  /* Prevent screen zoom on input focus and buttons click for iOS/Android */
+  input, select, textarea, button, .btn, .option-btn, .form-input, .mcq-chip {
+    font-size: 16px !important;
+  }
+
+  .nav-user {
+    display: none !important;
+  }
+  .nav-brand {
+    font-size: 1rem;
+    max-width: 140px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav-links {
+    gap: 4px;
+  }
+  .nav-links a {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+  }
+
+  .chat-layout {
+    position: relative;
+    flex-direction: row;
+  }
+  .chat-sidebar {
+    position: absolute;
+    top: 0;
+    left: -260px;
+    bottom: 0;
+    width: 260px;
+    height: 100% !important;
+    background: #09090b; /* Sleek dark charcoal on mobile too */
+    border-right: 1px solid #1f1f23;
+    z-index: 50;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 4px 0 12px rgba(0,0,0,0.15);
+  }
+  .chat-layout.sidebar-open .chat-sidebar {
+    transform: translateX(260px);
+  }
+  .chat-layout::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 45;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .chat-layout.sidebar-open::before {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  
+  .chat-main {
+    width: 100%;
+    flex: none;
+  }
+
+  /* Mobile Chat Header */
+  .chat-header-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--border);
+    height: 54px;
+    flex-shrink: 0;
+  }
+  .btn-sidebar-toggle {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+  .btn-sidebar-toggle:active {
+    background: #f4f4f5;
+  }
+  .chat-header-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .btn-new-exam-mobile {
+    background: transparent;
+    border: none;
+    font-size: 1.4rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  }
+  .btn-new-exam-mobile:active {
+    background: #f4f4f5;
+  }
+
+  .chat-messages-container {
+    padding: 16px 16px;
+  }
+  .message-wrapper {
+    max-width: 90%;
+  }
+  .message-wrapper.user {
+    max-width: 85%;
+  }
+  .chat-input-bar {
+    padding: 12px 16px;
+  }
+  
+  /* Exam View Tweaks */
+  .question-card {
+    padding: 20px !important;
+  }
+  .submit-zone {
+    padding: 20px !important;
+  }
+  .nav-btns {
+    gap: 8px;
+  }
+}
+
+/* ─── Floating Input Bar Styles ───────────────────────────────────── */
+.input-container-floating {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.form-input-floating {
+  width: 100%;
+  padding: 14px 60px 14px 20px;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: 28px;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+.form-input-floating:focus {
+  border-color: #a1a1aa;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04), 0 0 0 2px rgba(9, 9, 11, 0.03);
+}
+.form-input-floating::placeholder {
+  color: #a1a1aa;
+}
+.btn-send-floating {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #0f0f11;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-send-floating:hover {
+  background: #27272a;
+  transform: translateY(-50%) scale(1.05);
+}
+.btn-send-floating:active {
+  transform: translateY(-50%) scale(0.95);
+}
+.btn-send-floating:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* ─── Centered Welcome Landing Screen Styles ────────────────────────── */
+.welcome-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: auto;
+  max-width: 650px;
+  text-align: center;
+  padding: 40px 20px;
+}
+.welcome-logo {
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
+  background: #0f0f11;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.welcome-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  letter-spacing: -0.8px;
+}
+.welcome-subtitle {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin-bottom: 40px;
+  max-width: 520px;
+}
+.welcome-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+}
+.welcome-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 22px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.01);
+}
+.welcome-card:hover {
+  border-color: #a1a1aa;
+  background: #f9f9f9;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+.welcome-card-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.welcome-card-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+  .welcome-grid {
+    grid-template-columns: 1fr;
+  }
+  .welcome-title {
+    font-size: 1.9rem;
+  }
+}
+
+/* ─── Chat Exam Header (Only shown during active chat exams) ─── */
+.chat-exam-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: #f9f9f9;
+  border-bottom: 1px solid var(--border);
+  z-index: 10;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.chat-exam-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-exam-topic {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.chat-exam-q-counter {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.chat-exam-timer {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--danger);
+  font-family: monospace;
+}
