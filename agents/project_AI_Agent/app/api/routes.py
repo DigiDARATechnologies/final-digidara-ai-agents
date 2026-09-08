@@ -35,7 +35,10 @@ from app.api.schemas import (
     TopicClarifyRequest,
     TopicClarifyResponse,
     UsageSummaryResponse,
+    VivaAnswerRequest,
+    VivaQuestionOut,
 )
+from app.viva import VIVA_PASS_THRESHOLD, generate_viva_questions, verify_viva_answer
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
@@ -469,27 +472,23 @@ async def submission_upload(
         _log_id(thread_id), result.get("status"), result.get("final_score"), result.get("passed"),
     )
 
-    # Persist just the outcome onto the main (checkpointed) thread — this is
-    # what GET /api/status/{thread_id} and the resubmission guard above read.
-    # A plain update_state with no `as_node` and no follow-up invoke() is safe
-    # here: it only writes values, it never asks the main graph to re-run.
-    compiled_graph.update_state(
-        _thread_config(thread_id),
-        {
-            "status": result.get("status"),
-            "revision_notes": result.get("revision_notes"),
-            "final_score": result.get("final_score"),
-            "passed": result.get("passed"),
-            "feedback": result.get("feedback"),
-            "score_reasoning": result.get("score_reasoning"),
-            "code_quality_score": result.get("code_quality_score"),
-        },
-    )
-
     if result.get("status") == "error":
+        compiled_graph.update_state(_thread_config(thread_id), {"status": "error"})
         raise HTTPException(422, result.get("feedback", "Submission could not be processed."))
 
     if result.get("status") == "needs_revision":
+        compiled_graph.update_state(
+            _thread_config(thread_id),
+            {
+                "status": result.get("status"),
+                "revision_notes": result.get("revision_notes"),
+                "final_score": result.get("final_score"),
+                "passed": result.get("passed"),
+                "feedback": result.get("feedback"),
+                "score_reasoning": result.get("score_reasoning"),
+                "code_quality_score": result.get("code_quality_score"),
+            },
+        )
         return SubmissionResultResponse(
             thread_id=thread_id,
             status="needs_revision",
@@ -503,15 +502,128 @@ async def submission_upload(
             code_quality_score=result.get("code_quality_score"),
         )
 
+    # Content grade passed -- hold the score back and run the viva before
+    # revealing it. See app/viva.py.
+    questions = generate_viva_questions(
+        state["chosen_topic"], state["course_medium"], result.get("zip_code_files") or {}
+    )
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        submission.viva_questions_json = questions
+        submission.viva_answers_json = []
+        submission.status = SubmissionStatus.pending_viva
+        submission.score_json = {
+            "final_score": result.get("final_score"),
+            "passed": result.get("passed"),
+            "feedback": result.get("feedback"),
+            "score_reasoning": result.get("score_reasoning"),
+            "code_quality_score": result.get("code_quality_score"),
+        }
+        session.commit()
+    finally:
+        session.close()
+
+    compiled_graph.update_state(_thread_config(thread_id), {"status": "pending_viva"})
+
+    first_question = questions[0] if questions else None
     return SubmissionResultResponse(
         thread_id=thread_id,
-        status="graded",
-        final_score=result.get("final_score"),
-        passed=result.get("passed"),  # LLM-decided in ScoreAggregatorNode, not recomputed here
-        feedback=result.get("feedback"),
-        score_reasoning=result.get("score_reasoning"),
-        code_quality_score=result.get("code_quality_score"),
+        status="pending_viva",
+        submission_id=submission_id,
+        viva_question=VivaQuestionOut(**first_question) if first_question else None,
+        viva_progress=f"1 of {len(questions)}" if questions else None,
     )
+
+
+def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
+    logger.info("=== POST /api/viva/answer submission=%s question=%s", req.submission_id, req.question_id)
+    session = get_session()
+    try:
+        submission = session.get(Submission, req.submission_id)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        if submission.status != SubmissionStatus.pending_viva:
+            raise HTTPException(409, "This submission is not awaiting a viva answer.")
+
+        thread_id = submission.assignment.thread_id
+        questions = submission.viva_questions_json or []
+        answers = submission.viva_answers_json or []
+        expected_index = len(answers)
+        if req.question_id != expected_index:
+            raise HTTPException(409, f"Expected an answer for question {expected_index}, got {req.question_id}.")
+
+        question = next((q for q in questions if q["id"] == req.question_id), None)
+        if question is None:
+            raise HTTPException(404, "Unknown viva question.")
+
+        verdict = verify_viva_answer(question["question"], question.get("expected_concepts", []), req.answer)
+        answers = answers + [{
+            "question_id": req.question_id,
+            "answer": req.answer,
+            "correct": verdict["correct"],
+            "note": verdict["note"],
+        }]
+        submission.viva_answers_json = answers
+
+        if len(answers) < len(questions):
+            session.commit()
+            next_question = questions[len(answers)]
+            return SubmissionResultResponse(
+                thread_id=thread_id,
+                status="pending_viva",
+                submission_id=req.submission_id,
+                viva_question=VivaQuestionOut(**next_question),
+                viva_progress=f"{len(answers) + 1} of {len(questions)}",
+            )
+
+        # Last question just answered -- finalize both scores together.
+        correct_count = sum(1 for a in answers if a["correct"])
+        viva_passed = correct_count >= VIVA_PASS_THRESHOLD
+        submission.viva_score = float(correct_count)
+        submission.viva_passed = viva_passed
+
+        code_result = submission.score_json or {}
+        code_passed = bool(code_result.get("passed"))
+        overall_passed = code_passed and viva_passed
+
+        final_status = SubmissionStatus.graded if overall_passed else SubmissionStatus.needs_revision
+        submission.status = final_status
+        session.commit()
+
+        viva_note = (
+            f"\n\nViva result: {correct_count} of {len(questions)} correct "
+            f"({'passed' if viva_passed else 'not enough correct answers to pass'})."
+        )
+        combined_feedback = (code_result.get("feedback") or "") + viva_note
+
+        compiled_graph.update_state(
+            _thread_config(thread_id),
+            {
+                "status": final_status.value,
+                "final_score": code_result.get("final_score"),
+                "passed": overall_passed,
+                "feedback": combined_feedback,
+                "score_reasoning": code_result.get("score_reasoning"),
+                "code_quality_score": code_result.get("code_quality_score"),
+            },
+        )
+
+        return SubmissionResultResponse(
+            thread_id=thread_id,
+            status=final_status.value,
+            final_score=code_result.get("final_score"),
+            passed=overall_passed,
+            feedback=combined_feedback,
+            score_reasoning=code_result.get("score_reasoning"),
+            code_quality_score=code_result.get("code_quality_score"),
+            viva_score=submission.viva_score,
+            viva_passed=viva_passed,
+        )
+    finally:
+        session.close()
 
 
 @router.get("/status/{thread_id}", response_model=StatusResponse)
@@ -602,6 +714,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(get_status, str(payload.get("thread_id", "")))
     elif action == "usage_summary":
         result = await run_in_threadpool(usage_summary)
+    elif action == "submit_viva_answer":
+        result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

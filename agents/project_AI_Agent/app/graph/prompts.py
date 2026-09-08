@@ -596,3 +596,52 @@ praise language. This is read by a real learner right after a stressful deadline
 be respectful of that, but do not soften factual weaknesses.
 
 OUTPUT: plain text only (this is shown directly on Screen 9, not JSON)."""
+
+
+# --- Viva (oral defense) prompts -- see app/viva.py ------------------------
+
+def viva_question_generator_prompt(chosen_topic: dict, course_medium: str, code_files: dict) -> str:
+    file_char_limit = 3000
+
+    def _file_block(path: str, content: str) -> str:
+        if len(content) <= file_char_limit:
+            return f"--- {path} ---\n{content}"
+        return f"--- {path} (truncated) ---\n{content[:file_char_limit]}\n...[truncated]"
+
+    files_text = "\n\n".join(_file_block(path, content) for path, content in list(code_files.items())[:8])
+
+    return f"""You are conducting a viva (oral defense) interview for a student's capstone project submission. The content grading already passed -- this viva verifies the student genuinely understands and built the project themselves.
+
+PROJECT TITLE: {chosen_topic.get('title', 'Untitled')}
+PROJECT DESCRIPTION: {chosen_topic.get('description', '')}
+TECHNOLOGY / MEDIUM: {course_medium}
+
+The student's actual submitted source code:
+
+{files_text}
+
+Generate exactly 10 viva questions, mixing four kinds roughly evenly:
+1. PROJECT UNDERSTANDING -- what the project does, why specific design choices were made, what problem it solves.
+2. TECHNOLOGY-SPECIFIC -- core {course_medium} concepts this project necessarily relies on.
+3. CODE-SPECIFIC -- direct questions referencing a specific function, variable, or logic decision visible in the code above.
+4. GENERAL INTERVIEW -- questions a real technical interviewer would ask about any project (e.g. hardest part, what you'd improve, a tradeoff you made).
+
+For each question, also list the 2-4 key concepts a correct answer must demonstrate (used to grade the answer afterward) -- never reveal these concepts in the question text itself.
+
+Respond as JSON: {{"questions": [{{"question": "...", "expected_concepts": ["...", "..."]}}, ...]}} with exactly 10 items."""
+
+
+def viva_answer_verifier_prompt(question: str, expected_concepts: list, answer: str) -> str:
+    concepts_text = "\n".join(f"- {c}" for c in expected_concepts)
+    return f"""You are grading one answer in a student's capstone project viva (oral defense).
+
+QUESTION ASKED: {question}
+
+KEY CONCEPTS A CORRECT ANSWER SHOULD DEMONSTRATE (the core idea is enough, not exact wording):
+{concepts_text}
+
+STUDENT'S ANSWER: {answer}
+
+Judge whether the answer demonstrates genuine understanding of the core concept(s) above. Be lenient on phrasing -- this is a typed spoken-style answer, not a formal essay -- but it must show real understanding, not just repeat the question back or give an unrelated/evasive response. A blank or "I don't know" answer is always incorrect.
+
+Respond as JSON: {{"correct": true or false, "note": "one short sentence explaining why"}}"""

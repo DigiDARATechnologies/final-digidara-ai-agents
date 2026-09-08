@@ -115,15 +115,25 @@ export interface CodeQualityScore {
   specific_line_feedback?: string[];
 }
 
+export interface VivaQuestion {
+  id: number;
+  question: string;
+}
+
 export interface SubmissionResult {
   thread_id: string;
   status: string;
+  submission_id?: string | null;
   revision_notes?: string | null;
   final_score?: number | null;
   passed?: boolean | null;
   feedback?: string | null;
   score_reasoning?: string | null;
   code_quality_score?: CodeQualityScore | null;
+  viva_question?: VivaQuestion | null;
+  viva_progress?: string | null;
+  viva_score?: number | null;
+  viva_passed?: boolean | null;
 }
 
 export interface ThreadStatus {
@@ -154,4 +164,8 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
     body: form,
   });
   return parseResponse<SubmissionResult>(response);
+}
+
+export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
+  return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
 }
