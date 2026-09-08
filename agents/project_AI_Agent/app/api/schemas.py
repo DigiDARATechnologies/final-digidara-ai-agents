@@ -57,9 +57,21 @@ class TimerConfirmResponse(BaseModel):
     submission_guide: dict
 
 
+class VivaQuestionOut(BaseModel):
+    id: int
+    question: str
+
+
+class VivaAnswerRequest(BaseModel):
+    submission_id: str
+    question_id: int
+    answer: str
+
+
 class SubmissionResultResponse(BaseModel):
     thread_id: str
     status: str
+    submission_id: str | None = None
     revision_notes: str | None = None
     final_score: float | None = None
     passed: bool | None = None
@@ -69,6 +81,11 @@ class SubmissionResultResponse(BaseModel):
     # breakdown behind the single final_score number.
     score_reasoning: str | None = None
     code_quality_score: dict | None = None
+    # Post-grading viva (oral defense) -- see app/viva.py.
+    viva_question: VivaQuestionOut | None = None
+    viva_progress: str | None = None
+    viva_score: float | None = None
+    viva_passed: bool | None = None
 
 
 class StatusResponse(BaseModel):

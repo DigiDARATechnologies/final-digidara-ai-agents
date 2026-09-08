@@ -28,6 +28,24 @@ def init_db() -> None:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE students MODIFY COLUMN phone VARCHAR(32) NULL"))
 
+    submission_columns = {column["name"]: column for column in inspect(engine).get_columns("submissions")}
+    with engine.begin() as connection:
+        # Widen the status ENUM to include the new pending_viva value. Always
+        # safe to re-run -- MySQL accepts an identical MODIFY COLUMN with no error.
+        connection.execute(text(
+            "ALTER TABLE submissions MODIFY COLUMN status "
+            "ENUM('processing','needs_revision','graded','error','pending_viva') "
+            "NOT NULL DEFAULT 'processing'"
+        ))
+        if "viva_questions_json" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_questions_json JSON NULL"))
+        if "viva_answers_json" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_answers_json JSON NULL"))
+        if "viva_score" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_score FLOAT NULL"))
+        if "viva_passed" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_passed BOOLEAN NULL"))
+
 
 def get_session() -> Session:
     return SessionLocal()

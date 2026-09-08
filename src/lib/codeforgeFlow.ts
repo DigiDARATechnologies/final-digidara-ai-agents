@@ -57,7 +57,10 @@ function matchSlugOrName<T extends { slug: string; name: string }>(list: T[], va
 }
 
 function courseOptions(courses: Course[]): ChatOption[] {
-  return courses.map((c) => ({ label: c.name, value: c.slug, description: c.description }));
+  return [
+    ...courses.map((c) => ({ label: c.name, value: c.slug, description: c.description })),
+    { label: "Code Playground", value: "__playground__", description: "Write and run any code freely, not tied to a course." },
+  ];
 }
 
 function technologyOptions(technologies: Technology[]): ChatOption[] {
