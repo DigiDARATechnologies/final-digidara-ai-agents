@@ -849,6 +849,11 @@ export default function App() {
     }
 
     if (agent?.kind === "codeforge") {
+      if (text === "__playground__") {
+        setTyping(false);
+        setPlaygroundOpen(true);
+        return;
+      }
       const flowState = resumeSnapshot as CodeForgeFlowState | undefined;
       if (!flowState) {
         setTyping(false);

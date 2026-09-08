@@ -5,6 +5,7 @@ import {
   clarifyTopicRequest,
   confirmTimer,
   getThreadStatus,
+  submitVivaAnswer,
   uploadSubmission,
   type CodeQualityScore,
   type ProjectDifficulty,
@@ -16,6 +17,7 @@ export type CapstoneStep =
   | "awaiting_topic_choice"
   | "awaiting_timer_confirm"
   | "awaiting_submission"
+  | "awaiting_viva_answer"
   | "not_eligible"
   | "graded";
 
@@ -62,6 +64,13 @@ export interface CapstoneFlowState {
   codeQualityScore?: CodeQualityScore | null;
   docxFile?: File;
   zipFile?: File;
+  /** Post-grading viva (oral defense) — see app/viva.py on the backend. */
+  vivaSubmissionId?: string | null;
+  vivaQuestionId?: number | null;
+  vivaQuestionText?: string | null;
+  vivaProgress?: string | null;
+  vivaScore?: number | null;
+  vivaPassed?: boolean | null;
 }
 
 export function createInitialCapstoneState(user: User): CapstoneFlowState {
@@ -226,6 +235,44 @@ export async function handleCapstoneText(
       }
     }
 
+    case "awaiting_viva_answer": {
+      if (!trimmed) {
+        return { state, messages: [{ text: "Please answer the question above before continuing." }] };
+      }
+      if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
+        return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
+      }
+      try {
+        const result = await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
+        if (result.status === "pending_viva" && result.viva_question) {
+          return {
+            state: {
+              ...state,
+              vivaQuestionId: result.viva_question.id,
+              vivaQuestionText: result.viva_question.question,
+              vivaProgress: result.viva_progress,
+            },
+            messages: [{ text: `Question ${result.viva_progress}:\n\n${result.viva_question.question}` }],
+          };
+        }
+        return {
+          state: {
+            ...state,
+            step: "graded",
+            finalScore: result.final_score,
+            passed: result.passed,
+            feedback: result.feedback,
+            scoreReasoning: result.score_reasoning ?? null,
+            codeQualityScore: result.code_quality_score ?? null,
+            vivaScore: result.viva_score ?? null,
+            vivaPassed: result.viva_passed ?? null,
+          },
+          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - ${result.passed ? "You passed!" : "Not passed"}\n\n${result.feedback ?? ""}` }],
+        };
+      } catch (error) {
+        return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
+      }
+    }
     case "awaiting_submission":
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
     case "not_eligible":
@@ -308,6 +355,22 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         messages: [{ text: `Revision needed:\n${result.revision_notes ?? "Review the validation notes."}\n\nFix the issues and attach both files again.` }],
       };
     }
+    if (result.status === "pending_viva" && result.viva_question) {
+      return {
+        state: {
+          ...state,
+          step: "awaiting_viva_answer",
+          vivaSubmissionId: result.submission_id,
+          vivaQuestionId: result.viva_question.id,
+          vivaQuestionText: result.viva_question.question,
+          vivaProgress: result.viva_progress,
+        },
+        messages: [{
+          text: `Your project passed content grading. Before your score is revealed, a short viva (${result.viva_progress}): \n\n${result.viva_question.question}`,
+        }],
+      };
+    }
+
     return {
       state: {
         ...state,
@@ -318,6 +381,8 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         revisionNotes: null,
         scoreReasoning: result.score_reasoning ?? null,
         codeQualityScore: result.code_quality_score ?? null,
+        vivaScore: result.viva_score ?? null,
+        vivaPassed: result.viva_passed ?? null,
       },
       messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - ${result.passed ? "Passed" : "Not passed"}\n\n${result.feedback ?? ""}` }],
     };

@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -41,6 +41,9 @@ class SubmissionStatus(str, enum.Enum):
     needs_revision = "needs_revision"
     graded = "graded"
     error = "error"
+    # Content grade passed; waiting on the post-grading viva (oral defense)
+    # before the score is revealed. See app/viva.py.
+    pending_viva = "pending_viva"
 
 
 class Student(Base):
@@ -124,6 +127,12 @@ class Submission(Base):
     status: Mapped[SubmissionStatus] = mapped_column(
         Enum(SubmissionStatus), nullable=False, default=SubmissionStatus.processing
     )
+    # Post-grading viva (oral defense). Populated once the content grade
+    # passes; see app/viva.py and POST /api/viva/answer.
+    viva_questions_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    viva_answers_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    viva_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    viva_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     assignment: Mapped[ProjectAssignment] = relationship(back_populates="submissions")
 

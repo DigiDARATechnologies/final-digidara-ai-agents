@@ -12,6 +12,7 @@ const STEP_LABELS: Record<CapstoneStep, string> = {
   awaiting_topic_choice: "Choose project",
   awaiting_timer_confirm: "Ready to start",
   awaiting_submission: "Project in progress",
+  awaiting_viva_answer: "Viva in progress",
   not_eligible: "Verification required",
   graded: "Graded",
 };
@@ -21,6 +22,7 @@ const STEP_PROGRESS: Record<CapstoneStep, number> = {
   awaiting_topic_choice: 45,
   awaiting_timer_confirm: 60,
   awaiting_submission: 78,
+  awaiting_viva_answer: 92,
   not_eligible: 10,
   graded: 100,
 };
