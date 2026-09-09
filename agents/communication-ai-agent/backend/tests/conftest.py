@@ -16,6 +16,8 @@ def clear_groq_rate_limit_state():
 def app():
     test_app = create_app({
         "TESTING": True,
+        "OPENAI_API_KEY": "",
+        "AI_PROVIDER": "auto",
         "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
         "SQLALCHEMY_ENGINE_OPTIONS": {},
         "JWT_SECRET_KEY": "test-jwt-secret-with-at-least-32-bytes",

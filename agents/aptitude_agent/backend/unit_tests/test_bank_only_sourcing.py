@@ -8,7 +8,7 @@ def test_learner_question_selector_is_memory_prefetch_then_bounded_live():
     source=(ROOT/"app"/"services"/"adaptive_service.py").read_text(encoding="utf-8")
     selector=source[source.index("def _question_source"):source.index("def _persist_question")]
     assert "generate_questions(" in selector
-    assert "allow_demo_fallback=False" in selector
+    assert 'allow_demo_fallback=current_app.config["ALLOW_DEMO_QUESTIONS"]' in selector
     assert "consume_question_prefetch(" in selector
     assert '"prefetch_hit"' in selector
     assert '"prefetch_miss"' in selector

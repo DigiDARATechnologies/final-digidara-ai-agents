@@ -652,7 +652,8 @@ def parse_experience(lines):
             continue
         heading = entry[0]
         company, role = split_role_company(heading)
-        bullets = [strip_bullet(line) for line in entry[1:] if line]
+        bullets = [strip_bullet(line) for line in entry[1:]
+                   if line and DATE_PATTERN.sub("", line).strip(" -–—|,/")]
         joined = " ".join(entry)
         dates = DATE_PATTERN.findall(joined)
         result.append({

@@ -3,12 +3,12 @@ from types import SimpleNamespace
 
 from flask import Flask
 
-from backend.app.services import groq_service
+from backend.app.services import ai_service as groq_service
 
 
 def test_json_completion_sets_configured_completion_budget(monkeypatch):
     app=Flask(__name__)
-    app.config.update(GROQ_JSON_MAX_COMPLETION_TOKENS=4096)
+    app.config.update(OPENAI_JSON_MAX_COMPLETION_TOKENS=4096)
     captured={}
 
     class Completions:
@@ -25,15 +25,15 @@ def test_json_completion_sets_configured_completion_budget(monkeypatch):
     def complete(request_builder,**_options):
         return request_builder(fake_client,"openai/gpt-oss-20b"),"openai/gpt-oss-20b",{"provider_wait_ms":1,"provider_retry_count":0,"provider_attempt_count":1}
 
-    monkeypatch.setattr(groq_service,"_complete_with_retry",complete)
+    monkeypatch.setattr(groq_service,"_complete",complete)
 
     with app.app_context():
         payload,usage=groq_service.json_completion("system","prompt")
 
     assert payload=={"questions":[]}
     assert usage["total_tokens"]==15
-    assert captured["max_completion_tokens"]==4096
-    assert captured["reasoning_format"]=="hidden"
+    assert captured["max_tokens"]==4096
+    assert "reasoning_format" not in captured
     assert captured["response_format"]=={"type":"json_object"}
 
 
@@ -58,23 +58,23 @@ def test_text_completion_sets_low_reasoning_effort(monkeypatch):
     def complete(request_builder,**_options):
         return request_builder(fake_client,"openai/gpt-oss-20b"),"openai/gpt-oss-20b",{"provider_wait_ms":1,"provider_retry_count":0,"provider_attempt_count":1}
 
-    monkeypatch.setattr(groq_service,"_complete_with_retry",complete)
+    monkeypatch.setattr(groq_service,"_complete",complete)
     with app.app_context():
         text,_usage=groq_service.text_completion(
             "system","prompt",maximum_tokens=512,reasoning_effort="low",
         )
 
     assert text=="Use short daily drills."
-    assert captured["max_completion_tokens"]==512
-    assert captured["reasoning_format"]=="hidden"
-    assert captured["reasoning_effort"]=="low"
+    assert captured["max_tokens"]==512
+    assert "reasoning_format" not in captured
+    assert "reasoning_effort" not in captured
 
 
 def test_rate_limit_fails_over_without_retrying_same_model(monkeypatch):
     app=Flask(__name__)
     app.config.update(
-        GROQ_API_KEY="test",GROQ_MODEL="primary",GROQ_FALLBACK_MODELS=("fallback",),
-        GROQ_TIMEOUT_SECONDS=6,GROQ_CIRCUIT_FAILURE_THRESHOLD=5,GROQ_CIRCUIT_COOLDOWN_SECONDS=60,
+        OPENAI_API_KEY="test",OPENAI_MODEL="primary",OPENAI_FALLBACK_MODELS=("fallback",),
+        OPENAI_TIMEOUT_SECONDS=6,OPENAI_CIRCUIT_FAILURE_THRESHOLD=5,OPENAI_CIRCUIT_COOLDOWN_SECONDS=60,
     )
     calls=[]
 
@@ -97,7 +97,7 @@ def test_rate_limit_fails_over_without_retrying_same_model(monkeypatch):
         created.append(options)
         return SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
 
-    monkeypatch.setattr(groq_service,"Groq",fake_groq)
+    monkeypatch.setattr(groq_service,"OpenAI",fake_groq)
     groq_service._circuits.clear()
     with app.app_context():
         text,usage=groq_service.text_completion("system","prompt")
@@ -112,8 +112,8 @@ def test_rate_limit_fails_over_without_retrying_same_model(monkeypatch):
 def test_later_request_honors_recorded_retry_after_before_calling_again(monkeypatch):
     app=Flask(__name__)
     app.config.update(
-        GROQ_API_KEY="test",GROQ_MODEL="primary",GROQ_FALLBACK_MODELS=("fallback",),
-        GROQ_TIMEOUT_SECONDS=6,GROQ_CIRCUIT_FAILURE_THRESHOLD=5,GROQ_CIRCUIT_COOLDOWN_SECONDS=60,
+        OPENAI_API_KEY="test",OPENAI_MODEL="primary",OPENAI_FALLBACK_MODELS=("fallback",),
+        OPENAI_TIMEOUT_SECONDS=6,OPENAI_CIRCUIT_FAILURE_THRESHOLD=5,OPENAI_CIRCUIT_COOLDOWN_SECONDS=60,
     )
     clock={"now":100.0};calls=[];model_calls={"primary":0,"fallback":0};sleeps=[]
 
@@ -133,7 +133,7 @@ def test_later_request_honors_recorded_retry_after_before_calling_again(monkeypa
                 usage=SimpleNamespace(prompt_tokens=1,completion_tokens=1,total_tokens=2),
             )
 
-    monkeypatch.setattr(groq_service,"Groq",lambda **_options:SimpleNamespace(chat=SimpleNamespace(completions=Completions())))
+    monkeypatch.setattr(groq_service,"OpenAI",lambda **_options:SimpleNamespace(chat=SimpleNamespace(completions=Completions())))
     monkeypatch.setattr(groq_service.time,"monotonic",lambda:clock["now"])
     def fake_sleep(seconds):
         sleeps.append(seconds);clock["now"]+=seconds
@@ -144,7 +144,7 @@ def test_later_request_honors_recorded_retry_after_before_calling_again(monkeypa
         try:
             groq_service.text_completion("system","prompt",deadline=clock["now"]+3)
             assert False,"the first request should expose the two provider 429s"
-        except groq_service.GroqProviderError as exc:
+        except groq_service.AIProviderError as exc:
             assert exc.kind=="rate_limit"
         text,usage=groq_service.text_completion("system","prompt",deadline=clock["now"]+3)
 
@@ -157,9 +157,9 @@ def test_later_request_honors_recorded_retry_after_before_calling_again(monkeypa
 def test_json_validation_failure_gets_one_bounded_same_model_retry(monkeypatch):
     app=Flask(__name__)
     app.config.update(
-        GROQ_API_KEY="test",GROQ_MODEL="primary",GROQ_FALLBACK_MODELS=(),
-        GROQ_TIMEOUT_SECONDS=6,GROQ_JSON_MAX_COMPLETION_TOKENS=512,
-        GROQ_CIRCUIT_FAILURE_THRESHOLD=5,GROQ_CIRCUIT_COOLDOWN_SECONDS=60,
+        OPENAI_API_KEY="test",OPENAI_MODEL="primary",OPENAI_FALLBACK_MODELS=(),
+        OPENAI_TIMEOUT_SECONDS=6,OPENAI_JSON_MAX_COMPLETION_TOKENS=512,
+        OPENAI_CIRCUIT_FAILURE_THRESHOLD=5,OPENAI_CIRCUIT_COOLDOWN_SECONDS=60,
     )
     calls=[]
 
@@ -179,7 +179,7 @@ def test_json_validation_failure_gets_one_bounded_same_model_retry(monkeypatch):
             )
 
     monkeypatch.setattr(
-        groq_service,"Groq",
+        groq_service,"OpenAI",
         lambda **_options:SimpleNamespace(chat=SimpleNamespace(completions=Completions())),
     )
     groq_service._circuits.clear()

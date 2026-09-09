@@ -578,7 +578,9 @@ def test_legacy_doc_conversion_uses_isolated_libreoffice_profile(monkeypatch, tm
         profile_arg = next(item for item in command if item.startswith("-env:UserInstallation="))
         profile_uri = profile_arg.split("=", 1)[1]
         assert profile_uri.startswith("file:///")
-        profile_path = import_review.Path(profile_uri.replace("file:///", ""))
+        from urllib.parse import urlsplit
+        from urllib.request import url2pathname
+        profile_path = import_review.Path(url2pathname(urlsplit(profile_uri).path))
         registry = profile_path / "user" / "registrymodifications.xcu"
         assert registry.exists()
         assert "MacroSecurityLevel" in registry.read_text(encoding="utf-8")

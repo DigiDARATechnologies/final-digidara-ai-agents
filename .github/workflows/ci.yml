@@ -77,14 +77,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp agents/orchestrator/.env.example agents/orchestrator/.env
-          cp agents/project_AI_Agent/.env.example agents/project_AI_Agent/.env
-          cp agents/codeforge_agent/services/lms-api/.env.example agents/codeforge_agent/services/lms-api/.env
-          cp agents/communication-ai-agent/backend/.env.example agents/communication-ai-agent/backend/.env
-          cp agents/aptitude_agent/.env.example agents/aptitude_agent/.env
-          cp agents/resume_builder_agent/backend/.env.example agents/resume_builder_agent/backend/.env
-          cp agents/certificate_agent/.env.example agents/certificate_agent/.env
-          cp docker/mysql/.env.example docker/mysql/.env
+          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/resume_builder_agent/backend agents/certificate_agent docker/mysql; do
+            if [ -f "$directory/.env.example" ]; then
+              cp "$directory/.env.example" "$directory/.env"
+            else
+              touch "$directory/.env"
+            fi
+          done
 
       - name: Validate Compose file
         run: docker compose config --quiet
@@ -216,32 +215,11 @@ jobs:
       - name: Install Selenium test dependencies
         run: pip install -r requirements-ci.txt
 
-      - name: Start frontend test server
-        shell: pwsh
-        run: |
-          Start-Process python -WindowStyle Hidden -ArgumentList "-m", "http.server", "4173", "--directory", "dist" -RedirectStandardOutput "frontend-test.log" -RedirectStandardError "frontend-test-error.log"
-          $ready = $false
-          for ($i = 0; $i -lt 30; $i++) {
-            try {
-              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4173/ | Out-Null
-              $ready = $true
-              break
-            } catch {
-              Start-Sleep -Seconds 1
-            }
-          }
-          if (-not $ready) {
-            Get-Content frontend-test.log -ErrorAction SilentlyContinue
-            Get-Content frontend-test-error.log -ErrorAction SilentlyContinue
-            exit 1
-          }
-
-      - name: Run Selenium tests
-        shell: pwsh
+      - name: Run Edge tests with managed frontend server
         env:
           BROWSER: edge
           BASE_URL: http://127.0.0.1:4173
-        run: python -m pytest -q tests/e2e
+        run: python scripts/test_e2e.py
 
       - name: Upload Selenium screenshots and logs
         if: always()

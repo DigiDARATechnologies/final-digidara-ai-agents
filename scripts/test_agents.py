@@ -1,4 +1,4 @@
-﻿"""Build and test isolated agent containers locally or in GitHub Actions."""
+"""Build and test isolated agent containers locally or in GitHub Actions."""
 import argparse
 import json
 import os
@@ -96,6 +96,12 @@ def run_agent(agent, skip_build):
                     '-v', f'{(ROOT / "scripts/run_agent_suite.py").as_posix()}:/test_runner.py:ro']
                 for path in SUITES[name]:
                     command += ['-v', f'{(ROOT / context / path).as_posix()}:/app/{path}:ro']
+                if name == 'resume-builder-agent':
+                    for source, target in [
+                        ('agents/resume_builder_agent/.github', '/.github'),
+                        ('agents/resume_builder_agent/SECURITY_AUDIT.md', '/SECURITY_AUDIT.md'),
+                    ]:
+                        command += ['-v', f'{(ROOT / source).as_posix()}:{target}:ro']
                 command += ['--entrypoint', 'python', name, '/test_runner.py', *SUITES[name]]
                 with (artifacts / 'suite.log').open('w', encoding='utf-8') as log:
                     suite_result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200)

@@ -18,6 +18,10 @@ def run_migrations_offline():
 
 def run_migrations_online():
     with get_engine().connect() as connection:
+        if connection.dialect.name == "mysql":
+            connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(128) NOT NULL PRIMARY KEY)")
+            connection.exec_driver_sql("ALTER TABLE alembic_version MODIFY version_num VARCHAR(128) NOT NULL")
+            connection.commit()
         context.configure(connection=connection,target_metadata=target_metadata,compare_type=True)
         with context.begin_transaction():context.run_migrations()
 

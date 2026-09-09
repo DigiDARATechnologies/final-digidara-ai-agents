@@ -41,7 +41,7 @@ def test_batch_structural_collision_retries(monkeypatch):
         ({"questions":[first,replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
     ]
     monkeypatch.setattr(test_generation,"json_completion",lambda *_args,**_kwargs:responses.pop(0))
-    app=Flask(__name__);app.config.update(GROQ_API_KEY="test",GROQ_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
+    app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
     with app.app_context():questions,_model,usage=test_generation.generate_questions([SLOT,SLOT])
     assert questions[0]["structural_hash"]!=questions[1]["structural_hash"]
     assert usage["total_tokens"]==60
@@ -57,7 +57,7 @@ def test_persistent_batch_collision_stops_after_three_attempts(monkeypatch):
         return {"questions":[first,duplicate]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}
 
     monkeypatch.setattr(test_generation,"json_completion",repeated)
-    app=Flask(__name__);app.config.update(GROQ_API_KEY="test",GROQ_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
+    app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
     with app.app_context(),pytest.raises(ValueError,match="after 3 attempts"):
         test_generation.generate_questions([SLOT,SLOT])
     assert len(calls)==3
@@ -82,7 +82,7 @@ def test_prompt_and_validator_share_the_full_exclusion_set(monkeypatch):
         return responses.pop(0)
 
     monkeypatch.setattr(test_generation,"json_completion",fake_completion)
-    app=Flask(__name__);app.config.update(GROQ_API_KEY="test",GROQ_MODEL="primary-model",ALLOW_DEMO_QUESTIONS=False)
+    app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="primary-model",ALLOW_DEMO_QUESTIONS=False)
     with app.app_context():questions,model,_usage=test_generation.generate_questions([SLOT],avoid_questions=exclusions)
 
     assert all(question in prompts[0] for question in exclusions)
@@ -113,7 +113,7 @@ def test_retry_context_accumulates_all_rejected_questions(monkeypatch):
         return responses.pop(0)
 
     monkeypatch.setattr(test_generation,"json_completion",fake_completion)
-    app=Flask(__name__);app.config.update(GROQ_API_KEY="test",GROQ_MODEL="primary-model",ALLOW_DEMO_QUESTIONS=False)
+    app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="primary-model",ALLOW_DEMO_QUESTIONS=False)
     with app.app_context():questions,_model,usage=test_generation.generate_questions([SLOT],avoid_questions=exclusions)
 
     assert len(prompts)==3
