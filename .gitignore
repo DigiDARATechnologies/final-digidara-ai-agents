@@ -55,3 +55,6 @@ agents/certificate_agent/.git.nested-backup/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Generated CI and local test reports
+artifacts/

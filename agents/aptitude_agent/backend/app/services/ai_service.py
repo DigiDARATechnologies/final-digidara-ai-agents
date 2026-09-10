@@ -34,6 +34,8 @@ def _provider_error(exc):
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", {}) or {}
     retry_after = headers.get("retry-after")
+    if status == 400 and "json_validate_failed" in str(exc):
+        return AIProviderError("invalid_json", str(exc), True, status, retry_after)
     if "auth" in name or status in (401, 403):
         return AIProviderError("authentication", str(exc), False, status, retry_after)
     if status == 404:
@@ -123,6 +125,12 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
     wait_ms = 0.0
     retries = 0
     attempts = 0
+    available = [model for model in selected_models if _available(model)]
+    if not available and selected_models and deadline is not None:
+        with _circuit_lock:
+            wait = min(max(0.0, _circuits.get(model, {}).get("open_until", 0) - time.monotonic()) for model in selected_models)
+        if 0 < wait < deadline - time.monotonic():
+            time.sleep(wait)
     for model in selected_models:
         if not _available(model):
             continue
@@ -151,7 +159,7 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
                 if last_error.kind == "rate_limit":
                     _rate_limited(model, last_error)
                     break
-                if last_error.transient:
+                if last_error.transient and last_error.kind != "invalid_json":
                     _failure(model, last_error)
                 if not last_error.transient or model_attempt == 1:
                     break

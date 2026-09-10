@@ -18,7 +18,7 @@ from backend.app.services.groq_service import GroqProviderError
 def test_recommendation_handles_perfect_zero_and_mixed_metrics(monkeypatch,metrics):
     app=Flask(__name__)
     app.config.update(
-        GROQ_MODEL="primary-model",GROQ_FALLBACK_MODELS=("fast-model",),
+        OPENAI_MODEL="primary-model",OPENAI_FALLBACK_MODELS=("fast-model",),
     )
     captured=[]
 
@@ -43,7 +43,7 @@ def test_recommendation_handles_perfect_zero_and_mixed_metrics(monkeypatch,metri
 def test_recommendation_tries_second_model_after_empty_response(monkeypatch):
     app=Flask(__name__)
     app.config.update(
-        GROQ_MODEL="primary-model",GROQ_FALLBACK_MODELS=("fast-model",),
+        OPENAI_MODEL="primary-model",OPENAI_FALLBACK_MODELS=("fast-model",),
     )
     attempted=[]
 

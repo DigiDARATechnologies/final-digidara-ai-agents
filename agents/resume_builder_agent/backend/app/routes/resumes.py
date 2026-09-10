@@ -33,7 +33,7 @@ from app.services.import_review import (
     score_resume,
     validate_import_file,
 )
-from app.security import dev_header_allowed, rate_limit, session_user_id
+from app.security import dev_header_allowed, in_invoke_reentry, rate_limit, session_user_id
 from app.template_catalog import LEGACY_TEMPLATE_ALIASES, TEMPLATE_BY_ID, TEMPLATE_METADATA
 
 resumes_bp = Blueprint("resumes", __name__)
@@ -103,14 +103,10 @@ def get_request_user_id(payload=None):
     if verified_session_user:
         return verified_session_user
 
-    # X-User-Id here was set by our own invoke.py re-entry adapter from the
-    # orchestrator's verified gateway assertion (X-Digidara-User-Id) -- it is
-    # never client-supplied, since this container's port is never published
-    # to the host or the internet. Trust it unconditionally, unlike the
-    # genuinely client-controllable query param / payload field below, which
-    # stay behind the dev-only gate.
+    # The internal adapter may supply identity; direct browser headers require
+    # explicit development mode. Network isolation alone is not authentication.
     header_value = request.headers.get("X-User-Id")
-    if isinstance(header_value, str):
+    if isinstance(header_value, str) and (dev_header_allowed() or in_invoke_reentry()):
         header_value = header_value.strip()
         if USER_ID_PATTERN.fullmatch(header_value):
             return header_value

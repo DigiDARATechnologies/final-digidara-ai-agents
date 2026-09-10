@@ -8,13 +8,14 @@ def test_learner_question_selector_is_memory_prefetch_then_bounded_live():
     source=(ROOT/"app"/"services"/"adaptive_service.py").read_text(encoding="utf-8")
     selector=source[source.index("def _question_source"):source.index("def _persist_question")]
     assert "generate_questions(" in selector
-    assert "allow_demo_fallback=False" in selector
+    assert 'allow_demo_fallback=current_app.config["ALLOW_DEMO_QUESTIONS"]' in selector
     assert "consume_question_prefetch(" in selector
     assert '"prefetch_hit"' in selector
     assert '"prefetch_miss"' in selector
     assert '"expected_first_question"' in selector
     assert "select_approved_item(" not in selector
-    assert 'max_validation_attempts=1 if test.test_mode=="category_practice" else 2' in selector
+    # Both generation paths allow two attempts within the shared deadline.
+    assert selector.count("deadline=deadline,max_validation_attempts=2") == 2
     assert "replace_attempt_topic(" in selector
 
 
