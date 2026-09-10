@@ -474,17 +474,16 @@ jobs:
             ghcr.io/${{ steps.owner.outputs.name }}/digidara-frontend:${{ github.sha }}
             ghcr.io/${{ steps.owner.outputs.name }}/digidara-frontend:latest
 
-  deploy-approval:
-    name: Manual approval to promote to production
+  deploy:
+    name: Deploy to production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [publish-ghcr, publish-ghcr-frontend]
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Record promoted images
         run: |
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "Approved for production promotion: commit ${{ github.sha }}"
+          echo "Deploying commit ${{ github.sha }}"
           echo "Images published under ghcr.io/$owner/digidara-*:${{ github.sha }}"
 
       - name: Deploy via SSH

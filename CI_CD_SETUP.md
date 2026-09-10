@@ -92,7 +92,7 @@ Database integration: start Docker Desktop and run python scripts/test_agents.py
 
 Security findings are actionable failures, not evidence that the scan is broken. Upgrade the reported package/base image and rerun the affected suites; unresolved findings must remain visible in the PR.
 
-## Branches, publishing and deployment gate
+## Branches, publishing and deployment
 
 - `main` and `develop` are protected: PR review plus these required checks
   before merge (see repository branch protection settings for the current
@@ -100,8 +100,8 @@ Security findings are actionable failures, not evidence that the scan is broken.
 - On push to `main`, once quality/build/test jobs pass, `publish-ghcr` and
   `publish-ghcr-frontend` push per-agent and frontend images to
   `ghcr.io/<owner>/digidara-*`, tagged with the commit SHA and `latest`.
-- `deploy-approval` then gates on the `production` GitHub Environment,
-  which requires manual reviewer approval before the job runs.
+- `deploy` then SSHes into the production host and runs `deploy.sh` —
+  automatically, with no manual approval step.
 - `notify-failure` posts to Slack (via the `SLACK_WEBHOOK_URL` secret) when
   any job on a `main` push fails; it no-ops if the secret isn't set.
 
