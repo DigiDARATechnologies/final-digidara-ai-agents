@@ -17,13 +17,23 @@ from app.gateway import routes as gateway
 
 @pytest.fixture
 def database(monkeypatch):
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    test_url = os.environ.get("INTEGRATION_DATABASE_URL")
+    if test_url:
+        from sqlalchemy.engine import make_url
+        url = make_url(test_url)
+        if url.get_backend_name() != "mysql" or not (url.database or "").endswith("_test"):
+            raise RuntimeError("Integration tests require a dedicated MySQL database ending in _test")
+        engine = create_engine(test_url)
+    else:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    db.Base.metadata.drop_all(engine)
     db.Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     for module in (db, service, auth_service):
         monkeypatch.setattr(module, "get_session", factory)
     service_auth._seen_request_ids.clear()
     yield factory
+    db.Base.metadata.drop_all(engine)
     engine.dispose()
 
 @pytest.fixture

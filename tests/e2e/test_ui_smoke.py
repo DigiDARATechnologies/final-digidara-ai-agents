@@ -112,5 +112,6 @@ def test_mobile_viewport_renders(driver):
     wait = WebDriverWait(driver, 20)
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
     assert overlay.is_displayed()
-    assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").is_displayed()
+    heading = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
+    assert heading.is_displayed()
     save(driver, "mobile")

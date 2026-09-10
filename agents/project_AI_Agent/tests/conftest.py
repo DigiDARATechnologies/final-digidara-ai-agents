@@ -29,7 +29,16 @@ def database(monkeypatch, tmp_path):
         raise AssertionError("Test attempted an uncontrolled AI call")
     monkeypatch.setattr(nodes, "call_json", unexpected_ai_call)
     monkeypatch.setattr(nodes, "call_text", unexpected_ai_call)
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    test_url = os.environ.get("INTEGRATION_DATABASE_URL")
+    if test_url:
+        from sqlalchemy.engine import make_url
+        url = make_url(test_url)
+        if url.get_backend_name() != "mysql" or not (url.database or "").endswith("_test"):
+            raise RuntimeError("Integration tests require a dedicated MySQL database ending in _test")
+        engine = create_engine(test_url)
+    else:
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(routes, "get_session", factory)
@@ -42,6 +51,7 @@ def database(monkeypatch, tmp_path):
         session.add(ProjectAssignment(id="assignment", thread_id="thread", student_id="student", course_id="course", medium=CourseMedium.local))
         session.commit()
     yield factory
+    Base.metadata.drop_all(engine)
     engine.dispose()
 
 @pytest.fixture

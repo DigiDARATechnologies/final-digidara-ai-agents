@@ -38,7 +38,7 @@ export async function openAptitudeChat(user: User) {
   catch (error) { return { state, messages: [{ text: `I could not connect to Aptitude: ${(error as Error).message}`, options: [{ label: "Try again", value: "retry" }] }] }; }
 }
 
-export async function handleAptitudeText(state: AptitudeFlowState, text: string, user?: User) {
+export async function handleAptitudeText(state: AptitudeFlowState, text: string, user?: User): Promise<{ state: AptitudeFlowState; messages: AptitudeFlowMessage[] }> {
   const value = text.trim();
   try {
     const restartRequested = /^(?:(?:start|begin|take)\s+(?:a\s+)?(?:new|another)\s+(?:test|practice)|restart(?:\s+(?:test|practice))?|new\s+(?:test|practice))$/i.test(value);

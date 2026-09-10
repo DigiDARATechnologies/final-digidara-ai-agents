@@ -5,3 +5,10 @@ agents
 .claude
 *.log
 .env
+
+artifacts
+tests
+*.tar.gz
+.mypy_cache
+.ruff_cache
+.pytest_cache
