@@ -6,12 +6,13 @@ typing-extensions>=4.12,<5
 SQLAlchemy>=2.0,<3
 PyMySQL>=1.1,<2
 python-dotenv>=1.0,<2
-httpx==0.27.2
-# These pins match the working Capstone dependency set. LiteLLM 1.55.4
-# requires httpx 0.27.x; newer releases can fail metadata resolution on
-# legacy Windows/Python environments.
-litellm==1.55.4
-langgraph==0.2.62
+httpx==0.28.1
+# LiteLLM 1.84.0 requires httpx>=0.28,<1 — bumped from the previous 1.55.4
+# pin to pick up fixes for known CVEs in litellm/langgraph/langchain-core
+# (see CI_CD_SETUP.md). httpx==0.28.1 already matches the working pin used
+# by the communication agent elsewhere in this repo.
+litellm==1.84.0
+langgraph==1.0.10
 bcrypt>=4.2,<5
 PyJWT>=2.9,<3
 slowapi>=0.1.9,<1
