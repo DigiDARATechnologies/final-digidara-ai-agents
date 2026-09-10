@@ -1,0 +1,156 @@
+# Course-track categories. Every job (from any source: Greenhouse, Apify,
+# manual entry, or any future scraper) is tagged with the category it best
+# matches, so students only see jobs relevant to the course they were
+# certified in — not a company's internal org chart (Sales, HR, ...).
+#
+# Rules are checked TOP TO BOTTOM and the first match wins, so more
+# specific categories (e.g. Gen AI & Agentic AI) are listed before the
+# broader ones they could otherwise be swallowed by (e.g. AI/ML). Add or
+# edit keywords freely — no code changes needed.
+#
+# `keywords` classifies noisy, free-text job titles/descriptions, so they
+# are deliberately specific multi-word phrases to avoid false positives
+# (e.g. "python developer", not bare "python", which would also match an
+# unrelated job that merely lists Python among five other tools).
+#
+# `course_keywords` classifies a certification course's name instead —
+# short, admin-entered text from DigiDARA's own catalog (e.g. "Python",
+# "AI/ML", "Machine Learning"), not noisy scraped text — so it can safely
+# use single, broader words. If omitted for a category, `keywords` is
+# reused for course-name matching too.
+#
+# `related_categories` lists other category ids that share a meaningful
+# skill base with this one (e.g. Python underpins Data Analytics, Data
+# Science, AI/ML, and Gen AI & Agentic AI alike). A job in a related
+# category still shows up for a student and still scores above an
+# unrelated one, just below an exact match — "broader relevant jobs"
+# instead of a hard, narrow filter. Digital Marketing intentionally has
+# no related categories: it doesn't share a technical skill base with the
+# others, so it should never bleed into a Python-track student's results.
+categories:
+  - id: gen_ai_agentic_ai
+    label: "Gen AI & Agentic AI"
+    related_categories: [ai_ml, python_full_stack, data_science]
+    keywords:
+      - generative ai
+      - gen ai
+      - genai
+      - agentic ai
+      - agentic workflows
+      - agentic systems
+      - large language model
+      - " llm "
+      - llm engineer
+      - prompt engineer
+      - langchain
+      - langgraph
+      - retrieval augmented generation
+      - rag pipeline
+      - rag system
+      - ai agent
+      - autonomous agent
+      - conversational ai
+    course_keywords:
+      - generative ai
+      - gen ai
+      - genai
+      - agentic ai
+      - agentic
+      - large language model
+      - llm
+
+  - id: ai_ml
+    label: "AI/ML"
+    related_categories: [gen_ai_agentic_ai, data_science, python_full_stack]
+    keywords:
+      - machine learning
+      - deep learning
+      - artificial intelligence
+      - computer vision
+      - natural language processing
+      - " nlp "
+      - ai engineer
+      - ml engineer
+      - mlops
+      - neural network
+      - pytorch
+      - tensorflow
+    course_keywords:
+      - machine learning
+      - deep learning
+      - artificial intelligence
+      - "ai/ml"
+      - "ai / ml"
+      - "ai-ml"
+      - "ai & ml"
+      - " ai "
+      - " ml "
+
+  - id: data_science
+    label: "Data Science"
+    related_categories: [data_analytics, ai_ml, python_full_stack, gen_ai_agentic_ai]
+    keywords:
+      - data scientist
+      - data science
+      - predictive modeling
+      - statistician
+    course_keywords:
+      - data science
+
+  - id: data_analytics
+    label: "Data Analytics"
+    related_categories: [data_science, python_full_stack]
+    keywords:
+      - data analyst
+      - business analyst
+      - bi analyst
+      - business intelligence
+      - data analytics
+      - tableau
+      - power bi
+      - reporting analyst
+      - sql analyst
+    course_keywords:
+      - data analytics
+      - data analysis
+
+  - id: python_full_stack
+    label: "Python Full Stack"
+    related_categories: [data_analytics, data_science, ai_ml, gen_ai_agentic_ai]
+    keywords:
+      - python developer
+      - full stack
+      - fullstack
+      - full-stack
+      - django
+      - flask
+      - backend developer
+      - backend engineer
+      - software engineer
+      - web developer
+      - api developer
+    course_keywords:
+      - python
+      - full stack
+      - fullstack
+      - full-stack
+
+  - id: digital_marketing
+    label: "Digital Marketing"
+    related_categories: []
+    keywords:
+      - digital marketing
+      - " seo "
+      - " sem "
+      - " ppc "
+      - social media marketing
+      - content marketing
+      - growth marketing
+      - performance marketing
+      - marketing specialist
+      - marketing analyst
+      - brand marketing
+      - media planner
+    course_keywords:
+      - digital marketing
+      - marketing

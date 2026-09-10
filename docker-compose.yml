@@ -120,6 +120,42 @@ services:
       orchestrator:
         condition: service_healthy
 
+  job-agent:
+    build:
+      context: ./agents/job_agent
+    image: digidara-job-agent:local
+    restart: unless-stopped
+    env_file:
+      - ./agents/job_agent/.env
+    volumes:
+      - job_uploads:/app/job_agent/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
+  job-worker:
+    image: digidara-job-agent:local
+    restart: unless-stopped
+    command: ["python", "-m", "job_agent.worker"]
+    env_file:
+      - ./agents/job_agent/.env
+    healthcheck:
+      # Overrides the image's inherited HTTP HEALTHCHECK: this container
+      # runs the polling worker, not the Flask app, so nothing ever listens
+      # on port 5020 here — checking that endpoint would always fail.
+      test: ["CMD", "python", "-m", "job_agent.worker", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      mysql:
+        condition: service_healthy
+      job-agent:
+        condition: service_healthy
+
   frontend:
     build:
       context: .
@@ -136,3 +172,4 @@ services:
 
 volumes:
   mysql_data:
+  job_uploads:

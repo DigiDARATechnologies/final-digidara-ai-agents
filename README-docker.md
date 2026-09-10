@@ -32,13 +32,14 @@ agents use to find each other changed (Docker service names instead of
    cp agents/aptitude_agent/.env.example agents/aptitude_agent/.env
    cp agents/resume_builder_agent/backend/.env.example agents/resume_builder_agent/backend/.env
    cp agents/certificate_agent/.env.example agents/certificate_agent/.env
+   cp agents/job_agent/.env.example agents/job_agent/.env
    cp docker/mysql/.env.example docker/mysql/.env
    ```
 
 2. In `docker/mysql/.env`, set a real `MYSQL_ROOT_PASSWORD`.
 
 3. In **every** agent `.env` you just copied, set `DATABASE_URL` /
-   `MYSQL_PASSWORD` to that **same** password (all agents connect to MySQL
+   `MYSQL_PASSWORD` / `DB_PASSWORD` to that **same** password (all agents connect to MySQL
    as `root` — no separate per-service MySQL user is created). The
    `.env.example` files use `change-me` as a placeholder in the same spot.
 
@@ -57,6 +58,10 @@ agents use to find each other changed (Docker service names instead of
    `DB_PASSWORD` are set to real values (not the `your_...` placeholders in
    its `.env.example`) — see `cert_app/config.py`'s `validate_secrets`.
 
+6. To expose the administration area, set `ADMIN_EMAIL` and
+   `ADMIN_PASSWORD` in `agents/orchestrator/.env`. Startup creates or
+   promotes that account without resetting an existing password.
+
 ## Running the stack
 
 ```
@@ -64,8 +69,9 @@ docker compose up -d --build
 ```
 
 This builds and starts, in dependency order: `mysql` → `orchestrator` →
-the six agents → `frontend`, plus Judge0's `server`/`worker`/`db`/`redis`.
-First boot creates the seven MySQL databases automatically (see
+the seven agent APIs (plus the Job ingestion worker) → `frontend`, plus
+Judge0's `server`/`worker`/`db`/`redis`.
+First boot creates the eight MySQL databases automatically (see
 `docker/mysql-init/01-create-databases.sql`); each service still runs its
 own migrations/`create_all()` against its database the same as before.
 
@@ -88,6 +94,7 @@ you must exec into a container or use `docker compose exec`):
 ```
 docker compose exec orchestrator python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8100/health').read())"
 docker compose exec codeforge-agent python -c "import urllib.request,json; req=urllib.request.Request('http://127.0.0.1:4000/api/invoke', data=json.dumps({'action':'health'}).encode(), headers={'Content-Type':'application/json'}); print(urllib.request.urlopen(req).read())"
+docker compose exec job-agent python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:5020/health').read())"
 ```
 
 (Swap the service name/port for `capstone-agent:8000`,
@@ -119,8 +126,8 @@ docker compose logs -f                     # everything
 
 Service names: `mysql`, `orchestrator`, `capstone-agent`, `codeforge-agent`,
 `communication-agent`, `aptitude-agent`, `resume-builder-agent`,
-`certificate-agent`, `frontend`, plus Judge0's `server`, `worker`, `db`,
-`redis`.
+`certificate-agent`, `job-agent`, `job-worker`, `frontend`, plus Judge0's
+`server`, `worker`, `db`, `redis`.
 
 ## Stopping / resetting
 
@@ -138,7 +145,8 @@ docker compose down -v       # stop everything AND delete mysql/judge0 data
   `agents/codeforge_agent/services/lms-api`,
   `agents/communication-ai-agent/backend`, `agents/aptitude_agent`,
   `agents/resume_builder_agent/backend`, `agents/certificate_agent`,
-  `agents/agent_template` — plus a matching `.dockerignore` next to each.
+  `agents/job_agent`, `agents/agent_template` — plus a matching
+  `.dockerignore` next to each.
 - `Dockerfile.frontend`, `nginx.conf`, `.dockerignore` (repo root).
 - `docker-compose.yml` (repo root).
 - `docker/mysql-init/01-create-databases.sql`, `docker/mysql/.env.example`.
@@ -153,6 +161,8 @@ docker compose down -v       # stop everything AND delete mysql/judge0 data
   `uvicorn.run` for local dev); the other four services already had it for
   their PM2 production target, so this brings all eight in line with the
   same pattern/comment.
+- `agents/job_agent/requirements.txt` — added the same pinned Gunicorn
+  runtime used by the other containerized Flask services.
 - `.env.example` in `agent_template`, `codeforge_agent/services/lms-api`,
   `communication-ai-agent/backend`, `project_AI_Agent`, `aptitude_agent`,
   `resume_builder_agent/backend`, `certificate_agent` — changed
@@ -174,6 +184,9 @@ docker compose down -v       # stop everything AND delete mysql/judge0 data
   and this file — updated to add `certificate-agent` after it landed on
   `origin/ui_branch` partway through this work (it wasn't in the original
   7-service table).
+- `docker/mysql-init/01-create-databases.sql` and `docker-compose.yml` also
+  add the isolated `job_agent` database, `job-agent` API, persistent resume
+  upload volume, and the separately scalable `job-worker` queue consumer.
 
 Nothing in `agents/codeforge_agent/judge0/` was touched.
 

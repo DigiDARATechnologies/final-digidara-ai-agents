@@ -19,6 +19,7 @@ export interface AuthUser {
   name: string;
   email: string;
   mobile: string | null;
+  is_admin: boolean;
 }
 
 export interface TokenResponse {
@@ -70,6 +71,19 @@ export async function fetchMe(token: string): Promise<AuthUser> {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseAuthResponse<AuthUser>(response);
+}
+
+export async function changePassword(
+  token: string,
+  currentPassword: string | undefined,
+  newPassword: string,
+): Promise<{ message: string }> {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/auth/password`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  return parseAuthResponse<{ message: string }>(response);
 }
 
 function postJson(path: string, body: Record<string, unknown>): Promise<Response> {

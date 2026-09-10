@@ -38,3 +38,9 @@ def init_db() -> None:
                 # column -- MySQL error 1060 is "Duplicate column name".
                 if "1060" not in str(exc):
                     raise
+        if "is_admin" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
