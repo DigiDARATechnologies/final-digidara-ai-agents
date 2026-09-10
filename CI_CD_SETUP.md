@@ -35,8 +35,8 @@ still run. The runner does not silently skip failing suites.
 
 | Agent | Existing automated checks |
 | --- | --- |
-| Orchestrator | Health API (no dedicated suite currently present) |
-| Capstone | Health API (no dedicated suite currently present) |
+| Orchestrator | Health API and tests/ (registry signatures, lifecycle, gateway authentication, forwarding and billing) |
+| Capstone | Health API and tests/ (topics, upload validation, evaluation persistence, timers and viva) |
 | CodeForge | Health API and tests/test_standalone_workflow.py (GitHub by default) |
 | Communication | Health API and tests/ |
 | Aptitude | Health API, backend/unit_tests/, and backend/tests/ with dedicated MySQL |
@@ -60,3 +60,5 @@ Push only after reviewing local results. A workflow exists on GitHub only after
 its files have been committed and pushed. A green Actions run must be observed
 on GitHub before claiming CI passed. Requiring green checks before merging needs
 repository branch protection; this workflow alone does not configure it.
+
+The orchestrator and capstone dedicated suites use disposable SQLite databases. Capstone uses memory checkpoints; AI and remote agent responses are controlled test fixtures. Docker health checks still exercise startup against MySQL. These suites do not measure live AI answer quality.
