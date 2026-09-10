@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
+import LegalModal from "./LegalModal";
 
 interface LoginOverlayProps {
   onAuthenticate: (
@@ -24,6 +25,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -103,8 +105,14 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
             {submitting ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
           </button>
         </form>
-        <p className="login-foot">By continuing you agree to the DigiDARA Terms &amp; Privacy Policy.</p>
+        <p className="login-foot">
+          By continuing you agree to the DigiDARA{" "}
+          <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+          {" "}&amp;{" "}
+          <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
+        </p>
       </div>
+      <LegalModal open={legalTab !== null} initialTab={legalTab ?? "terms"} onClose={() => setLegalTab(null)} />
     </div>
   );
 }
