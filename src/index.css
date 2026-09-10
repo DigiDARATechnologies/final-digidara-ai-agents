@@ -178,6 +178,7 @@ body.glow-off .send-btn:hover{
 }
 .field input:focus{border-color:var(--accent1); box-shadow:0 0 0 4px var(--accent-soft); background:#fff;}
 .login-foot{font-size:12px;color:var(--text-faint);text-align:center;margin:16px 0 0;}
+.link-btn{background:none;border:0;padding:0;margin:0;font:inherit;font-size:inherit;color:var(--accent1);text-decoration:underline;cursor:pointer;}
 .auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg-soft);padding:4px;border-radius:12px;margin-bottom:18px;}
 .auth-tabs button{border:0;background:transparent;color:var(--text-dim);font-weight:700;padding:9px;border-radius:9px;}
 .auth-tabs button.active{background:#fff;color:var(--accent1);box-shadow:var(--shadow-sm);}
@@ -713,6 +714,16 @@ body.glow-off .send-btn:hover{
 .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border-soft); }
 .modal-head h3{ margin:0; font-size:16px; }
 .modal-body{ padding:8px 20px 20px; max-height:min(72vh, 640px); overflow-y:auto; }
+
+.legal-shell{ max-width:640px; }
+.legal-shell .modal-head{ padding:14px 16px; }
+.legal-body{ padding:8px 24px 28px; max-height:min(70vh, 600px); }
+.legal-doc h2{ font-size:19px; margin:6px 0 2px; }
+.legal-doc .legal-meta{ color:var(--text-faint); font-size:12px; margin:0 0 18px; }
+.legal-doc h3{ font-size:14px; margin:20px 0 8px; }
+.legal-doc p, .legal-doc li{ color:var(--text-dim); font-size:13px; line-height:1.6; }
+.legal-doc ul{ margin:0 0 12px; padding-left:20px; }
+.legal-doc a{ color:var(--accent1); }
 
 .profile-section-head{ font-size:12.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); margin:18px 2px 8px; }
 .profile-usage-loading{ padding:6px 2px 12px; font-size:13px; }
