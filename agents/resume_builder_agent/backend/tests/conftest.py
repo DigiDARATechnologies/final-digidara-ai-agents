@@ -1,8 +1,21 @@
+import os
+from sqlalchemy.engine import make_url
+
 import pytest
 
 from app import create_app
 from app.extensions import db
 
+
+
+def integration_url(fallback):
+    value = os.environ.get("INTEGRATION_DATABASE_URL")
+    if not value:
+        return fallback
+    url = make_url(value)
+    if url.get_backend_name() != "mysql" or not (url.database or "").endswith("_test"):
+        raise RuntimeError("Integration tests require a dedicated MySQL database ending in _test")
+    return value
 
 @pytest.fixture()
 def app(tmp_path):
@@ -10,11 +23,12 @@ def app(tmp_path):
         TESTING = True
         SECRET_KEY = "test-secret-key-for-security-regression-tests"
         ALLOW_DEV_USER_HEADER = True
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+        SQLALCHEMY_DATABASE_URI = integration_url(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
         SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     app = create_app(TestConfig)
     with app.app_context():
+        db.drop_all()
         db.create_all()
         yield app
         db.session.remove()

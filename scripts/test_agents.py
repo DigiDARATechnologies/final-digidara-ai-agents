@@ -51,6 +51,7 @@ def compose_config(init_file, agents=None):
             'command': ['gunicorn', '-w', '1', '-k', worker, '-b', f'0.0.0.0:{port}', app],
             'environment': {
                 'DATABASE_URL': database_url, 'TEST_DATABASE_URL': database_url,
+                'INTEGRATION_DATABASE_URL': database_url,
                 'DB_HOST': 'mysql', 'DB_USER': 'root', 'DB_PASSWORD': 'local-test-password', 'DB_NAME': database,
                 'MYSQL_HOST': 'mysql', 'MYSQL_USER': 'root', 'MYSQL_PASSWORD': 'local-test-password', 'MYSQL_DATABASE': database,
                 'SECRET_KEY': 'local-test-secret-at-least-32-characters',
