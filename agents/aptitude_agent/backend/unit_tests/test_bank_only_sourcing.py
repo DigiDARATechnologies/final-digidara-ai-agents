@@ -14,7 +14,8 @@ def test_learner_question_selector_is_memory_prefetch_then_bounded_live():
     assert '"prefetch_miss"' in selector
     assert '"expected_first_question"' in selector
     assert "select_approved_item(" not in selector
-    assert 'max_validation_attempts=1 if test.test_mode=="category_practice" else 2' in selector
+    # Both generation paths allow two attempts within the shared deadline.
+    assert selector.count("deadline=deadline,max_validation_attempts=2") == 2
     assert "replace_attempt_topic(" in selector
 
 

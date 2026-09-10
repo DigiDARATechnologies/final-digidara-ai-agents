@@ -84,6 +84,8 @@ jobs:
               touch "$directory/.env"
             fi
           done
+          # Judge0 config is deployment-local; validation needs the env file to exist.
+          touch agents/codeforge_agent/judge0/judge0.conf
 
       - name: Validate Compose file
         run: docker compose config --quiet
