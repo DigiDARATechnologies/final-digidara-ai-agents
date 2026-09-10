@@ -20,6 +20,8 @@ AGENTS = [
     ('certificate-agent', 'agents/certificate_agent', 8008, 'cert_app.main:app', 'uvicorn.workers.UvicornWorker'),
 ]
 SUITES = {
+    'orchestrator': ['tests'],
+    'capstone-agent': ['tests'],
     'codeforge-agent': ['tests'],
     'communication-agent': ['tests'],
     'aptitude-agent': ['backend/unit_tests', 'backend/tests'],
