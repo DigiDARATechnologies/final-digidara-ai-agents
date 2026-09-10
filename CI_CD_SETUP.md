@@ -91,3 +91,19 @@ npm audit --audit-level=high
 Database integration: start Docker Desktop and run python scripts/test_agents.py (six agents locally by default), or add --agent all to include CodeForge. Never manually set INTEGRATION_DATABASE_URL to an existing development database: fixtures reset tables. The runner creates and removes its own test database containers.
 
 Security findings are actionable failures, not evidence that the scan is broken. Upgrade the reported package/base image and rerun the affected suites; unresolved findings must remain visible in the PR.
+
+## Branches, publishing and deployment gate
+
+- `main` and `develop` are protected: PR review plus these required checks
+  before merge (see repository branch protection settings for the current
+  list).
+- On push to `main`, once quality/build/test jobs pass, `publish-ghcr` and
+  `publish-ghcr-frontend` push per-agent and frontend images to
+  `ghcr.io/<owner>/digidara-*`, tagged with the commit SHA and `latest`.
+- `deploy-approval` then gates on the `production` GitHub Environment,
+  which requires manual reviewer approval before the job runs.
+- `notify-failure` posts to Slack (via the `SLACK_WEBHOOK_URL` secret) when
+  any job on a `main` push fails; it no-ops if the secret isn't set.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full branch model and pipeline
+details.

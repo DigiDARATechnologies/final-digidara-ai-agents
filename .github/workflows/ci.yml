@@ -2,7 +2,7 @@ name: DigiDARA CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -371,3 +371,134 @@ jobs:
           name: security-npm
           path: npm-audit.json
           if-no-files-found: error
+
+  publish-ghcr:
+    name: Publish image to GHCR - ${{ matrix.agent }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [docker-build, frontend-docker, python-quality, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - orchestrator
+          - capstone-agent
+          - codeforge-agent
+          - communication-agent
+          - aptitude-agent
+          - resume-builder-agent
+          - certificate-agent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve agent build context
+        id: context
+        env:
+          AGENT_NAME: ${{ matrix.agent }}
+        run: |
+          python - <<'PY'
+          import os
+          from scripts.test_agents import AGENTS
+          context = next(a[1] for a in AGENTS if a[0] == os.environ['AGENT_NAME'])
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'path={context}\n')
+          PY
+
+      - name: Set up Docker builder
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push agent image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.context.outputs.path }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/digidara-${{ matrix.agent }}:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/digidara-${{ matrix.agent }}:latest
+          cache-from: type=gha,scope=${{ matrix.agent }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.agent }}
+
+  publish-ghcr-frontend:
+    name: Publish frontend image to GHCR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [frontend-docker, python-quality, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker builder
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/digidara-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/digidara-frontend:latest
+
+  deploy-approval:
+    name: Manual approval to promote to production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [publish-ghcr, publish-ghcr-frontend]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Record promoted images
+        run: |
+          echo "Approved for production promotion: commit ${{ github.sha }}"
+          echo "Images published under ghcr.io/${{ github.repository_owner }}/digidara-*:${{ github.sha }}"
+          echo "Add the actual deployment steps (e.g. SSH, kubectl, ECS update) here when a production target exists."
+
+  notify-failure:
+    name: Notify Slack on CI failure
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - frontend
+      - python-quality
+      - compose-validation
+      - docker-build
+      - frontend-docker
+      - selenium-linux
+      - selenium-edge
+      - npm-security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack failure notification
+        if: contains(needs.*.result, 'failure')
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "SLACK_WEBHOOK_URL secret is not set; skipping Slack notification."
+            exit 0
+          fi
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          payload=$(printf '{"text":"CI failed on main for %s@%s\\n%s"}' \
+            "${{ github.repository }}" "${{ github.sha }}" "$run_url")
+          curl -sf -X POST -H 'Content-type: application/json' --data "$payload" "$SLACK_WEBHOOK_URL"
