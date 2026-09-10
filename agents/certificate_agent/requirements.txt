@@ -14,6 +14,7 @@ reportlab
 Pillow
 requests
 python-jose[cryptography]
+PyJWT>=2.13.0
 passlib[bcrypt]
 python-multipart
 aiofiles

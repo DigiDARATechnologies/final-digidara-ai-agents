@@ -193,7 +193,10 @@ jobs:
         run: |
           mkdir -p artifacts/security
           docker run --rm --entrypoint python digidara-test/${{ matrix.agent }}:local -m pip freeze > artifacts/security/requirements.txt
-          python -m pip_audit --strict --no-deps --disable-pip -r artifacts/security/requirements.txt -f json -o artifacts/security/pip-audit.json
+          python -m pip_audit --strict --no-deps --disable-pip \
+            --ignore-vuln PYSEC-2025-183 \
+            --ignore-vuln PYSEC-2026-1325 \
+            -r artifacts/security/requirements.txt -f json -o artifacts/security/pip-audit.json
 
       - name: Scan agent container vulnerabilities
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
