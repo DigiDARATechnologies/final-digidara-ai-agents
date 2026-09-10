@@ -2,7 +2,7 @@
 
 DigiDARA is a multi-agent platform with a React chat interface, a FastAPI
 orchestrator, a MySQL-backed runtime agent registry, and independently
-deployed agents. Three agents are integrated end-to-end using the
+deployed agents. The platform agents are integrated through the
 **REST + Registry + Gateway (Strategy F)** architecture:
 
 - **Capstone Project Agent** (`agents/project_AI_Agent`, FastAPI + MySQL) —
@@ -15,16 +15,21 @@ deployed agents. Three agents are integrated end-to-end using the
 - **Communication Coach Agent** (`agents/communication-ai-agent`, Flask +
   MySQL) — Pronunciation, Speaking and Writing practice loops scored live by
   an LLM, daily challenges, and a progress dashboard.
+- **Job Fetching Agent** (`agents/job_agent`, Flask + MySQL) — learner job
+  profiles, resume upload, explainable matching, saved/application tracking,
+  Greenhouse and Apify-backed ingestion, and administrator moderation.
 
-All three agents register with the same orchestrator and are driven entirely
+All integrated agents register with the same orchestrator and are driven entirely
 from the same shared React chat UI — the orchestrator's gateway is generic
 per agent name, so adding an agent needs no orchestrator code changes. See
 [STRATEGY_F.md](STRATEGY_F.md) for the full architecture reference, and each
 agent's own `agents/<name>/INTEGRATION.md` for agent-specific detail.
 
 This document explains the architecture, startup process, user workflows,
-database verification, integration contracts, and common problems for all
-three agents.
+database verification, integration contracts, and common problems.
+
+For the complete container stack, including the Job API and its separate
+ingestion worker, see [README-docker.md](README-docker.md).
 
 ## Resume Builder Strategy F
 
@@ -112,6 +117,7 @@ flowchart LR
     GW -->|Forward request| CAP[Capstone Agent<br/>Port 8000 /api/invoke]
     GW -->|Forward request| CF[CodeForge Agent<br/>Port 4000 /api/invoke]
     GW -->|Forward request| COM[Communication Agent<br/>Port 5001 /api/invoke]
+    GW -->|Forward request| JOB[Job Agent<br/>Port 5020 /api/invoke]
     CAP --> CDB[(MySQL capstone_agent)]
     CAP --> LG[LangGraph workflow]
     LG --> LLM[LiteLLM provider]
@@ -120,9 +126,12 @@ flowchart LR
     CF --> OAI[OpenAI: AI Tutor]
     COM --> COMDB[(MySQL communication_module)]
     COM --> COMLLM[OpenAI or Groq: scoring + generation]
+    JOB --> JDB[(MySQL job_agent)]
+    JW[Job ingestion worker] --> JDB
     CAP -->|Register / heartbeat| REG
     CF -->|Register / heartbeat| REG
     COM -->|Register / heartbeat| REG
+    JOB -->|Register / heartbeat| REG
 ```
 
 The browser knows an agent only by its logical name (`capstone_project_agent`,
@@ -142,8 +151,10 @@ the orchestrator.
 | Communication Agent | `http://127.0.0.1:5001` | Pronunciation/Speaking/Writing practice, daily challenges, dashboard |
 | Resume Builder Agent | `http://127.0.0.1:5010` | Resume creation, ATS scoring, PDF export |
 | Certificate Agent | `http://127.0.0.1:8008` | Certification exam generation, chat evaluation, leaderboard, PDF certificates |
+| Job Agent | `http://127.0.0.1:5020` | Job profiles, matching feed, applications and admin controls |
+| Job Worker | internal process | Greenhouse/Apify ingestion queue consumer |
 | Judge0 | `http://127.0.0.1:2358` | Sandboxed code execution for CodeForge's Run/Submit (Docker) |
-| MySQL | `localhost:3306` | Runtime agent registry (`digidara_registry`), Capstone (`capstone_agent`), CodeForge (`leetcode`), Communication (`communication_module`) |
+| MySQL | `localhost:3306` | Per-service databases, including `digidara_registry` and `job_agent` |
 
 Every agent is MySQL-backed — there is no SQLite anywhere in this stack, dev or production.
 

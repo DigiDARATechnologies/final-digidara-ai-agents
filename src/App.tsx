@@ -41,6 +41,8 @@ import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
 import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
+import JobFetchDashboard from "./components/JobFetchDashboard";
+import AdminShell from "./components/AdminShell";
 import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
@@ -50,6 +52,8 @@ import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
 import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
+import { checkJobFetchHealth } from "./lib/jobFetchApi";
+import { handleJobFetchText, openJobFetchChat, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
 
@@ -71,7 +75,7 @@ function loadToken(): string | null {
 
 function toUser(authUser: AuthUser): User {
   const name = authUser.name || "User";
-  return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase() };
+  return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(), isAdmin: authUser.is_admin };
 }
 
 function capstoneKey(email: string) {
@@ -110,6 +114,9 @@ function loadResumeBuilderStates(email?: string): Record<string, ResumeBuilderFl
 function certificateKey(email: string) { return `digidara_certificate_${email.trim().toLowerCase()}`; }
 function loadCertificateStates(email?: string): Record<string, CertificateFlowState> { return email ? JSON.parse(localStorage.getItem(certificateKey(email)) || "{}") : {}; }
 
+function jobFetchKey(email: string) { return `digidara_job_fetch_${email.trim().toLowerCase()}`; }
+function loadJobFetchStates(email?: string): Record<string, JobFetchFlowState> { return email ? JSON.parse(localStorage.getItem(jobFetchKey(email)) || "{}") : {}; }
+
 export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
@@ -125,6 +132,7 @@ export default function App() {
   const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>(() => loadCommunicationStates(loadUser()?.email));
   const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>(() => loadResumeBuilderStates(loadUser()?.email));
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>(() => loadCertificateStates(loadUser()?.email));
+  const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>(() => loadJobFetchStates(loadUser()?.email));
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [capstoneOnline, setCapstoneOnline] = useState(false);
   const [codeforgeOnline, setCodeforgeOnline] = useState(false);
@@ -132,6 +140,7 @@ export default function App() {
   const [communicationOnline, setCommunicationOnline] = useState(false);
   const [resumeBuilderOnline, setResumeBuilderOnline] = useState(false);
   const [certificateOnline, setCertificateOnline] = useState(false);
+  const [jobFetchOnline, setJobFetchOnline] = useState(false);
   const [certificateSecondsLeft, setCertificateSecondsLeft] = useState<number | null>(null);
   const [dailyChallengeStatus, setDailyChallengeStatus] = useState<"pending" | "completed">("pending");
   const [codeBusy, setCodeBusy] = useState(false);
@@ -264,6 +273,7 @@ export default function App() {
       setAptitudeStates(loadAptitudeStates(user.email));
       setCommunicationStates(loadCommunicationStates(user.email));
       setCertificateStates(loadCertificateStates(user.email));
+      setJobFetchStates(loadJobFetchStates(user.email));
     } else {
       setChats([]);
       setCapstoneStates({});
@@ -271,6 +281,7 @@ export default function App() {
       setAptitudeStates({});
       setCommunicationStates({});
       setCertificateStates({});
+      setJobFetchStates({});
     }
     skipCapstoneSave.current = true;
     skipCodeforgeSave.current = true;
@@ -322,6 +333,10 @@ export default function App() {
   }, [certificateStates, user]);
 
   useEffect(() => {
+    if (user) localStorage.setItem(jobFetchKey(user.email), JSON.stringify(jobFetchStates));
+  }, [jobFetchStates, user]);
+
+  useEffect(() => {
     if (!user) return;
     let active = true;
     const updateHealth = () => checkCapstoneHealth().then((online) => { if (active) setCapstoneOnline(online); });
@@ -343,6 +358,15 @@ export default function App() {
     if (!user) return;
     let active = true;
     const updateHealth = () => checkCertificateAgentHealth().then((online) => { if (active) setCertificateOnline(online); });
+    updateHealth();
+    const timer = window.setInterval(updateHealth, 30000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const updateHealth = () => checkJobFetchHealth().then((online) => { if (active) setJobFetchOnline(online); });
     updateHealth();
     const timer = window.setInterval(updateHealth, 30000);
     return () => { active = false; window.clearInterval(timer); };
@@ -591,6 +615,10 @@ export default function App() {
       const { state, messages } = await openCertificateChat(user);
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
+    } else if (agent.kind === "job-fetch") {
+      const { state, messages } = await openJobFetchChat(user);
+      setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
+      appendAgentMessages(chatId, messages);
     }
     setTyping(false);
   }
@@ -722,6 +750,20 @@ export default function App() {
         });
         setTyping(false);
       });
+    } else if (agent.kind === "job-fetch") {
+      setDashboardOpen(false);
+      setTyping(true);
+      openJobFetchChat(user).then(({ state, messages }) => {
+        setJobFetchStates((prev) => ({ ...prev, [chat.id]: state }));
+        setChats((prev) => {
+          const next = prev.map((c) => c.id === chat.id
+            ? { ...c, messages: messages.map((m) => ({ role: "agent" as const, text: m.text, options: m.options, time: nowStr() })), updatedAt: Date.now() }
+            : c);
+          saveChats(next);
+          return next;
+        });
+        setTyping(false);
+      });
     }
     switchView("chat");
   }
@@ -782,6 +824,7 @@ export default function App() {
     if (kind === "aptitude") return aptitudeStates[chatId];
     if (kind === "communication") return communicationStates[chatId];
     if (kind === "certificate") return certificateStates[chatId];
+    if (kind === "job-fetch") return jobFetchStates[chatId];
     return undefined;
   }
 
@@ -916,11 +959,37 @@ export default function App() {
       return;
     }
 
+    if (agent?.kind === "job-fetch") {
+      const flowState = jobFetchStates[chatId];
+      if (!flowState) {
+        setTyping(false);
+        return;
+      }
+      handleJobFetchText(flowState, text)
+        .then(({ state, messages }) => {
+          setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
+          appendAgentMessages(chatId, messages);
+        })
+        .catch((error) => {
+          appendAgentMessages(chatId, [{ text: `Job Fetching Agent request failed: ${(error as Error).message}` }]);
+        })
+        .finally(() => setTyping(false));
+      return;
+    }
+
     routeGeneralMessage(chatId, text, toRouteHistory(baseMessages));
   }
 
   function editMessage(index: number, newText: string) {
     sendMessage(newText, index);
+  }
+
+  function handleChooseOption(value: string, label?: string) {
+    if (value.startsWith("open:")) {
+      window.open(value.slice(5), "_blank", "noopener,noreferrer");
+      return;
+    }
+    sendMessage(value, undefined, false, label);
   }
 
   function expireAptitudeQuestion() {
@@ -1006,10 +1075,25 @@ export default function App() {
       return;
     }
 
+    if (agent?.kind === "job-fetch") {
+      const file = Array.from(files)[0];
+      const flowState = jobFetchStates[chatId];
+      if (!file || !flowState) return;
+      setTyping(true);
+      submitJobFetchResume(flowState, file)
+        .then(({ state, messages }) => {
+          setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
+          appendAgentMessages(chatId, messages);
+        })
+        .catch((error) => appendAgentMessages(chatId, [{ text: `Resume upload failed: ${(error as Error).message}` }]))
+        .finally(() => setTyping(false));
+      return;
+    }
+
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") {
     if (action === "settings") {
       setSettingsOpen(true);
       return;
@@ -1020,6 +1104,10 @@ export default function App() {
     }
     if (action === "my-agents") {
       switchView("store");
+      return;
+    }
+    if (action === "admin" && user?.isAdmin) {
+      switchView("admin");
       return;
     }
     showToast("This section is coming soon.");
@@ -1070,15 +1158,17 @@ export default function App() {
   const isCommunicationChat = currentAgent.kind === "communication";
   const isResumeBuilderChat = currentAgent.kind === "resume-builder";
   const isCertificateChat = currentAgent.kind === "certificate";
+  const isJobFetchChat = currentAgent.kind === "job-fetch";
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
   const codeforgeState = currentChat ? codeforgeStates[currentChat.id] : undefined;
   const aptitudeState = currentChat ? aptitudeStates[currentChat.id] : undefined;
   const communicationState = currentChat ? communicationStates[currentChat.id] : undefined;
   const resumeBuilderState = currentChat ? resumeBuilderStates[currentChat.id] : undefined;
   const certificateState = currentChat ? certificateStates[currentChat.id] : undefined;
+  const jobFetchState = currentChat ? jobFetchStates[currentChat.id] : undefined;
 
   const pendingFiles = capstoneState ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f) : [];
-  const systemOnline = isCapstoneChat ? capstoneOnline : isCodeForgeChat ? codeforgeOnline : isAptitudeChat ? aptitudeOnline : isCommunicationChat ? communicationOnline : isResumeBuilderChat ? resumeBuilderOnline : isCertificateChat ? certificateOnline : true;
+  const systemOnline = isCapstoneChat ? capstoneOnline : isCodeForgeChat ? codeforgeOnline : isAptitudeChat ? aptitudeOnline : isCommunicationChat ? communicationOnline : isResumeBuilderChat ? resumeBuilderOnline : isCertificateChat ? certificateOnline : isJobFetchChat ? jobFetchOnline : true;
 
   const CAPSTONE_STEP_LABELS: Record<string, string> = {
     awaiting_topic_request: "Choosing a topic",
@@ -1208,7 +1298,7 @@ export default function App() {
             title={topbarTitle}
             user={user}
             notifOpen={openMenu === "notif"}
-            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isResumeBuilderChat) && !!currentChat}
+            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isResumeBuilderChat || isJobFetchChat) && !!currentChat}
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
@@ -1229,6 +1319,8 @@ export default function App() {
             />
           )}
 
+          {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
+
           {view === "chat" && newChatPending && <NewChatLanding onSend={startNewChatWithMessage} />}
 
           {view === "chat" && !newChatPending && currentChat && (
@@ -1242,10 +1334,10 @@ export default function App() {
                 composerDisabled={isCertificateChat && typing}
                 onBack={handleChatBack}
                 onSend={sendMessage}
-                onChooseOption={(value, label) => sendMessage(value, undefined, false, label)}
+                onChooseOption={handleChooseOption}
                 onEditMessage={editMessage}
-                attachEnabled={isCapstoneChat || isResumeBuilderChat}
-                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : ".docx,.zip"}
+                attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
+                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onAttachDisabled={() => showToast("File attachments are only available in the Capstone Project Agent chat.")}
@@ -1292,6 +1384,9 @@ export default function App() {
               )}
               {isResumeBuilderChat && dashboardOpen && resumeBuilderState && (
                 <ResumeBuilderDashboard user={user} state={resumeBuilderState} onClose={() => setDashboardOpen(false)} />
+              )}
+              {isJobFetchChat && dashboardOpen && jobFetchState && (
+                <JobFetchDashboard user={user} state={jobFetchState} onClose={() => setDashboardOpen(false)} />
               )}
             </div>
           )}

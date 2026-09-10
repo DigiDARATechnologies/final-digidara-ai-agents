@@ -26,9 +26,9 @@ export const AGENTS: Agent[] = [
   },
   {
     id: "job-fetch", name: "Job Fetching Agent", icon: "🔎", color: "#3b82f6", author: "DigiDARA", rating: 4.6,
-    category: ["Career", "Productivity"], featured: false,
-    desc: "Continuously scans job boards for roles matching your profile and ranks them by fit score.",
-    greeting: "Tell me your target role, location and must-have skills, and I'll start pulling matching openings.",
+    category: ["Career", "Productivity"], featured: false, kind: "job-fetch", backendAgentName: "job_agent",
+    desc: "Continuously scans job boards for roles matching your profile and ranks them by an explainable fit score.",
+    greeting: "Connecting you to the Job Fetching Agent…",
   },
   {
     id: "research", name: "Research Agent", icon: "📚", color: "#06b6d4", author: "DigiDARA", rating: 4.8,

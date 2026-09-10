@@ -40,6 +40,19 @@ TOKEN_COST_PER_CALL = int(os.environ.get("TOKEN_COST_PER_CALL", "100"))
 FREE_ACTIONS = {
     "ensure_session", "usage_summary", "list_courses", "list_languages",
     "ensure_profile", "get_thread_status", "getThreadStatus",
+    # Job Agent actions are database/scraper operations and do not invoke an
+    # LLM. Keeping them free avoids applying the legacy per-call fallback to
+    # deterministic reads, uploads, moderation and ingestion controls.
+    "get_profile", "update_profile", "upload_resume", "get_categories",
+    "get_feed", "job_action", "get_applications", "admin_list_users",
+    "admin_update_plan", "admin_list_sources", "admin_create_source",
+    "admin_update_source_status", "admin_run_source", "admin_list_runs",
+    "admin_list_jobs", "admin_create_job", "admin_update_job_status",
+    "admin_bulk_update_job_status", "admin_list_categories",
+    "admin_greenhouse_companies", "admin_greenhouse_summary",
+    "admin_greenhouse_pending_companies", "admin_greenhouse_revalidate",
+    "admin_greenhouse_sync", "admin_greenhouse_run", "admin_apify_status",
+    "admin_apify_actors", "admin_apify_run", "admin_tn_coverage",
 }
 
 
@@ -69,23 +82,33 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
     # action must be tied to a valid DigiDARA login.
     is_health = isinstance(envelope, dict) and envelope.get("action") == "health"
     user_id = None
+    user = None
     if not is_health:
         authorization = request.headers.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "Missing bearer token.")
         user_id = decode_access_token(authorization[7:])
+        # Resolve every authenticated request, including free actions. This
+        # rejects deleted accounts and supplies the trusted platform admin
+        # flag that Job Agent authorization requires.
+        user = auth_service.get_by_id(user_id)
+        if user is None:
+            raise HTTPException(401, "This account no longer exists.")
 
     action_name = envelope.get("action") if isinstance(envelope, dict) else None
-    is_free_action = action_name in FREE_ACTIONS
+    # The Job Agent's only multipart action is its deterministic resume
+    # upload. Multipart bodies are forwarded byte-for-byte, so they are not
+    # decoded into `envelope` above; identify this narrowly by the registered
+    # agent plus media type instead of trusting a client-supplied billing
+    # override header/query parameter.
+    is_job_resume_upload = agent_name == "job_agent" and request.headers.get("content-type", "").startswith("multipart/form-data")
+    is_free_action = action_name in FREE_ACTIONS or is_job_resume_upload
     is_billable = bool(user_id) and not is_free_action
 
     if is_billable:
         # Cheap pre-check only -- blocks starting a new request once a
         # balance has already run out. The real, accurate charge for this
         # specific request happens after the response comes back below.
-        user = auth_service.get_by_id(user_id)
-        if user is None:
-            raise HTTPException(401, "This account no longer exists.")
         if user.token_balance <= 0:
             raise HTTPException(402, "Insufficient token balance. Please top up to continue.")
 
@@ -97,12 +120,10 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
     if user_id:
         # Derived from the verified platform JWT, never from the JSON payload.
         headers["x-digidara-user-id"] = user_id
+        headers["x-digidara-is-admin"] = "true" if user and user.is_admin else "false"
 
     if isinstance(envelope, dict):
         if envelope.get("action") == "ensure_session":
-            user = auth_service.get_by_id(user_id)
-            if user is None:
-                raise HTTPException(401, "This account no longer exists.")
             payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
             # Identity bridges receive only server-verified profile fields;
             # browser-supplied identity values are never forwarded.
