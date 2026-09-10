@@ -38,15 +38,24 @@ branches — only for commits that land on `main`.
 `deploy-approval` runs after both publish jobs succeed and targets the
 `production` GitHub Environment, which requires a reviewer to approve the
 run before it proceeds (configured under **Settings → Environments →
-production** in the repository). The job currently only records which
-images were published for the approved commit; it is the place to add real
-promotion steps (SSH, `kubectl`, ECS/Cloud Run update, etc.) once a
-production target exists.
+production** in the repository — note: required reviewers on environments
+need GitHub Team/Enterprise for a private repo; this org is currently on
+Free, so the environment exists but has no reviewer gate until upgraded).
+After recording which images were approved, it SSHes into the deploy host
+and runs `/opt/digidara-agents/deploy.sh`, via `appleboy/ssh-action`.
 
-To add a real deploy step, edit the `deploy-approval` job in
-`.github/workflows/ci.yml` and add steps after the "Record promoted images"
-step, using the environment's secrets (`Settings → Environments →
-production → Environment secrets`) for credentials.
+This step needs three repo secrets that do **not exist yet**
+(`gh secret list` is currently empty) — the job will fail on `Deploy via
+SSH` until they're added under **Settings → Secrets and variables →
+Actions**:
+
+- `DEPLOY_HOST` — the server's hostname/IP
+- `DEPLOY_USER` — the SSH user `deploy.sh` runs as
+- `DEPLOY_SSH_KEY` — private key for that user, authorized on the server
+
+`deploy.sh` itself lives on the server, not in this repo — it's expected to
+already pull the freshly published `:latest` (or `:<sha>`) images and
+restart the Compose stack.
 
 ### Failure notifications
 
@@ -66,11 +75,15 @@ recreated automatically if changed or removed:
 
 - Branch protection on `main` and `develop` (PR review + required status
   checks).
-- The `production` Environment with a required reviewer.
+- The `production` Environment with a required reviewer (needs a plan
+  upgrade first, see above).
+- `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` Actions secrets — required
+  for `deploy-approval`'s SSH step; the job fails without them.
 - The `SLACK_WEBHOOK_URL` Actions secret (optional — notifications no-op
   without it).
 
-No infrastructure-level deployment (servers, Kubernetes, cloud provider)
-exists yet. Publishing to GHCR and gating on manual approval is the current
-extent of "deployment"; wiring the approved images to an actual runtime
-environment is a follow-up.
+`deploy-approval` now actually deploys: on every push to `main`, once
+images are published to GHCR, it SSHes into the configured host and runs
+`deploy.sh`. Until the `production` Environment has a required reviewer
+(blocked on the plan upgrade), this happens automatically with no human
+approval step in between — treat merges to `main` accordingly.

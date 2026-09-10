@@ -486,7 +486,14 @@ jobs:
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           echo "Approved for production promotion: commit ${{ github.sha }}"
           echo "Images published under ghcr.io/$owner/digidara-*:${{ github.sha }}"
-          echo "Add the actual deployment steps (e.g. SSH, kubectl, ECS update) here when a production target exists."
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: bash /opt/digidara-agents/deploy.sh
 
   notify-failure:
     name: Notify Slack on CI failure
