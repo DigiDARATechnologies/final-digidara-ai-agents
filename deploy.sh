@@ -10,7 +10,11 @@ git reset --hard origin/main
 NEW_COMMIT=$(git rev-parse HEAD)
 echo "Deploying commit: $NEW_COMMIT"
 
-docker compose up -d --build
+# Don't let a container that's slow to report healthy (rather than
+# genuinely broken) kill the whole script before reaching the real health
+# check and rollback logic below -- `|| true` lets execution continue so
+# those checks get a chance to run and decide for themselves.
+docker compose up -d --build || true
 
 echo "Waiting for services to stabilize..."
 sleep 20
