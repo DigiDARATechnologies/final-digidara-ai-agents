@@ -76,34 +76,36 @@ def test_digidara_login_page_loads(driver):
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
     assert overlay.is_displayed()
 
+    # The overlay opens in login mode by default (see LoginOverlay.tsx).
     heading = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
-    assert heading.text == "Create your DigiDARA account"
+    assert heading.text == "Welcome back"
 
     google_button = driver.find_element(By.CSS_SELECTOR, "button.google-btn")
     assert "Continue with Google" in google_button.text
 
-    save(driver, "signup")
+    save(driver, "login")
 
 
 def test_login_signup_tabs_work(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
 
-    login_tab = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'auth-tabs')]//button[normalize-space()='Log in']"))
+    # Mode switching is a plain link in the ".login-switch" footer line, not
+    # a tab bar — see LoginOverlay.tsx's "First time here?"/"Already have an
+    # account?" copy.
+    signup_link = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Sign up instead']"))
     )
-    login_tab.click()
-    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Welcome back"))
-    assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Welcome back"
-    save(driver, "login")
+    signup_link.click()
+    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Create your account"))
+    assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Create your account"
+    save(driver, "signup")
 
-    signup_tab = driver.find_element(
-        By.XPATH, "//div[contains(@class,'auth-tabs')]//button[normalize-space()='Sign up']"
+    login_link = driver.find_element(
+        By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"
     )
-    signup_tab.click()
-    wait.until(
-        EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Create your DigiDARA account")
-    )
+    login_link.click()
+    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Welcome back"))
 
 
 def test_mobile_viewport_renders(driver):
