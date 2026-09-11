@@ -1,5 +1,7 @@
+from datetime import datetime
+
 from app.db import get_session
-from app.models import User
+from app.models import Payment, User
 
 
 def get_by_email(email: str) -> User | None:
@@ -26,10 +28,23 @@ def get_by_google_id(google_id: str) -> User | None:
         session.close()
 
 
-def create_user(name: str, email: str, mobile: str | None, password_hash: str) -> User:
+def create_user(
+    name: str,
+    email: str,
+    mobile: str | None,
+    password_hash: str,
+    consent_policy_version: str,
+) -> User:
     session = get_session()
     try:
-        user = User(name=name, email=email, mobile=mobile, password_hash=password_hash)
+        user = User(
+            name=name,
+            email=email,
+            mobile=mobile,
+            password_hash=password_hash,
+            consent_accepted_at=datetime.utcnow(),
+            consent_policy_version=consent_policy_version,
+        )
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -38,15 +53,73 @@ def create_user(name: str, email: str, mobile: str | None, password_hash: str) -
         session.close()
 
 
-def create_google_user(name: str, email: str, google_id: str) -> User:
+def create_google_user(name: str, email: str, google_id: str, consent_policy_version: str) -> User:
     """No password_hash — this account can only ever sign in via Google."""
     session = get_session()
     try:
-        user = User(name=name, email=email, google_id=google_id)
+        user = User(
+            name=name,
+            email=email,
+            google_id=google_id,
+            consent_accepted_at=datetime.utcnow(),
+            consent_policy_version=consent_policy_version,
+        )
         session.add(user)
         session.commit()
         session.refresh(user)
         return user
+    finally:
+        session.close()
+
+
+def delete_user(user_id: str) -> None:
+    """DPDP Act 2023 right to erasure. Payment rows are intentionally kept
+    (financial records DigiDARA must retain under tax/accounting law and
+    which hold no name/email/mobile of their own -- see app/models.py) but
+    are no longer reachable through any authenticated account afterwards."""
+    session = get_session()
+    try:
+        user = session.get(User, user_id)
+        if user:
+            session.delete(user)
+            session.commit()
+    finally:
+        session.close()
+
+
+def export_user_data(user_id: str) -> dict | None:
+    """DPDP Act 2023 right to access -- a machine-readable dump of every
+    piece of personal data this service holds about the requesting user."""
+    session = get_session()
+    try:
+        user = session.get(User, user_id)
+        if not user:
+            return None
+        payments = session.query(Payment).filter_by(user_id=user_id).all()
+        return {
+            "account": {
+                "id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "mobile": user.mobile,
+                "google_linked": user.google_id is not None,
+                "created_at": user.created_at.isoformat(),
+                "token_balance": user.token_balance,
+                "consent_accepted_at": user.consent_accepted_at.isoformat() if user.consent_accepted_at else None,
+                "consent_policy_version": user.consent_policy_version,
+            },
+            "payments": [
+                {
+                    "plan_id": payment.plan_id,
+                    "amount": payment.amount,
+                    "currency": payment.currency,
+                    "status": payment.status,
+                    "created_at": payment.created_at.isoformat(),
+                    "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
+                }
+                for payment in payments
+            ],
+        }
     finally:
         session.close()
 
