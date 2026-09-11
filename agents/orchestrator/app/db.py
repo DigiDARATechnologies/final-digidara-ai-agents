@@ -38,3 +38,15 @@ def init_db() -> None:
                 # column -- MySQL error 1060 is "Duplicate column name".
                 if "1060" not in str(exc):
                     raise
+        if "consent_accepted_at" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN consent_accepted_at DATETIME NULL"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        if "consent_policy_version" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN consent_policy_version VARCHAR(32) NULL"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise

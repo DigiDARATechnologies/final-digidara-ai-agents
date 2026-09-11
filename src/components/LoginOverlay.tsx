@@ -5,15 +5,21 @@ import LegalModal from "./LegalModal";
 interface LoginOverlayProps {
   onAuthenticate: (
     mode: "login" | "signup",
-    details: { name: string; email: string; mobile: string; password: string },
+    details: { name: string; email: string; mobile: string; password: string; consent: boolean },
   ) => Promise<string | null>;
 }
 
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
+// DPDP Act 2023: the OAuth redirect leaves this page before we can send
+// consent along with the signup call, so the affirmative checkbox state is
+// carried across the redirect the same way `state` is, and read back by
+// App.tsx once Google returns control to us.
+export const GOOGLE_OAUTH_CONSENT_KEY = "digidara_google_oauth_consent";
 
-function startGoogleSignIn() {
+function startGoogleSignIn(consent: boolean) {
   const state = crypto.randomUUID();
   sessionStorage.setItem(GOOGLE_OAUTH_STATE_KEY, state);
+  sessionStorage.setItem(GOOGLE_OAUTH_CONSENT_KEY, consent ? "1" : "0");
   window.location.href = googleAuthUrl(state);
 }
 
@@ -44,6 +50,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
+  const [consent, setConsent] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -55,10 +62,22 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
       setError("Passwords do not match");
       return;
     }
+    if (mode === "signup" && !consent) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setSubmitting(true);
-    const result = await onAuthenticate(mode, { name: trimmedName, email: trimmedEmail, mobile: trimmedMobile, password });
+    const result = await onAuthenticate(mode, { name: trimmedName, email: trimmedEmail, mobile: trimmedMobile, password, consent });
     setSubmitting(false);
     setError(result ?? "");
+  }
+
+  function handleGoogleClick() {
+    if (mode === "signup" && !consent) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
+    startGoogleSignIn(consent);
   }
 
   return (
@@ -71,7 +90,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
           </span>
         </div>
         <h1>{mode === "signup" ? "Create your DigiDARA account" : "Welcome back"}</h1>
-        <button type="button" className="btn btn-outline btn-full google-btn" onClick={startGoogleSignIn}>
+        <button type="button" className="btn btn-outline btn-full google-btn" onClick={handleGoogleClick}>
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
             <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z" />
             <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z" />
@@ -155,17 +174,36 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               </div>
             </label>
           )}
+          {mode === "signup" && (
+            <label className="field consent-field" style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                style={{ marginTop: 3, width: "auto" }}
+              />
+              <span>
+                I have read and agree to the DigiDARA{" "}
+                <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+                {" "}and{" "}
+                <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
+                and consent to the collection and use of my personal data as described there.
+              </span>
+            </label>
+          )}
           {error && <p className="form-error" role="alert">{error}</p>}
-          <button type="submit" className="btn btn-primary btn-glow btn-full" disabled={submitting}>
+          <button type="submit" className="btn btn-primary btn-glow btn-full" disabled={submitting || (mode === "signup" && !consent)}>
             {submitting ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
           </button>
         </form>
-        <p className="login-foot">
-          By continuing you agree to the DigiDARA{" "}
-          <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
-          {" "}&amp;{" "}
-          <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
-        </p>
+        {mode === "login" && (
+          <p className="login-foot">
+            Need the fine print? Read the DigiDARA{" "}
+            <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+            {" "}&amp;{" "}
+            <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
+          </p>
+        )}
       </div>
       <LegalModal open={legalTab !== null} initialTab={legalTab ?? "terms"} onClose={() => setLegalTab(null)} />
     </div>

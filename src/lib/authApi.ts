@@ -19,6 +19,8 @@ export interface AuthUser {
   name: string;
   email: string;
   mobile: string | null;
+  consent_accepted_at: string | null;
+  consent_policy_version: string | null;
 }
 
 export interface TokenResponse {
@@ -27,8 +29,8 @@ export interface TokenResponse {
   user: AuthUser;
 }
 
-export async function signup(name: string, email: string, mobile: string, password: string): Promise<TokenResponse> {
-  const response = await postJson("/auth/signup", { name, email, mobile, password });
+export async function signup(name: string, email: string, mobile: string, password: string, consent: boolean): Promise<TokenResponse> {
+  const response = await postJson("/auth/signup", { name, email, mobile, password, consent });
   return parseAuthResponse<TokenResponse>(response);
 }
 
@@ -60,8 +62,8 @@ export function googleAuthUrl(state: string): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export async function googleAuth(code: string): Promise<TokenResponse> {
-  const response = await postJson("/auth/google", { code, redirect_uri: googleRedirectUri() });
+export async function googleAuth(code: string, consent: boolean): Promise<TokenResponse> {
+  const response = await postJson("/auth/google", { code, redirect_uri: googleRedirectUri(), consent });
   return parseAuthResponse<TokenResponse>(response);
 }
 
@@ -70,6 +72,36 @@ export async function fetchMe(token: string): Promise<AuthUser> {
     headers: { Authorization: `Bearer ${token}` },
   });
   return parseAuthResponse<AuthUser>(response);
+}
+
+/** DPDP Act 2023 right to access — every piece of personal data the
+ * platform holds about the caller, as a JSON document. */
+export async function exportMyData(token: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/auth/me/export`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return parseAuthResponse<Record<string, unknown>>(response);
+}
+
+/** DPDP Act 2023 right to erasure / consent withdrawal. `password` is
+ * required to confirm deletion of a password-based account; omit it for a
+ * Google-only account. */
+export async function deleteMyAccount(token: string, password?: string): Promise<void> {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/auth/me`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ password: password ?? null }),
+  });
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const body = await response.json();
+      detail = body.detail ?? detail;
+    } catch {
+      // Keep the HTTP status text when an upstream response is not JSON.
+    }
+    throw new Error(detail);
+  }
 }
 
 function postJson(path: string, body: Record<string, unknown>): Promise<Response> {

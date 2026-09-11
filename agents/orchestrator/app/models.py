@@ -59,6 +59,13 @@ class User(Base):
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.
     token_balance: Mapped[int] = mapped_column(Integer, default=50000, server_default="50000")
+    # DPDP Act 2023 consent record: the timestamp/policy-version pair the
+    # user affirmatively agreed to at signup (see app/auth/consent.py). Not
+    # nullable in practice for new rows -- signup rejects a missing
+    # consent flag before create_user is ever called -- but nullable here
+    # so the column can be added to a table with pre-existing accounts.
+    consent_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consent_policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class Payment(Base):

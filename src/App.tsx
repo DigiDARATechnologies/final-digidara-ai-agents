@@ -25,7 +25,7 @@ import {
   MENU_OPTIONS as COMMUNICATION_MENU_OPTIONS,
   type CommunicationFlowState,
 } from "./lib/communicationFlow";
-import LoginOverlay from "./components/LoginOverlay";
+import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import StoreView from "./components/StoreView";
@@ -50,7 +50,7 @@ import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
 import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
-import { fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
+import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
 
 type OpenMenu = "user" | "notif" | null;
@@ -224,7 +224,9 @@ export default function App() {
     const state = params.get("state");
     const oauthError = params.get("error");
     const expectedState = sessionStorage.getItem(GOOGLE_OAUTH_STATE_KEY);
+    const consent = sessionStorage.getItem(GOOGLE_OAUTH_CONSENT_KEY) === "1";
     sessionStorage.removeItem(GOOGLE_OAUTH_STATE_KEY);
+    sessionStorage.removeItem(GOOGLE_OAUTH_CONSENT_KEY);
     window.history.replaceState({}, "", "/");
 
     if (oauthError) {
@@ -237,7 +239,7 @@ export default function App() {
       showToast("Google sign-in failed — please try again.");
       return;
     }
-    googleAuth(code)
+    googleAuth(code, consent)
       .then((result) => {
         const newUser = toUser(result.user);
         localStorage.setItem(TOKEN_KEY, result.access_token);
@@ -466,7 +468,7 @@ export default function App() {
 
   async function handleAuthenticate(
     mode: "login" | "signup",
-    details: { name: string; email: string; mobile: string; password: string },
+    details: { name: string; email: string; mobile: string; password: string; consent: boolean },
   ): Promise<string | null> {
     const email = details.email.trim().toLowerCase();
     try {
@@ -474,7 +476,7 @@ export default function App() {
         ? await (async () => {
             const mobile = details.mobile.replace(/[\s()-]/g, "");
             if (!/^\+?\d{8,15}$/.test(mobile)) throw new Error("Enter a valid mobile number with country code.");
-            return signupApi(details.name.trim(), email, mobile, details.password);
+            return signupApi(details.name.trim(), email, mobile, details.password, details.consent);
           })()
         : await loginApi(email, details.password);
 
@@ -506,6 +508,41 @@ export default function App() {
     setCertificateStates({});
     setDashboardOpen(false);
     setView("chat");
+  }
+
+  // DPDP Act 2023 right to access: downloads every piece of personal data
+  // the platform holds about the signed-in account as a JSON file.
+  async function handleExportMyData() {
+    const token = loadToken();
+    if (!token) return;
+    try {
+      const data = await exportMyData(token);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `digidara-account-data-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      showToast((error as Error).message || "Could not export your data. Please try again.");
+    }
+  }
+
+  // DPDP Act 2023 right to erasure / consent withdrawal: permanently
+  // deletes the account. `password` is required for password-based
+  // accounts as a confirmation step; Google-only accounts pass none.
+  async function handleDeleteAccount(password?: string): Promise<string | null> {
+    const token = loadToken();
+    if (!token) return "You're not signed in.";
+    try {
+      await deleteMyAccount(token, password);
+      handleLogout();
+      showToast("Your account and personal data have been deleted.");
+      return null;
+    } catch (error) {
+      return (error as Error).message || "Could not delete your account. Please try again.";
+    }
   }
 
   function switchView(next: View) {
@@ -1316,6 +1353,8 @@ export default function App() {
         onGlowToggle={setGlowOn}
         onClearHistory={handleClearHistory}
         onToast={showToast}
+        onExportData={handleExportMyData}
+        onDeleteAccount={handleDeleteAccount}
       />
 
       <ProfilePage open={profileOpen} user={user} onClose={() => setProfileOpen(false)} />
