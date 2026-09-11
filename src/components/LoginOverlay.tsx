@@ -23,6 +23,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
@@ -33,6 +34,10 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
     const trimmedEmail = email.trim();
     const trimmedMobile = mobile.trim();
     if ((mode === "signup" && (!trimmedName || !trimmedMobile)) || !trimmedEmail || !password) return;
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
     setSubmitting(true);
     const result = await onAuthenticate(mode, { name: trimmedName, email: trimmedEmail, mobile: trimmedMobile, password });
     setSubmitting(false);
@@ -100,6 +105,20 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
+          {mode === "signup" && (
+            <label className="field">
+              <span>Re-enter password</span>
+              <input
+                type="password"
+                placeholder="Re-enter your password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </label>
+          )}
           {error && <p className="form-error" role="alert">{error}</p>}
           <button type="submit" className="btn btn-primary btn-glow btn-full" disabled={submitting}>
             {submitting ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
