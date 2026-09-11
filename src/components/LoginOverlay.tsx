@@ -17,6 +17,21 @@ function startGoogleSignIn() {
   window.location.href = googleAuthUrl(state);
 }
 
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  ) : (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M10.6 5.2A11.6 11.6 0 0 1 12 5c7 0 11 7 11 7a14.5 14.5 0 0 1-3.9 4.3M6.6 6.6C3.7 8.4 1 12 1 12s4 7 11 7c1.4 0 2.7-.27 3.9-.73" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   const [mode, setMode] = useState<"login" | "signup">("signup");
   const [name, setName] = useState("");
@@ -24,6 +39,8 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
@@ -94,28 +111,48 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
           )}
           <label className="field">
             <span>Password</span>
-            <input
-              type="password"
-              placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
-              required
-              minLength={mode === "signup" ? 8 : undefined}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+            <div className="password-field">
+              <input
+                type={showPassword ? "text" : "password"}
+                placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+                required
+                minLength={mode === "signup" ? 8 : undefined}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                <EyeIcon open={showPassword} />
+              </button>
+            </div>
           </label>
           {mode === "signup" && (
             <label className="field">
               <span>Re-enter password</span>
-              <input
-                type="password"
-                placeholder="Re-enter your password"
-                required
-                minLength={8}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-              />
+              <div className="password-field">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Re-enter your password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  <EyeIcon open={showConfirmPassword} />
+                </button>
+              </div>
             </label>
           )}
           {error && <p className="form-error" role="alert">{error}</p>}
