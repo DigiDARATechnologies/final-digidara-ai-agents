@@ -108,7 +108,7 @@ export const DEFAULT_AGENT: Agent = {
   id: "digidara-assistant",
   name: "DigiDARA Assistant",
   icon: "⚡",
-  color: "#6d5bff",
+  color: "#0e7490",
   greeting: "Hi, I'm your DigiDARA Assistant. Ask me anything, or open a specialized agent from the store for focused help.",
 };
 

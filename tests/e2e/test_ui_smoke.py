@@ -5,6 +5,7 @@ from urllib.request import urlopen
 
 import pytest
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -68,6 +69,48 @@ def save(driver, name: str):
     driver.save_screenshot(str(ARTIFACT_DIR / f"{BROWSER}-{name}.png"))
 
 
+def js_click(driver, element):
+    """Dispatch the click via the DOM instead of Selenium's native click.
+
+    geckodriver's native click computes a target point from the element's
+    bounding rect and requires it to resolve back to the element (or a
+    descendant) via elementFromPoint; for a zero-padding inline `<button>`
+    sitting inside a paragraph of mixed text nodes, that geometry check is
+    stricter in Firefox than in Chromium, and the click can silently land on
+    nothing. A JS-dispatched click has no such geometry requirement and is
+    the standard cross-browser-safe way to click this kind of element.
+    """
+    driver.execute_script("arguments[0].click();", element)
+
+
+def heading_text(driver):
+    return driver.execute_script("return document.querySelector('#loginOverlay h1')?.textContent ?? ''")
+
+
+def wait_for_heading(driver, wait, expected_text, debug_name):
+    """Poll the heading's raw textContent via execute_script rather than
+    Selenium's WebElement.text / EC.text_to_be_present_in_element.
+
+    Root-caused via the diagnostics this replaced: after the click, the DOM
+    already had the right heading (confirmed by reading textContent), but
+    geckodriver's `.text` -- which computes a "rendered text" that accounts
+    for visibility/layout, not a plain textContent read -- never reflected
+    it within the wait window. Chrome and Edge don't have this quirk; only
+    Firefox does. Reading textContent directly sidesteps that layer.
+    """
+    try:
+        wait.until(lambda d: expected_text in heading_text(d))
+    except TimeoutException:
+        actual = heading_text(driver)
+        switch_html = driver.execute_script("return document.querySelector('.login-switch')?.outerHTML")
+        save(driver, debug_name)
+        raise AssertionError(
+            f"Heading never became {expected_text!r}. "
+            f"Actual heading text: {actual!r}. "
+            f".login-switch outerHTML: {switch_html!r}."
+        )
+
+
 def test_digidara_login_page_loads(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
@@ -76,34 +119,36 @@ def test_digidara_login_page_loads(driver):
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
     assert overlay.is_displayed()
 
-    heading = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
-    assert heading.text == "Create your DigiDARA account"
+    # The overlay opens in login mode by default (see LoginOverlay.tsx).
+    wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
+    assert heading_text(driver) == "Welcome back"
 
     google_button = driver.find_element(By.CSS_SELECTOR, "button.google-btn")
     assert "Continue with Google" in google_button.text
 
-    save(driver, "signup")
+    save(driver, "login")
 
 
 def test_login_signup_tabs_work(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
 
-    login_tab = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'auth-tabs')]//button[normalize-space()='Log in']"))
+    # Mode switching is a plain link in the ".login-switch" footer line, not
+    # a tab bar — see LoginOverlay.tsx's "First time here?"/"Already have an
+    # account?" copy.
+    signup_link = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Sign up instead']"))
     )
-    login_tab.click()
-    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Welcome back"))
-    assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Welcome back"
-    save(driver, "login")
+    js_click(driver, signup_link)
+    wait_for_heading(driver, wait, "Create your account", "signup-debug")
+    assert heading_text(driver) == "Create your account"
+    save(driver, "signup")
 
-    signup_tab = driver.find_element(
-        By.XPATH, "//div[contains(@class,'auth-tabs')]//button[normalize-space()='Sign up']"
+    login_link = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"))
     )
-    signup_tab.click()
-    wait.until(
-        EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Create your DigiDARA account")
-    )
+    js_click(driver, login_link)
+    wait_for_heading(driver, wait, "Welcome back", "login-debug")
 
 
 def test_mobile_viewport_renders(driver):
