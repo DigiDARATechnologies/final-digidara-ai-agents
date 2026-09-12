@@ -267,12 +267,14 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               )}
             </p>
 
-            <p className="login-foot">
-              By continuing you agree to the DigiDARA{" "}
-              <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
-              {" "}&amp;{" "}
-              <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
-            </p>
+            {mode === "login" && (
+              <p className="login-foot">
+                By continuing you agree to the DigiDARA{" "}
+                <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+                {" "}&amp;{" "}
+                <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
+              </p>
+            )}
           </div>
         </div>
       </div>
