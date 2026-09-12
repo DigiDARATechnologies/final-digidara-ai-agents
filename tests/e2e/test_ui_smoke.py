@@ -69,18 +69,32 @@ def save(driver, name: str):
     driver.save_screenshot(str(ARTIFACT_DIR / f"{BROWSER}-{name}.png"))
 
 
-def js_click(driver, element):
-    """Dispatch the click via the DOM instead of Selenium's native click.
+_CLICK_SWITCH_LINK_JS = """
+const label = arguments[0];
+const p = document.querySelector('.login-switch');
+if (!p) return false;
+const btn = Array.from(p.querySelectorAll('button')).find((b) => b.textContent.trim() === label);
+if (!btn || btn.offsetParent === null) return false;
+btn.click();
+return true;
+"""
 
-    geckodriver's native click computes a target point from the element's
-    bounding rect and requires it to resolve back to the element (or a
-    descendant) via elementFromPoint; for a zero-padding inline `<button>`
-    sitting inside a paragraph of mixed text nodes, that geometry check is
-    stricter in Firefox than in Chromium, and the click can silently land on
-    nothing. A JS-dispatched click has no such geometry requirement and is
-    the standard cross-browser-safe way to click this kind of element.
+
+def click_switch_link(driver, wait, label):
+    """Poll for the ".login-switch" button with this exact text and click it
+    in the same JS call, entirely bypassing Selenium's element-discovery and
+    clickability machinery (find_element + EC.element_to_be_clickable +
+    WebElement.click()).
+
+    Selenium's own visibility/clickability checks (`is_displayed`,
+    `is_enabled`, WebElement.text) have repeatedly lagged behind the real
+    DOM on Firefox/geckodriver specifically in this suite -- see
+    wait_for_heading below, root-caused the same way -- while a direct JS
+    read of offsetParent/textContent has been reliable and immediate every
+    time. Doing discovery, visibility, and the click itself all inside one
+    execute_script call removes every layer that's shown this lag so far.
     """
-    driver.execute_script("arguments[0].click();", element)
+    wait.until(lambda d: d.execute_script(_CLICK_SWITCH_LINK_JS, label))
 
 
 def heading_text(driver):
@@ -136,18 +150,12 @@ def test_login_signup_tabs_work(driver):
     # Mode switching is a plain link in the ".login-switch" footer line, not
     # a tab bar — see LoginOverlay.tsx's "First time here?"/"Already have an
     # account?" copy.
-    signup_link = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Sign up instead']"))
-    )
-    js_click(driver, signup_link)
+    click_switch_link(driver, wait, "Sign up instead")
     wait_for_heading(driver, wait, "Create your account", "signup-debug")
     assert heading_text(driver) == "Create your account"
     save(driver, "signup")
 
-    login_link = wait.until(
-        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"))
-    )
-    js_click(driver, login_link)
+    click_switch_link(driver, wait, "Log in instead")
     wait_for_heading(driver, wait, "Welcome back", "login-debug")
 
 
