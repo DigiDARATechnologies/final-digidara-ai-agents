@@ -68,6 +68,20 @@ def save(driver, name: str):
     driver.save_screenshot(str(ARTIFACT_DIR / f"{BROWSER}-{name}.png"))
 
 
+def js_click(driver, element):
+    """Dispatch the click via the DOM instead of Selenium's native click.
+
+    geckodriver's native click computes a target point from the element's
+    bounding rect and requires it to resolve back to the element (or a
+    descendant) via elementFromPoint; for a zero-padding inline `<button>`
+    sitting inside a paragraph of mixed text nodes, that geometry check is
+    stricter in Firefox than in Chromium, and the click can silently land on
+    nothing. A JS-dispatched click has no such geometry requirement and is
+    the standard cross-browser-safe way to click this kind of element.
+    """
+    driver.execute_script("arguments[0].click();", element)
+
+
 def test_digidara_login_page_loads(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
@@ -96,15 +110,15 @@ def test_login_signup_tabs_work(driver):
     signup_link = wait.until(
         EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Sign up instead']"))
     )
-    signup_link.click()
+    js_click(driver, signup_link)
     wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Create your account"))
     assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Create your account"
     save(driver, "signup")
 
-    login_link = driver.find_element(
-        By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"
+    login_link = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"))
     )
-    login_link.click()
+    js_click(driver, login_link)
     wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Welcome back"))
 
 
