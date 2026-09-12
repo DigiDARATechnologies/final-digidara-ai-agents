@@ -5,6 +5,7 @@ from urllib.request import urlopen
 
 import pytest
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -82,6 +83,27 @@ def js_click(driver, element):
     driver.execute_script("arguments[0].click();", element)
 
 
+def wait_for_heading(driver, wait, expected_text, debug_name):
+    """wait.until(text_to_be_present_in_element(...)) but on timeout, capture
+    what the DOM actually says instead of just failing with no context --
+    two prior fixes here (native click, then a JS-dispatched click) both
+    failed the same way on Firefox only, with no clue why, so the next
+    failure needs to be diagnosable from the CI log alone."""
+    try:
+        wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), expected_text))
+    except TimeoutException:
+        actual = driver.execute_script("return document.querySelector('#loginOverlay h1')?.textContent")
+        switch_html = driver.execute_script("return document.querySelector('.login-switch')?.outerHTML")
+        overlay_html_len = driver.execute_script("return document.querySelector('#loginOverlay')?.outerHTML?.length")
+        save(driver, debug_name)
+        raise AssertionError(
+            f"Heading never became {expected_text!r}. "
+            f"Actual heading text: {actual!r}. "
+            f".login-switch outerHTML: {switch_html!r}. "
+            f"#loginOverlay outerHTML length: {overlay_html_len!r}."
+        )
+
+
 def test_digidara_login_page_loads(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
@@ -111,7 +133,7 @@ def test_login_signup_tabs_work(driver):
         EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Sign up instead']"))
     )
     js_click(driver, signup_link)
-    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Create your account"))
+    wait_for_heading(driver, wait, "Create your account", "signup-debug")
     assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Create your account"
     save(driver, "signup")
 
@@ -119,7 +141,7 @@ def test_login_signup_tabs_work(driver):
         EC.element_to_be_clickable((By.XPATH, "//p[contains(@class,'login-switch')]//button[normalize-space()='Log in instead']"))
     )
     js_click(driver, login_link)
-    wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), "Welcome back"))
+    wait_for_heading(driver, wait, "Welcome back", "login-debug")
 
 
 def test_mobile_viewport_renders(driver):
