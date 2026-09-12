@@ -83,24 +83,31 @@ def js_click(driver, element):
     driver.execute_script("arguments[0].click();", element)
 
 
+def heading_text(driver):
+    return driver.execute_script("return document.querySelector('#loginOverlay h1')?.textContent ?? ''")
+
+
 def wait_for_heading(driver, wait, expected_text, debug_name):
-    """wait.until(text_to_be_present_in_element(...)) but on timeout, capture
-    what the DOM actually says instead of just failing with no context --
-    two prior fixes here (native click, then a JS-dispatched click) both
-    failed the same way on Firefox only, with no clue why, so the next
-    failure needs to be diagnosable from the CI log alone."""
+    """Poll the heading's raw textContent via execute_script rather than
+    Selenium's WebElement.text / EC.text_to_be_present_in_element.
+
+    Root-caused via the diagnostics this replaced: after the click, the DOM
+    already had the right heading (confirmed by reading textContent), but
+    geckodriver's `.text` -- which computes a "rendered text" that accounts
+    for visibility/layout, not a plain textContent read -- never reflected
+    it within the wait window. Chrome and Edge don't have this quirk; only
+    Firefox does. Reading textContent directly sidesteps that layer.
+    """
     try:
-        wait.until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#loginOverlay h1"), expected_text))
+        wait.until(lambda d: expected_text in heading_text(d))
     except TimeoutException:
-        actual = driver.execute_script("return document.querySelector('#loginOverlay h1')?.textContent")
+        actual = heading_text(driver)
         switch_html = driver.execute_script("return document.querySelector('.login-switch')?.outerHTML")
-        overlay_html_len = driver.execute_script("return document.querySelector('#loginOverlay')?.outerHTML?.length")
         save(driver, debug_name)
         raise AssertionError(
             f"Heading never became {expected_text!r}. "
             f"Actual heading text: {actual!r}. "
-            f".login-switch outerHTML: {switch_html!r}. "
-            f"#loginOverlay outerHTML length: {overlay_html_len!r}."
+            f".login-switch outerHTML: {switch_html!r}."
         )
 
 
@@ -113,8 +120,8 @@ def test_digidara_login_page_loads(driver):
     assert overlay.is_displayed()
 
     # The overlay opens in login mode by default (see LoginOverlay.tsx).
-    heading = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
-    assert heading.text == "Welcome back"
+    wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))
+    assert heading_text(driver) == "Welcome back"
 
     google_button = driver.find_element(By.CSS_SELECTOR, "button.google-btn")
     assert "Continue with Google" in google_button.text
@@ -134,7 +141,7 @@ def test_login_signup_tabs_work(driver):
     )
     js_click(driver, signup_link)
     wait_for_heading(driver, wait, "Create your account", "signup-debug")
-    assert driver.find_element(By.CSS_SELECTOR, "#loginOverlay h1").text == "Create your account"
+    assert heading_text(driver) == "Create your account"
     save(driver, "signup")
 
     login_link = wait.until(
