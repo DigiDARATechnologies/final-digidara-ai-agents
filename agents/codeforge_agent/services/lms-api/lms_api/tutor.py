@@ -2,7 +2,7 @@ import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from flask import current_app, has_request_context, request
+from flask import current_app, g, has_request_context, request
 
 
 class TutorService:
@@ -55,16 +55,24 @@ class TutorService:
     def _record_usage(usage, model_name):
         if not usage:
             return
-        user_id = request.headers.get("X-DigiDARA-User-Id") if has_request_context() else None
+        in_request = has_request_context()
+        user_id = request.headers.get("X-DigiDARA-User-Id") if in_request else None
+        total_tokens = int(usage.get("total_tokens", 0) or 0)
         current_app.extensions["repository"].record_llm_usage(
             provider="openai",
             model_name=model_name,
             prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
             completion_tokens=int(usage.get("completion_tokens", 0) or 0),
-            total_tokens=int(usage.get("total_tokens", 0) or 0),
+            total_tokens=total_tokens,
             request_type="ai_tutor_explain",
             user_id=user_id or None,
         )
+        # Real per-call usage for the orchestrator's token billing -- read
+        # back in an after_request hook and returned as a response header,
+        # so the gateway charges the caller for actual LLM cost instead of a
+        # flat guess (see app.py's report_tokens_used hook).
+        if in_request:
+            g.tokens_used_this_request = g.get("tokens_used_this_request", 0) + total_tokens
 
     @staticmethod
     def _policy(hint_level):
