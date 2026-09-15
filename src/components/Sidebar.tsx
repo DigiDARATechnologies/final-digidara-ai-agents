@@ -117,7 +117,7 @@ export default function Sidebar({
                 className={`history-item${c.id === currentChatId ? " active" : ""}`}
                 onClick={() => onOpenChat(c.id)}
               >
-                <span className="h-dot" style={{ background: agent.color || "#0e7490" }} />
+                <span className="h-dot" style={{ background: agent.color || "#365f91" }} />
                 <span className="history-title">{c.title}</span>
               </button>
             );

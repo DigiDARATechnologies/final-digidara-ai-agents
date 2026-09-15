@@ -54,7 +54,7 @@ export default function SettingsModal({ open, user, chats, glowOn, onClose, onOp
     try {
       const order = await createBillingOrder(planId); await loadRazorpay();
       const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
-      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} plan`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#0e7490" },
+      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} plan`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#365f91" },
         handler: async (response: CheckoutResponse) => { try { await verifyBillingPayment(response); setBilling(await fetchBillingSummary()); onToast("Payment verified. Your plan is active."); } catch (error) { onToast((error as Error).message); } finally { setBusy(false); } },
         modal: { ondismiss: () => setBusy(false) },
       });
@@ -67,7 +67,7 @@ export default function SettingsModal({ open, user, chats, glowOn, onClose, onOp
     try {
       const order = await createTopupOrder(amountInr); await loadRazorpay();
       const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
-      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} top-up`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#0e7490" },
+      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} top-up`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#365f91" },
         handler: async (response: CheckoutResponse) => { try { await verifyBillingPayment(response); const balance = await fetchTokenBalance(); setTokenBalance(balance.balance); onToast(`Payment verified. ${order.tokens.toLocaleString()} tokens added.`); } catch (error) { onToast((error as Error).message); } finally { setBusy(false); } },
         modal: { ondismiss: () => setBusy(false) },
       });

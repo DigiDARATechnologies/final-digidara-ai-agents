@@ -254,7 +254,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               )}
 
               {error && <p className="form-error" role="alert">{error}</p>}
-              <button type="submit" className="btn btn-primary btn-glow btn-full" disabled={submitting || (mode === "signup" && !consent)}>
+              <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>
                 {submitting ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
               </button>
             </form>
