@@ -1,6 +1,6 @@
 import logging
 
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_limiter.errors import RateLimitExceeded
@@ -114,6 +114,19 @@ def create_app(config_overrides=None):
     db.init_app(app)
     limiter.init_app(app)
     jwt = JWTManager(app)
+
+    @app.after_request
+    def report_tokens_used(response):
+        # Real per-call usage for the orchestrator gateway's token billing —
+        # groq_usage.persist_llm_usage accumulates this on `g` as LLM calls
+        # happen during the request. Flask reuses the same app context (and
+        # `g`) across the invoke dispatcher's nested test-client calls (see
+        # routes/invoke.py's _forward), so this sees the real total even
+        # though the LLM call happened in an inner nested request. Mirrors
+        # aptitude_agent's reference implementation, so the gateway charges
+        # actual cost instead of a flat guess.
+        response.headers["X-Tokens-Used"] = str(g.get("tokens_used_this_request", 0))
+        return response
 
     @jwt.expired_token_loader
     def expired_token_callback(_jwt_header, _jwt_payload):

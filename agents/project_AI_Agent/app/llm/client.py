@@ -22,7 +22,7 @@ from litellm.exceptions import BadRequestError, RateLimitError
 from app import config
 from app.db.database import get_session
 from app.db.models import LlmUsage
-from app.request_context import current_user_id
+from app.request_context import current_request_tokens, current_user_id
 
 litellm.drop_params = True  # silently drop params a given provider doesn't support
 
@@ -122,6 +122,9 @@ def _record_usage(usage: Any, caller: str, model: str) -> None:
             request_type=caller,
         ))
         session.commit()
+        counter = current_request_tokens.get()
+        if counter is not None:
+            counter.total += total_tokens
     except Exception:
         logger.warning("failed to record LLM usage for caller=%s", caller, exc_info=True)
         session.rollback()

@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from flask import current_app, has_app_context, has_request_context, request
+from flask import current_app, g, has_app_context, has_request_context, request
 
 from .groq_pricing import estimate_cost
 
@@ -208,6 +208,7 @@ def persist_llm_usage(*, operation, model, usage, provider="Groq"):
     usage = normalize_usage(usage)
     if not usage.get("usage_available"):
         return
+    total_tokens = int(usage.get("total_tokens") or 0)
     try:
         from ..extensions import db
         from ..models import LlmUsage
@@ -219,10 +220,16 @@ def persist_llm_usage(*, operation, model, usage, provider="Groq"):
             model_name=str(model or "unknown"),
             prompt_tokens=int(usage.get("input_tokens") or 0),
             completion_tokens=int(usage.get("output_tokens") or 0),
-            total_tokens=int(usage.get("total_tokens") or 0),
+            total_tokens=total_tokens,
             request_type=str(operation or "unspecified"),
         ))
         db.session.commit()
+        # Real per-call usage for the orchestrator's token billing -- read
+        # back in an after_request hook and returned as a response header,
+        # so the gateway charges the caller for actual LLM cost instead of a
+        # flat guess (see app/__init__.py's secure_headers-equivalent hook).
+        if has_request_context():
+            g.tokens_used_this_request = g.get("tokens_used_this_request", 0) + total_tokens
     except Exception:
         logger.warning("failed to persist LLM usage for operation=%s", operation, exc_info=True)
         try:

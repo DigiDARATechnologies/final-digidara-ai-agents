@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
 from app.api.routes import router  # noqa: E402
 from app.db.database import init_db  # noqa: E402
 from app.integration.registry_client import registry_client  # noqa: E402
-from app.request_context import current_user_id  # noqa: E402
+from app.request_context import TokenCounter, current_request_tokens, current_user_id  # noqa: E402
 
 logger = logging.getLogger("capstone.startup")
 
@@ -55,10 +55,19 @@ async def bind_request_user(request, call_next):
     # Lets deep call sites (e.g. app/llm/client.py's usage logging) attribute
     # work to the caller without threading the header through every function.
     token = current_user_id.set(request.headers.get("x-digidara-user-id"))
+    counter = TokenCounter()
+    counter_token = current_request_tokens.set(counter)
     try:
-        return await call_next(request)
+        response = await call_next(request)
+        # Real per-call usage for the orchestrator gateway's token billing —
+        # app/llm/client.py's _record_usage accumulates this onto `counter`
+        # as LLM calls happen, so the gateway charges actual cost instead of
+        # a flat guess. Mirrors aptitude_agent's reference implementation.
+        response.headers["x-tokens-used"] = str(counter.total)
+        return response
     finally:
         current_user_id.reset(token)
+        current_request_tokens.reset(counter_token)
 
 app.include_router(router)
 
