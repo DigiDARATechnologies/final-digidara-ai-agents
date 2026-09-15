@@ -357,21 +357,25 @@ body.glow-off .send-btn:hover{
 .sidebar-divider{padding:14px 8px 9px;display:flex;align-items:center;justify-content:space-between;font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--text-faint);text-transform:uppercase;}
 .history-count{display:grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border-radius:99px;background:#eefafe;color:var(--accent1);font-size:10px;letter-spacing:0;}
 
-.history-list{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding:0 2px 8px;scrollbar-gutter:stable;}
+.history-list{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0 2px 8px;scrollbar-gutter:stable;}
 .history-item{
-  display:flex; align-items:center; gap:2px;
-  padding:2px; border-radius:var(--radius-sm);
+  position:relative;
+  display:flex; align-items:center;
+  padding:10px 11px; border-radius:var(--radius-sm);
   font-size:13.5px; color:var(--text-dim); background:transparent; border:1px solid transparent;
-  width:100%;overflow:hidden;
+  width:100%;
   transition:background .15s, color .15s;
 }
+/* Matches .nav-item's box (same padding/radius/hover-white-card feel) —
+   deliberately no overflow:hidden here, unlike .nav-item, so the "..." menu
+   (an absolutely-positioned child) isn't clipped by its own row. */
 .history-item:hover{background:#fff;color:var(--text);}
 .history-item.active{background:#fff;color:var(--accent1);font-weight:650;border-color:#e2f4fd;box-shadow:0 5px 14px rgba(54,95,145,.08);}
 .history-item .h-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 3px rgba(54,95,145,.07);}
 .history-item-main{
   display:flex; align-items:center; gap:9px; flex:1 1 auto; min-width:0;
-  background:none; border:0; padding:7px 8px; text-align:left;
-  color:inherit; font:inherit; white-space:nowrap; overflow:hidden;
+  background:none; border:0; padding:0; margin:0; text-align:left;
+  color:inherit; font:inherit; font-size:inherit; white-space:nowrap; overflow:hidden;
 }
 .history-title{overflow:hidden;text-overflow:ellipsis;}
 .history-pin-icon{flex:0 0 auto;font-size:10px;}
@@ -381,14 +385,14 @@ body.glow-off .send-btn:hover{
   background:#fff; outline:none; box-shadow:0 0 0 3px var(--accent-soft);
 }
 .history-menu-btn{
+  position:absolute; right:6px; top:50%; transform:translateY(-50%);
   flex:0 0 auto; width:26px; height:26px; border-radius:7px;
   font-size:15px; color:var(--text-faint); opacity:0;
   transition:opacity .15s, background .15s, color .15s;
 }
 .history-item:hover .history-menu-btn,
-.history-menu-btn.open,
-.history-item:has(.history-menu-panel.open) .history-menu-btn{ opacity:1; }
-.history-menu-panel{ top:30px; right:6px; width:170px; padding:6px; }
+.history-item:has(.history-menu-panel.open) .history-menu-btn{ opacity:1; background:#fff; }
+.dropdown-panel.history-menu-panel{ top:34px; right:6px; width:170px; padding:6px; }
 .history-menu-panel button{
   width:100%; text-align:left; padding:8px 9px; border-radius:8px;
   background:none; border:none; font-size:13px; font-weight:600; color:var(--text);

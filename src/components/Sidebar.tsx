@@ -157,26 +157,24 @@ export default function Sidebar({
                     </>
                   )}
                 </button>
-                <div className="dropdown-wrap">
-                  <button
-                    type="button"
-                    className="icon-btn history-menu-btn"
-                    onClick={(e) => onToggleChatMenu(c.id, e)}
-                    aria-label="Chat options"
-                  >
-                    ⋯
+                <button
+                  type="button"
+                  className="icon-btn history-menu-btn"
+                  onClick={(e) => onToggleChatMenu(c.id, e)}
+                  aria-label="Chat options"
+                >
+                  ⋯
+                </button>
+                <div className={`dropdown-panel history-menu-panel${openChatMenuId === c.id ? " open" : ""}`}>
+                  <button type="button" onClick={() => startRename(c)}>
+                    ✏️ Rename
                   </button>
-                  <div className={`dropdown-panel history-menu-panel${openChatMenuId === c.id ? " open" : ""}`}>
-                    <button type="button" onClick={() => startRename(c)}>
-                      ✏️ Rename
-                    </button>
-                    <button type="button" onClick={() => onTogglePinChat(c.id)}>
-                      📌 {c.pinned ? "Unpin chat" : "Pin chat"}
-                    </button>
-                    <button type="button" className="danger" onClick={() => onDeleteChat(c.id)}>
-                      🗑️ Delete
-                    </button>
-                  </div>
+                  <button type="button" onClick={() => onTogglePinChat(c.id)}>
+                    📌 {c.pinned ? "Unpin chat" : "Pin chat"}
+                  </button>
+                  <button type="button" className="danger" onClick={() => onDeleteChat(c.id)}>
+                    🗑️ Delete
+                  </button>
                 </div>
               </div>
             );
