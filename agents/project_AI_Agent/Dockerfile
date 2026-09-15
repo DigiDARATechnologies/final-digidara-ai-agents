@@ -11,6 +11,7 @@ WORKDIR /app
 # lean without changing behavior. Add it later if that evidence path is
 # needed in this deployment.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
