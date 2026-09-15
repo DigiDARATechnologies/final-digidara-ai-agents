@@ -68,9 +68,10 @@ def invoke():
         return jsonify({"student": student, "sessionToken": token, "expiresAt": expires_at})
 
     if action == "usage_summary":
-        # Platform-wide metric, not scoped to a student — no session required,
-        # same as health/ensure_session above.
-        return jsonify(repo().get_llm_usage_summary())
+        # Scoped to the verified DigiDARA identity the orchestrator gateway
+        # forwards via X-DigiDARA-User-Id — no session required, same as
+        # health/ensure_session above.
+        return jsonify(repo().get_llm_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
 
     if action == "list_languages":
         # Static reference data from Judge0 itself — no session required.

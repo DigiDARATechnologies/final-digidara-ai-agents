@@ -675,17 +675,20 @@ class DailyChallengeSummary(db.Model):
 
 
 class LlmUsage(db.Model):
-    """One row per LLM call — platform-wide token usage visibility, mirroring
-    agents/project_AI_Agent's identical table. groq_usage.log_groq_attempt
-    deliberately only prints to the terminal ("does not store usage in the
-    database... does not expose prompts, learner answers, API keys, JWTs,
-    headers or model response text") — this table respects that same privacy
-    boundary: only the model name, token counts and an operation label are
-    ever written here, nothing from the request/response bodies."""
+    """One row per LLM call, attributed to the verified DigiDARA user id
+    (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that
+    triggered it, mirroring agents/project_AI_Agent's identical table.
+    groq_usage.log_groq_attempt deliberately only prints to the terminal
+    ("does not store usage in the database... does not expose prompts,
+    learner answers, API keys, JWTs, headers or model response text") — this
+    table respects that same privacy boundary: only the model name, token
+    counts, an operation label and the caller's platform user id are ever
+    written here, nothing from the request/response bodies."""
 
     __tablename__ = "llm_usage"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.String(128), nullable=True, index=True)
     provider = db.Column(db.String(50))
     model_name = db.Column(db.String(100))
     prompt_tokens = db.Column(db.Integer, default=0)

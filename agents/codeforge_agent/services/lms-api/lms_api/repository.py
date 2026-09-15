@@ -392,35 +392,46 @@ class MySqlRepository:
                 "sequence": int(row["display_order"]), "progress": row.get("progress", "Not Started"),
                 "best_score": int(row.get("best_score", 0)), "attempts": int(row.get("attempts", 0))}
 
-    def record_llm_usage(self, provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type):
+    def record_llm_usage(self, provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type, user_id=None):
         """Best-effort — a usage-logging failure must never break the AI
-        Tutor call it's attached to."""
+        Tutor call it's attached to. `user_id` is the verified DigiDARA
+        identity (`X-DigiDARA-User-Id`, forwarded by the orchestrator
+        gateway) that triggered the call, so usage can be reported per user
+        instead of as a platform-wide total."""
         try:
             with connection() as conn, conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO llm_usage
-                         (provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type)
-                       VALUES (%s,%s,%s,%s,%s,%s)""",
-                    (provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type),
+                         (user_id, provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (user_id, provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type),
                 )
                 conn.commit()
         except Exception:
             current_app.logger.warning("failed to record LLM usage", exc_info=True)
 
-    def get_llm_usage_summary(self):
-        """Platform-wide token usage — backs the Profile page's usage dashboard."""
+    def get_llm_usage_summary(self, user_id=None):
+        """Token usage for this agent, scoped to the verified DigiDARA
+        identity that made the calls — backs the Settings > Usage dashboard.
+        Without a verified identity there is nothing safe to attribute the
+        request to, so this returns all-zero totals rather than a
+        platform-wide aggregate."""
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 """SELECT COUNT(*) AS total_requests,
                           COALESCE(SUM(prompt_tokens),0) AS prompt_tokens,
                           COALESCE(SUM(completion_tokens),0) AS completion_tokens,
                           COALESCE(SUM(total_tokens),0) AS total_tokens
-                   FROM llm_usage"""
+                   FROM llm_usage WHERE user_id = %s""",
+                (user_id,),
             )
             totals = cursor.fetchone()
             cursor.execute(
-                "SELECT request_type, COALESCE(SUM(total_tokens),0) AS tokens FROM llm_usage GROUP BY request_type"
+                "SELECT request_type, COALESCE(SUM(total_tokens),0) AS tokens FROM llm_usage WHERE user_id = %s GROUP BY request_type",
+                (user_id,),
             )
+            # `user_id = NULL` never matches in SQL, so an unverified caller
+            # naturally gets all-zero totals and an empty breakdown here.
             by_type = cursor.fetchall()
         return {
             "agent_name": "codeforge_agent",

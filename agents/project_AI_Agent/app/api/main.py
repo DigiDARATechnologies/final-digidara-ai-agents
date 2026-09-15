@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from app.api.routes import router  # noqa: E402
 from app.db.database import init_db  # noqa: E402
 from app.integration.registry_client import registry_client  # noqa: E402
+from app.request_context import current_user_id  # noqa: E402
 
 ALLOWED_ORIGINS = [
     origin.strip()
@@ -35,6 +36,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def bind_request_user(request, call_next):
+    # Lets deep call sites (e.g. app/llm/client.py's usage logging) attribute
+    # work to the caller without threading the header through every function.
+    token = current_user_id.set(request.headers.get("x-digidara-user-id"))
+    try:
+        return await call_next(request)
+    finally:
+        current_user_id.reset(token)
 
 app.include_router(router)
 

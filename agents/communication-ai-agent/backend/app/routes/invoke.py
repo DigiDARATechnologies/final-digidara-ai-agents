@@ -175,11 +175,11 @@ def invoke():
     if action == "bridge_identity":
         return _bridge_identity(payload)
     if action == "usage_summary":
-        # Platform-wide metric, not scoped to a student — no session
-        # required, matching capstone_project_agent/codeforge_agent's own
-        # usage_summary actions.
+        # Scoped to the verified DigiDARA identity the orchestrator gateway
+        # forwards via X-DigiDARA-User-Id — no session required, matching
+        # capstone_project_agent/codeforge_agent's own usage_summary actions.
         from ..services.groq_usage import get_usage_summary
-        return jsonify(get_usage_summary())
+        return jsonify(get_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
     if action not in ACTION_MAP:
         return _error(f"Unknown action: {action!r}", "unknown_action")
     return _forward(action, payload)

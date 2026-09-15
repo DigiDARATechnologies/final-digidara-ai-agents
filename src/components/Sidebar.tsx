@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 
@@ -9,6 +10,7 @@ interface SidebarProps {
   chats: Chat[];
   currentChatId: string | null;
   userMenuOpen: boolean;
+  openChatMenuId: string | null;
   onToggleCollapse: () => void;
   onNewChat: () => void;
   onGoHome: () => void;
@@ -16,6 +18,10 @@ interface SidebarProps {
   onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
   onUserMenuAction: (action: "profile" | "settings" | "logout") => void;
+  onToggleChatMenu: (chatId: string, e: React.MouseEvent) => void;
+  onRenameChat: (chatId: string, title: string) => void;
+  onTogglePinChat: (chatId: string) => void;
+  onDeleteChat: (chatId: string) => void;
 }
 
 export default function Sidebar({
@@ -26,6 +32,7 @@ export default function Sidebar({
   chats,
   currentChatId,
   userMenuOpen,
+  openChatMenuId,
   onToggleCollapse,
   onNewChat,
   onGoHome,
@@ -33,8 +40,28 @@ export default function Sidebar({
   onNavAction,
   onToggleUserMenu,
   onUserMenuAction,
+  onToggleChatMenu,
+  onRenameChat,
+  onTogglePinChat,
+  onDeleteChat,
 }: SidebarProps) {
-  const sortedChats = [...chats].sort((a, b) => b.updatedAt - a.updatedAt);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const sortedChats = [...chats].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return b.updatedAt - a.updatedAt;
+  });
+
+  function startRename(chat: Chat) {
+    setRenamingId(chat.id);
+    setRenameValue(chat.title);
+  }
+
+  function commitRename(chatId: string) {
+    onRenameChat(chatId, renameValue);
+    setRenamingId(null);
+  }
 
   return (
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
@@ -101,15 +128,57 @@ export default function Sidebar({
         ) : (
           sortedChats.map((c) => {
             const agent = findAgent(c.agentId) || DEFAULT_AGENT;
+            const isRenaming = renamingId === c.id;
             return (
-              <button
-                key={c.id}
-                className={`history-item${c.id === currentChatId ? " active" : ""}`}
-                onClick={() => onOpenChat(c.id)}
-              >
-                <span className="h-dot" style={{ background: agent.color || "#365f91" }} />
-                <span className="history-title">{c.title}</span>
-              </button>
+              <div key={c.id} className={`history-item${c.id === currentChatId ? " active" : ""}`}>
+                <button
+                  type="button"
+                  className="history-item-main"
+                  onClick={() => !isRenaming && onOpenChat(c.id)}
+                >
+                  <span className="h-dot" style={{ background: agent.color || "#365f91" }} />
+                  {isRenaming ? (
+                    <input
+                      className="history-rename-input"
+                      autoFocus
+                      value={renameValue}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => commitRename(c.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(c.id);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      {c.pinned && <span className="history-pin-icon" title="Pinned">📌</span>}
+                      <span className="history-title">{c.title}</span>
+                    </>
+                  )}
+                </button>
+                <div className="dropdown-wrap">
+                  <button
+                    type="button"
+                    className="icon-btn history-menu-btn"
+                    onClick={(e) => onToggleChatMenu(c.id, e)}
+                    aria-label="Chat options"
+                  >
+                    ⋯
+                  </button>
+                  <div className={`dropdown-panel history-menu-panel${openChatMenuId === c.id ? " open" : ""}`}>
+                    <button type="button" onClick={() => startRename(c)}>
+                      ✏️ Rename
+                    </button>
+                    <button type="button" onClick={() => onTogglePinChat(c.id)}>
+                      📌 {c.pinned ? "Unpin chat" : "Pin chat"}
+                    </button>
+                    <button type="button" className="danger" onClick={() => onDeleteChat(c.id)}>
+                      🗑️ Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
             );
           })
         )}

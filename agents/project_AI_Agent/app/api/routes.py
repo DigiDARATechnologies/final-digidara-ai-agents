@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import func
@@ -111,21 +111,27 @@ def get_config() -> ConfigOut:
     )
 
 
-@router.get("/usage/summary", response_model=UsageSummaryResponse)
-def usage_summary() -> UsageSummaryResponse:
-    """Platform-wide token usage for this agent — not per-user, since there
-    is no per-user LLM quota concept yet. Backs the Profile page's usage
-    dashboard."""
+def usage_summary(user_id: str | None) -> UsageSummaryResponse:
+    """Token usage for this agent, scoped to the verified DigiDARA identity
+    (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that made
+    the calls. Without a verified identity there is nothing safe to
+    attribute the request to, so this returns all-zero totals rather than
+    a platform-wide aggregate. Backs the Settings > Usage dashboard."""
     session = get_session()
     try:
-        total_requests, total_tokens, prompt_tokens, completion_tokens = session.query(
+        base = (
+            session.query(LlmUsage).filter(LlmUsage.user_id == user_id)
+            if user_id
+            else session.query(LlmUsage).filter(LlmUsage.id.is_(None))
+        )
+        total_requests, total_tokens, prompt_tokens, completion_tokens = base.with_entities(
             func.count(LlmUsage.id),
             func.coalesce(func.sum(LlmUsage.total_tokens), 0),
             func.coalesce(func.sum(LlmUsage.prompt_tokens), 0),
             func.coalesce(func.sum(LlmUsage.completion_tokens), 0),
         ).one()
         by_type = dict(
-            session.query(LlmUsage.request_type, func.coalesce(func.sum(LlmUsage.total_tokens), 0))
+            base.with_entities(LlmUsage.request_type, func.coalesce(func.sum(LlmUsage.total_tokens), 0))
             .group_by(LlmUsage.request_type)
             .all()
         )
@@ -139,6 +145,13 @@ def usage_summary() -> UsageSummaryResponse:
         completion_tokens=int(completion_tokens),
         by_request_type={k: int(v) for k, v in by_type.items()},
     )
+
+
+@router.get("/usage/summary", response_model=UsageSummaryResponse)
+def usage_summary_route(
+    x_digidara_user_id: str | None = Header(None, alias="X-DigiDARA-User-Id"),
+) -> UsageSummaryResponse:
+    return usage_summary(x_digidara_user_id)
 
 
 def _thread_config(thread_id: str) -> dict:
@@ -713,7 +726,7 @@ async def invoke(request: Request) -> JSONResponse:
     elif action == "status":
         result = await run_in_threadpool(get_status, str(payload.get("thread_id", "")))
     elif action == "usage_summary":
-        result = await run_in_threadpool(usage_summary)
+        result = await run_in_threadpool(usage_summary, request.headers.get("x-digidara-user-id"))
     elif action == "submit_viva_answer":
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
     else:
