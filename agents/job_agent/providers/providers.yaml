@@ -1,0 +1,409 @@
+# DigiDARA jobs providers — configuration-driven company/source lists.
+#
+# Do not put secrets here. Provider credentials (e.g. Apify's API token)
+# come from environment variables and are never committed to this file.
+
+greenhouse:
+  enabled: true
+
+  # Jobs are only kept if BOTH filters pass:
+  #   1. location_keywords: the job's location text must contain at least
+  #      one of these (case-insensitive substring match). This is how the
+  #      platform stays scoped to Tamil Nadu, Bengaluru, and Hyderabad.
+  #   2. entry_level_only + exclude/entry title keywords: a title is
+  #      dropped if it contains an exclude keyword (senior, lead, manager,
+  #      ...) UNLESS it also contains an entry keyword (junior, associate,
+  #      intern, ...), which always wins. Titles with no signal either way
+  #      are kept by default (most plain "X Engineer" titles are entry/mid).
+  # This is a heuristic on the title text Greenhouse provides, not a real
+  # seniority field, so it will not be perfect — adjust the keyword lists
+  # below as needed. Full Tamil Nadu district coverage (used for the
+  # location engine's per-job classification, a separate and more precise
+  # step than this keyword pre-filter) lives in tn_location.py.
+  filters:
+    entry_level_only: true
+    location_keywords:
+      - chennai
+      - coimbatore
+      - madurai
+      - tiruchirappalli
+      - trichy
+      - salem
+      - tiruppur
+      - erode
+      - vellore
+      - tirunelveli
+      - thoothukudi
+      - thanjavur
+      - dindigul
+      - hosur
+      - kanchipuram
+      - chengalpattu
+      - "tamil nadu"
+      - tamilnadu
+      - bengaluru
+      - bangalore
+      - hyderabad
+    exclude_title_keywords:
+      - senior
+      - "sr."
+      - staff
+      - principal
+      - lead
+      - manager
+      - director
+      - "head of"
+      - vp
+      - "vice president"
+      - chief
+      - architect
+    entry_title_keywords:
+      - entry
+      - junior
+      - "jr."
+      - associate
+      - graduate
+      - intern
+      - trainee
+      - fresher
+      - campus
+      - "new grad"
+      - "early career"
+
+  # Each entry is a company whose public Greenhouse job board should be
+  # collected. `board_id` is the identifier Greenhouse uses in its public
+  # Job Board API: https://boards-api.greenhouse.io/v1/boards/<board_id>/jobs
+  #
+  # `district`/`city`/`state`/`country`/`category` are registry-level
+  # metadata about the company (its known primary Tamil Nadu presence,
+  # per the verified source list) — informational only. They do NOT
+  # determine whether any given fetched job counts as a Tamil Nadu job;
+  # that is decided per-job, from the job's own location field, by
+  # tn_location.py. A Tamil Nadu company can post non-Tamil Nadu jobs and
+  # vice versa.
+  #
+  # `enabled: false` entries below are companies verified (both the
+  # public API and the hosted job-boards.greenhouse.io career page
+  # checked live) to have their Greenhouse board taken offline. The
+  # board id itself was confirmed correct against each company's own
+  # indexed postings before being marked disabled — this is not a
+  # guess-the-slug situation. Re-enable if the board returns.
+  #
+  # This is a verified Tamil Nadu Greenhouse technology source *seed
+  # set*, not a claim of complete coverage — see providers/README.md.
+  companies:
+    - name: Appian
+      board_id: appian
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software
+
+    - name: Zuora
+      board_id: zuora
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software
+
+    - name: DevRev
+      board_id: devrev
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / AI
+
+    # Verified 2026-09-03: board id confirmed correct (matches Tekion's
+    # own indexed postings at job-boards.greenhouse.io/tekion), but both
+    # the API and that hosted page now return 404. Re-enable if it
+    # returns.
+    - name: Tekion
+      board_id: tekion
+      enabled: false
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Automotive Platform
+
+    - name: FourKites
+      board_id: fourkites
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Supply Chain
+
+    - name: Striim, Inc.
+      board_id: striiminc
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Data Streaming
+
+    - name: Sagent India
+      board_id: sagentindia
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Fintech
+
+    - name: WPP
+      board_id: wpp
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: AdTech / Marketing Technology
+
+    - name: Episode Six
+      board_id: episodesix
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Payments
+
+    - name: TechGrove by Banyan Software
+      board_id: techgrovebybanyansoftware
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software
+
+    # Verified 2026-09-03: board id confirmed correct (matches
+    # Integrate's own indexed postings at
+    # job-boards.greenhouse.io/integrate), but both the API and that
+    # hosted page now return 404. Re-enable if it returns.
+    - name: Integrate
+      board_id: integrate
+      enabled: false
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / B2B Marketing
+
+    # Verified 2026-09-03: board id confirmed correct (matches
+    # Arcadia's own indexed postings at
+    # job-boards.greenhouse.io/arcadiacareers), but both the API and
+    # that hosted page now return 404. Re-enable if it returns.
+    - name: Arcadia
+      board_id: arcadiacareers
+      enabled: false
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Clean Energy
+
+    # Verified 2026-09-03: board id confirmed correct (matches Pleo's
+    # own indexed postings at job-boards.greenhouse.io/pleo), but both
+    # the API and that hosted page now return 404. Re-enable if it
+    # returns.
+    - name: Pleo
+      board_id: pleo
+      enabled: false
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Fintech
+
+    - name: Sony Music Entertainment
+      board_id: sonymusicasiacareers
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Media / Entertainment Technology
+
+    # Verified 2026-09-03: board id confirmed correct (matches Perch
+    # Energy's own indexed postings at
+    # job-boards.greenhouse.io/perchenergycareers), but both the API
+    # and that hosted page now return 404. Re-enable if it returns.
+    - name: Perch Energy
+      board_id: perchenergycareers
+      enabled: false
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Clean Energy
+
+    - name: ZoomInfo
+      board_id: zoominfo
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Sales Intelligence
+
+    - name: Tide
+      board_id: tide
+      enabled: true
+      district: Chennai
+      city: Chennai
+      state: Tamil Nadu
+      country: India
+      category: Software / Fintech
+
+    # --- Newly discovered Coimbatore technology sources ---
+
+    - name: AppViewX
+      board_id: appviewx
+      enabled: true
+      district: Coimbatore
+      city: Coimbatore
+      state: Tamil Nadu
+      country: India
+      category: Software / DevOps / Security / Automation
+
+    - name: Orion Innovation
+      board_id: orioninnovationnaukri
+      enabled: true
+      district: Coimbatore
+      city: Coimbatore
+      state: Tamil Nadu
+      country: India
+      category: Digital Engineering / AI / Data / Cloud / Software
+
+    - name: Bradken
+      board_id: bradken
+      enabled: true
+      district: Coimbatore
+      city: Coimbatore
+      state: Tamil Nadu
+      country: India
+      category: Engineering Software / Product Engineering / Industrial Technology
+
+    - name: Arcana Analytics
+      board_id: arcanaanalytics
+      enabled: true
+      district: Coimbatore
+      city: Coimbatore
+      state: Tamil Nadu
+      country: India
+      category: Analytics / Software / Data / QA
+
+    - name: Twin Health
+      board_id: twinhealth
+      enabled: true
+      district: Coimbatore
+      city: Coimbatore
+      state: Tamil Nadu
+      country: India
+      category: AI / IoT / Digital Health / Software
+
+    # --- Candidates: NOT activated, pending further validation ---
+    #
+    # `status: pending_validation` keeps these out of automatic sync and
+    # collection entirely (see sync.py) until someone confirms them and
+    # flips this to `enabled: true` without `status`.
+
+    # Karat: the public Greenhouse board resolves (verified 2026-09-03),
+    # but third-party evidence of its India hiring location conflicts —
+    # one source ties an India role to Bangalore, another to Coimbatore.
+    # Not inferring a Tamil Nadu location from conflicting data.
+    - name: Karat
+      board_id: karat
+      enabled: false
+      status: pending_validation
+      district: null
+      city: null
+      state: null
+      country: India
+      category: Software / Technical Interviewing
+      candidate_note: "Board resolves; India office location disputed between Bangalore and Coimbatore in third-party sources. Do not activate until location is confirmed."
+
+    # Nexaminds: public evidence of a Greenhouse-sourced Coimbatore job
+    # exists, but the company-to-board relationship (which Greenhouse
+    # board id actually belongs to Nexaminds) has not been independently
+    # confirmed. No board_id is configured — inventing one would violate
+    # this project's "never guess a board id" rule. Add a `board_id` and
+    # flip `enabled: true` (dropping `status`) once verified.
+    # - name: Nexaminds
+    #   status: pending_validation
+    #   district: Coimbatore
+    #   city: Coimbatore
+    #   state: Tamil Nadu
+    #   country: India
+    #   category: Software
+    #   candidate_note: "Company-to-Greenhouse-board relationship not yet verified; no board_id configured."
+
+# Apify scaffold — disabled until an API token and at least one actor are
+# configured. Set the token via the APIFY_API_TOKEN environment variable
+# (never in this file). See backend/jobs/providers/apify.py.
+apify:
+  enabled: true
+  # Each entry is one job board scraped through an Apify actor, admin-run
+  # manually (never on the automatic Greenhouse schedule) — see
+  # admin_apify_run's `platform` argument and the "Run now" buttons per
+  # platform in the admin Sources tab. `platform` is the dispatch key
+  # providers/apify.py's normalize_job() uses to pick the right field
+  # mapping for that actor's specific output shape.
+  actors:
+    - platform: naukri
+      actor_id: crawloop/naukri-jobs-scraper
+      enabled: true
+
+    - platform: foundit
+      actor_id: crawloop/foundit-jobs-scraper
+      enabled: true
+
+    - platform: hirist
+      actor_id: crawloop/hirist-jobs-scraper
+      enabled: true
+
+    - platform: instahyre
+      actor_id: parsebird/instahyre-jobs-scraper
+      enabled: true
+
+    - platform: internshala
+      actor_id: hipersoft/internshala-scraper
+      enabled: true
+
+    - platform: indeed
+      actor_id: solidscrape/indeed-jobs-scraper
+      enabled: true
+
+    - platform: glassdoor
+      actor_id: simpleapi/glassdoor-jobs-scraper
+      enabled: true
+
+    # Pending: needs a LinkedIn actor id and a sample dataset item before
+    # normalize_job() can map it (every LinkedIn-scraping actor on Apify
+    # uses different field names) — kept here, disabled, as the known next
+    # platform to wire up.
+    - platform: linkedin
+      actor_id: artificially/linkedin-jobs-scraper
+      enabled: true
+      run_input:
+        searchQueries:
+          - software engineer
+        location: Chennai, Tamil Nadu, India
+        maxJobs: 5
+        jobType:
+          - full-time
+        experienceLevel:
+          - entry
+          - associate
+        datePosted: past-week
+        remoteFilter: any

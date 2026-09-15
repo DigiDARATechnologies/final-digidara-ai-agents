@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Integer, PrimaryKeyConstraint, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -55,6 +55,9 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     google_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
+    # Platform operator status. The gateway derives the Job Agent admin
+    # header from this server-side value, never from browser input.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.

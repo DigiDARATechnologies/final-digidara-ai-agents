@@ -18,6 +18,7 @@ AGENTS = [
     ('aptitude-agent', 'agents/aptitude_agent', 5000, 'app:app', 'sync'),
     ('resume-builder-agent', 'agents/resume_builder_agent/backend', 5010, 'run:app', 'sync'),
     ('certificate-agent', 'agents/certificate_agent', 8008, 'cert_app.main:app', 'uvicorn.workers.UvicornWorker'),
+    ('job-agent', 'agents/job_agent', 5020, 'job_agent.app:create_app()', 'sync'),
 ]
 SUITES = {
     'orchestrator': ['tests'],
@@ -27,6 +28,7 @@ SUITES = {
     'aptitude-agent': ['backend/unit_tests', 'backend/tests'],
     'resume-builder-agent': ['tests'],
     'certificate-agent': ['tests'],
+    'job-agent': ['tests'],
 }
 
 
@@ -108,7 +110,9 @@ def run_agent(agent, skip_build):
                 command += ['--entrypoint', 'python', name, '/test_runner.py', *SUITES[name]]
                 with (artifacts / 'suite.log').open('w', encoding='utf-8') as log:
                     suite_result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200)
-                print((artifacts / 'suite.log').read_text(encoding='utf-8'), flush=True)
+                suite_output = (artifacts / 'suite.log').read_text(encoding='utf-8')
+                output_encoding = sys.stdout.encoding or 'utf-8'
+                print(suite_output.encode(output_encoding, errors='replace').decode(output_encoding), flush=True)
                 result_code = result_code or suite_result.returncode
             else:
                 print(f'{name}: no existing unit/integration suite; health check only.', flush=True)

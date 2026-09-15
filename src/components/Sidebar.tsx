@@ -13,7 +13,7 @@ interface SidebarProps {
   onNewChat: () => void;
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
-  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings") => void;
+  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
   onUserMenuAction: (action: "profile" | "settings" | "logout") => void;
 }
@@ -84,6 +84,16 @@ export default function Sidebar({
           <span className="nav-icon">⚙️</span>
           <span className="label">Settings</span>
         </button>
+        <button className="nav-item" onClick={() => onNavAction("playground")}>
+          <span className="nav-icon">▶</span>
+          <span className="label">Code Playground</span>
+        </button>
+        {user.isAdmin && (
+          <button className="nav-item" onClick={() => onNavAction("admin")}>
+            <span className="nav-icon">🛠️</span>
+            <span className="label">Admin</span>
+          </button>
+        )}
       </nav>
 
       <div className="sidebar-divider">

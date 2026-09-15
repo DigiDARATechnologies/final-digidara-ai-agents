@@ -29,6 +29,11 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str | None = None
+    new_password: str = Field(min_length=8, max_length=255)
+
+
 class GoogleAuthRequest(BaseModel):
     code: str = Field(min_length=1)
     # Must exactly match the redirect_uri used to obtain `code` — Google's
@@ -46,6 +51,7 @@ class UserOut(BaseModel):
     name: str
     email: str
     mobile: str | None
+    is_admin: bool = False
     consent_accepted_at: datetime | None = None
     consent_policy_version: str | None = None
 
