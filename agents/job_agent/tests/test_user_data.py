@@ -1,3 +1,4 @@
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +58,65 @@ class UserDataLifecycleTests(unittest.TestCase):
         self.assertFalse(resume.exists())
         cursor.execute.assert_any_call("DELETE FROM user_job_profiles WHERE user_id=%s", ("learner",))
         db.commit.assert_called_once()
+
+    @patch("job_agent.routes.get_db")
+    def test_delete_removes_orphaned_resume_files_not_just_the_tracked_one(self, get_db):
+        """Regression: before re-upload cleanup existed, a user who uploaded
+        more than one resume had every earlier file survive erasure, since
+        only the currently-tracked filename was ever removed."""
+        db = MagicMock()
+        cursor = MagicMock()
+        db.cursor.return_value = cursor
+        cursor.fetchone.return_value = {"user_id": "learner", "resume_filename": "learner/current.pdf"}
+        get_db.return_value = db
+
+        with tempfile.TemporaryDirectory() as directory, patch("job_agent.routes.UPLOAD_DIR", Path(directory)):
+            user_dir = Path(directory) / "learner"
+            user_dir.mkdir()
+            current = user_dir / "current.pdf"
+            orphan = user_dir / "orphan-from-an-earlier-upload.pdf"
+            current.write_bytes(b"resume")
+            orphan.write_bytes(b"old resume")
+
+            response = self.client.post(
+                "/api/invoke",
+                json={"action": "delete_user_data", "payload": {}},
+                headers=self.headers,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(user_dir.exists())
+            self.assertFalse(orphan.exists())
+
+    @patch("job_agent.routes.get_db")
+    def test_reupload_deletes_the_previous_resume_file(self, get_db):
+        db = MagicMock()
+        cursor = MagicMock()
+        db.cursor.return_value = cursor
+        cursor.fetchone.return_value = ("learner/old.pdf",)
+        get_db.return_value = db
+
+        with tempfile.TemporaryDirectory() as directory, patch("job_agent.routes.UPLOAD_DIR", Path(directory)):
+            user_dir = Path(directory) / "learner"
+            user_dir.mkdir()
+            old_resume = user_dir / "old.pdf"
+            old_resume.write_bytes(b"old resume")
+
+            response = self.client.post(
+                "/api/invoke",
+                data={
+                    "action": "upload_resume",
+                    "payload": "{}",
+                    "file": (io.BytesIO(b"new resume"), "new_resume.pdf"),
+                },
+                content_type="multipart/form-data",
+                headers=self.headers,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(old_resume.exists())
+            # The newly-saved file is the only thing left in the folder.
+            self.assertEqual(len(list(user_dir.iterdir())), 1)
 
 
 if __name__ == "__main__":

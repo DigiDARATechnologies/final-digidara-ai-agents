@@ -90,6 +90,11 @@ function feedMessage(feed: JobFeedItem[], planTier: string, intro: string): JobF
 }
 
 function jobDetailMessage(job: JobFeedItem, feed: JobFeedItem[]): JobFetchFlowMessage {
+  // Backend already rejects any non-http(s) apply_url at ingestion, but this
+  // is the render-side half of that same guarantee — job data ultimately
+  // comes from third-party sources DigiDARA doesn't control, and this must
+  // never render or open a raw, unvalidated URL (e.g. a javascript: link).
+  const safeApplyUrl = safeJobApplyUrl(job.apply_url);
   const lines = [
     `${job.title} @ ${job.company}`,
     job.location ? `Location: ${job.location}` : null,
@@ -97,20 +102,23 @@ function jobDetailMessage(job: JobFeedItem, feed: JobFeedItem[]): JobFetchFlowMe
     job.skills.length ? `Skills: ${job.skills.join(", ")}` : null,
     `Match: ${job.match_score}% — ${job.match_reasons.join("; ")}`,
     job.description ? `\n${job.description.slice(0, 600)}` : null,
-    `\nApply here: ${job.apply_url}`,
+    safeApplyUrl ? `\nApply here: ${safeApplyUrl}` : null,
   ].filter(Boolean);
   // "open:" is a client-side-only convention App.tsx intercepts to open the
   // real apply page in a new tab, instead of sending it as a chat turn —
   // this is the one-click fix for the apply link previously being inert text.
-  const options: ChatOption[] = [
-    { label: "Apply now ↗", value: `open:${job.apply_url}` },
+  const options: ChatOption[] = [];
+  if (safeApplyUrl) {
+    options.push({ label: "Apply now ↗", value: `open:${safeApplyUrl}` });
+  }
+  options.push(
     { label: job.is_saved ? "Unsave" : "Save", value: job.is_saved ? `unsave:${job.id}` : `save:${job.id}` },
     { label: job.application_status === "applied" ? "Applied ✓ (mark again)" : "Mark as applied", value: `apply:${job.id}` },
     // Not a match for you — removes it from this feed. Reversible from the
     // dashboard's "Hidden jobs" section (Unhide), which is the only other
     // place a hidden job is ever listed again.
     { label: "Not interested (hide)", value: `hide:${job.id}` },
-  ];
+  );
   // Lets the learner move through every match one at a time without
   // detouring back to the full list between each one.
   const currentIndex = feed.findIndex((item) => item.id === job.id);

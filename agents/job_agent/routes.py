@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import shutil
 import uuid
 from datetime import date, datetime
 
@@ -25,6 +27,8 @@ from .scraper import _validate_public_url, ScraperError
 from .service import _clean_job, queue_source_run_once
 from .tn_location import ALL_TN_DISTRICTS
 
+
+logger = logging.getLogger(__name__)
 
 job_bp = Blueprint("job_agent", __name__)
 SOURCE_TYPES = {"json_ld", "html_cards", "rss", "greenhouse", "apify"}
@@ -52,6 +56,33 @@ def _close(cursor, db):
 def _get_profile(cursor, user_id):
     cursor.execute("SELECT * FROM user_job_profiles WHERE user_id=%s", (user_id,))
     return cursor.fetchone()
+
+
+def _user_upload_dir(user_id):
+    """The per-user resume folder, or None if `user_id` could somehow escape
+    UPLOAD_DIR (defensive — user_id is a platform-issued id, never raw
+    client input, but this is cheap insurance for a path used in deletes)."""
+    upload_root = UPLOAD_DIR.resolve()
+    candidate = (UPLOAD_DIR / user_id).resolve()
+    if candidate != upload_root and upload_root in candidate.parents:
+        return candidate
+    return None
+
+
+def _delete_resume_file(resume_filename):
+    """Best-effort delete of one stored resume, given the DB's
+    `<user_id>/<stored_name>` value. Never raises — a missing file or a
+    race with a concurrent delete must not fail the caller's request."""
+    if not resume_filename:
+        return
+    upload_root = UPLOAD_DIR.resolve()
+    resume_path = (UPLOAD_DIR / resume_filename).resolve()
+    if upload_root != resume_path.parent and upload_root not in resume_path.parents:
+        return
+    try:
+        resume_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("Could not delete resume file %s", resume_path, exc_info=True)
 
 
 def _bounded_int(raw_value, default, minimum=0, maximum=None):
@@ -158,6 +189,14 @@ def my_resume_upload():
     cursor = db.cursor()
     try:
         cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
+        # Read the outgoing filename in the same transaction as the
+        # overwrite, so a replaced resume is never left orphaned on disk —
+        # without this, every re-upload leaked the previous file, which also
+        # meant GDPR erasure (my_data's DELETE branch) could silently miss
+        # older files it never knew about.
+        cursor.execute("SELECT resume_filename FROM user_job_profiles WHERE user_id=%s", (g.job_user_id,))
+        previous = cursor.fetchone()
+        previous_resume_filename = previous[0] if previous else None
         cursor.execute(
             "UPDATE user_job_profiles SET resume_filename=%s, resume_original_name=%s WHERE user_id=%s",
             (f"{g.job_user_id}/{stored_name}", original_name, g.job_user_id),
@@ -166,6 +205,8 @@ def my_resume_upload():
     finally:
         cursor.close()
         db.close()
+    if previous_resume_filename:
+        _delete_resume_file(previous_resume_filename)
     return jsonify({"message": "Resume uploaded", "filename": original_name})
 
 
@@ -376,23 +417,21 @@ def my_data():
                 "job_actions": [_serialize(row) for row in cursor.fetchall()],
             })
 
-        resume_filename = profile.get("resume_filename") if profile else None
         cursor.execute("DELETE FROM user_job_profiles WHERE user_id=%s", (g.job_user_id,))
         db.commit()
     finally:
         _close(cursor, db)
 
-    if resume_filename:
-        upload_root = UPLOAD_DIR.resolve()
-        resume_path = (UPLOAD_DIR / resume_filename).resolve()
-        if upload_root == resume_path.parent or upload_root in resume_path.parents:
-            try:
-                resume_path.unlink(missing_ok=True)
-                resume_path.parent.rmdir()
-            except OSError:
-                # Database erasure is authoritative; an empty-directory or
-                # already-removed-file race must not make deletion non-idempotent.
-                pass
+    # Removes the whole per-user folder, not just the currently-tracked
+    # resume_filename — re-uploading used to leak the previous file (see
+    # my_resume_upload's cleanup, added alongside this), so relying on a
+    # single tracked filename here could leave older resumes behind for
+    # any account that had uploaded more than one. shutil.rmtree with
+    # ignore_errors covers "never uploaded a resume" (no folder to remove)
+    # and "already erased" the same way: nothing to do, not an error.
+    user_dir = _user_upload_dir(g.job_user_id)
+    if user_dir is not None:
+        shutil.rmtree(user_dir, ignore_errors=True)
     return jsonify({"message": "Job Agent user data deleted"})
 
 

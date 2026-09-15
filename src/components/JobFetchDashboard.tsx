@@ -8,7 +8,7 @@ import {
   type HiddenJobItem,
   type SavedJobItem,
 } from "../lib/jobFetchApi";
-import type { JobFetchFlowState } from "../lib/jobFetchFlow";
+import { safeJobApplyUrl, type JobFetchFlowState } from "../lib/jobFetchFlow";
 import type { User } from "../types";
 
 interface JobFetchDashboardProps {
@@ -108,12 +108,15 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
         <div className="dashboard-section">
           <h3>Saved jobs</h3>
           <dl>
-            {savedJobs.slice(0, 10).map((job) => (
-              <div key={job.id} className="saved-job-row">
-                <dt><a href={job.apply_url} target="_blank" rel="noreferrer">{job.title}</a></dt>
-                <dd>{job.company}{job.application_status === "applied" ? " · Applied" : ""}</dd>
-              </div>
-            ))}
+            {savedJobs.slice(0, 10).map((job) => {
+              const safeApplyUrl = safeJobApplyUrl(job.apply_url);
+              return (
+                <div key={job.id} className="saved-job-row">
+                  <dt>{safeApplyUrl ? <a href={safeApplyUrl} target="_blank" rel="noreferrer">{job.title}</a> : job.title}</dt>
+                  <dd>{job.company}{job.application_status === "applied" ? " · Applied" : ""}</dd>
+                </div>
+              );
+            })}
           </dl>
         </div>
       )}
@@ -127,15 +130,18 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
         <div className="dashboard-section">
           <h3>Applications</h3>
           <dl>
-            {applications.slice(0, 10).map((job) => (
-              <div key={job.id}>
-                <dt><a href={job.apply_url} target="_blank" rel="noreferrer">{job.title}</a></dt>
-                <dd>
-                  {job.company}
-                  {job.application_status ? ` · ${job.application_status[0].toUpperCase()}${job.application_status.slice(1)}` : ""}
-                </dd>
-              </div>
-            ))}
+            {applications.slice(0, 10).map((job) => {
+              const safeApplyUrl = safeJobApplyUrl(job.apply_url);
+              return (
+                <div key={job.id}>
+                  <dt>{safeApplyUrl ? <a href={safeApplyUrl} target="_blank" rel="noreferrer">{job.title}</a> : job.title}</dt>
+                  <dd>
+                    {job.company}
+                    {job.application_status ? ` · ${job.application_status[0].toUpperCase()}${job.application_status.slice(1)}` : ""}
+                  </dd>
+                </div>
+              );
+            })}
           </dl>
         </div>
       )}
