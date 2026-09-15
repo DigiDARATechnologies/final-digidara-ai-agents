@@ -5,7 +5,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_limiter.errors import RateLimitExceeded
 from sqlalchemy import inspect, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from .config import Config, PLACEHOLDER_SECRETS
 from .extensions import db, limiter
@@ -148,7 +148,16 @@ def create_app(config_overrides=None):
     with app.app_context():
         try:
             _ensure_result_schema()
-        except OperationalError:
+        except SQLAlchemyError:
+            # Broader than OperationalError: gunicorn boots multiple workers
+            # (-w 4) without --preload, so each worker runs this schema
+            # check independently — two workers racing to ADD the same
+            # column raise a duplicate-column error, which PyMySQL/SQLAlchemy
+            # doesn't always classify as OperationalError. Whatever the
+            # exception, roll back so the session isn't left unusable, then
+            # let the app boot anyway; the column only needs one worker to
+            # succeed in adding it.
+            db.session.rollback()
             app.logger.exception("Database schema check failed during startup")
 
     if not app.config.get("TESTING"):
