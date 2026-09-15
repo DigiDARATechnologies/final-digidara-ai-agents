@@ -81,7 +81,7 @@ export default function ProfilePage({ open, user, onClose }: ProfilePageProps) {
           {usage && (
             <>
               <div className="profile-usage-total">
-                <span>Platform total</span>
+                <span>Your usage</span>
                 <strong>{formatTokens(totalTokens)} tokens</strong>
                 <span className="muted">· {totalRequests} requests</span>
               </div>

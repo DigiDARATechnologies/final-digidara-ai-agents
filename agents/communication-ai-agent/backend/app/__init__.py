@@ -75,6 +75,9 @@ def _ensure_result_schema():
             "email_verified": "ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE",
             "total_xp": "ADD COLUMN total_xp INTEGER NOT NULL DEFAULT 0",
         },
+        "llm_usage": {
+            "user_id": "ADD COLUMN user_id VARCHAR(128) NULL",
+        },
     }
     for table, alters in planned.items():
         if table not in inspector.get_table_names():

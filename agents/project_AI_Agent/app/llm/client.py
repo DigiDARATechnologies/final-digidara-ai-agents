@@ -22,6 +22,7 @@ from litellm.exceptions import BadRequestError, RateLimitError
 from app import config
 from app.db.database import get_session
 from app.db.models import LlmUsage
+from app.request_context import current_user_id
 
 litellm.drop_params = True  # silently drop params a given provider doesn't support
 
@@ -112,6 +113,7 @@ def _record_usage(usage: Any, caller: str, model: str) -> None:
         total_tokens = int(getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens))
         provider = model.split("/", 1)[0] if "/" in model else model
         session.add(LlmUsage(
+            user_id=current_user_id.get(),
             provider=provider,
             model_name=model,
             prompt_tokens=prompt_tokens,

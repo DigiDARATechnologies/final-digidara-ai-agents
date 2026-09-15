@@ -1,7 +1,7 @@
 import logging
 import uuid
 
-from flask import current_app, has_app_context
+from flask import current_app, has_app_context, has_request_context, request
 
 from .groq_pricing import estimate_cost
 
@@ -212,7 +212,9 @@ def persist_llm_usage(*, operation, model, usage, provider="Groq"):
         from ..extensions import db
         from ..models import LlmUsage
 
+        user_id = request.headers.get("X-DigiDARA-User-Id") if has_request_context() else None
         db.session.add(LlmUsage(
+            user_id=user_id or None,
             provider=str(provider or "Groq"),
             model_name=str(model or "unknown"),
             prompt_tokens=int(usage.get("input_tokens") or 0),
@@ -230,24 +232,29 @@ def persist_llm_usage(*, operation, model, usage, provider="Groq"):
             pass
 
 
-def get_usage_summary():
-    """Platform-wide aggregate for the `usage_summary` Strategy F action —
-    same shape as agents/project_AI_Agent's UsageSummaryResponse."""
+def get_usage_summary(user_id=None):
+    """Token usage for this agent, scoped to the verified DigiDARA identity
+    (`X-DigiDARA-User-Id`) that made the calls — same shape as
+    agents/project_AI_Agent's UsageSummaryResponse. Without a verified
+    identity there is nothing safe to attribute the request to, so this
+    returns all-zero totals rather than a platform-wide aggregate."""
     from sqlalchemy import func
 
     from ..extensions import db
     from ..models import LlmUsage
 
-    totals = db.session.query(
+    base = db.session.query(LlmUsage)
+    base = base.filter(LlmUsage.user_id == user_id) if user_id else base.filter(LlmUsage.id.is_(None))
+
+    total_requests, total_tokens, prompt_tokens, completion_tokens = base.with_entities(
         func.count(LlmUsage.id),
         func.coalesce(func.sum(LlmUsage.total_tokens), 0),
         func.coalesce(func.sum(LlmUsage.prompt_tokens), 0),
         func.coalesce(func.sum(LlmUsage.completion_tokens), 0),
     ).one()
-    total_requests, total_tokens, prompt_tokens, completion_tokens = totals
 
     by_type_rows = (
-        db.session.query(LlmUsage.request_type, func.count(LlmUsage.id))
+        base.with_entities(LlmUsage.request_type, func.count(LlmUsage.id))
         .group_by(LlmUsage.request_type)
         .all()
     )

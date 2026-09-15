@@ -46,6 +46,12 @@ def init_db() -> None:
         if "viva_passed" not in submission_columns:
             connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_passed BOOLEAN NULL"))
 
+    llm_usage_columns = {column["name"]: column for column in inspect(engine).get_columns("llm_usage")}
+    if "user_id" not in llm_usage_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE llm_usage ADD COLUMN user_id VARCHAR(128) NULL"))
+            connection.execute(text("CREATE INDEX ix_llm_usage_user_id ON llm_usage (user_id)"))
+
 
 def get_session() -> Session:
     return SessionLocal()

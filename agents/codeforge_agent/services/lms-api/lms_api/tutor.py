@@ -2,7 +2,7 @@ import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from flask import current_app
+from flask import current_app, has_request_context, request
 
 
 class TutorService:
@@ -55,6 +55,7 @@ class TutorService:
     def _record_usage(usage, model_name):
         if not usage:
             return
+        user_id = request.headers.get("X-DigiDARA-User-Id") if has_request_context() else None
         current_app.extensions["repository"].record_llm_usage(
             provider="openai",
             model_name=model_name,
@@ -62,6 +63,7 @@ class TutorService:
             completion_tokens=int(usage.get("completion_tokens", 0) or 0),
             total_tokens=int(usage.get("total_tokens", 0) or 0),
             request_type="ai_tutor_explain",
+            user_id=user_id or None,
         )
 
     @staticmethod

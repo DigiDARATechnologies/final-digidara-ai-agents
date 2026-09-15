@@ -138,12 +138,17 @@ class Submission(Base):
 
 
 class LlmUsage(Base):
-    """One row per LLM call — platform-wide token usage visibility, not
-    per-user attribution (there's no per-user LLM quota concept yet)."""
+    """One row per LLM call, attributed to the verified DigiDARA user id
+    (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that
+    triggered it — lets usage_summary report per-user totals instead of a
+    platform-wide aggregate. `user_id` is nullable so rows written before
+    this column existed, or calls made without a verified identity, still
+    persist."""
 
     __tablename__ = "llm_usage"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     provider: Mapped[str] = mapped_column(String(50))
     model_name: Mapped[str] = mapped_column(String(100))
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
