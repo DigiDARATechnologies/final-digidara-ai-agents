@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
 
 from app.auth.routes import router as auth_router  # noqa: E402
+from app.auth import service as auth_service  # noqa: E402
 from app.db import init_db  # noqa: E402
 from app.gateway.routes import router as gateway_router  # noqa: E402
 from app.orchestrator.routes import router as chat_router  # noqa: E402
@@ -56,6 +57,7 @@ app.include_router(billing_router)
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    auth_service.seed_admin_from_env()
 
 
 @app.get("/health")

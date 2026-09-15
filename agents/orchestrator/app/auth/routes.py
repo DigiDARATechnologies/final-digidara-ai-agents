@@ -4,6 +4,7 @@ from app.auth import google_oauth, service
 from app.auth.consent import CONSENT_POLICY_VERSION
 from app.auth.schemas import (
     AccountDeleteRequest,
+    ChangePasswordRequest,
     GoogleAuthRequest,
     LoginRequest,
     SignupRequest,
@@ -13,6 +14,7 @@ from app.auth.schemas import (
 from app.auth.security import create_access_token, get_current_user_id, hash_password, verify_password
 from app.models import User
 from app.rate_limit import limiter
+from app import job_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,6 +30,7 @@ def _to_out(user: User) -> UserOut:
         name=user.name,
         email=user.email,
         mobile=user.mobile,
+        is_admin=user.is_admin,
         consent_accepted_at=user.consent_accepted_at,
         consent_policy_version=user.consent_policy_version,
     )
@@ -92,7 +95,24 @@ def export_my_data(user_id: str = Depends(get_current_user_id)) -> dict:
     data = service.export_user_data(user_id)
     if data is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    try:
+        data["job_agent"] = job_data.export_user_data(user_id)
+    except job_data.JobDataUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return data
+
+
+@router.put("/password")
+@limiter.limit(_LOGIN_RATE_LIMIT)
+def change_password(req: ChangePasswordRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+    user = service.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    if user.password_hash:
+        if not req.current_password or not verify_password(req.current_password, user.password_hash):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect.")
+    service.set_password(user.id, hash_password(req.new_password))
+    return {"message": "Password updated"}
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
@@ -112,4 +132,8 @@ def delete_my_account(req: AccountDeleteRequest, user_id: str = Depends(get_curr
     if user.password_hash:
         if not req.password or not verify_password(req.password, user.password_hash):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect password.")
+    try:
+        job_data.delete_user_data(user_id)
+    except job_data.JobDataUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     service.delete_user(user_id)

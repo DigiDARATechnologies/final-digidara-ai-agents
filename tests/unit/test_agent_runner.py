@@ -6,8 +6,8 @@ spec = importlib.util.spec_from_file_location("agent_runner", ROOT / "scripts/te
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 
-def test_all_seven_agents_have_dedicated_suites():
-    assert len(runner.AGENTS) == 7
+def test_all_agents_have_dedicated_suites():
+    assert len(runner.AGENTS) == 8
     assert {agent[0] for agent in runner.AGENTS} == set(runner.SUITES)
     for name, context, *_ in runner.AGENTS:
         assert all((ROOT / context / suite).is_dir() for suite in runner.SUITES[name])
@@ -23,7 +23,7 @@ def test_database_isolation_and_codegen_feature_setting(tmp_path):
         databases.add(env['DB_NAME'])
         assert service['ports'][0].startswith('127.0.0.1::')
         assert env['CODING_PRACTICE_ENABLED'] == 'true'
-    assert len(databases) == 7
+    assert len(databases) == 8
 
 def test_single_agent_configuration_does_not_start_other_agents(tmp_path):
     config = runner.compose_config(tmp_path / "init.sql", [runner.AGENTS[0]])

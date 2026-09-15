@@ -16,7 +16,7 @@ export interface Agent {
    * backend. All go through the same orchestrator gateway; absent means
    * canned replies.
    */
-  kind?: "capstone" | "codeforge" | "aptitude" | "communication" | "resume-builder" | "certificate";
+  kind?: "capstone" | "codeforge" | "aptitude" | "communication" | "resume-builder" | "certificate" | "job-fetch";
   /** This agent's registry name on the orchestrator (manifest.json's
    * `agent_name`) — lets the general chat's LLM router hand a matched
    * message off to this agent's dedicated flow. Absent for agents with no
@@ -30,6 +30,7 @@ export interface User {
   email: string;
   mobile: string;
   initial: string;
+  isAdmin?: boolean;
 }
 
 export interface ChatOption {
@@ -64,4 +65,4 @@ export interface Chat {
   pinned?: boolean;
 }
 
-export type View = "store" | "chat";
+export type View = "store" | "chat" | "admin";

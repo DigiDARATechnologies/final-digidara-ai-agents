@@ -1,5 +1,7 @@
 from datetime import datetime
+import os
 
+from app.auth.security import hash_password
 from app.db import get_session
 from app.models import Payment, User
 
@@ -199,5 +201,39 @@ def link_google_id(user_id: str, google_id: str) -> User:
         session.commit()
         session.refresh(user)
         return user
+    finally:
+        session.close()
+
+
+def set_password(user_id: str, password_hash: str) -> None:
+    session = get_session()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return
+        user.password_hash = password_hash
+        session.commit()
+    finally:
+        session.close()
+
+
+def seed_admin_from_env() -> None:
+    """Create or promote the configured platform administrator once.
+
+    Existing passwords are deliberately never reset during startup.
+    """
+    email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    password = os.environ.get("ADMIN_PASSWORD", "")
+    if not email or not password:
+        return
+    session = get_session()
+    try:
+        user = session.query(User).filter_by(email=email).first()
+        if user is None:
+            session.add(User(name="Admin", email=email, password_hash=hash_password(password), is_admin=True))
+            session.commit()
+        elif not user.is_admin:
+            user.is_admin = True
+            session.commit()
     finally:
         session.close()

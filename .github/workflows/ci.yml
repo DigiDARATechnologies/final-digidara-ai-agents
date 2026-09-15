@@ -102,7 +102,8 @@ jobs:
             agents/communication-ai-agent/backend \
             agents/aptitude_agent \
             agents/resume_builder_agent/backend \
-            agents/certificate_agent
+            agents/certificate_agent \
+            agents/job_agent
 
   compose-validation:
     name: Docker Compose validation
@@ -115,7 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/resume_builder_agent/backend agents/certificate_agent docker/mysql; do
+          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/resume_builder_agent/backend agents/certificate_agent agents/job_agent docker/mysql; do
             if [ -f "$directory/.env.example" ]; then
               cp "$directory/.env.example" "$directory/.env"
             else
@@ -143,6 +144,7 @@ jobs:
           - aptitude-agent
           - resume-builder-agent
           - certificate-agent
+          - job-agent
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -396,6 +398,7 @@ jobs:
           - aptitude-agent
           - resume-builder-agent
           - certificate-agent
+          - job-agent
     steps:
       - name: Checkout
         uses: actions/checkout@v6

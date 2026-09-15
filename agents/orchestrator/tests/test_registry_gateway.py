@@ -113,6 +113,28 @@ def test_identity_bridge_overwrites_client_identity(client, upstream, database):
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000
 
+
+def test_gateway_derives_admin_header_from_platform_user(client, upstream, database):
+    assert invoke(client, "get_profile", headers={"x-digidara-is-admin": "true"}).status_code == 200
+    assert upstream.calls[-1][1]["headers"]["x-digidara-is-admin"] == "false"
+
+    with database() as session:
+        session.get(User, "learner").is_admin = True
+        session.commit()
+
+    assert invoke(client, "admin_list_jobs").status_code == 200
+    assert upstream.calls[-1][1]["headers"]["x-digidara-is-admin"] == "true"
+
+
+@pytest.mark.parametrize(
+    "action",
+    ["get_saved_jobs", "get_hidden_jobs", "admin_get_automation", "admin_update_automation"],
+)
+def test_job_database_actions_are_not_billed(client, upstream, database, action):
+    assert invoke(client, action).status_code == 200
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+
 @pytest.mark.parametrize("reported,cost", [("25", 25), ("bad", gateway.TOKEN_COST_PER_CALL), ("0", gateway.TOKEN_COST_PER_CALL)])
 def test_billing_and_binary_response_forwarding(client, upstream, database, reported, cost):
     upstream.response = httpx.Response(201, content=b"%PDF-test", headers={"content-type": "application/pdf", "content-disposition": "attachment; filename=report.pdf", "x-tokens-used": reported})
