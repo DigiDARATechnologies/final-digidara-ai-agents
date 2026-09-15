@@ -61,6 +61,7 @@ export interface Chat {
   title: string;
   messages: ChatMessage[];
   updatedAt: number;
+  pinned?: boolean;
 }
 
 export type View = "store" | "chat";

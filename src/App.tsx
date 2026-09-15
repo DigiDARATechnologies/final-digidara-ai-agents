@@ -145,6 +145,7 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
   const [glowOn, setGlowOn] = useState(true);
   const [typing, setTyping] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
@@ -383,12 +384,14 @@ export default function App() {
   useEffect(() => {
     function onDocClick() {
       setOpenMenu(null);
+      setOpenChatMenuId(null);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setSettingsOpen(false);
         setSelectedAgent(null);
         setOpenMenu(null);
+        setOpenChatMenuId(null);
       }
     }
     document.addEventListener("click", onDocClick);
@@ -464,6 +467,23 @@ export default function App() {
   function persistChats(next: Chat[]) {
     setChats(next);
     saveChats(next);
+  }
+
+  function handleRenameChat(chatId: string, title: string) {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed } : c)));
+  }
+
+  function handleTogglePinChat(chatId: string) {
+    persistChats(chats.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned } : c)));
+  }
+
+  function handleDeleteChat(chatId: string) {
+    persistChats(chats.filter((c) => c.id !== chatId));
+    if (currentChatId === chatId) {
+      startNewChatLanding();
+    }
   }
 
   async function handleAuthenticate(
@@ -1233,11 +1253,19 @@ export default function App() {
           chats={chats}
           currentChatId={currentChatId}
           userMenuOpen={openMenu === "user"}
+          openChatMenuId={openChatMenuId}
           onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
           onNewChat={startNewChatLanding}
           onGoHome={startNewChatLanding}
           onOpenChat={openChatById}
           onNavAction={handleNavAction}
+          onToggleChatMenu={(chatId, e) => {
+            e.stopPropagation();
+            setOpenChatMenuId((id) => (id === chatId ? null : chatId));
+          }}
+          onRenameChat={handleRenameChat}
+          onTogglePinChat={handleTogglePinChat}
+          onDeleteChat={handleDeleteChat}
           onToggleUserMenu={(e) => {
             e.stopPropagation();
             setOpenMenu((m) => (m === "user" ? null : "user"));

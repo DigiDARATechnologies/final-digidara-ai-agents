@@ -359,16 +359,43 @@ body.glow-off .send-btn:hover{
 
 .history-list{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:3px;padding:0 2px 8px;scrollbar-gutter:stable;}
 .history-item{
-  display:flex; align-items:center; gap:9px;
-  padding:9px 10px; border-radius:var(--radius-sm);
+  display:flex; align-items:center; gap:2px;
+  padding:2px; border-radius:var(--radius-sm);
   font-size:13.5px; color:var(--text-dim); background:transparent; border:1px solid transparent;
-  width:100%;text-align:left;white-space:nowrap;overflow:hidden;
+  width:100%;overflow:hidden;
   transition:background .15s, color .15s;
 }
-.history-item:hover{background:#fff;color:var(--text);transform:translateX(2px);}
+.history-item:hover{background:#fff;color:var(--text);}
 .history-item.active{background:#fff;color:var(--accent1);font-weight:650;border-color:#e2f4fd;box-shadow:0 5px 14px rgba(54,95,145,.08);}
 .history-item .h-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 3px rgba(54,95,145,.07);}
+.history-item-main{
+  display:flex; align-items:center; gap:9px; flex:1 1 auto; min-width:0;
+  background:none; border:0; padding:7px 8px; text-align:left;
+  color:inherit; font:inherit; white-space:nowrap; overflow:hidden;
+}
 .history-title{overflow:hidden;text-overflow:ellipsis;}
+.history-pin-icon{flex:0 0 auto;font-size:10px;}
+.history-rename-input{
+  flex:1; min-width:0; border:1px solid var(--accent1); border-radius:6px;
+  padding:3px 6px; font:inherit; font-size:13px; color:var(--text);
+  background:#fff; outline:none; box-shadow:0 0 0 3px var(--accent-soft);
+}
+.history-menu-btn{
+  flex:0 0 auto; width:26px; height:26px; border-radius:7px;
+  font-size:15px; color:var(--text-faint); opacity:0;
+  transition:opacity .15s, background .15s, color .15s;
+}
+.history-item:hover .history-menu-btn,
+.history-menu-btn.open,
+.history-item:has(.history-menu-panel.open) .history-menu-btn{ opacity:1; }
+.history-menu-panel{ top:30px; right:6px; width:170px; padding:6px; }
+.history-menu-panel button{
+  width:100%; text-align:left; padding:8px 9px; border-radius:8px;
+  background:none; border:none; font-size:13px; font-weight:600; color:var(--text);
+}
+.history-menu-panel button:hover{ background:var(--bg-soft); }
+.history-menu-panel button.danger{ color:var(--red); }
+.history-menu-panel button.danger:hover{ background:#fef2f2; }
 .history-empty{ font-size:12.5px; color:var(--text-faint); padding:10px; text-align:center; }
 
 .sidebar-bottom{position:relative;border-top:1px solid var(--border);padding-top:11px;margin-top:0;}
