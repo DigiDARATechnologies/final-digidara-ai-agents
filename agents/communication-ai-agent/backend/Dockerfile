@@ -3,6 +3,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Pick up Debian security patches for OS packages already present in the
+# base image (e.g. gzip, libpcre2, libsqlite3, perl-base CVEs) that aren't
+# refreshed just by pulling a floating python:3.12-slim tag.
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

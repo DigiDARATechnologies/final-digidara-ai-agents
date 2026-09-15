@@ -6,6 +6,7 @@ WORKDIR /app
 # tesseract-ocr + poppler-utils are required by app/services/import_review.py
 # (pytesseract OCR and pdf2image, which shells out to poppler's pdftoppm).
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tesseract-ocr poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
