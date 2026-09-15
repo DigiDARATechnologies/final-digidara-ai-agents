@@ -189,8 +189,10 @@ function PrivacyContent() {
       <h3>7. Cookies and local storage</h3>
       <p>
         The platform uses browser local storage to keep you signed in and
-        cache chat history on your device. We don't use third-party
-        advertising trackers or cookies for behavioural profiling.
+        keep a temporary chat-history cache on your device. Your account-linked
+        conversation history is stored in DigiDARA's MySQL database so it is
+        available when you sign in on another browser or device. We don't use
+        third-party advertising trackers or cookies for behavioural profiling.
       </p>
 
       <h3>8. Security safeguards</h3>

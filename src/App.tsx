@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
-import { useChats, nowStr } from "./hooks/useChats";
+import { newChatId, nowStr, useChats } from "./hooks/useChats";
 import {
   handleCapstoneText,
   createInitialCapstoneState,
@@ -167,7 +167,7 @@ export default function App() {
   const certificateTimeoutQuestionRef = useRef<string | null>(null);
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
-  const { loadChats, saveChats } = useChats(user?.email);
+  const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
 
   // Must run before the `!user` early return below — React requires every
   // render to call the same hooks in the same order, and this one used to
@@ -269,8 +269,13 @@ export default function App() {
 
   // load this user's chats once they're known
   useEffect(() => {
+    let active = true;
     if (user) {
-      setChats(loadChats());
+      const localChats = loadChats();
+      setChats(localChats);
+      loadAccountChats(localChats).then((accountChats) => {
+        if (active && accountChats) setChats(accountChats);
+      });
       setCapstoneStates(loadCapstoneStates(user.email));
       setCodeforgeStates(loadCodeForgeStates(user.email));
       setAptitudeStates(loadAptitudeStates(user.email));
@@ -289,6 +294,9 @@ export default function App() {
     skipCapstoneSave.current = true;
     skipCodeforgeSave.current = true;
     skipCommunicationSave.current = true;
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
@@ -496,11 +504,11 @@ export default function App() {
   function handleRenameChat(chatId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
-    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed } : c)));
+    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed, updatedAt: Date.now() } : c)));
   }
 
   function handleTogglePinChat(chatId: string) {
-    persistChats(chats.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned } : c)));
+    persistChats(chats.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned, updatedAt: Date.now() } : c)));
   }
 
   function handleDeleteChat(chatId: string) {
@@ -714,7 +722,7 @@ export default function App() {
     const agent = findAgent(agentId);
     if (!agent || !user) return;
     const chat: Chat = {
-      id: "c_" + Date.now(),
+      id: newChatId(),
       agentId: agent.id,
       title: agent.name,
       messages: [{ role: "agent", text: agent.greeting, time: nowStr() }],
@@ -847,7 +855,7 @@ export default function App() {
     const trimmed = text.trim();
     if (!trimmed) return;
     const chat: Chat = {
-      id: "c_" + Date.now(),
+      id: newChatId(),
       agentId: DEFAULT_AGENT.id,
       title: trimmed.length > 42 ? trimmed.slice(0, 42) + "…" : trimmed,
       messages: [{ role: "user", text: trimmed, time: nowStr() }],

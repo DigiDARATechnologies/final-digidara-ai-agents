@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -69,6 +70,54 @@ class User(Base):
     # so the column can be added to a table with pre-existing accounts.
     consent_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     consent_policy_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class ChatHistoryState(Base):
+    """Marks an account as migrated even when its history is intentionally empty."""
+
+    __tablename__ = "chat_history_state"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    agent_id: Mapped[str] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(500))
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at_ms: Mapped[int] = mapped_column(BigInteger)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (PrimaryKeyConstraint("id", "user_id"),)
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    conversation_id: Mapped[str] = mapped_column(String(128))
+    user_id: Mapped[str] = mapped_column(String(32))
+    position: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"))
+    display_time: Mapped[str] = mapped_column(String(32))
+    message_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["conversation_id", "user_id"],
+            ["conversations.id", "conversations.user_id"],
+            ondelete="CASCADE",
+        ),
+    )
 
 
 class Payment(Base):
