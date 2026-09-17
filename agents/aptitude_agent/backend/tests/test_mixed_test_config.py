@@ -13,6 +13,18 @@ DEFAULTS = {
 }
 
 
+def generated_batch(slots, prefix):
+    return [{
+        **slot,
+        "question": f"{prefix} question {index} for {slot['topic']}?",
+        "options": {"A": "First", "B": "Second", "C": "Third", "D": "Fourth"},
+        "correct_answer": "A",
+        "explanation": "First is the configured correct response.",
+        "content_hash": f"{prefix}-content-{index}",
+        "structural_hash": f"{prefix}-structure-{index}",
+    } for index, slot in enumerate(slots, 1)]
+
+
 def payload(counts):
     return {
         "categories": [
@@ -68,18 +80,9 @@ def test_mixed_test_uses_saved_count_snapshot(app,client,auth_headers,monkeypatc
     assert updated.status_code==200,updated.get_json()
 
     def live_generation(slots,*_args,**_kwargs):
-        slot=slots[0]
-        return [{
-            **slot,
-            "question":f"Configured Mixed Test question for {slot['topic']}?",
-            "options":{"A":"First","B":"Second","C":"Third","D":"Fourth"},
-            "correct_answer":"A",
-            "explanation":"First is the configured correct response.",
-            "content_hash":"mixed-config-content",
-            "structural_hash":"mixed-config-structure",
-        }],"mixed-config-test-model",{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+        return generated_batch(slots,"mixed-config"),"mixed-config-test-model",{"input_tokens":1,"output_tokens":1,"total_tokens":2,"provider_attempt_count":1}
 
-    monkeypatch.setattr("backend.app.services.adaptive_service.generate_questions",live_generation)
+    monkeypatch.setattr("backend.app.services.test_question_service.generate_questions",live_generation)
     created=client.post(
         "/api/aptitude/tests",headers=auth_headers,json={"mode":"mixed"},
     )
@@ -106,18 +109,10 @@ def test_mixed_test_persists_selected_technical_language(app,client,auth_headers
     captured=[]
 
     def live_generation(slots,*_args,**_kwargs):
-        slot=slots[0];captured.append(dict(slot))
-        return [{
-            **slot,
-            "question":"Which option verifies language persistence?",
-            "options":{"A":"Stored","B":"Missing","C":"Invalid","D":"Unknown"},
-            "correct_answer":"A",
-            "explanation":"The selected language is stored with the test, so option A is correct.",
-            "content_hash":"mixed-language-content",
-            "structural_hash":"mixed-language-structure",
-        }],"mixed-language-model",{"input_tokens":1,"output_tokens":1,"total_tokens":2}
+        captured.extend(dict(slot) for slot in slots)
+        return generated_batch(slots,"mixed-language"),"mixed-language-model",{"input_tokens":1,"output_tokens":1,"total_tokens":2,"provider_attempt_count":1}
 
-    monkeypatch.setattr("backend.app.services.adaptive_service.generate_questions",live_generation)
+    monkeypatch.setattr("backend.app.services.test_question_service.generate_questions",live_generation)
     created=client.post(
         "/api/aptitude/tests",headers=auth_headers,
         json={"mode":"mixed","technical_language":"SQL"},

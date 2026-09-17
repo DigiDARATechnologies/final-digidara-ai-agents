@@ -1,20 +1,23 @@
 import type { ChatOption, User } from "../types";
-import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
+import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, skipAptitudeQuestion, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
 
 export type AptitudeStep = "awaiting_mode" | "awaiting_category" | "awaiting_level" | "awaiting_language" | "awaiting_question" | "awaiting_next_question" | "completed";
-export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: "C" | "Java" | "Python" | "SQL"; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; }
+export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: "C" | "Java" | "Python" | "SQL"; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; tokenInterrupted?: boolean; }
 export interface AptitudeFlowMessage { text: string; options?: ChatOption[]; }
 const categories = ["Quantitative Aptitude", "Logical Reasoning", "Verbal Ability", "Analytical Reasoning", "Computer Fundamentals", "Technical Aptitude"];
 const categoryOptions = categories.map((value) => ({ label: value, value }));
 const levelOptions = ["Beginner", "Intermediate", "Advanced"].map((value) => ({ label: value, value }));
 const languageOptions = ["Python", "Java", "C", "SQL"].map((value) => ({ label: value, value }));
 const optionMap = (options: Record<string, string>): ChatOption[] => Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
+const isTokenInterruption = (error: unknown) => /insufficient token balance|token balance/i.test((error as Error)?.message || "");
+const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
 export const createInitialAptitudeState = (): AptitudeFlowState => ({ step: "awaiting_mode" });
 export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: `Hi ${user.name.split(" ")[0]}! What would you like to practice?`, options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] });
 
 function questionMessage(question: AptitudeQuestion): AptitudeFlowMessage {
   const priority = question.topic_is_starred ? " ★ Priority topic" : "";
-  return { text: `Question ${question.sequence}/${question.total_questions} · ${question.category} · ${question.topic}${priority} · ${question.difficulty}\n\n${question.question}\n\nAnswer before the live timer reaches zero.`, options: optionMap(question.options) };
+  const state = question.status === "answered" ? "Answered" : question.status === "timed_out" ? "Timed out" : "Unanswered";
+  return { text: `Question ${question.sequence}/${question.total_questions} · ${question.category} · ${question.topic}${priority} · ${question.difficulty}\n\n${question.question}\n\n${state}${question.status === "unanswered" ? ". Answer before the live timer reaches zero." : ". This question is already submitted."}`, options: question.status === "unanswered" ? optionMap(question.options) : [] };
 }
 async function startTest(state: AptitudeFlowState, user?: User) {
   // Refresh the agent session immediately before starting. This also
@@ -52,12 +55,25 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
         messages: [{ text: "Your previous attempt has ended. What would you like to practice next?", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
       };
     }
+    if (/^exit test$/i.test(value) && state.testId && state.sessionToken && (state.step === "awaiting_question" || state.step === "awaiting_next_question")) {
+      const result = await abandonAptitudeTest(state.sessionToken, state.testId);
+      if (result.status !== "abandoned") throw new Error("The test could not be exited. Please try again.");
+      return {
+        state: { step: "awaiting_mode" as const, sessionToken: state.sessionToken },
+        messages: [{ text: "Test exited. You can start a new Category or Mixed Test.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
+      };
+    }
     if (state.step === "completed" && /download|report|pdf/i.test(value)) {
       const report = await downloadAptitudeReport(state.sessionToken!, state.testId!);
       const binary = Uint8Array.from(atob(report.data), (character) => character.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([binary], { type: "application/pdf" }));
       const link = document.createElement("a"); link.href = url; link.download = report.filename || "aptitude-report.pdf"; link.click(); URL.revokeObjectURL(url);
       return { state, messages: [{ text: "Your Aptitude test report has been downloaded." }] };
+    }
+    if (state.tokenInterrupted) {
+      if (!/continue|resume/i.test(value)) return { state, messages: [{ text: "Top up your token balance, then choose Continue Test to restore the current question and timer.", options: resumeOptions }] };
+      const question = await getAptitudeQuestion(state.sessionToken!, state.testId!);
+      return { state: { ...state, step: "awaiting_question" as const, question, tokenInterrupted: false, hintsRemaining: question.hints_remaining, hintText: undefined }, messages: [questionMessage(question)] };
     }
     if (state.step === "awaiting_mode") {
       const mode = value.toLowerCase().includes("category") ? "category_practice" : value.toLowerCase().includes("mixed") ? "mixed" : undefined;
@@ -75,7 +91,25 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       return { state: { ...state, step: "awaiting_question" as const, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined }, messages: [questionMessage(nextQuestion)] };
     }
     if (state.step === "awaiting_question") {
-      if (value.toLowerCase() === "hint") { const result = await requestAptitudeHint(state.sessionToken!, state.testId!); return { state: { ...state, hintsRemaining: result.hints_remaining, hintText: result.hint }, messages: [{ text: `Hint (${result.hints_remaining} remaining): ${result.hint}`, options: optionMap(state.question!.options) }] }; }
+      const navMatch = value.match(/^__aptitude_nav:(\d+)$/);
+      if (navMatch) {
+        const question = await getAptitudeQuestion(state.sessionToken!, state.testId!, Number(navMatch[1]));
+        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined }, messages: [questionMessage(question)] };
+      }
+      if (/^skip(?: question)?$/i.test(value)) {
+        const question = await skipAptitudeQuestion(state.sessionToken!, state.testId!);
+        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined }, messages: [{ text: `Question ${state.question?.sequence} skipped. You can return to it from the question navigator.` }, questionMessage(question)] };
+      }
+      if (state.question?.status && state.question.status !== "unanswered") return { state, messages: [{ text: "This question is already submitted. Choose another question from the navigator." }] };
+      if (value.toLowerCase() === "hint") {
+        try {
+          const result = await requestAptitudeHint(state.sessionToken!, state.testId!);
+          return { state: { ...state, hintsRemaining: result.hints_remaining, hintText: result.hint }, messages: [{ text: `Hint (${result.hints_remaining} remaining): ${result.hint}`, options: optionMap(state.question!.options) }] };
+        } catch (error) {
+          if (isTokenInterruption(error)) return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "Your token balance is insufficient. Top up your balance, then continue this test to restore the current question and timer.", options: resumeOptions }] };
+          return { state, messages: [{ text: `I could not generate a safe hint right now: ${(error as Error).message}`, options: optionMap(state.question!.options) }] };
+        }
+      }
       // Accept only a real answer token. Previously any sentence containing
       // A-D (for example "start a new test") was misread as an answer.
       const timedOut = value === "__aptitude_timeout__";
@@ -96,11 +130,16 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
           state: { ...state, step: "awaiting_next_question" as const, question: undefined },
           messages: [
             { text: feedback },
-            { text: `Your answer was saved, but the next question could not be prepared: ${(error as Error).message}`, options: [{ label: "Retry question", value: "retry question" }] },
+            { text: `Your answer was saved, but the next stored question could not be loaded: ${(error as Error).message}`, options: [{ label: "Retry question", value: "retry question" }] },
           ],
         };
       }
     }
     return { state, messages: [{ text: "This test is complete. Start a new Aptitude chat for another attempt." }] };
-  } catch (error) { return { state, messages: [{ text: `Aptitude request failed: ${(error as Error).message}` }] }; }
+  } catch (error) {
+    if (isTokenInterruption(error) && state.testId && state.question) {
+      return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "Your token balance is insufficient. Top up your balance, then continue this test to restore the current question and timer.", options: resumeOptions }] };
+    }
+    return { state, messages: [{ text: `Aptitude request failed: ${(error as Error).message}` }] };
+  }
 }

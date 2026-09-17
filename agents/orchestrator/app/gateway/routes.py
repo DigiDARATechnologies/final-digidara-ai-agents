@@ -134,9 +134,20 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             envelope["payload"] = payload
             body = json.dumps(envelope).encode("utf-8")
 
+    # A complete aptitude assessment is prepared in one batch before the
+    # first question is returned. Its provider deadline is longer than the
+    # normal gateway timeout; apply the larger budget only to this action.
+    timeout_seconds = (
+        config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
+        if agent_name == "aptitude_agent" and action_name == "create_test"
+        else config.AGENT_CALL_TIMEOUT_SECONDS
+    )
     try:
-        async with httpx.AsyncClient(timeout=config.AGENT_CALL_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             upstream = await client.post(agent.endpoint, content=body, headers=headers)
+    except httpx.TimeoutException as exc:
+        logger.exception("gateway call timed out: agent=%s action=%s endpoint=%s timeout_seconds=%s", agent_name, action_name, agent.endpoint, timeout_seconds)
+        raise HTTPException(504, f"Agent {agent_name!r} did not complete {action_name!r} before the gateway timeout.") from exc
     except httpx.HTTPError as exc:
         logger.exception("gateway call failed: agent=%s endpoint=%s", agent_name, agent.endpoint)
         raise HTTPException(502, f"Registered agent {agent_name!r} could not be reached.") from exc

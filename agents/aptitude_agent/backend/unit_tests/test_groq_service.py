@@ -146,6 +146,8 @@ def test_later_request_honors_recorded_retry_after_before_calling_again(monkeypa
             assert False,"the first request should expose the two provider 429s"
         except groq_service.AIProviderError as exc:
             assert exc.kind=="rate_limit"
+            assert exc.provider_attempt_count==2
+            assert exc.provider_retry_count==0
         text,usage=groq_service.text_completion("system","prompt",deadline=clock["now"]+3)
 
     assert text=="OK"

@@ -74,9 +74,9 @@ def upstream(client, database, monkeypatch):
     with database() as session:
         session.add(User(id="learner", name="Learner", email="learner@example.test", token_balance=1000))
         session.commit()
-    remote = SimpleNamespace(calls=[], response=httpx.Response(200, json={"ok": True}), error=None)
+    remote = SimpleNamespace(calls=[], timeouts=[], response=httpx.Response(200, json={"ok": True}), error=None)
     class FakeClient:
-        def __init__(self, **kwargs): pass
+        def __init__(self, **kwargs): remote.timeouts.append(kwargs.get("timeout"))
         async def __aenter__(self): return self
         async def __aexit__(self, *args): pass
         async def post(self, url, **kwargs):
@@ -162,6 +162,29 @@ def test_unreachable_agent_returns_502_without_charge(client, upstream, database
     assert invoke(client).status_code == 502
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000
+
+
+def test_agent_timeout_reports_timeout_without_charge(client, upstream, database):
+    upstream.error = httpx.ReadTimeout("batch still running")
+    response = invoke(client, "create_test", payload={})
+    assert response.status_code == 504
+    assert "did not complete" in response.json()["detail"]
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+
+
+def test_batch_create_uses_longer_gateway_timeout(client, upstream, monkeypatch):
+    monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
+    service.register(AgentRegisterRequest(**dict(PAYLOAD, agent_name="aptitude_agent")))
+    response = client.post(
+        "/gateway/agents/aptitude_agent/invoke",
+        json={"action": "create_test", "payload": {}},
+        headers={"authorization": "Bearer " + create_access_token("learner")},
+    )
+    assert response.status_code == 200
+    assert upstream.timeouts[-1] == config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
+    assert invoke(client, "health", token=False).status_code == 200
+    assert upstream.timeouts[-1] == config.AGENT_CALL_TIMEOUT_SECONDS
 
 
 def test_gateway_resolves_freshest_healthy_version(client, upstream, database):

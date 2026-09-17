@@ -20,6 +20,8 @@ class AptitudeTestQuestion(db.Model):
     explanation = db.Column(db.Text, nullable=False)
     allowed_time_seconds = db.Column(db.Integer, default=60, nullable=False)
     question_started_at = db.Column(db.DateTime(timezone=True))
+    time_spent_seconds = db.Column(db.Integer, default=0, nullable=False)
+    visited = db.Column(db.Boolean, default=False, nullable=False)
     hint_text = db.Column(db.Text)
     hint_requested = db.Column(db.Boolean, default=False, nullable=False)
     hint_requested_at = db.Column(db.DateTime(timezone=True))

@@ -1,7 +1,7 @@
 {
   "agent_name": "aptitude_agent",
   "version": "v1.0.0",
-  "description": "Adaptive aptitude assessments, category practice, mixed tests, hints, analytics, history, and PDF reports.",
+  "description": "Batch-generated aptitude assessments, category practice, mixed tests, hints, analytics, history, and PDF reports.",
   "owner": "DigiDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",

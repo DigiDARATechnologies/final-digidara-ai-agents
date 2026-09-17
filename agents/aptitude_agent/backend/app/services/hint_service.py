@@ -121,6 +121,12 @@ def generate_hint(question):
                 )
         if last_error:current_app.logger.warning("Conceptual hint safety attempts exhausted topic=%s",question.topic)
     except ProviderError as exc:
+        accumulated_usage=merge_usage(accumulated_usage,{
+            "input_tokens":0,"output_tokens":0,"total_tokens":0,"model":None,
+            "provider_attempt_count":getattr(exc,"provider_attempt_count",0),
+            "provider_retry_count":getattr(exc,"provider_retry_count",0),
+            "provider_wait_ms":getattr(exc,"provider_wait_ms",0),
+        })
         current_app.logger.warning("Conceptual hint provider unavailable kind=%s; using deterministic fallback",exc.kind)
     except Exception as exc:
         current_app.logger.exception(
