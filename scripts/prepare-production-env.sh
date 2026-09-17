@@ -51,6 +51,38 @@ set_env_value() {
   mv "$temp_env" "$file"
 }
 
+ensure_job_agent_host_allowed() {
+  # The orchestrator's gateway rejects any registered endpoint whose host
+  # isn't in this allowlist (see agents/orchestrator/app/gateway/routes.py).
+  # A production .env created before the job-agent Compose service existed
+  # never picked up its hostname, so a correct AGENT_PUBLIC_URL above still
+  # gets a 403 here unless we repair this list too.
+  if [ ! -f "$ORCHESTRATOR_ENV" ]; then
+    return 0
+  fi
+  local current_hosts host_found=false host
+  current_hosts=$(read_env_value "$ORCHESTRATOR_ENV" ALLOWED_AGENT_HOSTS || true)
+  IFS=',' read -ra hosts_array <<< "$current_hosts"
+  for host in "${hosts_array[@]}"; do
+    if [ "$(echo "$host" | xargs)" = "job-agent" ]; then
+      host_found=true
+      break
+    fi
+  done
+  if [ "$host_found" = true ]; then
+    echo "kept    agents/orchestrator/.env ALLOWED_AGENT_HOSTS"
+  else
+    local new_hosts
+    if [ -z "$current_hosts" ]; then
+      new_hosts="job-agent"
+    else
+      new_hosts="$current_hosts,job-agent"
+    fi
+    set_env_value "$ORCHESTRATOR_ENV" ALLOWED_AGENT_HOSTS "$new_hosts"
+    echo "updated agents/orchestrator/.env ALLOWED_AGENT_HOSTS"
+  fi
+}
+
 if [ -f "$JOB_ENV" ]; then
   current_job_agent_url=$(read_env_value "$JOB_ENV" AGENT_PUBLIC_URL || true)
   if [ "$current_job_agent_url" = "$CANONICAL_JOB_AGENT_URL" ]; then
@@ -59,6 +91,7 @@ if [ -f "$JOB_ENV" ]; then
     set_env_value "$JOB_ENV" AGENT_PUBLIC_URL "$CANONICAL_JOB_AGENT_URL"
     echo "updated agents/job_agent/.env AGENT_PUBLIC_URL"
   fi
+  ensure_job_agent_host_allowed
   exit 0
 fi
 
@@ -100,3 +133,4 @@ chmod 600 "$TEMP_ENV"
 mv "$TEMP_ENV" "$JOB_ENV"
 trap - EXIT
 echo "created agents/job_agent/.env from existing production secrets"
+ensure_job_agent_host_allowed
