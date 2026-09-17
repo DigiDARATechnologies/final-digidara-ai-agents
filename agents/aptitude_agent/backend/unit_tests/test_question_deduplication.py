@@ -35,7 +35,7 @@ def test_internal_token_and_value_are_rejected():
 def test_batch_structural_collision_retries(monkeypatch):
     duplicate=generated("Values 210, 180, and 195 appear in another story. Which conclusion follows?")
     first=generated("A code uses values 180, 195, and 210. Which conclusion follows?")
-    replacement=generated("A code uses values 181, 196, and 211. Which conclusion follows?")
+    replacement=generated("Every manager reviews reports, and Kiran is a manager. Which conclusion must hold?")
     responses=[
         ({"questions":[first,duplicate]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
         ({"questions":[first,replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),

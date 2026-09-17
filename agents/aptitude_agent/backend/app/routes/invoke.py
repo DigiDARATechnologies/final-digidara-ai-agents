@@ -88,10 +88,10 @@ def _invoke_internal(action: str, payload: dict):
         test_id = str(payload.get("test_id") or "").strip()
         if not test_id:
             return jsonify(error="test_id is required", code="test_id_required"), 400
-        endpoint = {"status": "status", "question": "question", "answer": "answer", "hint": "hint", "abandon": "abandon", "results": ""}.get(action)
+        endpoint = {"status": "status", "question": "question", "answer": "answer", "hint": "hint", "skip": "skip", "abandon": "abandon", "results": ""}.get(action)
         if endpoint is None:
             return jsonify(error="Unknown action", code="unknown_action"), 400
-        method = "POST" if action in {"answer", "hint", "abandon"} else "GET"
+        method = "POST" if action in {"answer", "hint", "skip", "abandon"} else "GET"
         path = f"/api/aptitude/tests/{test_id}" + (f"/{endpoint}" if endpoint else "")
         body = {key: value for key, value in payload.items() if key != "test_id"}
     token = str(body.pop("sessionToken", "") or "")
@@ -100,7 +100,8 @@ def _invoke_internal(action: str, payload: dict):
     headers = {"Authorization": f"Bearer {token}"}
     client = current_app.test_client()
     if method == "GET":
-        response = client.get(path, headers=headers)
+        query = {key: value for key, value in body.items() if key != "sessionToken"}
+        response = client.get(path, query_string=query, headers=headers)
     else:
         response = client.open(path, method=method, headers={**headers, "Content-Type": "application/json"}, json=body)
     if response.status_code >= 400:
@@ -145,7 +146,10 @@ def invoke():
         if not token or not test_id:
             return jsonify(error="sessionToken and test_id are required", code="invalid_payload"), 400
         # The normal results endpoint is JSON; use the dedicated download route.
-        pdf = current_app.test_client().get(f"/api/aptitude/tests/{test_id}/download", headers={"Authorization": f"Bearer {token}"})
+        pdf = current_app.test_client().get(
+            f"/api/aptitude/tests/{test_id}/download",
+            headers={"Authorization": f"Bearer {token}", "X-Student-Timezone": str(payload.get("timezone") or "")},
+        )
         if pdf.status_code != 200:
             return pdf
         return jsonify(content_type="application/pdf", filename="test-results.pdf", data=base64.b64encode(pdf.data).decode("ascii"))

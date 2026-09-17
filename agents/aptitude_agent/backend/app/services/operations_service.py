@@ -21,5 +21,5 @@ def operations_snapshot(student_id=None, stale_seconds=45):
         "stale_workers_hidden":len(all_workers)-len(workers),
         "jobs":{**counts,"oldest_pending_seconds":max(0,int((now-aware(oldest.created_at)).total_seconds())) if oldest else 0},
         "failed_jobs":[{"id":job.id,"job_type":job.job_type,"test_id":job.test_id,"attempts":job.attempt_count,"last_error":job.last_error,"created_at":aware(job.created_at).isoformat()} for job in failed],
-        "question_bank":{"enabled":False,"mode":"live_openai_with_memory_prefetch"},
+        "question_bank":{"enabled":False,"mode":"openai_complete_batch"},
     }

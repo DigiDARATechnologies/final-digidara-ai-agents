@@ -61,6 +61,8 @@ def merge_usage(first, second):
         merged[key] = (float(first.get(key, 0) or 0) + float(second.get(key, 0) or 0))
     merged["provider_retry_count"] = int(merged["provider_retry_count"])
     merged["provider_attempt_count"] = int(merged["provider_attempt_count"])
+    merged["finish_reason"] = second.get("finish_reason") or first.get("finish_reason")
+    merged["response_truncated"] = bool(first.get("response_truncated") or second.get("response_truncated"))
     return merged
 
 
@@ -68,9 +70,12 @@ def response_usage(response, model):
     usage = getattr(response, "usage", None)
     input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
     output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    choices = getattr(response, "choices", None) or []
+    finish_reason = str(getattr(choices[0], "finish_reason", "") or "") if choices else ""
     return {"input_tokens": input_tokens, "output_tokens": output_tokens,
             "total_tokens": int(getattr(usage, "total_tokens", 0) or input_tokens + output_tokens),
-            "model": model}
+            "model": model, "finish_reason": finish_reason,
+            "response_truncated": finish_reason == "length"}
 
 
 def client(timeout=None):
@@ -165,16 +170,23 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
                     break
                 retries += 1
     if last_error:
+        last_error.provider_attempt_count = attempts
+        last_error.provider_retry_count = retries
+        last_error.provider_wait_ms = round(wait_ms, 2)
         raise last_error
     raise AIProviderError("circuit_open", f"OpenAI circuit is open for configured models: {', '.join(selected_models)}", True)
 
 
-def json_completion(system: str, prompt: str, temperature: float = 0, *, models=None, deadline=None, timeout=None, maximum_tokens=None):
+def json_completion(system: str, prompt: str, temperature: float = 0, *, models=None, deadline=None, timeout=None, maximum_tokens=None, response_schema=None, schema_name="aptitude_response"):
     def request(openai_client, model):
+        response_format = (
+            {"type": "json_schema", "json_schema": {"name": schema_name, "strict": True, "schema": response_schema}}
+            if response_schema else {"type": "json_object"}
+        )
         return openai_client.chat.completions.create(
             model=model,
             temperature=temperature,
-            response_format={"type": "json_object"},
+            response_format=response_format,
             max_tokens=maximum_tokens or current_app.config["OPENAI_JSON_MAX_COMPLETION_TOKENS"],
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         )
