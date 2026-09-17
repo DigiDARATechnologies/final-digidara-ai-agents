@@ -1,7 +1,10 @@
 # Running DigiDARA AI Agents Locally
 
+For the current Windows-friendly environment map and automated setup, start
+with [ENV_WORKFLOW.md](ENV_WORKFLOW.md).
+
 One entry point for getting the whole platform (React UI + orchestrator +
-7 agents + MySQL + Judge0) running on your machine. Pick **Docker** (one
+8 agent/worker services + MySQL + Judge0) running on your machine. Pick **Docker** (one
 command, recommended) or **Native** (one terminal per service, useful for
 debugging a single agent with breakpoints/hot-reload outside a container).
 
@@ -40,27 +43,9 @@ cd final-digidara-ai-agents
 ## Path A — Docker (recommended)
 
 ```bash
-# 1. Copy every service's .env.example to .env
-cp agents/project_AI_Agent/.env.example agents/project_AI_Agent/.env
-cp agents/codeforge_agent/services/lms-api/.env.example agents/codeforge_agent/services/lms-api/.env
-cp agents/communication-ai-agent/backend/.env.example agents/communication-ai-agent/backend/.env
-cp agents/aptitude_agent/.env.example agents/aptitude_agent/.env
-cp agents/resume_builder_agent/backend/.env.example agents/resume_builder_agent/backend/.env
-cp agents/certificate_agent/.env.example agents/certificate_agent/.env
-cp docker/mysql/.env.example docker/mysql/.env
-
-# The orchestrator has no committed .env.example — create one with at
-# least these keys (see README.md §7.2 for the full list):
-cat > agents/orchestrator/.env << 'EOF'
-DATABASE_URL=mysql+pymysql://root:change-me@mysql:3306/digidara_registry
-JWT_SECRET=REPLACE_WITH_output_of_openssl_rand_hex_32
-AGENT_SHARED_SECRET=REPLACE_WITH_output_of_openssl_rand_hex_32
-ALLOWED_ORIGINS=http://localhost:5173
-ALLOWED_AGENT_HOSTS=orchestrator,codeforge-agent,capstone-agent,communication-agent,aptitude-agent,resume-builder-agent,certificate-agent
-LLM_MODEL=gpt-4o-mini
-OPENAI_API_KEY=your-key
-ENV=dev
-EOF
+# 1. Create every missing .env from its committed .env.example.
+#    Existing .env files are never overwritten.
+npm run setup:env
 
 # 2. Set a real MySQL root password (docker/mysql/.env), then use that
 #    SAME password in DATABASE_URL / MYSQL_PASSWORD in every agent .env
