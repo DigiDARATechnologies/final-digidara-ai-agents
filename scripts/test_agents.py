@@ -45,12 +45,13 @@ def compose_config(init_file, agents=None):
     for name, context, port, app, worker in (AGENTS if agents is None else agents):
         database = name.replace('-', '_') + '_test'
         database_url = f'mysql+pymysql://root:local-test-password@mysql:3306/{database}'
+        gunicorn_workers = '4' if name == 'job-agent' else '1'
         services[name] = {
             'image': f'digidara-test/{name}:local',
             'build': {'context': (ROOT / context).as_posix()},
             'ports': [f'127.0.0.1::{port}'],
             'depends_on': {'mysql': {'condition': 'service_healthy'}},
-            'command': ['gunicorn', '-w', '1', '-k', worker, '-b', f'0.0.0.0:{port}', app],
+            'command': ['gunicorn', '-w', gunicorn_workers, '-k', worker, '-b', f'0.0.0.0:{port}', app],
             'environment': {
                 'DATABASE_URL': database_url, 'TEST_DATABASE_URL': database_url,
                 'INTEGRATION_DATABASE_URL': database_url,

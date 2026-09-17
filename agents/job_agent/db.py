@@ -8,6 +8,8 @@ from mysql.connector import pooling
 logger = logging.getLogger(__name__)
 
 _pool = None
+_SCHEMA_LOCK_NAME = "digidara_job_agent_schema_init"
+_SCHEMA_LOCK_TIMEOUT_SECONDS = 120
 
 
 def _pool_config():
@@ -48,7 +50,18 @@ def init_job_tables():
     """
     db = get_db()
     cursor = db.cursor()
+    lock_acquired = False
     try:
+        # Gunicorn imports the app factory independently in every worker.
+        # Serialize schema DDL across those processes: concurrent CREATE /
+        # ALTER statements can deadlock even when they use IF NOT EXISTS.
+        cursor.execute(
+            "SELECT GET_LOCK(%s, %s)",
+            (_SCHEMA_LOCK_NAME, _SCHEMA_LOCK_TIMEOUT_SECONDS),
+        )
+        if cursor.fetchone() != (1,):
+            raise RuntimeError("Timed out waiting for the Job Agent schema initialization lock")
+        lock_acquired = True
         statements = [
             """CREATE TABLE IF NOT EXISTS job_sources (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -222,5 +235,11 @@ def init_job_tables():
         db.commit()
         logger.info("[JobAgent] Database tables ready")
     finally:
+        if lock_acquired:
+            try:
+                cursor.execute("SELECT RELEASE_LOCK(%s)", (_SCHEMA_LOCK_NAME,))
+                cursor.fetchone()
+            except mysql.connector.Error:
+                logger.exception("[JobAgent] Failed to release schema initialization lock")
         cursor.close()
         db.close()
