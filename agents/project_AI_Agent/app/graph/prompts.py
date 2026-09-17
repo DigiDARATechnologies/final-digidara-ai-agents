@@ -662,3 +662,50 @@ STUDENT'S ANSWER: {answer}
 Judge whether the answer demonstrates genuine understanding of the core concept(s) above. Be lenient on phrasing -- this is a typed spoken-style answer, not a formal essay -- but it must show real understanding, not just repeat the question back or give an unrelated/evasive response. A blank or "I don't know" answer is always incorrect.
 
 Respond as JSON: {{"correct": true or false, "note": "one short sentence explaining why"}}"""
+
+
+def screenshot_structure_prompt(missing_items: list[dict], matched_items: list[dict]) -> str:
+    """Phase 3: a confused student uploads a screenshot of their local file
+    explorer, their extracted zip contents, or their IDE's file tree -- this
+    prompt (used with a vision-capable call_json, see app/vision/
+    structure_screenshot.py) reads that image and points at exactly what's
+    missing, in terms of what's actually visible in the screenshot."""
+    return f"""You are the Folder Structure Screenshot Reviewer for a DigiDARA capstone project.
+
+A student's zip submission was already checked by code (never by you) and found to be
+MISSING these required folders/files:
+{json.dumps(missing_items, ensure_ascii=False)}
+
+These required items were already found in the zip and are fine -- do not tell the
+student to add them again unless they are visibly ABSENT from the screenshot too, in
+which case say the screenshot doesn't match what was actually in the uploaded zip and
+they should re-check which folder they zipped:
+{json.dumps(matched_items, ensure_ascii=False)}
+
+The student has now attached a screenshot. It could be their local file explorer, an
+archive tool showing the extracted contents of their zip, or their code editor's file
+tree -- you cannot know which in advance; read the image itself to work out what kind
+of view it is.
+
+TASK:
+For EACH missing item listed above, look at the screenshot and determine:
+1. Is it actually visible in this screenshot (the student already has it locally, they
+   just forgot to include it when they made the zip, or it's named slightly differently
+   than expected)?
+2. Give the student a short, concrete instruction for exactly what to create (or move,
+   or rename) and where -- reference actual folder/file names you can see in the
+   screenshot, not generic advice.
+
+OUTPUT FORMAT (strict JSON):
+{{
+  "observations": [
+    {{"path": "<the missing item's path, exactly as given above>",
+      "found_in_screenshot": <true|false>,
+      "guidance": "<specific instruction, referencing what you see in THIS screenshot>"}}
+  ],
+  "summary": "<2-4 sentence plain-language summary of what to do next, written directly to the student>"
+}}
+
+Be concrete. If the screenshot is unrelated to a project folder view entirely (e.g. an
+error message, a random photo), say so plainly in "summary" and leave "guidance" as an
+instruction to upload the right kind of screenshot instead."""

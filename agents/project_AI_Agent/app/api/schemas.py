@@ -118,6 +118,24 @@ class StatusResponse(BaseModel):
     review_markdown: str | None = None
 
 
+class StructureScreenshotObservation(BaseModel):
+    path: str
+    found_in_screenshot: bool
+    guidance: str
+
+
+class StructureScreenshotResponse(BaseModel):
+    observations: list[StructureScreenshotObservation]
+    summary: str
+
+
+class QAAskResponse(BaseModel):
+    answer: str
+    # Which tools the agent actually called to answer -- transparency into
+    # what grounded the response (e.g. ["get_project_brief", "read_submitted_file"]).
+    tools_used: list[str]
+
+
 class CourseOut(BaseModel):
     id: str
     name: str

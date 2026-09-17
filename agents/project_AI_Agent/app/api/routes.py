@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -19,6 +21,7 @@ def _log_id(thread_id: str) -> str:
     return hashlib.sha256(thread_id.encode()).hexdigest()[:8]
 
 from app import config
+from app.agentic.qa_agent import ProjectNotFound, ask_project_question
 from app.api.schemas import (
     ConfigOut,
     CourseOut,
@@ -26,7 +29,9 @@ from app.api.schemas import (
     EligibilityCheckRequest,
     EligibilityCheckResponse,
     FreeTopicRequest,
+    QAAskResponse,
     StatusResponse,
+    StructureScreenshotResponse,
     SubmissionResultResponse,
     TimerConfirmRequest,
     TimerConfirmResponse,
@@ -55,7 +60,9 @@ from app.db.models import (
 )
 from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
+from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
 from app.llm.client import LLMError, call_json
+from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
 
@@ -723,6 +730,106 @@ def get_review_markdown(submission_id: str) -> PlainTextResponse:
     if not submission.review_markdown:
         raise HTTPException(404, "No review report is available for this submission yet.")
     return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
+
+
+@router.post("/submission/{submission_id}/structure-screenshot", response_model=StructureScreenshotResponse)
+async def structure_screenshot(submission_id: str, image: UploadFile = File(...)) -> StructureScreenshotResponse:
+    """Phase 3: a student confused by a "missing folder" verdict attaches a
+    screenshot of their file explorer / extracted zip / IDE tree, and a
+    vision-capable LLM call points at exactly what's missing from THAT
+    screenshot -- grounded in the same deterministic missing-items list the
+    review report already used (see app/ingestion/structure_check.py)."""
+    logger.info("=== POST /api/submission/%s/structure-screenshot", submission_id)
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+
+    zip_score = submission.zip_validation_json or (submission.score_json or {}).get("zip_structure_score") or {}
+    detail = zip_score.get("required_paths_detail") or {}
+    missing_items = detail.get("missing_items") or []
+    if not missing_items:
+        raise HTTPException(400, "This submission has no missing required folders/files to check a screenshot against.")
+
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(400, "Please attach an image file (a screenshot).")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(400, "The screenshot is empty.")
+    if len(image_bytes) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Screenshot must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+    result = analyze_structure_screenshot(image_bytes, image.content_type, missing_items, detail.get("matched_items") or [])
+    return StructureScreenshotResponse(**result)
+
+
+@router.post("/qa/ask", response_model=QAAskResponse)
+async def qa_ask(
+    thread_id: str = Form(...),
+    question: str = Form(...),
+    attachment: UploadFile | None = File(None),
+) -> QAAskResponse:
+    """Phase 4: project-scoped Q&A. Answers are grounded ONLY in this
+    student's own topic/requirements/submitted code/report/grading result
+    (see app/agentic/qa_agent.py) -- the agent decides which of those to
+    look at via real tool calls, using web search only to verify a
+    technical claim or a current requirement. An optional image or .docx
+    attachment is analyzed and folded into that single question's context;
+    it is not persisted."""
+    logger.info("=== POST /api/qa/ask thread=%s", _log_id(thread_id))
+    if not question.strip():
+        raise HTTPException(400, "Question must not be empty.")
+
+    extra_context: str | None = None
+    if attachment is not None:
+        attachment_bytes = await attachment.read()
+        if not attachment_bytes:
+            raise HTTPException(400, "The attachment is empty.")
+        if len(attachment_bytes) > config.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"Attachment must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+        content_type = attachment.content_type or ""
+        filename = (attachment.filename or "").lower()
+        if content_type.startswith("image/"):
+            data_url = f"data:{content_type};base64,{base64.b64encode(attachment_bytes).decode('ascii')}"
+            description = call_text(
+                system="Describe what is shown in this image in plain language, in under 150 words. "
+                "If it looks like a file explorer, archive tool, or code editor file tree, list the "
+                "folder/file names you can actually read in it.",
+                user="Describe the attached image now.",
+                image_data_url=data_url,
+            )
+            extra_context = f"[Image attached by the student]\n{description}"
+        elif filename.endswith(".docx"):
+            tmp_dir = config.UPLOAD_DIR / "qa_attachments"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / f"{uuid.uuid4().hex}.docx"
+            tmp_path.write_bytes(attachment_bytes)
+            try:
+                parsed = ingest_docx(str(tmp_path))
+            except DocxIngestError as exc:
+                raise HTTPException(400, str(exc))
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            sections_text = json.dumps(parsed["sections"], ensure_ascii=False)
+            if len(sections_text) > 6000:
+                sections_text = sections_text[:6000] + "... [truncated]"
+            extra_context = f"[.docx document attached by the student]\n{sections_text}"
+        elif filename.endswith(".pdf"):
+            raise HTTPException(415, "PDF attachments aren't supported yet — please attach a .docx report or an image screenshot instead.")
+        else:
+            raise HTTPException(415, "Unsupported attachment type — please attach a .docx report or an image screenshot.")
+
+    try:
+        result = ask_project_question(thread_id, question, extra_context=extra_context)
+    except ProjectNotFound:
+        raise HTTPException(404, "Unknown or expired thread_id.")
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}")
+    return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
 
 
 @router.post("/invoke")
