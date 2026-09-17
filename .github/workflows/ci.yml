@@ -495,7 +495,13 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: bash /opt/digidara-agents/deploy.sh
+          script: |
+            set -euo pipefail
+            cd /opt/digidara-agents
+            previous_commit="$(git rev-parse HEAD)"
+            git fetch origin main
+            git reset --hard "${{ github.sha }}"
+            PREVIOUS_COMMIT="$previous_commit" DEPLOY_COMMIT="${{ github.sha }}" bash deploy.sh
 
   notify-failure:
     name: Notify Slack on CI failure
