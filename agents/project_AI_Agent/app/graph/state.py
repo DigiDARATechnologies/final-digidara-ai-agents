@@ -36,6 +36,9 @@ class ProjectAgentState(TypedDict, total=False):
     deadline_at: str
 
     submission_guide: dict[str, Any]  # SubmissionGuideNode output
+    # Plain-language "about this project" doc, built alongside submission_guide
+    # (see app/graph/report.py) -- downloadable via GET /api/assignment/{thread_id}/about.md
+    about_markdown: str
 
     docx_path: str
     doc_sections: dict[str, str]
@@ -61,6 +64,9 @@ class ProjectAgentState(TypedDict, total=False):
     passed: bool  # LLM-decided in ScoreAggregatorNode, not a threshold comparison
     score_reasoning: str
     feedback: str
+    # Full plain-language review report (see app/graph/report.py), built after
+    # every submission attempt -- downloadable via GET /api/submission/{id}/review.md
+    review_markdown: str
 
     status: str  # routes control flow / mirrors AssignmentStatus or SubmissionStatus
     revision_notes: str

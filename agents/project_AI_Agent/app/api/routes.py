@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 
@@ -402,6 +402,7 @@ def timer_confirm(req: TimerConfirmRequest) -> TimerConfirmResponse:
         thread_id=req.thread_id,
         deadline_at=result["deadline_at"],
         submission_guide=result["submission_guide"],
+        about_markdown=result.get("about_markdown"),
     )
 
 
@@ -500,11 +501,13 @@ async def submission_upload(
                 "feedback": result.get("feedback"),
                 "score_reasoning": result.get("score_reasoning"),
                 "code_quality_score": result.get("code_quality_score"),
+                "review_markdown": result.get("review_markdown"),
             },
         )
         return SubmissionResultResponse(
             thread_id=thread_id,
             status="needs_revision",
+            submission_id=submission_id,
             revision_notes=result.get("revision_notes"),
             # Present when this was a failed *content* grade being sent back
             # for another attempt (not just a packaging/structure issue) —
@@ -513,6 +516,7 @@ async def submission_upload(
             passed=result.get("passed"),
             score_reasoning=result.get("score_reasoning"),
             code_quality_score=result.get("code_quality_score"),
+            review_markdown=result.get("review_markdown"),
         )
 
     # Content grade passed -- hold the score back and run the viva before
@@ -621,17 +625,20 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
                 "feedback": combined_feedback,
                 "score_reasoning": code_result.get("score_reasoning"),
                 "code_quality_score": code_result.get("code_quality_score"),
+                "review_markdown": submission.review_markdown,
             },
         )
 
         return SubmissionResultResponse(
             thread_id=thread_id,
             status=final_status.value,
+            submission_id=req.submission_id,
             final_score=code_result.get("final_score"),
             passed=overall_passed,
             feedback=combined_feedback,
             score_reasoning=code_result.get("score_reasoning"),
             code_quality_score=code_result.get("code_quality_score"),
+            review_markdown=submission.review_markdown,
             viva_score=submission.viva_score,
             viva_passed=viva_passed,
         )
@@ -676,13 +683,46 @@ def get_status(thread_id: str) -> StatusResponse:
         chosen_topic=values.get("chosen_topic"),
         requirements=values.get("requirements"),
         submission_guide=values.get("submission_guide"),
+        about_markdown=values.get("about_markdown"),
         final_score=values.get("final_score"),
         passed=values.get("passed"),
         feedback=values.get("feedback"),
         revision_notes=values.get("revision_notes"),
         score_reasoning=values.get("score_reasoning"),
         code_quality_score=values.get("code_quality_score"),
+        review_markdown=values.get("review_markdown"),
     )
+
+
+@router.get("/assignment/{thread_id}/about.md")
+def get_about_markdown(thread_id: str) -> PlainTextResponse:
+    """Downloadable "about this project" doc -- topic, requirements, and the
+    required folder/report structure -- generated once the submission guide
+    is ready. Useful as a reference while building, and to bring to the viva."""
+    values = _get_state_values(thread_id)
+    markdown = values.get("about_markdown")
+    if not markdown:
+        raise HTTPException(404, "No project brief has been generated yet for this thread.")
+    return PlainTextResponse(markdown, media_type="text/markdown")
+
+
+@router.get("/submission/{submission_id}/review.md")
+def get_review_markdown(submission_id: str) -> PlainTextResponse:
+    """Downloadable full review report for one submission attempt -- see
+    app/graph/report.py:build_review_markdown. Available as soon as a
+    submission attempt finishes (including a structure-gate rejection),
+    regardless of whether the content score itself is still held back
+    pending the viva."""
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+    if not submission.review_markdown:
+        raise HTTPException(404, "No review report is available for this submission yet.")
+    return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
 
 
 @router.post("/invoke")

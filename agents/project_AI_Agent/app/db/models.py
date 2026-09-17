@@ -108,6 +108,10 @@ class ProjectAssignment(Base):
         Enum(AssignmentStatus), nullable=False, default=AssignmentStatus.awaiting_topic_choice
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # "About this project" doc -- see app/graph/report.py:build_about_markdown.
+    # Populated by submission_guide_node once the topic/requirements/folder
+    # structure are known.
+    about_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     submissions: Mapped[list["Submission"]] = relationship(back_populates="assignment")
 
@@ -124,6 +128,8 @@ class Submission(Base):
     zip_validation_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     score_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Full plain-language review report -- see app/graph/report.py:build_review_markdown.
+    review_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SubmissionStatus] = mapped_column(
         Enum(SubmissionStatus), nullable=False, default=SubmissionStatus.processing
     )
