@@ -33,10 +33,14 @@ if [ -n "$BAD_CONTAINERS" ]; then
 fi
 
 for container in $(docker compose ps --services); do
-  ERRORS=$(docker compose logs --tail=50 "$container" 2>&1 | grep -iE "traceback|fatal|unhandled exception" | grep -v "LangChainPendingDeprecationWarning" || true)
-  if [ -n "$ERRORS" ]; then
-    echo "Errors found in $container logs:"
-    echo "$ERRORS"
+  # Print the whole tail, not just the matching grep line -- a bare
+  # "Traceback (most recent call last):" or "Errors found in..." with no
+  # context tells you a container broke but not why, which is useless for
+  # actually fixing the regression from the CI log alone.
+  LOGS=$(docker compose logs --tail=80 "$container" 2>&1)
+  if echo "$LOGS" | grep -v "LangChainPendingDeprecationWarning" | grep -qiE "traceback|fatal|unhandled exception"; then
+    echo "Errors found in $container logs (last 80 lines):"
+    echo "$LOGS"
     HEALTH_OK=false
   fi
 done

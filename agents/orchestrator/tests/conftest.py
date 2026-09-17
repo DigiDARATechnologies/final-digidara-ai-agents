@@ -3,6 +3,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET"] = "orchestrator-test-secret-with-at-least-32-characters"
 os.environ["AGENT_SHARED_SECRET"] = "registry-test-secret"
+os.environ["ALLOWED_AGENT_HOSTS"] = "localhost"
 
 import pytest
 from fastapi import FastAPI
@@ -12,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from app import db
 from app.auth import service as auth_service, service_auth
+from app.chat_history import service as chat_history_service
 from app.registry import routes, service
 from app.gateway import routes as gateway
 
@@ -29,7 +31,7 @@ def database(monkeypatch):
     db.Base.metadata.drop_all(engine)
     db.Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
-    for module in (db, service, auth_service):
+    for module in (db, service, auth_service, chat_history_service):
         monkeypatch.setattr(module, "get_session", factory)
     service_auth._seen_request_ids.clear()
     yield factory

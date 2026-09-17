@@ -357,10 +357,20 @@ body.glow-off .send-btn:hover{
 .sidebar-divider{padding:14px 8px 9px;display:flex;align-items:center;justify-content:space-between;font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--text-faint);text-transform:uppercase;}
 .history-count{display:grid;place-items:center;min-width:22px;height:20px;padding:0 6px;border-radius:99px;background:#eefafe;color:var(--accent1);font-size:10px;letter-spacing:0;}
 
-.history-list{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0 2px 8px;scrollbar-gutter:stable;}
+.history-list{
+  flex:0 1 auto;
+  max-height:258px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding:0 2px 8px;
+  scrollbar-gutter:stable;
+}
 .history-item{
   position:relative;
   display:flex; align-items:center;
+  height:40px; flex:0 0 40px;
   padding:10px 11px; border-radius:var(--radius-sm);
   font-size:13.5px; color:var(--text-dim); background:transparent; border:1px solid transparent;
   width:100%;
@@ -391,8 +401,11 @@ body.glow-off .send-btn:hover{
   transition:opacity .15s, background .15s, color .15s;
 }
 .history-item:hover .history-menu-btn,
-.history-item:has(.history-menu-panel.open) .history-menu-btn{ opacity:1; background:#fff; }
+.history-item.menu-open .history-menu-btn{ opacity:1; background:#fff; }
 .dropdown-panel.history-menu-panel{ top:34px; right:6px; width:170px; padding:6px; }
+.dropdown-panel.history-menu-floating{
+  position:fixed; right:auto; z-index:1000;
+}
 .history-menu-panel button{
   width:100%; text-align:left; padding:8px 9px; border-radius:8px;
   background:none; border:none; font-size:13px; font-weight:600; color:var(--text);

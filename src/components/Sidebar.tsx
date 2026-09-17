@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 
@@ -47,11 +48,44 @@ export default function Sidebar({
 }: SidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
 
   const sortedChats = [...chats].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
     return b.updatedAt - a.updatedAt;
   });
+  const openMenuChat = sortedChats.find((chat) => chat.id === openChatMenuId);
+
+  useLayoutEffect(() => {
+    if (!openChatMenuId || !menuAnchor) return;
+
+    const positionMenu = () => {
+      const rect = menuAnchor.getBoundingClientRect();
+      const menuWidth = 170;
+      const menuHeight = 132;
+      const viewportGap = 8;
+      const top = rect.bottom + 4 + menuHeight <= window.innerHeight
+        ? rect.bottom + 4
+        : Math.max(viewportGap, rect.top - menuHeight - 4);
+
+      setMenuPosition({
+        top,
+        left: Math.min(
+          window.innerWidth - menuWidth - viewportGap,
+          Math.max(viewportGap, rect.right - menuWidth),
+        ),
+      });
+    };
+
+    positionMenu();
+    window.addEventListener("resize", positionMenu);
+    document.addEventListener("scroll", positionMenu, true);
+    return () => {
+      window.removeEventListener("resize", positionMenu);
+      document.removeEventListener("scroll", positionMenu, true);
+    };
+  }, [openChatMenuId, menuAnchor]);
 
   function startRename(chat: Chat) {
     setRenamingId(chat.id);
@@ -140,7 +174,7 @@ export default function Sidebar({
             const agent = findAgent(c.agentId) || DEFAULT_AGENT;
             const isRenaming = renamingId === c.id;
             return (
-              <div key={c.id} className={`history-item${c.id === currentChatId ? " active" : ""}`}>
+              <div key={c.id} className={`history-item${c.id === currentChatId ? " active" : ""}${openChatMenuId === c.id ? " menu-open" : ""}`}>
                 <button
                   type="button"
                   className="history-item-main"
@@ -170,27 +204,40 @@ export default function Sidebar({
                 <button
                   type="button"
                   className="icon-btn history-menu-btn"
-                  onClick={(e) => onToggleChatMenu(c.id, e)}
+                  onClick={(e) => {
+                    setMenuAnchor(e.currentTarget);
+                    onToggleChatMenu(c.id, e);
+                  }}
                   aria-label="Chat options"
+                  aria-haspopup="menu"
+                  aria-expanded={openChatMenuId === c.id}
                 >
                   ⋯
                 </button>
-                <div className={`dropdown-panel history-menu-panel${openChatMenuId === c.id ? " open" : ""}`}>
-                  <button type="button" onClick={() => startRename(c)}>
-                    ✏️ Rename
-                  </button>
-                  <button type="button" onClick={() => onTogglePinChat(c.id)}>
-                    📌 {c.pinned ? "Unpin chat" : "Pin chat"}
-                  </button>
-                  <button type="button" className="danger" onClick={() => onDeleteChat(c.id)}>
-                    🗑️ Delete
-                  </button>
-                </div>
               </div>
             );
           })
         )}
       </div>
+
+      {openMenuChat && menuAnchor && createPortal(
+        <div
+          className="dropdown-panel history-menu-panel open history-menu-floating"
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+          role="menu"
+        >
+          <button type="button" role="menuitem" onClick={() => startRename(openMenuChat)}>
+            ✏️ Rename
+          </button>
+          <button type="button" role="menuitem" onClick={() => onTogglePinChat(openMenuChat.id)}>
+            📌 {openMenuChat.pinned ? "Unpin chat" : "Pin chat"}
+          </button>
+          <button type="button" role="menuitem" className="danger" onClick={() => onDeleteChat(openMenuChat.id)}>
+            🗑️ Delete
+          </button>
+        </div>,
+        document.body,
+      )}
 
       <div className="sidebar-bottom">
         <button className="user-chip" onClick={onToggleUserMenu}>
