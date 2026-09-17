@@ -112,6 +112,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Validate deployment scripts
+        run: bash -n deploy.sh scripts/prepare-production-env.sh
+
       - name: Create CI-only env files from examples
         shell: bash
         run: |
