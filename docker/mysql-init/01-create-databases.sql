@@ -1,5 +1,6 @@
--- Runs once, on the mysql container's first boot (empty data volume), via
--- MySQL's own /docker-entrypoint-initdb.d mechanism. Each DigiDARA service
+-- Runs on the mysql container's first boot and is replayed idempotently by
+-- deploy.sh for existing production volumes. MySQL initially loads it via
+-- /docker-entrypoint-initdb.d. Each DigiDARA service
 -- owns and migrates its own schema inside its database; this script only
 -- makes sure the databases themselves exist so every service's own startup
 -- (SQLAlchemy create_all / Flask-Migrate / etc.) has somewhere to write.

@@ -23,6 +23,16 @@ bash scripts/prepare-production-env.sh
 # containers are touched.
 docker compose config --quiet
 
+# MySQL only runs /docker-entrypoint-initdb.d when its data volume is empty.
+# Replay the idempotent database-creation script on every deploy so services
+# added after the production volume was created get their database too.
+echo "Ensuring service databases exist..."
+docker compose up -d --wait --wait-timeout 120 mysql
+docker compose exec -T mysql sh -c \
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --protocol=socket -uroot' \
+  < docker/mysql-init/01-create-databases.sql
+echo "Service databases are ready."
+
 DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 HEALTH_OK=true
 if ! docker compose up -d --build --wait --wait-timeout 180; then
@@ -68,7 +78,7 @@ if [ "$HEALTH_OK" = false ]; then
   docker compose logs --since "$DEPLOY_STARTED_AT" --tail=200 || true
   echo "Health check FAILED. Rolling back to $PREVIOUS_COMMIT"
   git reset --hard "$PREVIOUS_COMMIT"
-  if ! docker compose up -d --build --wait --wait-timeout 180; then
+  if ! docker compose up -d --build --wait --wait-timeout 180 --remove-orphans; then
     echo "ROLLBACK FAILED. Manual intervention is required."
     exit 2
   fi
