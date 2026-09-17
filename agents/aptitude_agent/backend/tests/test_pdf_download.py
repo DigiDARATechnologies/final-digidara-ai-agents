@@ -2,10 +2,12 @@ from io import BytesIO
 import uuid
 
 from pypdf import PdfReader
+from datetime import datetime, timezone
 
 from backend.app.extensions import db
 from backend.app.models import AptitudeAnswer, AptitudeTest, AptitudeTestQuestion, Student
 from backend.app.models.base import utcnow
+from backend.app.utils.timezone import format_local_datetime, valid_timezone
 
 
 def _completed_test(student_id):
@@ -98,6 +100,62 @@ def test_completed_test_pdf_has_expected_content_and_excludes_dormant_diagnostic
     assert "DORMANT REASONING MUST NOT EXPORT" not in text
     assert "DORMANT DIAGNOSIS MUST NOT EXPORT" not in text
     assert "confidence" not in text.lower()
+    assert "No priority topics identified for this assessment." in text
+    assert "Aptitude Test" in text
+    assert "AptiDARA" not in text
+
+
+def test_pdf_uses_validated_student_timezone_and_safe_fallbacks():
+    instant=datetime(2026,9,12,6,54,tzinfo=timezone.utc)
+    assert format_local_datetime(instant,"Asia/Kolkata")=="12 Sep 2026, 12:24 PM IST"
+    assert format_local_datetime(instant,"America/New_York")=="12 Sep 2026, 02:54 AM EDT"
+    assert format_local_datetime(instant,"Europe/London")=="12 Sep 2026, 07:54 AM BST"
+    assert valid_timezone("invalid/timezone") is None
+    assert valid_timezone("Asia/Calcutta")=="Asia/Kolkata"
+    assert format_local_datetime(instant,"invalid/timezone")=="12 Sep 2026, 06:54 AM UTC"
+    assert format_local_datetime(instant,None)=="12 Sep 2026, 06:54 AM UTC"
+    assert format_local_datetime(datetime(2026,9,12,6,54),"Asia/Kolkata")=="12 Sep 2026, 12:24 PM IST"
+
+
+def test_pdf_priority_topics_branding_metadata_and_attempt_timezone(app,client,auth_headers):
+    with app.app_context():
+        student=Student.query.filter_by(email="learner@example.com").one()
+        test_id=_completed_test(student.id)
+        test=db.session.get(AptitudeTest,test_id)
+        test.completed_at=datetime(2026,9,12,6,54,tzinfo=timezone.utc)
+        test.timezone="Asia/Kolkata"
+        test.questions[0].category="Quantitative Aptitude"
+        test.questions[0].topic="Profit & Loss"
+        db.session.commit()
+
+    response=client.get(f"/api/aptitude/tests/{test_id}/download",headers=auth_headers)
+    assert response.status_code==200
+    reader=PdfReader(BytesIO(response.data))
+    text="\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "12 Sep 2026" in text
+    assert "12:24 PM IST" in text
+    assert "Priority Topics to Improve" in text
+    assert "PRIORITY" in text
+    assert "Quantitative Aptitude - Profit & Loss" in text
+    assert "AptiDARA" not in text
+    assert reader.metadata.author=="Aptitude Test"
+    assert "AptiDARA" not in (reader.metadata.title or "")
+
+
+def test_old_attempt_pdf_uses_validated_download_timezone_header(app,client,auth_headers):
+    with app.app_context():
+        student=Student.query.filter_by(email="learner@example.com").one()
+        test_id=_completed_test(student.id)
+        test=db.session.get(AptitudeTest,test_id)
+        test.completed_at=datetime(2026,9,12,6,54,tzinfo=timezone.utc)
+        db.session.commit()
+
+    response=client.get(
+        f"/api/aptitude/tests/{test_id}/download",
+        headers={**auth_headers,"X-Student-Timezone":"Asia/Kolkata"},
+    )
+    assert response.status_code==200
+    assert "12:24 PM IST" in _pdf_text(response)
 
 
 def test_pdf_download_enforces_owner_existence_and_completion(app,client,auth_headers):

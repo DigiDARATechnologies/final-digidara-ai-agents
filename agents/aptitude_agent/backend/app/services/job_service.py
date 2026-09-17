@@ -5,7 +5,7 @@ from ..extensions import db
 from ..models import AptitudeTest, BackgroundJob, WorkerHeartbeat
 from ..models.base import utcnow
 from .analytics_service import recalculate_topic_performance
-from .prefetch_service import clear_test_cache
+from .hint_cache_service import clear_test_cache
 
 
 RETIRED_JOB_TYPES=("pool_replenish","bank_quality_curation","adaptive_question","category_question","hint_generation","answer_diagnostics","recommendation")

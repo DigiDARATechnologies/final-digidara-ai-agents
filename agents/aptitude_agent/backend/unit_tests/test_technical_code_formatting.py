@@ -103,6 +103,17 @@ def test_rejects_unfenced_program_code_for_technical_questions():
         validate_generated_item(technical_item(question),TECHNICAL_SLOT)
 
 
+def test_allows_single_inline_code_reference_in_technical_prose():
+    question="What does print() do in Python?"
+    assert validate_generated_item(technical_item(question),TECHNICAL_SLOT)["question"]==question
+
+
+def test_rejects_multiline_unfenced_program_code():
+    question="What is the output?\ndef add(a, b):\n    return a + b"
+    with pytest.raises(ValueError,match="fenced code block"):
+        validate_generated_item(technical_item(question),TECHNICAL_SLOT)
+
+
 def test_nontechnical_content_is_not_subject_to_code_fence_validation():
     slot={"category":"Verbal Ability","topic":"Sentence Correction","difficulty":"Easy"}
     item={

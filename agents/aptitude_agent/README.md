@@ -1,6 +1,6 @@
 # AptiDARA — Aptitude AI Agent
 
-AptiDARA is a self-contained aptitude assessment application built with React, Flask, MySQL, and the Groq API. It provides adaptive mixed assessments, focused category practice, conceptual hints, immediate answer feedback, completed-test analytics, AI usage tracking, and an editable learner profile in the existing purple/light AptiDARA interface.
+AptiDARA is a self-contained aptitude assessment application built with React, Flask, MySQL, and the OpenAI API. It provides batch-generated mixed assessments, focused category practice, conceptual hints, immediate answer feedback, completed-test analytics, AI usage tracking, and an editable learner profile in the existing purple/light AptiDARA interface.
 
 This README describes the application as implemented on **27 August 2026**.
 
@@ -9,14 +9,14 @@ This README describes the application as implemented on **27 August 2026**.
 Implemented and active:
 
 - Dashboard is the landing page; `/` redirects to `/dashboard`.
-- Learner-configurable adaptive Mixed Test across all six aptitude categories, with 3–10 questions required per category.
+- Learner-configurable Mixed Test across all six aptitude categories, with 3–10 questions required per category.
 - 10-question fixed-level Category Practice with Beginner selected by default.
 - Shared topic taxonomy with researched priority metadata and visible priority-topic stars.
 - Equal-probability, all-topic rotation for Mixed Test.
 - 50/50 priority weighting and non-priority-topic rotation for Category Practice.
 - Shared per-category topic history across Mixed Test and Category Practice.
-- Live Groq question generation with strict content validation.
-- One-question, process-local background prefetch.
+- One complete-test OpenAI generation request with strict batch validation before the test starts.
+- Transactional persistence of every question before the first question is served.
 - Recent and in-test duplicate-question prevention.
 - Topic and difficulty transparency tags on every question.
 - Difficulty-based, server-authoritative timer: 60s Easy, 90s Medium, and 120s Hard.
@@ -34,7 +34,7 @@ Implemented and active:
 - MySQL-backed analytics and maintenance worker.
 - Backend tests, frontend lint/build checks, and GitHub Actions CI.
 
-Current verification baseline: **136 backend tests passing**, frontend ESLint passing, and the Vite production build passing.
+Current verification baseline: **141 backend tests passing**, **9 aptitude frontend tests passing**, frontend ESLint and TypeScript checks passing, and the Vite production build passing.
 
 Retired from the active product:
 
@@ -42,7 +42,7 @@ Retired from the active product:
 - Confidence rating.
 - Written reasoning evaluation.
 - Mistake diagnosis.
-- Answer-evaluation calls to Groq.
+- Answer-evaluation calls to an AI provider.
 - Resume-test functionality.
 - Separate Home, Login, and Register pages in the React UI.
 
@@ -55,7 +55,7 @@ Some legacy database columns, tables, and dormant compatibility service code rem
 | Frontend | React, Vite, JavaScript, HTML5, CSS3, React Router, Lucide icons |
 | Backend | Python 3.12, Flask, Flask-SQLAlchemy, Flask-Migrate, Werkzeug |
 | Database | MySQL 8 with PyMySQL |
-| AI provider | Groq API |
+| AI provider | OpenAI API |
 | Production WSGI | Waitress |
 | Background work | Python worker with a transactional MySQL job table |
 | Testing and quality | Pytest, ESLint, Vite production build, GitHub Actions |
@@ -69,7 +69,7 @@ React/Vite browser
        |
        | REST/JSON
        v
-Flask application --------------------> Groq API
+Flask application --------------------> OpenAI API
        |                                  | questions
        | SQLAlchemy                       | hints
        |                                  | recommendations
@@ -84,8 +84,8 @@ MySQL 8 <---------------------------- worker.py
 The Flask web process owns learner-facing work:
 
 - Creates tests.
-- Generates and validates live questions.
-- Prefetches one upcoming question in memory.
+- Generates and validates the complete question batch.
+- Persists the complete batch before marking a test ready.
 - Generates safe conceptual hints.
 - Scores submitted answers locally.
 - Generates the Results recommendation synchronously on first access.
@@ -109,7 +109,7 @@ The worker does **not** generate learner questions, hints, or Results recommenda
 | Questions | Configurable per learner: 3–10 in every category, 18–60 total; 21 by default |
 | Categories | 6 |
 | Timer | Easy 60s, Medium 90s, Hard 120s per question |
-| Difficulty | Adaptive: Easy, Medium, or Hard |
+| Difficulty | Fixed schedule containing Easy, Medium, and Hard questions |
 | Hints | 3 by default, configurable with `HINTS_PER_TEST` |
 | Topic policy | Equal probability across all eligible topics; every recent topic rotates |
 | Technical language | C, Java, Python, or SQL; Python by default |
@@ -128,13 +128,9 @@ Category distribution:
 
 Counts are stored per learner in MySQL. The overview updates the total live and provides explicit Save and Reset to Default actions. No category can be excluded from a Mixed Test.
 
-Adaptive difficulty is calculated independently within each category:
-
-- A category starts at Medium when it has no prior answer.
-- A wrong or timed-out answer steps difficulty down where possible.
-- A sufficiently fast correct answer or correct streak can step difficulty up.
-- A correct answer using a hint holds the current difficulty.
-- A correct answer using at least 90% of the allowed time also holds difficulty.
+Mixed difficulty is assigned when the complete test schedule is built. The
+Easy, Medium, and Hard labels are persisted with the questions and do not
+change in response to earlier answers.
 
 ### Category Practice
 
@@ -161,7 +157,7 @@ Mixed Test and Category Practice topic labels come from a config-only taxonomy c
 Dashboard
   -> Mixed Test overview
      -> Instructions
-        -> Adaptive test session
+        -> Mixed-difficulty test session
            -> Results
 
 Dashboard
@@ -177,44 +173,30 @@ Tests cannot be resumed. Re-entering an already-started question or confirming n
 
 ## AI generation and reliability
 
-### Live question generation
+### Complete-test batch generation
 
-Every learner question is generated live through Groq. The reusable question-bank architecture is retired; the legacy table remains only for migration compatibility.
+Every test is generated as one complete OpenAI JSON batch. The reusable question-bank architecture is retired; the legacy table remains only for migration compatibility. The server validates the full response and stores all questions in one transaction before returning a ready test ID. Question fetch and answer submission read stored rows and never call the provider.
 
 The generation path includes:
 
-- Primary model: `openai/gpt-oss-120b`.
-- Fallback model: `openai/gpt-oss-20b`.
-- Groq SDK retries disabled with `max_retries=0` so retry behavior is visible and bounded by the application.
-- Six-second foreground provider timeout by default.
-- Shared nine-second live-generation deadline.
-- At most two full validation attempts for a learner-facing question.
+- Primary and fallback models configured by `OPENAI_MODEL` and `OPENAI_FALLBACK_MODELS`.
+- OpenAI SDK retries disabled with `max_retries=0` so retry behavior is visible and bounded by the application.
+- A 120-second provider timeout and 180-second complete-batch deadline by default.
+- At most two complete-batch validation attempts.
 - Immediate failover to the fallback model after a `429`; the same rate-limited model is not retried.
 - Exactly one same-model retry for eligible transient transport errors.
 - Per-model circuit breaker and Retry-After awareness.
 - Strict JSON, option, answer, explanation, category, topic, and difficulty validation.
-- Structural and semantic duplicate detection against the current test and recent learner history.
-- A minimally safe last-candidate path when full validation exhausts the shared deadline.
+- Structural and semantic duplicate detection within the batch and against recent learner history.
+- Exact question-count validation before any questions are committed.
 
 When `ALLOW_DEMO_QUESTIONS=true`, local development assessments fall back to validated fixtures if the provider is temporarily unavailable or generated content repeatedly fails validation. Production validation requires `ALLOW_DEMO_QUESTIONS=false`, so deployed assessments remain AI-only and surface provider failures normally.
 
-### Question prefetch
-
-When question N is served or answered, Flask schedules generation for question N+1 using a small in-process executor. The result:
-
-- Is stored only in a process-local TTL cache.
-- Is never written to MySQL before it is actually served.
-- Is consumed once.
-- Is discarded if its sequence, category, topic, or adaptive difficulty is stale.
-- Falls back to bounded synchronous generation on a cache miss.
-
-Because this cache is process-local, a multi-process production deployment needs sticky routing or a shared prefetch cache to guarantee cross-process hits.
-
 ### Conceptual hints
 
-Hints use the smaller configured Groq model, a five-second budget, and a small completion limit. Safety validation rejects hints that reveal an option, repeat the answer, include calculations, or expose answer-specific numeric values. If Groq is unavailable or both safety attempts fail, the application returns a topic-specific deterministic hint instead of a raw provider error.
+Hints use the smaller configured OpenAI model, a five-second budget, and a small completion limit. Safety validation rejects hints that reveal an option, repeat the answer, include calculations, or expose answer-specific numeric values. If OpenAI is unavailable or both safety attempts fail, the application returns a topic-specific deterministic hint instead of a raw provider error.
 
-The external Groq call runs before the endpoint acquires MySQL write locks. The lock covers only final revalidation and persistence, preventing slow AI calls from blocking other requests on the same test.
+The external OpenAI call runs before the endpoint acquires MySQL write locks. The lock covers only final revalidation and persistence, preventing slow AI calls from blocking other requests on the same test.
 
 ### Answer scoring
 
@@ -224,11 +206,11 @@ Answer correctness is authoritative and local:
 selected_answer == stored correct_answer
 ```
 
-Submitting an answer never calls Groq. This keeps scoring deterministic and the critical answer-submission path limited to validation and MySQL writes.
+Submitting an answer never calls OpenAI. This keeps scoring deterministic and the critical answer-submission path limited to validation and MySQL writes.
 
 ### AI focus recommendation
 
-The first request to a completed test's Results page generates a concise recommendation synchronously under a bounded deadline. The result is stored in MySQL and reused on later visits. If Groq fails, the application stores and returns a deterministic fallback recommendation so the Results page remains complete.
+The first request to a completed test's Results page generates a concise recommendation synchronously under a bounded deadline. The result is stored in MySQL and reused on later visits. If OpenAI fails, the application stores and returns a deterministic fallback recommendation so the Results page remains complete.
 
 ### Completed-test PDF reports
 
@@ -250,7 +232,7 @@ History provides a Download action for every completed assessment. Flask builds 
 | `/test/:id` | Compatibility route for the shared assessment screen |
 | `/results/:id` | Completed assessment details and question review |
 | `/history` | Completed assessments only |
-| `/analytics` | Groq token usage by day, test, question, and operation |
+| `/analytics` | OpenAI token usage by day, test, question, and operation |
 | `/profile` | Editable learner profile |
 
 Legacy `/agents`, `/login`, and `/register` frontend URLs redirect into the current Dashboard/Aptitude Test experience.
@@ -275,7 +257,7 @@ Base path: `/api/aptitude`
 | `GET` | `/tests/<id>/download` | Download a completed assessment PDF |
 | `GET` | `/history` | Completed tests only |
 | `GET` | `/analytics` | Category and score analytics |
-| `GET` | `/usage` | Groq token usage analytics |
+| `GET` | `/usage` | OpenAI token usage analytics |
 | `GET` | `/operations` | Worker and job health |
 | `POST` | `/operations/jobs/<id>/retry` | Retry an eligible failed job |
 
@@ -331,7 +313,7 @@ Aptitude_ai_agent/
 - Python 3.12+
 - Node.js 20+
 - MySQL 8+
-- Groq API key for live assessment generation
+- OpenAI API key for complete-test batch generation
 
 ## Local installation
 
@@ -378,7 +360,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-The repository pins `groq==0.30.0` and `httpx==0.27.2` together. Do not upgrade `httpx` independently because incompatible versions can produce `Client.__init__() got an unexpected keyword argument 'proxies'`.
+Install dependencies from the pinned `requirements.txt` so the OpenAI client and HTTP transport remain compatible.
 
 ### 3. Configure `.env`
 
@@ -476,15 +458,14 @@ Single-user mode is intended for a trusted local environment. Production configu
 | `OPENAI_MODEL` | `gpt-4o-mini` | Primary generation model |
 | `OPENAI_FALLBACK_MODELS` | empty | Ordered fallback model list |
 | `OPENAI_TIMEOUT_SECONDS` | `12` | Foreground provider-call timeout |
-| `OPENAI_BACKGROUND_TIMEOUT_SECONDS` | `20` | Background prefetch provider timeout ceiling |
-| `LIVE_QUESTION_DEADLINE_SECONDS` | `30` | Shared foreground generation/validation budget |
-| `QUESTION_GENERATION_MAX_COMPLETION_TOKENS` | `1536` | Question JSON completion ceiling |
+| `OPENAI_BATCH_TIMEOUT_SECONDS` | `120` | Complete-test batch provider timeout ceiling |
+| `BATCH_GENERATION_DEADLINE_SECONDS` | `180` | Shared batch generation and validation budget |
+| `BATCH_GENERATION_MAX_ATTEMPTS` | `2` | Maximum complete-batch validation attempts |
+| `QUESTION_GENERATION_MAX_COMPLETION_TOKENS` | `16000` | Complete question-batch JSON completion ceiling |
 | `HINT_TIMEOUT_SECONDS` | `5` | Hint-generation budget |
 | `HINT_MAX_COMPLETION_TOKENS` | `96` | Hint completion ceiling |
 | `RECOMMENDATION_TIMEOUT_SECONDS` | `7` | Results recommendation budget |
-| `QUESTION_PREFETCH_ENABLED` | `true` | Enables one-question background prefetch |
-| `QUESTION_PREFETCH_TTL_SECONDS` | `120` | Prefetch cache lifetime |
-| `QUESTION_PREFETCH_WORKERS` | `2` | In-process prefetch executor size |
+| `HINT_CACHE_TTL_SECONDS` | `120` | In-process hot-cache lifetime for persisted hints |
 | `RECENT_QUESTION_HISTORY_LIMIT` | `30` | Recent-question exclusion history |
 | `QUESTION_SECONDS` | `60` | Legacy/default Easy timer |
 | `QUESTION_SECONDS_EASY` | `60` | Easy / Beginner timer |
@@ -561,13 +542,13 @@ python scripts\setup_mysql.py
 flask --app app db upgrade
 ```
 
-### `503` while starting or continuing a test
+### `503` while starting a test
 
-Live question delivery depends on Groq. Inspect the structured Flask log and its `request_id`. Common causes include:
+Complete-test batch generation depends on OpenAI. Inspect the structured Flask log and its `request_id`. Common causes include:
 
 - Missing or invalid API key.
 - Retired or inaccessible model.
-- Groq `429` token/rate limit.
+- OpenAI `429` token/rate limit.
 - Provider timeout or open circuit breaker.
 - Invalid/truncated JSON.
 - Generated question failing answer/explanation/duplicate validation.
@@ -575,14 +556,14 @@ Live question delivery depends on Groq. Inspect the structured Flask log and its
 Run:
 
 ```powershell
-flask --app app groq-check --full
+flask --app app openai-check --full
 ```
 
-The question route does not use the legacy question bank as an outage fallback. If all configured models are unavailable, the learner receives a bounded `503` instead of an unbounded wait.
+The test-creation route does not use the legacy question bank as an outage fallback. If all configured models are unavailable, the learner receives a bounded `503` instead of an incomplete test.
 
 ### Hint appears after a short delay
 
-Hints are synchronous because they must match the active question and pass answer-safety checks. The request is bounded and returns a deterministic fallback when Groq cannot provide a safe hint.
+Hints are synchronous because they must match the active question and pass answer-safety checks. The request is bounded and returns a deterministic fallback when OpenAI cannot provide a safe hint.
 
 ### Dashboard analytics are stale
 
@@ -610,10 +591,10 @@ The virtual environment uses Python 3.12.8 from `C:\Users\DELL\AppData\Local\Pro
 ## Known production boundaries
 
 - The current React application is optimized for trusted local single-user access and has no production login UI.
-- Live assessment delivery depends on Groq availability and quota.
-- Prefetch is process-local, not shared across multiple Waitress/Gunicorn processes.
+- New test creation depends on OpenAI availability and quota.
+- Validated hints are persisted on their question for reuse across processes; each process also keeps a short-lived hot cache.
 - The legacy question-bank and retired diagnostic schema remain until a separate reviewed cleanup migration is approved.
-- Mixed Test and Category Practice still depend on live Groq generation; topic schedules are configuration/history records, not stored questions.
+- Mixed Test and Category Practice use one OpenAI batch at creation; the validated questions are then stored for sequential delivery.
 - `APP_TIMEZONE_OFFSET_MINUTES` is a fixed offset, not a daylight-saving-aware timezone database.
 - Production deployment still needs external process supervision, TLS termination, backups, monitoring, and a completed multi-user authentication journey.
 

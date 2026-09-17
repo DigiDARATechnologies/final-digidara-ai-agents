@@ -75,6 +75,17 @@ def test_rejects_repeated_recalculation():
         validate_generated_item(item(explanation),SLOT)
 
 
+def test_complete_option_text_starting_with_answer_letter_is_not_a_bare_key():
+    generated={
+        **LOGICAL_SLOT,
+        "question":"Which structure removes the oldest inserted item first?",
+        "options":{"A":"A tree","B":"A queue","C":"A stack","D":"A graph"},
+        "correct_answer":"B",
+        "explanation":"A queue follows first-in, first-out order. Answer = A queue.",
+    }
+    assert validate_generated_item(generated,LOGICAL_SLOT)["correct_answer"]=="B"
+
+
 def test_rejects_quantitative_self_correction_and_option_guessing():
     explanation="Step 1: 35 / 12 = 2.92. Step 2: However, 2.92 is not among the options. Step 3: Answer = 25."
     with pytest.raises(ValueError):
@@ -110,9 +121,9 @@ def test_generation_retries_invalid_explanation_and_accumulates_usage(monkeypatc
         questions,model,usage=test_generation.generate_questions([SLOT])
 
     assert len(calls)==2
-    assert calls[0][2]==.35
+    assert calls[0][2]==0
     assert "Do not think out loud" in calls[0][1]
-    assert "must exactly match" in calls[0][1]
+    assert "Copy each slot's category, topic, and difficulty exactly" in calls[0][1]
     assert "Never mention" in calls[0][1]
     assert "recent typed number patterns" in calls[0][1]
     assert "RETRY CORRECTION" in calls[1][1]
@@ -222,8 +233,32 @@ def test_technical_generation_prompt_uses_selected_language(monkeypatch):
         questions,_model,_usage=test_generation.generate_questions([TECHNICAL_SLOT])
 
     assert questions[0]["category"]=="Technical Aptitude"
-    assert '"technical_language": "Java"' in prompts[0]
-    assert "use exactly that selected language" in prompts[0]
+    assert '"technical_language":"Java"' in prompts[0]
+    assert "using exactly the slot's selected technical_language" in prompts[0]
+
+
+def test_batch_schema_requires_exact_question_count():
+    schema=test_generation._batch_response_schema([SLOT for _ in range(21)])
+    questions=schema["properties"]["questions"]
+    assert questions["minItems"]==21
+    assert questions["maxItems"]==21
+    assert questions["items"]["additionalProperties"] is False
+    assert questions["items"]["required"]==[
+        "question","correct_option","distractors","reason","calculation_step_1","calculation_step_2",
+        "question_code","correct_option_code","distractor_codes","category","topic","difficulty",
+    ]
+
+
+def test_batch_item_builds_answer_and_explanation_from_one_correct_option():
+    generated={
+        "question":"What is 12 plus 8?","correct_option":"20","distractors":["18","19","21"],
+        "reason":"","calculation_step_1":"12 + 8 = 20","calculation_step_2":"The calculated value is 20",
+        "question_code":None,"correct_option_code":None,"distractor_codes":[None,None,None],
+    }
+    canonical=test_generation._canonicalize_batch_item(generated,SLOT)
+    assert canonical["options"][canonical["correct_answer"]]=="20"
+    assert canonical["explanation"].endswith("Answer = 20.")
+    assert validate_generated_item({**canonical,**SLOT},SLOT)["correct_answer"]==canonical["correct_answer"]
 
 
 @pytest.mark.parametrize("field",["question","explanation","A"])
@@ -265,7 +300,7 @@ def test_generation_retries_structurally_duplicate_batch(monkeypatch):
     slots=[LOGICAL_SLOT,LOGICAL_SLOT]
     first={**LOGICAL_SLOT,"question":"A code uses the values 180, 195, and 210. Which statement follows?","options":{"A":"First","B":"Second","C":"Third","D":"Fourth"},"correct_answer":"A","explanation":"The stated rule shows that the correct option is A."}
     duplicate={**first,"question":"Values 210, 180, and 195 appear in another story. Which statement follows?"}
-    replacement={**first,"question":"A code uses the values 181, 196, and 211. Which statement follows?"}
+    replacement={**first,"question":"Every manager reviews reports, and Kiran is a manager. Which conclusion must hold?"}
     responses=[
         ({"questions":[first,duplicate]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
         ({"questions":[first,replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
