@@ -114,6 +114,9 @@ def _seed_hint_attempt(app, *, total_questions=1, hints_allowed=3):
             total_questions=total_questions,
             test_mode="mixed",
             hints_allowed=hints_allowed,
+            total_duration_seconds=60 * total_questions,
+            assessment_started_at=utcnow(),
+            expires_at=utcnow() + timedelta(seconds=60 * total_questions),
         )
         questions = []
         for sequence in range(1, total_questions + 1):
@@ -281,7 +284,11 @@ def test_category_timer_is_persisted_from_fixed_difficulty(
     assert served.status_code == 200
     assert served.get_json()["difficulty"] == difficulty
     assert served.get_json()["allowed_seconds"] == allowed_seconds
-    assert served.get_json()["remaining_seconds"] == allowed_seconds
+    payload = served.get_json()
+    assert payload["total_duration_seconds"] == 10 * allowed_seconds
+    assert 0 < payload["remaining_seconds"] <= payload["total_duration_seconds"]
+    assert payload["overall_remaining_seconds"] == payload["remaining_seconds"]
+    assert payload["expires_at"].endswith("+00:00")
 
 
 def test_unanswered_question_can_resume_without_resetting_timer(
@@ -306,7 +313,9 @@ def test_unanswered_question_can_resume_without_resetting_timer(
     assert resumed.status_code == 200, resumed.get_json()
     resumed_payload = resumed.get_json()
     assert resumed_payload["id"] == first_payload["id"]
-    assert 0 < resumed_payload["remaining_seconds"] < first_payload["allowed_seconds"]
+    assert resumed_payload["expires_at"] == first_payload["expires_at"]
+    assert 0 < resumed_payload["remaining_seconds"] <= first_payload["remaining_seconds"]
+    assert resumed_payload["total_duration_seconds"] == 600
     with app.app_context():
         test = db.session.get(AptitudeTest, test_id)
         assert test.status == "in_progress"

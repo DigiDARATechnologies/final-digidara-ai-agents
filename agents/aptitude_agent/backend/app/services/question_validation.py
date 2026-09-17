@@ -173,6 +173,11 @@ def validate_generated_item(item, slot, internal_values=()):
     options = item["options"]
     if not isinstance(options, dict) or set(options) != {"A","B","C","D"}: raise ValueError("options must be A-D")
     technical=slot["category"]=="Technical Aptitude"
+    if technical:
+        # Validate before prose normalization: clean_text folds newlines and
+        # can otherwise hide an unfenced multi-line program.
+        for value in (item["question"],*options.values(),item["explanation"]):
+            validate_fenced_code(canonicalize_unlabelled_fences(value,selected_language),selected_language)
     options = {
         key:(normalize_fenced_text(canonicalize_unlabelled_fences(value,selected_language),500) if technical else clean_text(value,500))
         for key,value in options.items()

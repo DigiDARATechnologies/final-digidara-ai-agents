@@ -123,7 +123,7 @@ def test_generation_retries_invalid_explanation_and_accumulates_usage(monkeypatc
     assert len(calls)==2
     assert calls[0][2]==0
     assert "Do not think out loud" in calls[0][1]
-    assert "must exactly match" in calls[0][1]
+    assert "Copy each slot's category, topic, and difficulty exactly" in calls[0][1]
     assert "Never mention" in calls[0][1]
     assert "recent typed number patterns" in calls[0][1]
     assert "RETRY CORRECTION" in calls[1][1]
@@ -234,7 +234,7 @@ def test_technical_generation_prompt_uses_selected_language(monkeypatch):
 
     assert questions[0]["category"]=="Technical Aptitude"
     assert '"technical_language":"Java"' in prompts[0]
-    assert "use exactly that selected language" in prompts[0]
+    assert "using exactly the slot's selected technical_language" in prompts[0]
 
 
 def test_batch_schema_requires_exact_question_count():

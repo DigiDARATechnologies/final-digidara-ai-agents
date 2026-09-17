@@ -88,7 +88,8 @@ def test_prompt_and_validator_share_the_full_exclusion_set(monkeypatch):
     assert all(question in prompts[0] for question in exclusions)
     assert exclusions[-1] in prompts[0]
     assert exclusions[-1] in prompts[1]
-    assert "Required variation:" in prompts[1]
+    assert "RETRY CORRECTION 1" in prompts[1]
+    assert "different real-world setting" in prompts[1]
     assert questions[0]["question"]==accepted["question"]
     assert model=="fallback-model"
 
