@@ -832,6 +832,26 @@ async def qa_ask(
     return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
 
 
+def qa_ask_action(payload: dict) -> QAAskResponse:
+    """Text-only entry point for the /api/invoke JSON gateway contract (the
+    path the frontend chat actually calls) -- same agent as POST /api/qa/ask,
+    just without multipart attachment support, since a JSON invoke payload
+    has nowhere to carry a file. Used by capstoneFlow.ts to let a student ask
+    a genuine question mid-viva without it being consumed as their literal
+    answer to the pending viva question."""
+    thread_id = str(payload.get("thread_id", ""))
+    question = str(payload.get("question", ""))
+    if not question.strip():
+        raise HTTPException(400, "Question must not be empty.")
+    try:
+        result = ask_project_question(thread_id, question)
+    except ProjectNotFound:
+        raise HTTPException(404, "Unknown or expired thread_id.")
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}")
+    return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
+
+
 @router.post("/invoke")
 async def invoke(request: Request) -> JSONResponse:
     """Common Strategy F contract used by the registry-resolved gateway."""
@@ -876,6 +896,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(usage_summary, request.headers.get("x-digidara-user-id"))
     elif action == "submit_viva_answer":
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
+    elif action == "ask_project_question":
+        result = await run_in_threadpool(qa_ask_action, payload)
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

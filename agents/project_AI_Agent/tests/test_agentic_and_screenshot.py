@@ -111,6 +111,27 @@ def test_qa_ask_endpoint_unknown_thread(client, monkeypatch):
     assert response.status_code == 404
 
 
+def test_invoke_ask_project_question_action(client, monkeypatch):
+    """The frontend chat calls the JSON /api/invoke gateway contract, not the
+    multipart /api/qa/ask route directly -- this is what capstoneFlow.ts uses
+    to let a student ask a genuine question mid-viva instead of it being
+    submitted as their literal viva answer."""
+    monkeypatch.setattr(
+        routes, "ask_project_question",
+        Mock(return_value={"answer": "Your pie chart code is in chart.js.", "tools_used": ["read_submitted_file"]}),
+    )
+    response = client.post("/api/invoke", json={"action": "ask_project_question", "payload": {"thread_id": "thread", "question": "Where's my pie chart code?"}})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer"] == "Your pie chart code is in chart.js."
+    assert body["tools_used"] == ["read_submitted_file"]
+
+
+def test_invoke_ask_project_question_action_rejects_empty_question(client):
+    response = client.post("/api/invoke", json={"action": "ask_project_question", "payload": {"thread_id": "thread", "question": "   "}})
+    assert response.status_code == 400
+
+
 # --- Phase 3: screenshot-based structure troubleshooting ---------------------
 
 def test_structure_screenshot_endpoint_requires_missing_items(client, database):

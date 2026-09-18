@@ -447,7 +447,17 @@ export default function ChatView({
             className="paste-textarea"
             placeholder={multilinePlaceholder}
             value={input}
+            disabled={composerDisabled}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends, matching every other composer in this app;
+              // Shift+Enter is left alone so the textarea's own default
+              // behavior inserts a real newline instead.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!composerDisabled) e.currentTarget.form?.requestSubmit();
+              }
+            }}
           />
           <div className="paste-composer-actions">
             {attachEnabled && (
@@ -459,7 +469,7 @@ export default function ChatView({
                 variant="text"
               />
             )}
-            <button type="submit" className="btn btn-primary">Send</button>
+            <button type="submit" className="btn btn-primary" disabled={composerDisabled}>Send</button>
           </div>
         </form>
       ) : (
