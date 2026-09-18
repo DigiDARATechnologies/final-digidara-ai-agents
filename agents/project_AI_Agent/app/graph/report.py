@@ -27,6 +27,8 @@ def _structure_section(state: dict[str, Any]) -> list[str]:
     structure = state.get("structure_score") or {}
     lines = ["## Report Structure (.docx)"]
     lines.append(f"{_checkbox(bool(structure.get('is_complete', True)))} All required report sections present and substantive")
+    for section in structure.get("matched_sections") or []:
+        lines.append(f"- ✅ Section found: {section}")
     for section in structure.get("missing_sections") or []:
         lines.append(f"- ❌ Missing section: **{section}**")
     for weak in structure.get("weak_sections") or []:

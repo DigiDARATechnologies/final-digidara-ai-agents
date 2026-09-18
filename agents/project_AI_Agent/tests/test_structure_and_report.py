@@ -1,6 +1,6 @@
 from app.graph import nodes
 from app.graph.report import build_about_markdown, build_review_markdown
-from app.ingestion.structure_check import check_required_paths
+from app.ingestion.structure_check import check_required_paths, check_required_sections
 
 
 REQUIRED_PATHS = [
@@ -134,3 +134,70 @@ def test_build_review_markdown_lists_missing_screenshots():
     }
     markdown = build_review_markdown(state)
     assert "Missing screenshot: Pie chart of expenses by category" in markdown
+
+
+# --- docx section presence: deterministic, not LLM-judged --------------------
+
+def test_check_required_sections_matches_numbered_heading():
+    # Regression case: a student's real heading was literally "2. Approach"
+    # (Word auto-numbering) while the guide's requirement is the plain name
+    # "Approach" -- these must be recognized as the same section.
+    doc_sections = {"1. Problem Statement": "...", "2. Approach": "Architecture details here.", "3. Code": "..."}
+    result = check_required_sections(["Problem Statement", "Approach", "Code"], doc_sections)
+    assert result["is_complete"] is True
+    assert result["missing_sections"] == []
+    assert "Approach" in result["matched_sections"]
+
+
+def test_check_required_sections_detects_genuinely_missing_section():
+    doc_sections = {"1. Problem Statement": "...", "2. Code": "..."}
+    result = check_required_sections(["Problem Statement", "Approach", "Code"], doc_sections)
+    assert result["is_complete"] is False
+    assert result["missing_sections"] == ["Approach"]
+
+
+def test_check_required_sections_matches_broader_heading_text():
+    doc_sections = {"Approach & Design Rationale": "Details."}
+    result = check_required_sections(["Approach"], doc_sections)
+    assert result["is_complete"] is True
+
+
+def test_structure_validation_node_ignores_llm_hallucinated_missing_section(monkeypatch):
+    """Even if the LLM's own JSON claims a section is missing, the node must
+    use the deterministic result -- this is the exact bug from production:
+    a real "2. Approach" heading got reported as a missing 'Approach'
+    section because presence used to be entirely LLM-judged."""
+    monkeypatch.setattr(
+        nodes, "call_json",
+        lambda **kwargs: {"is_complete": True, "weak_sections": [], "screenshots_present": True, "notes": ""},
+    )
+    state = {
+        "submission_guide": {"docx_required_sections": ["Problem Statement", "Approach"]},
+        "doc_sections": {"1. Problem Statement": "Text.", "2. Approach": "Architecture and UI flow details."},
+        "screenshot_ocr_text": "none",
+        "screenshots_present": True,
+    }
+    result = nodes.structure_validation_node(state)
+    score = result["structure_score"]
+    assert score["is_complete"] is True
+    assert score["missing_sections"] == []
+    assert "Approach" in score["matched_sections"]
+
+
+def test_structure_validation_node_still_fails_on_genuinely_missing_section(monkeypatch):
+    """The reverse direction: even if the LLM (wrongly) claims completeness,
+    a truly absent required section must still fail the deterministic check."""
+    monkeypatch.setattr(
+        nodes, "call_json",
+        lambda **kwargs: {"is_complete": True, "weak_sections": [], "screenshots_present": True, "notes": ""},
+    )
+    state = {
+        "submission_guide": {"docx_required_sections": ["Problem Statement", "Approach"]},
+        "doc_sections": {"1. Problem Statement": "Text."},
+        "screenshot_ocr_text": "none",
+        "screenshots_present": True,
+    }
+    result = nodes.structure_validation_node(state)
+    score = result["structure_score"]
+    assert score["is_complete"] is False
+    assert score["missing_sections"] == ["Approach"]

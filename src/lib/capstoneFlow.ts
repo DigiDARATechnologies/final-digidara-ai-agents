@@ -14,16 +14,20 @@ import {
 } from "./capstoneApi";
 
 /** A rough, deliberately over-inclusive heuristic: is this message the
- * student asking something, rather than answering the pending viva
- * question? False positives (a genuine answer misread as a question) just
- * cost one extra turn where the student re-sends their answer — cheap.
- * False negatives (a real question silently consumed as the literal viva
- * answer) are the actual bug this exists to prevent, so this errs toward
- * catching more, not fewer. */
-function looksLikeQuestionNotAnswer(text: string): boolean {
+ * student asking something or disputing a finding, rather than a plain
+ * answer/instruction-following action (a viva answer, or just re-attaching
+ * files)? Covers two shapes seen in practice: a genuine question ("what
+ * does X mean?"), and a dispute/objection ("already have the approach
+ * section", "that's wrong", "no I did include that"). False positives (a
+ * genuine answer misread as one of these) just cost one extra turn where
+ * the student re-sends their answer — cheap. False negatives (a real
+ * question/dispute silently consumed as a literal viva answer, or dropped
+ * with a canned reminder) are the actual bug this exists to prevent, so
+ * this errs toward catching more, not fewer. */
+function looksLikeQuestionOrDispute(text: string): boolean {
   const trimmed = text.trim();
   if (/\?\s*$/.test(trimmed)) return true;
-  return /^(hey|hi|hello|wait|excuse me|sorry|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
+  return /^(hey|hi|hello|wait|excuse me|sorry|actually|no[,]?\s|already|i (already )?(have|wrote|did|add(ed)?|includ(e|ed)|do have)|that'?s (wrong|not right|incorrect)|this is (already|not)|i don'?t (think|agree)|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
 }
 
 export type CapstoneStep =
@@ -256,7 +260,7 @@ export async function handleCapstoneText(
       if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
         return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
       }
-      if (state.threadId && looksLikeQuestionNotAnswer(trimmed)) {
+      if (state.threadId && looksLikeQuestionOrDispute(trimmed)) {
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return {
@@ -302,8 +306,20 @@ export async function handleCapstoneText(
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
       }
     }
-    case "awaiting_submission":
+    case "awaiting_submission": {
+      // A student disputing a revision note ("already have the approach
+      // section") deserves an actual answer grounded in their submission,
+      // not the same canned reminder every other message gets here.
+      if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+        try {
+          const qa = await askProjectQuestion(state.threadId, trimmed);
+          return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
+        } catch {
+          // Q&A itself failed -- fall through to the normal reminder below.
+        }
+      }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
+    }
     case "not_eligible":
       return { state, messages: [{ text: "This project request could not proceed. Start a new chat to try again." }] };
     case "graded":

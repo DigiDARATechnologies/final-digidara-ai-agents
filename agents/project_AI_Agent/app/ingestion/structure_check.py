@@ -11,7 +11,57 @@ these presence/absence findings.
 """
 from __future__ import annotations
 
+import re
 from pathlib import PurePosixPath
+
+# Matches Word/Google-Docs style auto-numbered heading prefixes: "2. ",
+# "2.1 ", "2.1.3) ", "I. ", "A) ", possibly repeated ("2.1.3 " is one prefix
+# of three numbered groups). A student's "2. Approach" heading and the
+# submission guide's plain "Approach" requirement must be recognized as the
+# same section without this stripped, they never will be.
+_LEADING_NUMBERING_RE = re.compile(r"^\s*(?:[0-9]+|[ivxlcdm]+|[a-z])[.)]\s*(?=\S)", re.IGNORECASE)
+
+
+def _normalize_heading(text: str) -> str:
+    normalized = text.strip()
+    # Numbering can nest ("2.1.3 Approach") -- strip repeatedly, not once.
+    while True:
+        stripped = _LEADING_NUMBERING_RE.sub("", normalized, count=1)
+        if stripped == normalized:
+            break
+        normalized = stripped
+    return normalized.strip().lower()
+
+
+def check_required_sections(required_sections: list[str] | None, doc_sections: dict[str, str] | None) -> dict:
+    """required_sections: the submission guide's `docx_required_sections`
+    (plain names, e.g. "Approach"). doc_sections: {heading_text: body_text}
+    as returned by ingest_docx, where heading_text is the student's raw
+    heading exactly as written (often auto-numbered, e.g. "2. Approach").
+
+    Whether a required section actually EXISTS must never depend on an LLM's
+    read of the heading list -- only content-quality judgment (is a present
+    section's text substantive or placeholder) belongs to the LLM. Matches a
+    required name against a normalized heading by equality or substring in
+    either direction, so "Approach" matches "2. Approach" or "Approach &
+    Design Rationale" alike.
+    """
+    normalized_headings = {_normalize_heading(heading): heading for heading in (doc_sections or {})}
+
+    matched: list[str] = []
+    missing: list[str] = []
+    for required in required_sections or []:
+        target = _normalize_heading(str(required))
+        if not target:
+            continue
+        found = any(target == candidate or target in candidate or candidate in target for candidate in normalized_headings)
+        (matched if found else missing).append(required)
+
+    return {
+        "is_complete": not missing,
+        "matched_sections": matched,
+        "missing_sections": missing,
+    }
 
 
 def _normalize_parts(path: str) -> list[str]:
