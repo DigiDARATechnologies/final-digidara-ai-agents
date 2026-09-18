@@ -52,6 +52,9 @@ def init_db() -> None:
     if "about_markdown" not in assignment_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE project_assignments ADD COLUMN about_markdown TEXT NULL"))
+    if "qa_conversation_json" not in assignment_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE project_assignments ADD COLUMN qa_conversation_json JSON NULL"))
 
     llm_usage_columns = {column["name"]: column for column in inspect(engine).get_columns("llm_usage")}
     if "user_id" not in llm_usage_columns:

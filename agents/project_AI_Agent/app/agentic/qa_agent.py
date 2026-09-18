@@ -32,6 +32,16 @@ logger = logging.getLogger("capstone.qa_agent")
 
 _MAX_TOOL_ITERATIONS = 4
 _FILE_CHAR_LIMIT = 4000
+# Buffer window memory: how many past (question, answer) turns are replayed
+# into the model's context on the next question in the same thread, so a
+# follow-up like "explain that more" or "what about the second one" actually
+# has something to refer back to. Only the plain Q&A text is kept (not the
+# tool-calling trace that produced each answer) -- tool_call_ids are
+# provider-scoped and replaying them across separate completions isn't
+# meaningful, and the trace itself adds bulk without adding anything a
+# follow-up question would need. Bounded (a window, not the full history) so
+# context size stays flat no matter how long the conversation runs.
+_MEMORY_WINDOW_TURNS = 6
 
 _TOOLS: list[dict[str, Any]] = [
     {
@@ -159,8 +169,10 @@ class ProjectContext:
             assignment = session.query(ProjectAssignment).filter_by(thread_id=thread_id).first()
             if assignment is None:
                 raise ProjectNotFound(f"Unknown thread_id: {thread_id!r}")
+            self.assignment_id = assignment.id
             self.assignment_topic = assignment.topic_json
             self.assignment_about_markdown = assignment.about_markdown
+            self.conversation_history: list[dict[str, str]] = assignment.qa_conversation_json or []
             submission = (
                 session.query(Submission)
                 .filter_by(assignment_id=assignment.id)
@@ -228,6 +240,26 @@ class ProjectContext:
             "review_markdown": self.submission_review_markdown,
         }
 
+    def save_turn(self, question: str, answer: str) -> None:
+        """Appends this turn to the conversation buffer and trims it to the
+        window, so the DB row never grows past a bounded number of turns no
+        matter how long the conversation runs."""
+        history = self.conversation_history + [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer},
+        ]
+        history = history[-(_MEMORY_WINDOW_TURNS * 2):]
+        self.conversation_history = history
+
+        session = get_session()
+        try:
+            assignment = session.get(ProjectAssignment, self.assignment_id)
+            if assignment:
+                assignment.qa_conversation_json = history
+                session.commit()
+        finally:
+            session.close()
+
 
 def _run_web_search(query: str) -> str:
     """Reuses the same grounded search model as topic generation (see
@@ -262,10 +294,11 @@ def ask_project_question(thread_id: str, question: str, extra_context: str | Non
     if extra_context:
         user_message = f"{question}\n\nATTACHED MATERIAL (provided by the student alongside this question):\n{extra_context}"
 
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
-    ]
+    # Buffer window memory: replay the last few turns of this same thread's
+    # Q&A conversation so a follow-up question ("explain that more", "what
+    # about the second one") has the earlier exchange to refer back to,
+    # instead of each question being answered in isolation.
+    messages: list[dict[str, Any]] = [{"role": "system", "content": _SYSTEM_PROMPT}, *ctx.conversation_history, {"role": "user", "content": user_message}]
     tools_used: list[str] = []
 
     for _ in range(_MAX_TOOL_ITERATIONS):
@@ -280,7 +313,9 @@ def ask_project_question(thread_id: str, question: str, extra_context: str | Non
 
         tool_calls = getattr(message, "tool_calls", None)
         if not tool_calls:
-            return {"answer": (message.content or "").strip(), "tools_used": tools_used}
+            answer = (message.content or "").strip()
+            ctx.save_turn(question, answer)
+            return {"answer": answer, "tools_used": tools_used}
 
         messages.append({
             "role": "assistant",

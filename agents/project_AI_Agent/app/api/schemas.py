@@ -1,20 +1,12 @@
 from pydantic import BaseModel, Field
 
 
-class EligibilityCheckRequest(BaseModel):
-    name: str = Field(min_length=1)
-    email: str | None = None
-    phone: str = Field(min_length=1)
-    course_name: str = Field(min_length=1)
-
-
 class FreeTopicRequest(BaseModel):
     name: str = Field(min_length=1)
     email: str = Field(min_length=3)
-    # Optional here (unlike EligibilityCheckRequest) — this flow has no
-    # enrollment records to match a phone against, so the student is keyed
-    # on their email instead. A logged-in account with no phone on file
-    # (e.g. Google sign-in) shouldn't be blocked from using it.
+    # Optional -- there is no certificate/enrollment gate, so nothing else
+    # requires a phone on file; the student is keyed on email instead. A
+    # logged-in account with no phone (e.g. Google sign-in) still works.
     phone: str = ""
     course_name: str = Field(min_length=1)  # doubles as the free-text language/role/topic
     difficulty: str = Field(default="easy", pattern="^(easy|medium|hard)$")
@@ -134,17 +126,6 @@ class QAAskResponse(BaseModel):
     # Which tools the agent actually called to answer -- transparency into
     # what grounded the response (e.g. ["get_project_brief", "read_submitted_file"]).
     tools_used: list[str]
-
-
-class CourseOut(BaseModel):
-    id: str
-    name: str
-    medium: str
-
-
-class EligibleCoursesResponse(BaseModel):
-    student_found: bool
-    courses: list[CourseOut]
 
 
 class ConfigOut(BaseModel):

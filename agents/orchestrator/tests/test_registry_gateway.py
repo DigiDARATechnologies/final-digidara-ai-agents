@@ -39,6 +39,24 @@ def test_registration_upsert_and_deregistration(client):
     assert signed(client, "DELETE", path).status_code == 404
     assert service.resolve_healthy("test-agent") is None
 
+def test_heartbeat_resyncs_a_stale_endpoint(client):
+    """register() only runs once at process boot -- a long-lived agent whose
+    AGENT_PUBLIC_URL was corrected after it last started must self-heal via
+    its next heartbeat, not stay stuck on the endpoint it booted with."""
+    assert signed(client, "POST", "/registry/register", PAYLOAD).status_code == 201
+    heartbeat_payload = {"agent_name": "test-agent", "version": "v1", "endpoint": "http://job-agent:5020/api/invoke"}
+    assert signed(client, "POST", "/registry/heartbeat", heartbeat_payload).status_code == 200
+    rows = signed(client, "GET", "/registry/agents").json()
+    assert rows[0]["endpoint"] == "http://job-agent:5020/api/invoke"
+
+def test_heartbeat_without_endpoint_leaves_it_unchanged(client):
+    """Older/unpatched agent clients that don't send `endpoint` in their
+    heartbeat body must keep working exactly as before."""
+    assert signed(client, "POST", "/registry/register", PAYLOAD).status_code == 201
+    assert signed(client, "POST", "/registry/heartbeat", {"agent_name": "test-agent", "version": "v1"}).status_code == 200
+    rows = signed(client, "GET", "/registry/agents").json()
+    assert rows[0]["endpoint"] == PAYLOAD["endpoint"]
+
 @pytest.mark.parametrize("method,path", [("POST", "/registry/register"), ("POST", "/registry/heartbeat"), ("GET", "/registry/agents"), ("DELETE", "/registry/deregister?agent_name=x&version=v1")])
 def test_registry_requires_signature(client, method, path):
     assert client.request(method, path, json=PAYLOAD).status_code == 401

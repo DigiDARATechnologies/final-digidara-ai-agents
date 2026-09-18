@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
@@ -24,9 +24,6 @@ from app import config
 from app.agentic.qa_agent import ProjectNotFound, ask_project_question
 from app.api.schemas import (
     ConfigOut,
-    CourseOut,
-    EligibleCoursesResponse,
-    EligibilityCheckRequest,
     EligibilityCheckResponse,
     FreeTopicRequest,
     QAAskResponse,
@@ -47,11 +44,8 @@ from app.viva import VIVA_PASS_THRESHOLD, generate_viva_questions, verify_viva_a
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
-    Certificate,
     Course,
     CourseMedium,
-    Enrollment,
-    EnrollmentStatus,
     LlmUsage,
     ProjectAssignment,
     Student,
@@ -65,48 +59,6 @@ from app.llm.client import LLMError, call_json, call_text
 from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
-
-
-@router.get("/eligibility/courses", response_model=EligibleCoursesResponse)
-def eligible_courses(phone: str = Query(min_length=1)) -> EligibleCoursesResponse:
-    """Return only completed courses with an issued certificate for this mobile number."""
-    session = get_session()
-    try:
-        student = session.query(Student).filter_by(phone=phone).first()
-        if student is None:
-            return EligibleCoursesResponse(student_found=False, courses=[])
-
-        courses = (
-            session.query(Course)
-            .join(Enrollment, Enrollment.course_id == Course.id)
-            .join(
-                Certificate,
-                (Certificate.course_id == Course.id) & (Certificate.student_id == student.id),
-            )
-            .filter(
-                Enrollment.student_id == student.id,
-                Enrollment.status == EnrollmentStatus.completed,
-            )
-            .distinct()
-            .order_by(Course.name)
-            .all()
-        )
-        return EligibleCoursesResponse(
-            student_found=True,
-            courses=[CourseOut(id=c.id, name=c.name, medium=c.medium.value) for c in courses],
-        )
-    finally:
-        session.close()
-
-
-@router.get("/courses", response_model=list[CourseOut])
-def list_courses() -> list[CourseOut]:
-    session = get_session()
-    try:
-        courses = session.query(Course).order_by(Course.name).all()
-        return [CourseOut(id=c.id, name=c.name, medium=c.medium.value) for c in courses]
-    finally:
-        session.close()
 
 
 @router.get("/config", response_model=ConfigOut)
@@ -223,59 +175,6 @@ def _run_submission(sub_state: dict) -> dict:
         )
 
 
-@router.post("/eligibility/check", response_model=EligibilityCheckResponse)
-def eligibility_check(req: EligibilityCheckRequest) -> EligibilityCheckResponse:
-    logger.info("=== POST /api/eligibility/check name=%r phone=%r course=%r", req.name, req.phone, req.course_name)
-    session = get_session()
-    try:
-        student = session.query(Student).filter_by(phone=req.phone).first()
-        if student is None:
-            student = Student(name=req.name, email=req.email, phone=req.phone)
-            session.add(student)
-            session.flush()
-        elif req.email and student.email != req.email:
-            student.email = req.email
-
-        course = session.query(Course).filter_by(name=req.course_name).first()
-        if course is None:
-            raise HTTPException(404, f"Unknown course: {req.course_name!r}")
-
-        assignment = ProjectAssignment(
-            student_id=student.id,
-            course_id=course.id,
-            medium=course.medium,
-            status=AssignmentStatus.awaiting_topic_choice,
-        )
-        session.add(assignment)
-        session.commit()
-
-        thread_id = assignment.thread_id
-        initial_state = {
-            "student_id": student.id,
-            "course_id": course.id,
-            "assignment_id": assignment.id,
-            "student_name": student.name,
-            "phone": student.phone,
-            "course_name": course.name,
-            "course_medium": course.medium.value,
-        }
-    finally:
-        session.close()
-
-    result = _invoke_graph(initial_state, thread_id)
-
-    logger.info(
-        "=== eligibility=%s thread=%s reason=%r",
-        result.get("eligible"), _log_id(thread_id), result.get("eligibility_reason"),
-    )
-    return EligibilityCheckResponse(
-        thread_id=thread_id,
-        eligible=result.get("eligible", False),
-        eligibility_reason=result.get("eligibility_reason", ""),
-        topic_options=result.get("topic_options"),
-    )
-
-
 @router.post("/topic/clarify", response_model=TopicClarifyResponse)
 def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
     """Stateless pre-check for a free-topic request — deliberately not part
@@ -299,13 +198,13 @@ def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
 
 @router.post("/eligibility/free", response_model=EligibilityCheckResponse)
 def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
-    """Skip the certificate gate entirely: generate project topics for any
-    language, role, or topic the student names. `req.course_name` doubles as
-    that free-text topic here. A `Course` row is looked up or created for it
-    (medium defaults to `local`) purely so course_id-keyed tables/queries
-    downstream (ProjectAssignment, topic_generator_node's past-topic dedup)
-    keep working unchanged; eligibility_check_node skips its enrollment/
-    certificate DB check via the skip_certificate_check state flag below."""
+    """Generate project topics for any language, role, or topic the student
+    names -- the only entry point this app has; there is no certificate/
+    enrollment gate. `req.course_name` doubles as that free-text topic here.
+    A `Course` row is looked up or created for it (medium defaults to
+    `local`) purely so course_id-keyed tables/queries downstream
+    (ProjectAssignment, topic_generator_node's past-topic dedup) keep
+    working unchanged."""
     logger.info(
         "=== POST /api/eligibility/free name=%r phone=%r topic=%r difficulty=%r",
         req.name, req.phone, req.course_name, req.difficulty,
@@ -314,10 +213,8 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
 
     session = get_session()
     try:
-        # Keyed on email, not phone — this flow has no enrollment records to
-        # match a phone against (that's what eligibility_check/eligible_courses
-        # use it for), and a logged-in account's email is always present,
-        # unlike an optionally-blank phone (e.g. Google sign-in).
+        # Keyed on email, not phone -- a logged-in account's email is always
+        # present, unlike an optionally-blank phone (e.g. Google sign-in).
         student = session.query(Student).filter_by(email=email).first()
         if student is None:
             student = Student(name=req.name, email=email, phone=req.phone or None)
@@ -362,7 +259,6 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
             "phone": student.phone or "",
             "course_name": req.course_name,
             "course_medium": course.medium.value,
-            "skip_certificate_check": True,
             "free_topic_request": True,
             "difficulty": req.difficulty,
         }
@@ -446,6 +342,21 @@ async def submission_upload(
         assignment = session.get(ProjectAssignment, assignment_id)
         if assignment is None:
             raise HTTPException(404, "Assignment not found.")
+        # Without this, a student who re-drags the same (or corrected) files
+        # a few seconds after seeing "I am validating and grading them now"
+        # (anxious the first drop didn't register) starts a second full
+        # submission-graph run while the first is still in flight. Both
+        # eventually call compiled_graph.update_state(...) on the same
+        # thread's checkpoint; whichever finishes last silently overwrites
+        # the other's grading result / viva questions with no indication
+        # either run was ever discarded.
+        in_flight = (
+            session.query(Submission)
+            .filter_by(assignment_id=assignment_id, status=SubmissionStatus.processing)
+            .first()
+        )
+        if in_flight is not None:
+            raise HTTPException(409, "A previous submission for this project is still being graded. Please wait for that to finish before submitting again.")
         deadline = assignment.deadline_at
         if deadline is not None:
             # SQLite doesn't persist tzinfo on DateTime(timezone=True) columns —
@@ -487,13 +398,45 @@ async def submission_upload(
         "requirements": state["requirements"],
         "submission_guide": state["submission_guide"],
     }
-    result = _run_submission(sub_state)
+    try:
+        result = _run_submission(sub_state)
+    except HTTPException:
+        # _run_submission already converts any graph failure into an
+        # HTTPException -- but the Submission row created above is still
+        # sitting at `processing`. Left alone, that both permanently hides
+        # this failed attempt AND (combined with the in-flight guard above)
+        # would block the student from ever submitting again for this
+        # assignment, since a stuck `processing` row looks identical to a
+        # genuinely in-progress one.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                session.commit()
+        finally:
+            session.close()
+        raise
     logger.info(
         "=== submission result thread=%s status=%s final_score=%s passed=%s",
         _log_id(thread_id), result.get("status"), result.get("final_score"), result.get("passed"),
     )
 
     if result.get("status") == "error":
+        # Otherwise this Submission row (created above) stays stuck at
+        # `processing` forever -- the student can retry fine (the main
+        # thread's status isn't "graded"), but this specific failed attempt
+        # is permanently unlisted, with no error status and no feedback, in
+        # whatever admin/history view later reads Submission rows.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                submission.feedback_text = result.get("feedback")
+                session.commit()
+        finally:
+            session.close()
         compiled_graph.update_state(_thread_config(thread_id), {"status": "error"})
         raise HTTPException(422, result.get("feedback", "Submission could not be processed."))
 
@@ -566,7 +509,18 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
     logger.info("=== POST /api/viva/answer submission=%s question=%s", req.submission_id, req.question_id)
     session = get_session()
     try:
-        submission = session.get(Submission, req.submission_id)
+        # with_for_update: two requests for the same question (a double-click,
+        # or a client retry after a slow/timed-out response) must not both
+        # read the same `answers` list, both append their own answer, and
+        # both commit -- the second commit would silently overwrite the
+        # first's recorded (possibly correct) answer and verdict with no
+        # trace it ever happened. Locking the row here makes the second
+        # request wait for the first's commit, then see its answer already
+        # appended, so its own `expected_index` check below correctly
+        # rejects it as a duplicate instead of racing. (A no-op on SQLite,
+        # which doesn't support row locks -- fine there since tests run
+        # single-threaded; this is a real MySQL production concern.)
+        submission = session.get(Submission, req.submission_id, with_for_update=True)
         if submission is None:
             raise HTTPException(404, "Submission not found.")
         if submission.status != SubmissionStatus.pending_viva:
@@ -878,12 +832,8 @@ async def invoke(request: Request) -> JSONResponse:
     payload = body.get("payload") or {}
     if action == "health":
         result = {"status": "ok", "agent_name": "capstone_project_agent"}
-    elif action == "eligible_courses":
-        result = await run_in_threadpool(eligible_courses, str(payload.get("phone", "")))
     elif action == "clarify_topic_request":
         result = await run_in_threadpool(topic_clarify, TopicClarifyRequest(**payload))
-    elif action == "check_eligibility":
-        result = await run_in_threadpool(eligibility_check, EligibilityCheckRequest(**payload))
     elif action == "check_eligibility_free":
         result = await run_in_threadpool(eligibility_check_free, FreeTopicRequest(**payload))
     elif action == "choose_topic":

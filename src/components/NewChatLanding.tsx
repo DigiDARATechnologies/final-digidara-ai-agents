@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 interface NewChatLandingProps {
   onSend: (text: string) => void;
@@ -6,6 +6,7 @@ interface NewChatLandingProps {
 
 export default function NewChatLanding({ onSend }: NewChatLandingProps) {
   const [input, setInput] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -14,6 +15,16 @@ export default function NewChatLanding({ onSend }: NewChatLandingProps) {
     onSend(text);
     setInput("");
   }
+
+  // Same auto-grow fix as the main chat composer (ChatView.tsx) -- a
+  // single-line <input> can never hold a newline at all, so Shift+Enter had
+  // nothing to do and multi-line paste silently lost its line breaks.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   return (
     <section className="view view-chat new-chat-landing active">
@@ -27,13 +38,19 @@ export default function NewChatLanding({ onSend }: NewChatLandingProps) {
               <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
-          <input
-            type="text"
+          <textarea
+            ref={textareaRef}
+            rows={1}
             placeholder="Ask anything"
-            autoComplete="off"
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
           />
           <button type="button" className="icon-btn" title="Voice input">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">

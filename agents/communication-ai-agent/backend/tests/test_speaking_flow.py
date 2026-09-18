@@ -100,6 +100,40 @@ def test_normalize_feedback_preserves_mistake_points():
     assert feedback["mistakes"][0]["mistake_points"] == ["Use the correct verb form."]
 
 
+def test_normalize_feedback_does_not_trust_unclear_verdict_for_a_substantive_answer():
+    # Regression case: the LLM's own transcript_clear judgment is a single
+    # non-deterministic call and can flake between identical runs of the
+    # same transcript -- a multi-word, clearly-not-garbled answer must not
+    # be rejected as "unclear" (and the student told to redo it) just
+    # because one call happened to say so.
+    feedback = groq_speaking._normalize_feedback(
+        {
+            "has_errors": False,
+            "transcript_clear": False,
+            "correction_available": True,
+            "scores": {"confidence": 70, "fluency": 65, "grammar": 60, "overall": 65},
+        },
+        "topic",
+        "I usually wake up early and go for a run before breakfast.",
+    )
+    assert feedback["transcript_clear"] is True
+
+
+def test_normalize_feedback_still_honors_unclear_verdict_for_a_short_answer():
+    feedback = groq_speaking._normalize_feedback(
+        {"has_errors": False, "transcript_clear": False, "correction_available": True},
+        "topic",
+        "uh yeah",
+    )
+    assert feedback["transcript_clear"] is False
+
+
+def test_looks_substantive_word_count_floor():
+    assert groq_speaking._looks_substantive("I am going to work hard today") is True
+    assert groq_speaking._looks_substantive("uh yeah") is False
+    assert groq_speaking._looks_substantive("") is False
+
+
 def test_generate_speaking_question_retries_transient_groq_failure(app, monkeypatch):
     calls = {"count": 0}
 

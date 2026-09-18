@@ -40,7 +40,7 @@ def register_agent(req: AgentRegisterRequest) -> dict:
 
 @router.post("/heartbeat")
 def heartbeat(req: HeartbeatRequest) -> dict:
-    if not service.heartbeat(req.agent_name, req.version):
+    if not service.heartbeat(req.agent_name, req.version, req.endpoint):
         raise HTTPException(404, f"{req.agent_name}@{req.version} is not registered — register first.")
     return {"ok": True}
 

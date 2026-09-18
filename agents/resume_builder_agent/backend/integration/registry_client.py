@@ -80,7 +80,11 @@ def _post_register() -> bool:
 
 def _heartbeat() -> None:
     payload = registration_payload()
-    body = json.dumps({"agent_name": payload["agent_name"], "version": payload["version"]}).encode("utf-8")
+    # Includes `endpoint` (not just agent_name/version) so a long-lived
+    # process whose AGENT_PUBLIC_URL was corrected after it last started
+    # self-heals on the next heartbeat instead of staying registered under a
+    # stale endpoint indefinitely -- _post_register() only runs once at boot.
+    body = json.dumps({"agent_name": payload["agent_name"], "version": payload["version"], "endpoint": payload["endpoint"]}).encode("utf-8")
     headers = {"Content-Type": "application/json", **_sign_request("POST", "/registry/heartbeat", body)}
     try:
         response = requests.post(_url("/registry/heartbeat"), data=body, headers=headers, timeout=10)
@@ -100,7 +104,12 @@ def _loop() -> None:
         # healthy connection returns to the configured heartbeat interval.
         try:
             payload = registration_payload()
-            body = json.dumps({"agent_name": payload["agent_name"], "version": payload["version"]}).encode("utf-8")
+            # Includes `endpoint` so a long-lived process whose
+            # AGENT_PUBLIC_URL was corrected after it last started self-heals
+            # on the next heartbeat instead of staying registered under a
+            # stale endpoint indefinitely -- _post_register() only runs once
+            # at boot (or on a 404 here).
+            body = json.dumps({"agent_name": payload["agent_name"], "version": payload["version"], "endpoint": payload["endpoint"]}).encode("utf-8")
             headers = {"Content-Type": "application/json", **_sign_request("POST", "/registry/heartbeat", body)}
             response = requests.post(_url("/registry/heartbeat"), data=body, headers=headers, timeout=10)
             if response.status_code == 404:

@@ -701,12 +701,15 @@ body.glow-off .send-btn:hover{
 .landing-logo{ margin:0 auto 18px; }
 .landing-center h1{ font-size:32px; font-weight:800; letter-spacing:-.6px; margin:0 0 26px; color:var(--text); }
 .landing-composer{
-  display:flex; align-items:center; gap:8px;
+  display:flex; align-items:flex-end; gap:8px;
   background:#fff; border:1px solid var(--border); border-radius:999px;
   padding:10px 10px 10px 20px; box-shadow:var(--shadow-sm);
   transition:box-shadow .2s, border-color .2s;
 }
-.landing-composer input{ flex:1; border:none; outline:none; font-size:15px; color:var(--text); background:transparent; padding:6px 0; }
+.landing-composer textarea{
+  flex:1; border:none; outline:none; font-size:15px; color:var(--text); background:transparent;
+  font-family:inherit; resize:none; overflow-y:auto; max-height:160px; line-height:1.5; padding:6px 0;
+}
 
 /* ---- chat view ---- */
 .view-chat{ height:100%; }

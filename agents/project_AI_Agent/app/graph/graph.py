@@ -30,10 +30,6 @@ from app.graph import nodes
 from app.graph.state import ProjectAgentState
 
 
-def _eligibility_router(state: ProjectAgentState) -> str:
-    return "topic_generator" if state.get("eligible") else "blocked_exit"
-
-
 def _after_docx_ingest_router(state: ProjectAgentState) -> str:
     return "halt" if state.get("status") == "error" else "continue"
 
@@ -49,21 +45,14 @@ def _structure_gate_router(state: ProjectAgentState) -> str:
 def build_main_graph():
     graph = StateGraph(ProjectAgentState)
 
-    graph.add_node("eligibility_check", nodes.eligibility_check_node)
-    graph.add_node("blocked_exit", nodes.blocked_exit_node)
     graph.add_node("topic_generator", nodes.topic_generator_node)
     graph.add_node("requirement_expansion", nodes.requirement_expansion_node)
     graph.add_node("timer_init", nodes.timer_init_node)
     graph.add_node("generate_submission_guide", nodes.submission_guide_node)
 
-    graph.set_entry_point("eligibility_check")
-
-    graph.add_conditional_edges(
-        "eligibility_check",
-        _eligibility_router,
-        {"topic_generator": "topic_generator", "blocked_exit": "blocked_exit"},
-    )
-    graph.add_edge("blocked_exit", END)
+    # There is no certificate/enrollment gate -- every request goes straight
+    # to topic generation.
+    graph.set_entry_point("topic_generator")
 
     graph.add_edge("topic_generator", "requirement_expansion")  # [WAIT: topic choice] pauses here
     graph.add_edge("requirement_expansion", "timer_init")  # [WAIT: OK/start-timer] pauses here

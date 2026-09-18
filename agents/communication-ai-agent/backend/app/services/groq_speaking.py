@@ -411,6 +411,21 @@ def _contains_completion_command(value):
     return bool(COMPLETION_COMMAND_PATTERN.search(value or ""))
 
 
+_WORD_PATTERN = re.compile(r"[A-Za-z']{2,}")
+
+
+def _looks_substantive(value):
+    """Deterministic floor under the LLM's transcript_clear judgment: a
+    transcript with several real recognizable words is objectively not
+    empty or garbled, so a single non-deterministic LLM call flagging it
+    "unclear" (which can flake between identical runs of the same
+    transcript, telling a student to redo a perfectly fine answer) should
+    never override that on its own. This only ever pulls transcript_clear
+    toward True -- a genuinely short/garbled transcript can still be
+    flagged unclear by the LLM as before."""
+    return len(_WORD_PATTERN.findall(value or "")) >= 4
+
+
 def _empty_scores(mode):
     return {
         "confidence": None,
@@ -524,6 +539,8 @@ def _normalize_feedback(data, mode, answer):
     transcript_clear = data.get("transcript_clear")
     if not isinstance(transcript_clear, bool):
         transcript_clear = True
+    elif transcript_clear is False and _looks_substantive(answer):
+        transcript_clear = True
     unclear_phrases = data.get("unclear_phrases") if isinstance(data.get("unclear_phrases"), list) else []
     corrected_answer = str(data.get("corrected_answer") or "").strip() or None
     better_natural_answer = str(data.get("better_natural_answer") or "").strip() or None
@@ -599,7 +616,10 @@ def _normalize_feedback(data, mode, answer):
 
 
 def _evaluate_once(system_prompt, user_prompt):
-    raw = _chat(system_prompt, user_prompt, temperature=0.3, max_tokens=1800, retry_rate_limit=False, timeout=12, operation="speaking.answer_evaluation", module="speaking", service="groq_speaking.evaluate_speaking_answer")
+    # Low, not zero -- this judgment (transcript clarity, error detection,
+    # scores) should be as repeatable as possible for the same transcript;
+    # see _looks_substantive below for the deterministic floor on top of it.
+    raw = _chat(system_prompt, user_prompt, temperature=0.1, max_tokens=1800, retry_rate_limit=False, timeout=12, operation="speaking.answer_evaluation", module="speaking", service="groq_speaking.evaluate_speaking_answer")
     return _extract_json(raw)
 
 

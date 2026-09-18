@@ -93,6 +93,72 @@ def test_ask_project_question_unknown_thread_raises(database):
         qa_agent.ask_project_question("does-not-exist", "Hello?")
 
 
+# --- Conversation memory (buffer window) --------------------------------------
+
+def test_ask_project_question_replays_prior_turns_into_the_next_call(database, monkeypatch):
+    """A follow-up question in the same thread should see the earlier
+    (question, answer) turn in the messages sent to the model."""
+    _seed_assignment(database)
+    monkeypatch.setattr(qa_agent, "record_usage", lambda *a, **k: None)
+
+    monkeypatch.setattr(
+        qa_agent.litellm, "completion",
+        Mock(return_value=_FakeResponse(_FakeMessage(content="The pie chart is in chart.js.", tool_calls=None))),
+    )
+    qa_agent.ask_project_question("qa-thread", "Where's my pie chart code?")
+
+    captured = {}
+    def _capture(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _FakeResponse(_FakeMessage(content="It uses Chart.js's pie() function.", tool_calls=None))
+    monkeypatch.setattr(qa_agent.litellm, "completion", Mock(side_effect=_capture))
+    qa_agent.ask_project_question("qa-thread", "What library does it use?")
+
+    contents = [m["content"] for m in captured["messages"]]
+    assert "Where's my pie chart code?" in contents
+    assert "The pie chart is in chart.js." in contents
+
+
+def test_ask_project_question_conversation_window_is_bounded(database, monkeypatch):
+    _seed_assignment(database)
+    monkeypatch.setattr(qa_agent, "record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(
+        qa_agent.litellm, "completion",
+        Mock(return_value=_FakeResponse(_FakeMessage(content="ok", tool_calls=None))),
+    )
+    for i in range(qa_agent._MEMORY_WINDOW_TURNS + 3):
+        qa_agent.ask_project_question("qa-thread", f"question {i}")
+
+    with database() as session:
+        assignment = session.query(ProjectAssignment).filter_by(thread_id="qa-thread").first()
+        history = assignment.qa_conversation_json
+
+    assert len(history) == qa_agent._MEMORY_WINDOW_TURNS * 2
+    # The oldest turns were trimmed off -- only the most recent ones remain.
+    assert "question 0" not in [m["content"] for m in history]
+
+
+def test_ask_project_question_does_not_leak_memory_across_threads(database, monkeypatch):
+    _seed_assignment(database, thread_id="thread-a", assignment_id="assignment-a")
+    _seed_assignment(database, thread_id="thread-b", assignment_id="assignment-b")
+    monkeypatch.setattr(qa_agent, "record_usage", lambda *a, **k: None)
+    monkeypatch.setattr(
+        qa_agent.litellm, "completion",
+        Mock(return_value=_FakeResponse(_FakeMessage(content="answer for A", tool_calls=None))),
+    )
+    qa_agent.ask_project_question("thread-a", "secret question for A")
+
+    captured = {}
+    def _capture(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return _FakeResponse(_FakeMessage(content="answer for B", tool_calls=None))
+    monkeypatch.setattr(qa_agent.litellm, "completion", Mock(side_effect=_capture))
+    qa_agent.ask_project_question("thread-b", "question for B")
+
+    contents = " ".join(m["content"] or "" for m in captured["messages"])
+    assert "secret question for A" not in contents
+
+
 def test_qa_ask_endpoint_rejects_pdf_attachment(client, database):
     # The `database` fixture already seeds a ProjectAssignment with
     # thread_id="thread" -- reused here since this request never reaches
@@ -236,14 +302,13 @@ _SUBMISSION_PIPELINE_NODES = [
 
 
 def test_submission_pipeline_nodes_never_branch_on_free_topic_flag():
-    """A free-topic ("custom project") request only changes topic GENERATION
-    (see topic_generator_node/eligibility_check_node) -- every node in the
-    submission graph (docx/zip ingestion through scoring) must run
-    identically regardless of free_topic_request/skip_certificate_check, so
-    a custom project is validated exactly as strictly as a catalog one. This
-    is a regression guard: if a future change special-cases either flag
-    inside the submission pipeline, this test fails loudly."""
+    """A custom/free-topic request only changes topic GENERATION (see
+    topic_generator_node) -- every node in the submission graph (docx/zip
+    ingestion through scoring) must run identically regardless of
+    free_topic_request, so a custom project is validated exactly as
+    strictly as any other. This is a regression guard: if a future change
+    special-cases that flag inside the submission pipeline, this test fails
+    loudly."""
     for node in _SUBMISSION_PIPELINE_NODES:
         source = inspect.getsource(node)
         assert "free_topic_request" not in source, f"{node.__name__} must not branch on free_topic_request"
-        assert "skip_certificate_check" not in source, f"{node.__name__} must not branch on skip_certificate_check"

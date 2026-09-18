@@ -12,8 +12,6 @@ from app import config
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
-    Certificate,
-    Enrollment,
     ProjectAssignment,
     Submission,
     SubmissionStatus,
@@ -63,58 +61,7 @@ def log_node(fn):
     return wrapper
 
 
-# --- Node 1: EligibilityCheckNode (facts from DB, verdict decided by the LLM) ---
-
-@log_node
-def eligibility_check_node(state: ProjectAgentState) -> dict:
-    """The DB query below is fact retrieval, not a decision — the LLM has no
-    other way to learn enrollment/certificate status. The eligibility verdict
-    itself (and the message the student reads) is the LLM's call, applying the
-    stated rule to those facts."""
-    if state.get("skip_certificate_check"):
-        return {
-            "eligible": True,
-            "eligibility_reason": "No certificate required — generating project options for your requested topic.",
-        }
-
-    session = get_session()
-    try:
-        enrollment = (
-            session.query(Enrollment)
-            .filter_by(student_id=state["student_id"], course_id=state["course_id"])
-            .first()
-        )
-        certificate = (
-            session.query(Certificate)
-            .filter_by(student_id=state["student_id"], course_id=state["course_id"])
-            .first()
-        )
-        facts = {
-            "student_name": state["student_name"],
-            "course_name": state["course_name"],
-            "enrollment_exists": enrollment is not None,
-            "enrollment_status": enrollment.status.value if enrollment else "none",
-            "certificate_exists": certificate is not None,
-        }
-    finally:
-        session.close()
-
-    result = call_json(
-        system=prompts.eligibility_decision_prompt(facts),
-        user="Decide eligibility now.",
-    )
-    return {
-        "eligible": bool(result.get("eligible", False)),
-        "eligibility_reason": result.get("eligibility_reason", ""),
-    }
-
-
-@log_node
-def blocked_exit_node(state: ProjectAgentState) -> dict:
-    return {"status": "blocked", "feedback": state.get("eligibility_reason", "Not eligible.")}
-
-
-# --- Node 2: TopicGeneratorNode (LLM) ---------------------------------------
+# --- Node 1: TopicGeneratorNode (LLM) ---------------------------------------
 
 _TOPIC_ANGLES = [
     "personal productivity or habit tracking",
@@ -432,9 +379,17 @@ def score_aggregator_node(state: ProjectAgentState) -> dict:
         user="Decide the final score now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    final_score = float(result.get("final_score", 0))
+    # Pass/fail is a deterministic threshold comparison, not a second
+    # independent LLM judgment call -- letting the model decide "passed"
+    # on top of (and potentially disagreeing with) its own score meant two
+    # submissions with the identical final_score could get different
+    # verdicts purely from LLM variance, with no way for a student to
+    # understand why. The score itself is still the LLM's qualitative call;
+    # only the pass/fail line drawn on top of it is deterministic now.
     return {
-        "final_score": float(result.get("final_score", 0)),
-        "passed": bool(result.get("passed", False)),
+        "final_score": final_score,
+        "passed": final_score >= config.PASS_THRESHOLD,
         "score_reasoning": result.get("reasoning", ""),
     }
 

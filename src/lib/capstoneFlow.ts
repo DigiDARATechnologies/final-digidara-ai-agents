@@ -36,7 +36,6 @@ export type CapstoneStep =
   | "awaiting_timer_confirm"
   | "awaiting_submission"
   | "awaiting_viva_answer"
-  | "not_eligible"
   | "graded";
 
 export interface CapstoneFlowMessage {
@@ -320,8 +319,6 @@ export async function handleCapstoneText(
       }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
     }
-    case "not_eligible":
-      return { state, messages: [{ text: "This project request could not proceed. Start a new chat to try again." }] };
     case "graded":
       return { state, messages: [{ text: "This project has already been graded. Open the dashboard to review the result." }] };
   }

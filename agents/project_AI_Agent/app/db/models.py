@@ -52,12 +52,9 @@ class Student(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Required for the certificate-gated flow (eligibility_check/eligible_courses
-    # key student lookup on it, matching real enrollment records). Nullable
-    # because the free-topic flow (eligibility_check_free) has no enrollment
-    # records to match against and keys students on their verified email
-    # instead — a logged-in account with no phone on file (e.g. Google
-    # sign-in) shouldn't be unable to use it.
+    # Nullable -- students are keyed on their verified email
+    # (eligibility_check_free), which is always present; phone is optional
+    # contact info only, not a lookup key (e.g. Google sign-in has none).
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -112,6 +109,11 @@ class ProjectAssignment(Base):
     # Populated by submission_guide_node once the topic/requirements/folder
     # structure are known.
     about_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Buffer window memory for the project Q&A agent (see
+    # app/agentic/qa_agent.py) -- the last few (question, answer) turns of
+    # this thread's conversation, so a follow-up question has the earlier
+    # exchange to refer back to. Trimmed to a bounded window on every save.
+    qa_conversation_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     submissions: Mapped[list["Submission"]] = relationship(back_populates="assignment")
 

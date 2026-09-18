@@ -77,45 +77,21 @@ OUTPUT FORMAT (strict JSON, no prose outside the JSON):
 }}"""
 
 
-def eligibility_decision_prompt(facts: dict[str, Any]) -> str:
-    return f"""You are the Eligibility Decision Agent for DigiDARA Technologies capstone projects.
-
-FACTS (retrieved from the student records system — treat these as ground truth,
-do not assume anything beyond what is stated here):
-- Student: {facts['student_name']}
-- Course: {facts['course_name']}
-- Enrollment record exists: {facts['enrollment_exists']}
-- Enrollment status: {facts['enrollment_status']}
-- Certificate issued for this course: {facts['certificate_exists']}
-
-RULE: A student unlocks the capstone project only if all three are true: an
-enrollment record exists, its status is "completed", and a certificate has been
-issued for this course. Apply this rule to the facts above.
-
-TASK:
-Decide whether this student is eligible right now, and write the reason the
-student will read.
-
-OUTPUT FORMAT (strict JSON):
-{{
-  "eligible": <true|false>,
-  "eligibility_reason": "<one clear sentence, second person. If not eligible, say exactly what's missing — e.g. 'You have not yet registered for this course.' / 'Course in progress — finish all modules to unlock the capstone.' / 'Course complete, certificate pending issuance.' If eligible, just 'Eligible.'>"
-}}"""
-
-
 def final_score_decision_prompt(state: dict[str, Any], pass_threshold: int) -> str:
     difficulty = state.get("difficulty", "easy")
     return f"""You are the Final Score Decision Agent for a DigiDARA capstone project.
 Four independent reviewers have already assessed different aspects of this
-submission. Your job is to weigh their findings and make the final call — the
-score and pass/fail decision are yours to decide, not a fixed formula.
+submission. Your job is to weigh their findings into a single fair score — not
+to decide pass/fail, which is a deterministic threshold comparison the code
+applies to whatever score you produce (see below), not a judgment call.
 
 CONTEXT:
 - Course medium: {_effective_medium(state)}
 - Requested difficulty: {difficulty} — the code quality reviewer already calibrated
   its scoring to this level, so trust its scores as difficulty-appropriate rather
   than re-discounting or re-inflating them here for difficulty a second time.
-- Pass threshold (reference target, not a rigid cutoff — use your judgment): {pass_threshold} / 100
+- Pass threshold: {pass_threshold} / 100 — applied automatically by code once you
+  return a score; you are not deciding pass/fail, only the score itself.
 - Docx structure validation: {json.dumps(state.get('structure_score', {}), ensure_ascii=False)}
 - Zip structure validation: {json.dumps(state.get('zip_structure_score', {}), ensure_ascii=False)}
 - Output verification: {json.dumps(state.get('output_verification', {}), ensure_ascii=False)}
@@ -133,17 +109,16 @@ submissions with different total_code_score values (e.g. 87 vs. 85) should almos
 never land on the exact same final_score; if your adjustments genuinely cancel
 out to a round number, that's fine, but it should be the result of the math, not
 a shortcut. Weigh code correctness and quality most heavily; treat documentation
-and packaging quality as secondary factors. Then decide pass/fail: use the pass
-threshold as your primary reference point, but you may deviate from it if the
-overall picture clearly warrants it (e.g. borderline score but genuinely broken
-output should not pass; a slightly-below-threshold score with excellent code and
-only minor doc gaps could still pass at your discretion).
+and packaging quality as secondary factors. If the output verification shows
+genuinely broken/contradicted output (e.g. a real stderr traceback contradicting
+a "success" screenshot), that must pull the score down through the output
+verification adjustment above, not through a separate override of the pass/fail
+call you're not making.
 
 OUTPUT FORMAT (strict JSON):
 {{
   "final_score": <0-100, one decimal place>,
-  "passed": <true|false>,
-  "reasoning": "<2-3 sentences on how you weighed the inputs to reach this decision>"
+  "reasoning": "<2-3 sentences on how you weighed the inputs to reach this score>"
 }}"""
 
 
