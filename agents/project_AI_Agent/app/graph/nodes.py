@@ -25,7 +25,7 @@ from app.graph import prompts
 from app.graph.report import build_about_markdown, build_review_markdown
 from app.graph.state import ProjectAgentState
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
-from app.ingestion.structure_check import check_required_paths
+from app.ingestion.structure_check import check_required_paths, check_required_sections
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
 
@@ -259,15 +259,27 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
     }
 
 
-# --- Node 8: StructureValidationNode (LLM) ----------------------------------
+# --- Node 8: StructureValidationNode (deterministic presence check + LLM content quality) ---
 
 @log_node
 def structure_validation_node(state: ProjectAgentState) -> dict:
+    guide = state.get("submission_guide") or {}
+    deterministic = check_required_sections(guide.get("docx_required_sections"), state.get("doc_sections"))
+
     result = call_json(
-        system=prompts.structure_validation_prompt(state),
+        system=prompts.structure_validation_prompt(state, deterministic),
         user="Validate the document structure now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    # Whether a required section EXISTS is decided by check_required_sections, never
+    # by the LLM (see app/ingestion/structure_check.py) -- an auto-numbered heading
+    # like "2. Approach" must always match a plain "Approach" requirement the same
+    # way on every run, not depend on the model noticing it that particular time.
+    # The LLM's own is_complete is content-quality judgment ONLY (weak/placeholder
+    # sections, screenshot evidence); the final verdict requires both to pass.
+    result["missing_sections"] = deterministic["missing_sections"]
+    result["matched_sections"] = deterministic["matched_sections"]
+    result["is_complete"] = deterministic["is_complete"] and bool(result.get("is_complete", True))
     return {"structure_score": result}
 
 

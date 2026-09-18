@@ -352,8 +352,9 @@ Tone: instructional, concise, no ambiguity — a first-time submitter should not
 to ask a follow-up question after reading this."""
 
 
-def structure_validation_prompt(state: dict[str, Any]) -> str:
+def structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
+    deterministic = deterministic or {}
     return f"""You are the Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
@@ -364,12 +365,22 @@ CONTEXT:
 - Screenshot evidence found in the document (extracted via OCR): {state.get('screenshot_ocr_text', 'none')}
 - Screenshots present in document: {state.get('screenshots_present', False)}
 
+DETERMINISTIC CHECK RESULT (already computed by code from the actual heading text, not
+your judgment — never contradict it, and never tell the student a required section is
+missing if this result says it was found, even if its heading is auto-numbered like
+"2. Approach" or worded slightly differently than the requirement name):
+- Sections found: {json.dumps(deterministic.get('matched_sections', []), ensure_ascii=False)}
+- Sections NOT found: {json.dumps(deterministic.get('missing_sections', []), ensure_ascii=False)}
+
 TASK:
-Check whether the submitted document contains all required sections with
-substantive (non-empty, non-placeholder) content, and whether output screenshots
-are actually present as images (not described in words only) — use the
-"Screenshots present" flag and OCR text above as your evidence for this, since you
-cannot see the images directly.
+Whether each required section EXISTS is already decided above — do not re-derive it and
+do not add a section to missing_sections that the deterministic result already found.
+Your job is the judgment code can't make: for each section that WAS found, is its
+content actually substantive (real explanation/detail) or just a placeholder/filler (1-2
+throwaway sentences, a heading with nothing under it, "TBD", etc.)? List those as
+weak_sections. Also judge whether output screenshots are actually present as images (not
+described in words only) — use the "Screenshots present" flag and OCR text as your
+evidence, since you cannot see the images directly.
 
 Then, for EACH item in "Required screenshots" above, decide whether the OCR text gives
 enough evidence that a screenshot matching that specific description exists (e.g. OCR
@@ -382,12 +393,11 @@ exact chart type) you have no textual evidence for.
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "is_complete": <true|false>,
-  "missing_sections": ["<section name>", "..."],
+  "is_complete": <true|false — based ONLY on weak_sections/screenshot content-quality judgment below, not section presence>,
   "weak_sections": ["<section name: reason>", "..."],
   "screenshots_present": <true|false>,
   "missing_screenshots": ["<description of the required screenshot that has no evidence>", "..."],
-  "notes": "<short explanation for the student if incomplete>"
+  "notes": "<short explanation for the student if incomplete — if a section is in weak_sections, say specifically what's missing from it, not just that it's 'weak'>"
 }}
 
 Be strict but fair: a section with only 1-2 filler sentences counts as "weak", not complete.
