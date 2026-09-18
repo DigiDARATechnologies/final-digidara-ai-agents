@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -6,7 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 
@@ -19,6 +21,7 @@ def _log_id(thread_id: str) -> str:
     return hashlib.sha256(thread_id.encode()).hexdigest()[:8]
 
 from app import config
+from app.agentic.qa_agent import ProjectNotFound, ask_project_question
 from app.api.schemas import (
     ConfigOut,
     CourseOut,
@@ -26,7 +29,9 @@ from app.api.schemas import (
     EligibilityCheckRequest,
     EligibilityCheckResponse,
     FreeTopicRequest,
+    QAAskResponse,
     StatusResponse,
+    StructureScreenshotResponse,
     SubmissionResultResponse,
     TimerConfirmRequest,
     TimerConfirmResponse,
@@ -55,7 +60,9 @@ from app.db.models import (
 )
 from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
-from app.llm.client import LLMError, call_json
+from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
+from app.llm.client import LLMError, call_json, call_text
+from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
 
@@ -402,6 +409,7 @@ def timer_confirm(req: TimerConfirmRequest) -> TimerConfirmResponse:
         thread_id=req.thread_id,
         deadline_at=result["deadline_at"],
         submission_guide=result["submission_guide"],
+        about_markdown=result.get("about_markdown"),
     )
 
 
@@ -500,11 +508,13 @@ async def submission_upload(
                 "feedback": result.get("feedback"),
                 "score_reasoning": result.get("score_reasoning"),
                 "code_quality_score": result.get("code_quality_score"),
+                "review_markdown": result.get("review_markdown"),
             },
         )
         return SubmissionResultResponse(
             thread_id=thread_id,
             status="needs_revision",
+            submission_id=submission_id,
             revision_notes=result.get("revision_notes"),
             # Present when this was a failed *content* grade being sent back
             # for another attempt (not just a packaging/structure issue) —
@@ -513,6 +523,7 @@ async def submission_upload(
             passed=result.get("passed"),
             score_reasoning=result.get("score_reasoning"),
             code_quality_score=result.get("code_quality_score"),
+            review_markdown=result.get("review_markdown"),
         )
 
     # Content grade passed -- hold the score back and run the viva before
@@ -621,17 +632,20 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
                 "feedback": combined_feedback,
                 "score_reasoning": code_result.get("score_reasoning"),
                 "code_quality_score": code_result.get("code_quality_score"),
+                "review_markdown": submission.review_markdown,
             },
         )
 
         return SubmissionResultResponse(
             thread_id=thread_id,
             status=final_status.value,
+            submission_id=req.submission_id,
             final_score=code_result.get("final_score"),
             passed=overall_passed,
             feedback=combined_feedback,
             score_reasoning=code_result.get("score_reasoning"),
             code_quality_score=code_result.get("code_quality_score"),
+            review_markdown=submission.review_markdown,
             viva_score=submission.viva_score,
             viva_passed=viva_passed,
         )
@@ -676,13 +690,146 @@ def get_status(thread_id: str) -> StatusResponse:
         chosen_topic=values.get("chosen_topic"),
         requirements=values.get("requirements"),
         submission_guide=values.get("submission_guide"),
+        about_markdown=values.get("about_markdown"),
         final_score=values.get("final_score"),
         passed=values.get("passed"),
         feedback=values.get("feedback"),
         revision_notes=values.get("revision_notes"),
         score_reasoning=values.get("score_reasoning"),
         code_quality_score=values.get("code_quality_score"),
+        review_markdown=values.get("review_markdown"),
     )
+
+
+@router.get("/assignment/{thread_id}/about.md")
+def get_about_markdown(thread_id: str) -> PlainTextResponse:
+    """Downloadable "about this project" doc -- topic, requirements, and the
+    required folder/report structure -- generated once the submission guide
+    is ready. Useful as a reference while building, and to bring to the viva."""
+    values = _get_state_values(thread_id)
+    markdown = values.get("about_markdown")
+    if not markdown:
+        raise HTTPException(404, "No project brief has been generated yet for this thread.")
+    return PlainTextResponse(markdown, media_type="text/markdown")
+
+
+@router.get("/submission/{submission_id}/review.md")
+def get_review_markdown(submission_id: str) -> PlainTextResponse:
+    """Downloadable full review report for one submission attempt -- see
+    app/graph/report.py:build_review_markdown. Available as soon as a
+    submission attempt finishes (including a structure-gate rejection),
+    regardless of whether the content score itself is still held back
+    pending the viva."""
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+    if not submission.review_markdown:
+        raise HTTPException(404, "No review report is available for this submission yet.")
+    return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
+
+
+@router.post("/submission/{submission_id}/structure-screenshot", response_model=StructureScreenshotResponse)
+async def structure_screenshot(submission_id: str, image: UploadFile = File(...)) -> StructureScreenshotResponse:
+    """Phase 3: a student confused by a "missing folder" verdict attaches a
+    screenshot of their file explorer / extracted zip / IDE tree, and a
+    vision-capable LLM call points at exactly what's missing from THAT
+    screenshot -- grounded in the same deterministic missing-items list the
+    review report already used (see app/ingestion/structure_check.py)."""
+    logger.info("=== POST /api/submission/%s/structure-screenshot", submission_id)
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+
+    zip_score = submission.zip_validation_json or (submission.score_json or {}).get("zip_structure_score") or {}
+    detail = zip_score.get("required_paths_detail") or {}
+    missing_items = detail.get("missing_items") or []
+    if not missing_items:
+        raise HTTPException(400, "This submission has no missing required folders/files to check a screenshot against.")
+
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(400, "Please attach an image file (a screenshot).")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(400, "The screenshot is empty.")
+    if len(image_bytes) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Screenshot must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+    result = analyze_structure_screenshot(image_bytes, image.content_type, missing_items, detail.get("matched_items") or [])
+    return StructureScreenshotResponse(**result)
+
+
+@router.post("/qa/ask", response_model=QAAskResponse)
+async def qa_ask(
+    thread_id: str = Form(...),
+    question: str = Form(...),
+    attachment: UploadFile | None = File(None),
+) -> QAAskResponse:
+    """Phase 4: project-scoped Q&A. Answers are grounded ONLY in this
+    student's own topic/requirements/submitted code/report/grading result
+    (see app/agentic/qa_agent.py) -- the agent decides which of those to
+    look at via real tool calls, using web search only to verify a
+    technical claim or a current requirement. An optional image or .docx
+    attachment is analyzed and folded into that single question's context;
+    it is not persisted."""
+    logger.info("=== POST /api/qa/ask thread=%s", _log_id(thread_id))
+    if not question.strip():
+        raise HTTPException(400, "Question must not be empty.")
+
+    extra_context: str | None = None
+    if attachment is not None:
+        attachment_bytes = await attachment.read()
+        if not attachment_bytes:
+            raise HTTPException(400, "The attachment is empty.")
+        if len(attachment_bytes) > config.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"Attachment must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+        content_type = attachment.content_type or ""
+        filename = (attachment.filename or "").lower()
+        if content_type.startswith("image/"):
+            data_url = f"data:{content_type};base64,{base64.b64encode(attachment_bytes).decode('ascii')}"
+            description = call_text(
+                system="Describe what is shown in this image in plain language, in under 150 words. "
+                "If it looks like a file explorer, archive tool, or code editor file tree, list the "
+                "folder/file names you can actually read in it.",
+                user="Describe the attached image now.",
+                image_data_url=data_url,
+            )
+            extra_context = f"[Image attached by the student]\n{description}"
+        elif filename.endswith(".docx"):
+            tmp_dir = config.UPLOAD_DIR / "qa_attachments"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / f"{uuid.uuid4().hex}.docx"
+            tmp_path.write_bytes(attachment_bytes)
+            try:
+                parsed = ingest_docx(str(tmp_path))
+            except DocxIngestError as exc:
+                raise HTTPException(400, str(exc))
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            sections_text = json.dumps(parsed["sections"], ensure_ascii=False)
+            if len(sections_text) > 6000:
+                sections_text = sections_text[:6000] + "... [truncated]"
+            extra_context = f"[.docx document attached by the student]\n{sections_text}"
+        elif filename.endswith(".pdf"):
+            raise HTTPException(415, "PDF attachments aren't supported yet — please attach a .docx report or an image screenshot instead.")
+        else:
+            raise HTTPException(415, "Unsupported attachment type — please attach a .docx report or an image screenshot.")
+
+    try:
+        result = ask_project_question(thread_id, question, extra_context=extra_context)
+    except ProjectNotFound:
+        raise HTTPException(404, "Unknown or expired thread_id.")
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}")
+    return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
 
 
 @router.post("/invoke")

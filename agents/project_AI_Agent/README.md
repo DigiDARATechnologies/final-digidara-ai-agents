@@ -73,6 +73,10 @@ API docs: http://127.0.0.1:8000/docs
 | 3. Confirm & start the 7-day timer | `POST /api/timer/confirm` | `{thread_id}` → `deadline_at` + submission guide |
 | 4. Upload submission | `POST /api/submission/upload` | multipart form: `thread_id`, `docx_file`, `zip_file` → score/feedback or revision notes |
 | Poll progress | `GET /api/status/{thread_id}` | current stage + status |
+| Download the project brief | `GET /api/assignment/{thread_id}/about.md` | raw Markdown: topic, requirements, required folder/report structure |
+| Download the review report | `GET /api/submission/{submission_id}/review.md` | raw Markdown: full checklist-style review of one submission attempt |
+| Troubleshoot a missing folder via screenshot | `POST /api/submission/{submission_id}/structure-screenshot` | multipart form: `image` — a screenshot of the student's file explorer / extracted zip / IDE tree, checked against whichever required folders/files that submission is still missing |
+| Ask about your own project | `POST /api/qa/ask` | multipart form: `thread_id`, `question`, optional `attachment` (image or `.docx`) — a tool-calling agent answers using only that student's own topic/requirements/code/report/grading result, with web search available to verify a technical claim or current requirement |
 
 State between steps is persisted by LangGraph's MySQL checkpointer
 ([`langgraph-checkpoint-mysql`](https://github.com/tjni/langgraph-checkpoint-mysql),

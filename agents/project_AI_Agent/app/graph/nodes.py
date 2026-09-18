@@ -22,8 +22,10 @@ from app.execution.browser_check import BrowserCheckUnavailable, run_html_submis
 from app.execution.entry_point import find_html_entry_point, find_node_entry_point, find_python_entry_point
 from app.execution.judge0_client import Judge0Unavailable, run_node_submission, run_python_submission
 from app.graph import prompts
+from app.graph.report import build_about_markdown, build_review_markdown
 from app.graph.state import ProjectAgentState
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
+from app.ingestion.structure_check import check_required_paths
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
 
@@ -214,7 +216,18 @@ def submission_guide_node(state: ProjectAgentState) -> dict:
         system=prompts.submission_guide_prompt(state),
         user="Write the submission guide now.",
     )
-    return {"submission_guide": result}
+    about_markdown = build_about_markdown({**state, "submission_guide": result})
+
+    session = get_session()
+    try:
+        assignment = session.get(ProjectAssignment, state["assignment_id"])
+        if assignment:
+            assignment.about_markdown = about_markdown
+            session.commit()
+    finally:
+        session.close()
+
+    return {"submission_guide": result, "about_markdown": about_markdown}
 
 
 # --- Node 6: DocxIngestNode (deterministic) ---------------------------------
@@ -258,15 +271,26 @@ def structure_validation_node(state: ProjectAgentState) -> dict:
     return {"structure_score": result}
 
 
-# --- Node 9: ZipStructureValidationNode (LLM) -------------------------------
+# --- Node 9: ZipStructureValidationNode (deterministic presence check + LLM commentary) ---
 
 @log_node
 def zip_structure_validation_node(state: ProjectAgentState) -> dict:
+    guide = state.get("submission_guide") or {}
+    deterministic = check_required_paths(guide.get("required_paths"), state.get("zip_file_tree"))
+
     result = call_json(
-        system=prompts.zip_structure_validation_prompt(state),
+        system=prompts.zip_structure_validation_prompt(state, deterministic),
         user="Validate the zip folder structure now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    # Presence/absence of required paths is decided by check_required_paths, never
+    # by the LLM (see app/ingestion/structure_check.py) -- this is what makes the
+    # same zip always get the same "missing folder" verdict on resubmission. The
+    # LLM call above only supplies clutter_flags/structure_quality/notes on top.
+    result["is_complete"] = deterministic["is_complete"]
+    result["missing_items"] = [item["path"] for item in deterministic["missing_items"]]
+    result["matched_items"] = [item["path"] for item in deterministic["matched_items"]]
+    result["required_paths_detail"] = deterministic
     return {"zip_structure_score": result}
 
 
@@ -341,6 +365,7 @@ def request_revision_node(state: ProjectAgentState) -> dict:
     if not zip_structure.get("is_complete", True):
         notes.append(f"Code zip: {zip_structure.get('notes', 'Folder structure incomplete.')}")
     revision_notes = "\n".join(notes) or "Submission is incomplete — see validation notes."
+    review_markdown = build_review_markdown({**state, "status": "needs_revision", "revision_notes": revision_notes})
 
     session = get_session()
     try:
@@ -349,11 +374,12 @@ def request_revision_node(state: ProjectAgentState) -> dict:
             submission.status = SubmissionStatus.needs_revision
             submission.docx_validation_json = structure
             submission.zip_validation_json = zip_structure
+            submission.review_markdown = review_markdown
             session.commit()
     finally:
         session.close()
 
-    return {"status": "needs_revision", "revision_notes": revision_notes}
+    return {"status": "needs_revision", "revision_notes": revision_notes, "review_markdown": review_markdown}
 
 
 # --- Node 10: OutputVerificationNode (LLM, OCR-based) -----------------------
@@ -419,6 +445,7 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
     submission_status = SubmissionStatus.graded if passed else SubmissionStatus.needs_revision
     assignment_status = AssignmentStatus.graded if passed else AssignmentStatus.needs_revision
     result_status = "graded" if passed else "needs_revision"
+    review_markdown = build_review_markdown({**state, "status": result_status, "revision_notes": None if passed else feedback_text})
 
     session = get_session()
     try:
@@ -435,6 +462,7 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
                 "zip_structure_score": state.get("zip_structure_score"),
             }
             submission.feedback_text = feedback_text
+            submission.review_markdown = review_markdown
             session.commit()
         assignment = session.get(ProjectAssignment, state["assignment_id"])
         if assignment:
@@ -449,4 +477,5 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
         "revision_notes": None if passed else feedback_text,
         "final_score": state["final_score"],
         "passed": passed,
+        "review_markdown": review_markdown,
     }

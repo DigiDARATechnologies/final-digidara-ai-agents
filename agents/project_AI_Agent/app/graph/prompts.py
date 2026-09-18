@@ -312,10 +312,20 @@ must cover:
 2. Exact section headings required inside the .docx report, in order.
 3. A short worked example for ONE section (e.g., what a good "Output Screenshots" section looks like) so the format is unambiguous.
 4. Common mistakes to avoid (e.g., missing screenshots, code pasted as image instead of text, no explanation of approach).
+5. The SAME folder structure as `required_paths`: a flat list, one entry per required
+   folder or file, each with its path relative to the project root, its type, and a
+   one-sentence plain-language description of what belongs there and why it's checked
+   (this is what a deterministic checker and the student-facing review report both use
+   — it must include at minimum one "dir" entry for source code and one "dir" entry
+   for output/screenshots, matching the folder tree above exactly).
 
 OUTPUT FORMAT (strict JSON):
 {{
   "folder_structure": ["<tree line 1>", "<tree line 2>", "..."],
+  "required_paths": [
+    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}},
+    {{"path": "<slug>/output_screenshots", "type": "dir", "description": "<why this exists / what goes here>"}}
+  ],
   "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
   "worked_example_section": "<name of section>",
   "worked_example_text": "<the example content, 3-6 sentences or a short snippet>",
@@ -357,8 +367,9 @@ If is_complete is false, the submission is routed back to the student for revisi
 your notes field is what they will read, so be specific about what to add."""
 
 
-def zip_structure_validation_prompt(state: dict[str, Any]) -> str:
+def zip_structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
+    deterministic = deterministic or {}
     return f"""You are the Code Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
@@ -366,31 +377,37 @@ CONTEXT:
 - Actual file tree extracted from the submitted zip: {json.dumps(state['zip_file_tree'], ensure_ascii=False)}
 - Course medium: {_effective_medium(state)}
 
+DETERMINISTIC CHECK RESULT (already computed by code, not your judgment — never
+contradict it, and never tell the student a required item is present/missing if this
+result says otherwise):
+- Matched required items: {json.dumps(deterministic.get('matched_items', []), ensure_ascii=False)}
+- Missing required items: {json.dumps(deterministic.get('missing_items', []), ensure_ascii=False)}
+
 NOTE: The .docx report is uploaded as a SEPARATE file alongside this zip, not inside
 it — never flag a missing report.docx or any .docx file as an issue here. A short
 README is normal, good practice and is not clutter on its own.
 
 TASK:
-Compare the actual zip contents against the required folder structure. Check for:
-1. Missing required folders/files (e.g., no `/output_screenshots`, no recognizable entry point).
-2. Irrelevant or excessive clutter (e.g., IDE config folders, committed dependency folders,
+Whether required folders/files are present or missing is ALREADY DECIDED above — do
+not re-derive it. Your job is to add the qualitative judgment code can't make:
+1. Irrelevant or excessive clutter (e.g., IDE config folders, committed dependency folders,
    duplicate/backup copies of the same file) that suggests careless packaging.
-3. Whether the code appears organized into the expected structure at all, or dumped as a
-   flat pile of files with no separation.
-4. Whether the zip contains actual source files at all, versus only screenshots/docs
+2. Whether the code appears organized into the expected structure at all, or dumped as a
+   flat pile of files with no separation, even where the required folders technically exist.
+3. Whether the zip contains actual source files at all, versus only screenshots/docs
    (which would belong in the docx, not here).
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "is_complete": <true|false>,
-  "missing_items": ["<expected item not found>", "..."],
   "clutter_flags": ["<file/folder that shouldn't be there>", "..."],
   "structure_quality": "<poor|acceptable|good>",
-  "notes": "<short explanation for the student if incomplete>"
+  "notes": "<short explanation for the student, in plain language — if the deterministic
+    result found missing items, explain what each one is for and where to add it; always
+    end with any additional organization/clutter observations>"
 }}
 
 Be strict but fair — a slightly different-but-sensible folder name is fine; a flat dump of
-files with no organization, or a zip missing the actual code, is not."""
+files with no organization is not."""
 
 
 def _execution_context_block(state: dict[str, Any]) -> str:
@@ -645,3 +662,50 @@ STUDENT'S ANSWER: {answer}
 Judge whether the answer demonstrates genuine understanding of the core concept(s) above. Be lenient on phrasing -- this is a typed spoken-style answer, not a formal essay -- but it must show real understanding, not just repeat the question back or give an unrelated/evasive response. A blank or "I don't know" answer is always incorrect.
 
 Respond as JSON: {{"correct": true or false, "note": "one short sentence explaining why"}}"""
+
+
+def screenshot_structure_prompt(missing_items: list[dict], matched_items: list[dict]) -> str:
+    """Phase 3: a confused student uploads a screenshot of their local file
+    explorer, their extracted zip contents, or their IDE's file tree -- this
+    prompt (used with a vision-capable call_json, see app/vision/
+    structure_screenshot.py) reads that image and points at exactly what's
+    missing, in terms of what's actually visible in the screenshot."""
+    return f"""You are the Folder Structure Screenshot Reviewer for a DigiDARA capstone project.
+
+A student's zip submission was already checked by code (never by you) and found to be
+MISSING these required folders/files:
+{json.dumps(missing_items, ensure_ascii=False)}
+
+These required items were already found in the zip and are fine -- do not tell the
+student to add them again unless they are visibly ABSENT from the screenshot too, in
+which case say the screenshot doesn't match what was actually in the uploaded zip and
+they should re-check which folder they zipped:
+{json.dumps(matched_items, ensure_ascii=False)}
+
+The student has now attached a screenshot. It could be their local file explorer, an
+archive tool showing the extracted contents of their zip, or their code editor's file
+tree -- you cannot know which in advance; read the image itself to work out what kind
+of view it is.
+
+TASK:
+For EACH missing item listed above, look at the screenshot and determine:
+1. Is it actually visible in this screenshot (the student already has it locally, they
+   just forgot to include it when they made the zip, or it's named slightly differently
+   than expected)?
+2. Give the student a short, concrete instruction for exactly what to create (or move,
+   or rename) and where -- reference actual folder/file names you can see in the
+   screenshot, not generic advice.
+
+OUTPUT FORMAT (strict JSON):
+{{
+  "observations": [
+    {{"path": "<the missing item's path, exactly as given above>",
+      "found_in_screenshot": <true|false>,
+      "guidance": "<specific instruction, referencing what you see in THIS screenshot>"}}
+  ],
+  "summary": "<2-4 sentence plain-language summary of what to do next, written directly to the student>"
+}}
+
+Be concrete. If the screenshot is unrelated to a project folder view entirely (e.g. an
+error message, a random photo), say so plainly in "summary" and leave "guidance" as an
+instruction to upload the right kind of screenshot instead."""
