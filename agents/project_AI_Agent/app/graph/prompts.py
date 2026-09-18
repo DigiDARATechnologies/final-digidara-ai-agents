@@ -294,6 +294,7 @@ def submission_guide_prompt(state: dict[str, Any]) -> str:
 CONTEXT:
 - Chosen topic: {topic_title}
 - Deliverables required: {requirements.get('expected_deliverables')}
+- Functional requirements: {requirements.get('functional_requirements')}
 
 TASK:
 Produce a submission guide the student will read right after the timer starts. It
@@ -318,6 +319,17 @@ must cover:
    (this is what a deterministic checker and the student-facing review report both use
    — it must include at minimum one "dir" entry for source code and one "dir" entry
    for output/screenshots, matching the folder tree above exactly).
+6. Exactly which screenshots must go in that output/screenshots folder AND be embedded
+   in the .docx report: one entry per functional requirement above that has a visible
+   UI proof point (e.g. "pie chart of expenses by category" -> one screenshot showing
+   that pie chart actually rendered with real data; "edit/delete an entry" -> a
+   before/after pair). Skip a requirement only if it genuinely has nothing to show on
+   screen (e.g. "data persists locally" has no single screenshot that proves it on its
+   own — note in that item's description how the student CAN demonstrate it, e.g.
+   "reload the page and show the data is still there", rather than omitting it
+   silently). Be as specific as the requirement itself — "a screenshot of the app" is
+   not acceptable, "a screenshot showing the pie chart of expenses by category with at
+   least two categories visible" is.
 
 OUTPUT FORMAT (strict JSON):
 {{
@@ -325,6 +337,10 @@ OUTPUT FORMAT (strict JSON):
   "required_paths": [
     {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}},
     {{"path": "<slug>/output_screenshots", "type": "dir", "description": "<why this exists / what goes here>"}}
+  ],
+  "required_screenshots": [
+    {{"description": "<exactly what this screenshot must show, specific to the requirement below>",
+      "linked_requirement": "<the functional requirement text this proves>"}}
   ],
   "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
   "worked_example_section": "<name of section>",
@@ -342,6 +358,8 @@ def structure_validation_prompt(state: dict[str, Any]) -> str:
 
 CONTEXT:
 - Required sections: {guide.get('docx_required_sections')}
+- Required screenshots (exactly what each one must show, from the submission guide):
+  {json.dumps(guide.get('required_screenshots', []), ensure_ascii=False)}
 - Parsed document sections and content: {json.dumps(state['doc_sections'], ensure_ascii=False)}
 - Screenshot evidence found in the document (extracted via OCR): {state.get('screenshot_ocr_text', 'none')}
 - Screenshots present in document: {state.get('screenshots_present', False)}
@@ -353,12 +371,22 @@ are actually present as images (not described in words only) — use the
 "Screenshots present" flag and OCR text above as your evidence for this, since you
 cannot see the images directly.
 
+Then, for EACH item in "Required screenshots" above, decide whether the OCR text gives
+enough evidence that a screenshot matching that specific description exists (e.g. OCR
+text containing category labels and percentages is evidence of a pie chart; OCR text
+naming two comparable totals is evidence of a bar/comparison chart). OCR text is
+imperfect (garbled characters, missed layout) — don't demand a perfect textual match,
+but a required screenshot with literally no supporting OCR text or surrounding
+paragraph context should be listed as missing. Never guess visual details (colors,
+exact chart type) you have no textual evidence for.
+
 OUTPUT FORMAT (strict JSON):
 {{
   "is_complete": <true|false>,
   "missing_sections": ["<section name>", "..."],
   "weak_sections": ["<section name: reason>", "..."],
   "screenshots_present": <true|false>,
+  "missing_screenshots": ["<description of the required screenshot that has no evidence>", "..."],
   "notes": "<short explanation for the student if incomplete>"
 }}
 

@@ -34,6 +34,8 @@ def _structure_section(state: dict[str, Any]) -> list[str]:
     screenshots_present = structure.get("screenshots_present")
     if screenshots_present is not None:
         lines.append(f"{_checkbox(bool(screenshots_present))} Output screenshots embedded in the report")
+    for missing_screenshot in structure.get("missing_screenshots") or []:
+        lines.append(f"- ❌ Missing screenshot: {missing_screenshot}")
     if structure.get("notes"):
         lines.append("")
         lines.append(structure["notes"])
@@ -223,6 +225,19 @@ def build_about_markdown(state: dict[str, Any]) -> str:
     for index, section in enumerate(guide.get("docx_required_sections") or [], start=1):
         lines.append(f"{index}. {section}")
     lines.append("")
+
+    required_screenshots = guide.get("required_screenshots") or []
+    if required_screenshots:
+        lines.append("## Required Screenshots")
+        lines.append(
+            "Each of these must be its own screenshot, both saved in your `output_screenshots` folder "
+            "AND embedded in your .docx report (a screenshot only in one place doesn't count):"
+        )
+        for index, item in enumerate(required_screenshots, start=1):
+            lines.append(f"{index}. **{item.get('description', '')}**")
+            if item.get("linked_requirement"):
+                lines.append(f"   _Proves: {item['linked_requirement']}_")
+        lines.append("")
 
     if guide.get("worked_example_section"):
         lines += [
