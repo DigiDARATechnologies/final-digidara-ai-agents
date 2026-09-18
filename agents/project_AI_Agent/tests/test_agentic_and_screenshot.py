@@ -174,6 +174,36 @@ def test_structure_screenshot_endpoint_rejects_non_image(client, database):
     assert response.status_code == 400
 
 
+def test_system_prompt_instructs_dispute_resolution_flow():
+    """Regression guard for the requirement-dispute conversation flow: check
+    the code first, only ask for a screenshot when code evidence alone is
+    inconclusive and none was already attached, then give a clear verdict
+    once one is available."""
+    prompt = qa_agent._SYSTEM_PROMPT
+    assert "HANDLING A DISPUTE" in prompt
+    assert "read_submitted_file" in prompt
+    assert "ask them to attach a" in prompt
+    assert "screenshot" in prompt
+
+
+def test_ask_project_question_dispute_uses_code_tool_then_answers(database, monkeypatch):
+    """A student disputing a flagged-missing feature should get an answer
+    that engaged with the actual code, not a canned response."""
+    _seed_assignment(database)
+    responses = [
+        _FakeResponse(_FakeMessage(content=None, tool_calls=[_FakeToolCall("call-1", "list_submitted_files", "{}")])),
+        _FakeResponse(_FakeMessage(content=None, tool_calls=[_FakeToolCall("call-2", "read_submitted_file", '{"path": "chart.js"}')])),
+        _FakeResponse(_FakeMessage(content="Your chart.js does call Chart.js's pie() function, so the code is present.", tool_calls=None)),
+    ]
+    monkeypatch.setattr(qa_agent.litellm, "completion", Mock(side_effect=responses))
+    monkeypatch.setattr(qa_agent, "record_usage", lambda *a, **k: None)
+
+    result = qa_agent.ask_project_question("qa-thread", "You said my pie chart is missing but I wrote it — check chart.js")
+
+    assert result["tools_used"] == ["list_submitted_files", "read_submitted_file"]
+    assert "chart.js" in result["answer"]
+
+
 # --- Phase 5: free/custom-topic submissions share the exact same checks ------
 
 _SUBMISSION_PIPELINE_NODES = [
