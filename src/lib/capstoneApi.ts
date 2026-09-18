@@ -169,3 +169,16 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
   return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
 }
+
+export interface QAAskResult {
+  answer: string;
+  tools_used: string[];
+}
+
+/** Project-scoped Q&A, grounded only in this student's own topic/requirements/
+ * submitted code/report/grading result (see the backend's app/agentic/qa_agent.py).
+ * Used mid-viva when the student is asking something rather than answering
+ * the pending question — see capstoneFlow.ts's looksLikeQuestionNotAnswer. */
+export function askProjectQuestion(thread_id: string, question: string) {
+  return invoke<QAAskResult>("ask_project_question", { thread_id, question });
+}

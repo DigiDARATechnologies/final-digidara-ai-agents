@@ -1,5 +1,6 @@
 import type { ChatOption, User } from "../types";
 import {
+  askProjectQuestion,
   checkEligibilityFree,
   chooseTopic,
   clarifyTopicRequest,
@@ -11,6 +12,19 @@ import {
   type ProjectDifficulty,
   type TopicOption,
 } from "./capstoneApi";
+
+/** A rough, deliberately over-inclusive heuristic: is this message the
+ * student asking something, rather than answering the pending viva
+ * question? False positives (a genuine answer misread as a question) just
+ * cost one extra turn where the student re-sends their answer — cheap.
+ * False negatives (a real question silently consumed as the literal viva
+ * answer) are the actual bug this exists to prevent, so this errs toward
+ * catching more, not fewer. */
+function looksLikeQuestionNotAnswer(text: string): boolean {
+  const trimmed = text.trim();
+  if (/\?\s*$/.test(trimmed)) return true;
+  return /^(hey|hi|hello|wait|excuse me|sorry|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
+}
 
 export type CapstoneStep =
   | "awaiting_topic_request"
@@ -241,6 +255,21 @@ export async function handleCapstoneText(
       }
       if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
         return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
+      }
+      if (state.threadId && looksLikeQuestionNotAnswer(trimmed)) {
+        try {
+          const qa = await askProjectQuestion(state.threadId, trimmed);
+          return {
+            state,
+            messages: [
+              { text: qa.answer },
+              { text: `Shall we continue the viva? Here's the question again —\n\nQuestion ${state.vivaProgress}:\n\n${state.vivaQuestionText}` },
+            ],
+          };
+        } catch {
+          // Q&A itself failed (e.g. thread expired) — fall through and treat
+          // the text as a literal viva answer rather than silently dropping it.
+        }
       }
       try {
         const result = await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
