@@ -788,7 +788,7 @@ body.glow-off .send-btn:hover{
 
 .composer{
   display:flex; align-items:flex-end; gap:8px; margin:14px 10% 22px;
-  background:#fff; border:1px solid var(--border); border-radius:22px;
+  background:#fff; border:1px solid var(--border); border-radius:999px;
   padding:7px 8px 7px 18px; box-shadow:var(--shadow-sm);
   transition:box-shadow .2s, border-color .2s;
 }
@@ -798,6 +798,7 @@ body.glow-off .send-btn:hover{
   font-family:inherit; resize:none; overflow-y:auto; max-height:160px;
   line-height:1.5; padding:6px 0;
 }
+.attach-plus-btn{ border-radius:50%; flex-shrink:0; }
 .send-btn{ background:var(--accent-grad); color:#fff; }
 .send-btn:hover{ box-shadow:0 4px 14px rgba(54,95,145,.4); }
 .icon-btn.mic-recording{ background:var(--red); color:#fff; border-color:var(--red); animation:micPulse 1.4s ease-in-out infinite; }
