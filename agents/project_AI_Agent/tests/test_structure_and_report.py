@@ -100,3 +100,37 @@ def test_build_about_markdown_includes_required_paths_and_sections():
     assert "TaskTracker/src" in markdown
     assert "output_screenshots" in markdown
     assert "Problem Statement" in markdown
+
+
+def test_build_about_markdown_lists_required_screenshots():
+    state = {
+        "chosen_topic": {"title": "Budget Tracker"},
+        "requirements": {"functional_requirements": ["Show a pie chart of expenses by category"]},
+        "submission_guide": {
+            "required_screenshots": [
+                {
+                    "description": "Pie chart of expenses by category with at least two categories visible",
+                    "linked_requirement": "Show a pie chart of expenses by category",
+                }
+            ],
+        },
+    }
+    markdown = build_about_markdown(state)
+    assert "Required Screenshots" in markdown
+    assert "Pie chart of expenses by category" in markdown
+    assert "Show a pie chart of expenses by category" in markdown
+
+
+def test_build_review_markdown_lists_missing_screenshots():
+    state = {
+        "chosen_topic": {"title": "Budget Tracker"},
+        "status": "needs_revision",
+        "structure_score": {
+            "is_complete": False,
+            "missing_screenshots": ["Pie chart of expenses by category"],
+            "notes": "Add the pie chart screenshot.",
+        },
+        "revision_notes": "Report: Add the pie chart screenshot.",
+    }
+    markdown = build_review_markdown(state)
+    assert "Missing screenshot: Pie chart of expenses by category" in markdown
