@@ -56,3 +56,10 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        # Widen last_heartbeat to microsecond precision -- a plain DATETIME
+        # (fsp=0) truncates every value to the whole second, so two agent
+        # versions that register or heartbeat within the same second could
+        # tie (or invert) once resolve_healthy() orders by this column to
+        # pick the freshest one during a rollout. Always safe to re-run --
+        # MySQL accepts an identical MODIFY COLUMN with no error.
+        connection.execute(text("ALTER TABLE agent_registry MODIFY COLUMN last_heartbeat DATETIME(6) NOT NULL"))

@@ -240,7 +240,29 @@ export async function handleCapstoneText(
     }
 
     case "awaiting_timer_confirm": {
-      if (!/^(confirm|yes|start)/i.test(trimmed)) return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
+      if (!/^(confirm|yes|start)/i.test(trimmed)) {
+        // The only valid action here is confirming the timer, so anything
+        // else typed is by definition a doubt about the requirements just
+        // shown -- e.g. "what does 'must run offline' mean?" -- not just
+        // messages that happen to match the question/dispute heuristic
+        // used elsewhere. Answer it before the student starts an
+        // irreversible 7-day clock over a misunderstanding.
+        if (state.threadId) {
+          try {
+            const qa = await askProjectQuestion(state.threadId, trimmed);
+            return {
+              state,
+              messages: [
+                { text: qa.answer },
+                { text: "Start the 7-day project timer when you're ready.", options: [{ label: "Start 7-day timer", value: "confirm" }] },
+              ],
+            };
+          } catch {
+            // Q&A itself failed -- fall through to the plain reminder below.
+          }
+        }
+        return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
+      }
       try {
         const result = await confirmTimer(state.threadId!);
         return {

@@ -171,6 +171,7 @@ class ProjectContext:
                 raise ProjectNotFound(f"Unknown thread_id: {thread_id!r}")
             self.assignment_id = assignment.id
             self.assignment_topic = assignment.topic_json
+            self.assignment_requirements = assignment.requirements_json
             self.assignment_about_markdown = assignment.about_markdown
             self.conversation_history: list[dict[str, str]] = assignment.qa_conversation_json or []
             submission = (
@@ -191,7 +192,11 @@ class ProjectContext:
         self._docx_cache: dict | None = None
 
     def brief(self) -> dict:
-        return {"topic": self.assignment_topic, "about_markdown": self.assignment_about_markdown}
+        return {
+            "topic": self.assignment_topic,
+            "requirements": self.assignment_requirements,
+            "about_markdown": self.assignment_about_markdown,
+        }
 
     def _zip(self) -> dict:
         if self._zip_cache is None:

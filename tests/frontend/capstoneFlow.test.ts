@@ -24,6 +24,12 @@ const submissionState: CapstoneFlowState = {
   threadId: 'thread',
 };
 
+const timerConfirmState: CapstoneFlowState = {
+  step: 'awaiting_timer_confirm',
+  name: 'Learner', email: 'learner@example.test', phone: '', difficulty: 'easy',
+  threadId: 'thread',
+};
+
 afterEach(() => jest.clearAllMocks());
 
 describe('mid-viva question/dispute detection', () => {
@@ -73,5 +79,29 @@ describe('mid-resubmission dispute detection', () => {
     const result = await handleCapstoneText(submissionState, 'ok');
     expect(api.askProjectQuestion).not.toHaveBeenCalled();
     expect(result.messages[0].text).toBe('Attach both your .docx report and .zip source archive using the paperclip button.');
+  });
+});
+
+describe('requirements doubts before the timer is confirmed', () => {
+  test('any non-confirm message is treated as a doubt and answered', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: '"Must run offline" means no network calls at all.', tools_used: ['get_project_brief'] });
+    const result = await handleCapstoneText(timerConfirmState, "what does 'must run offline' mean?");
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', "what does 'must run offline' mean?");
+    expect(result.messages[0].text).toContain('no network calls');
+    expect(result.messages[1].text).toContain('Start the 7-day project timer');
+    expect(result.state.step).toBe('awaiting_timer_confirm');
+  });
+
+  test('confirming the timer does not go through the Q&A agent', async () => {
+    jest.mocked(api.confirmTimer).mockResolvedValue({ thread_id: 'thread', deadline_at: '2026-09-25T00:00:00Z', submission_guide: {} });
+    await handleCapstoneText(timerConfirmState, 'confirm');
+    expect(api.askProjectQuestion).not.toHaveBeenCalled();
+    expect(api.confirmTimer).toHaveBeenCalledWith('thread');
+  });
+
+  test('if the Q&A call itself fails, the plain reminder is shown instead', async () => {
+    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
+    const result = await handleCapstoneText(timerConfirmState, 'what does this requirement mean?');
+    expect(result.messages[0].text).toBe('Use the button when you are ready. The timer cannot be paused.');
   });
 });

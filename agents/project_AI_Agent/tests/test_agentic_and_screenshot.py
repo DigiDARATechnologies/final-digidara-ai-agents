@@ -49,6 +49,24 @@ def _seed_assignment(database, thread_id="qa-thread", assignment_id="qa-assignme
         session.commit()
 
 
+def test_project_brief_includes_requirements_before_submission_guide_exists(database):
+    """A doubt about the requirements must be answerable as soon as they're
+    shown -- before the timer is confirmed, when about_markdown doesn't
+    exist yet -- so the brief tool needs requirements_json specifically,
+    not just about_markdown."""
+    with database() as session:
+        session.add(ProjectAssignment(
+            id="pre-timer-assignment", thread_id="pre-timer-thread", student_id="student", course_id="course",
+            medium=CourseMedium.local, topic_json={"title": "Task Tracker"},
+            requirements_json={"functional_requirements": ["Must run fully offline"]},
+            about_markdown=None,
+        ))
+        session.commit()
+    ctx = qa_agent.ProjectContext("pre-timer-thread")
+    assert ctx.brief()["requirements"] == {"functional_requirements": ["Must run fully offline"]}
+    assert ctx.brief()["about_markdown"] is None
+
+
 def test_ask_project_question_calls_a_tool_then_answers(database, monkeypatch):
     _seed_assignment(database)
     responses = [

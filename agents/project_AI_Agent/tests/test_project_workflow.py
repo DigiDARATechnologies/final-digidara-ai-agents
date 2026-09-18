@@ -201,6 +201,11 @@ def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database
     compiled_graph.update_state(thread, {"chosen_topic": topic})
     second = compiled_graph.invoke(None, thread)
     assert second["requirements"] == {"features": ["Save tasks"]}
+    with database() as session:
+        # Persisted so the Q&A agent can answer a requirements doubt before
+        # the timer is confirmed (and about_markdown exists) -- not just
+        # kept in the LangGraph checkpoint.
+        assert session.get(ProjectAssignment, "assignment").requirements_json == {"features": ["Save tasks"]}
     assert compiled_graph.get_state(thread).next == ("timer_init",)
     final = compiled_graph.invoke(None, thread)
     assert final["deadline_at"]

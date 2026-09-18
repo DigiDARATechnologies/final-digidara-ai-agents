@@ -98,6 +98,12 @@ class ProjectAssignment(Base):
     student_id: Mapped[str] = mapped_column(String(32), ForeignKey("students.id"), nullable=False)
     course_id: Mapped[str] = mapped_column(String(32), ForeignKey("courses.id"), nullable=False)
     topic_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # RequirementExpansionNode's output (objective, functional_requirements,
+    # technical_constraints, expected_deliverables, evaluation_criteria) --
+    # persisted (not just kept in the LangGraph checkpoint) so the Q&A agent
+    # can answer a doubt about the requirements as soon as they're shown,
+    # even before the timer is confirmed and about_markdown exists.
+    requirements_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     medium: Mapped[CourseMedium] = mapped_column(Enum(CourseMedium), nullable=False)
     chosen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

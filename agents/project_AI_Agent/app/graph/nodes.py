@@ -131,6 +131,20 @@ def requirement_expansion_node(state: ProjectAgentState) -> dict:
         system=prompts.requirement_expansion_prompt(state),
         user="Write the full requirements brief now.",
     )
+
+    # Persisted (not just kept in the LangGraph checkpoint) so the Q&A agent
+    # can answer a doubt about the requirements as soon as they're shown --
+    # including before the timer is confirmed, when about_markdown doesn't
+    # exist yet.
+    session = get_session()
+    try:
+        assignment = session.get(ProjectAssignment, state["assignment_id"])
+        if assignment:
+            assignment.requirements_json = result
+            session.commit()
+    finally:
+        session.close()
+
     return {"requirements": result}
 
 

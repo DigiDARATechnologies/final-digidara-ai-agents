@@ -168,7 +168,11 @@ def resolve_healthy(agent_name: str) -> AgentRegistry | None:
             .filter(AgentRegistry.agent_name == agent_name)
             .filter(AgentRegistry.status == "healthy")
             .filter(AgentRegistry.last_heartbeat >= cutoff)
-            .order_by(AgentRegistry.last_heartbeat.desc())
+            # version as a tiebreak: last_heartbeat now has microsecond
+            # precision (see models.py), but two versions could still
+            # heartbeat at the exact same instant -- an unordered tie would
+            # otherwise pick whichever row MySQL happens to scan first.
+            .order_by(AgentRegistry.last_heartbeat.desc(), AgentRegistry.version.desc())
             .first()
         )
     finally:
