@@ -85,15 +85,9 @@ export default function AttachMenu({
           📎 Attach file
         </button>
       ) : (
-        <button type="button" className="icon-btn" title="Attach file" onClick={handleToggle}>
+        <button type="button" className="icon-btn attach-plus-btn" title="Attach file" onClick={handleToggle}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M21 12.5l-8.5 8.5a4.5 4.5 0 01-6.4-6.4L14.6 6a3 3 0 014.3 4.3L10.4 18.7a1.5 1.5 0 01-2.2-2.2l7.6-7.6"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       )}

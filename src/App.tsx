@@ -1434,8 +1434,6 @@ export default function App() {
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onAttachDisabled={() => showToast("File attachments are only available in the Capstone Project Agent chat.")}
-                multilineMode={isCapstoneChat}
-                multilinePlaceholder="Message DigiDARA… (Shift+Enter for a new line)"
                 codeMode={isCodeForgeChat && codeforgeState?.step === "awaiting_code"}
                 codeSeed={codeforgeState?.starterCode}
                 codeBusy={codeBusy}

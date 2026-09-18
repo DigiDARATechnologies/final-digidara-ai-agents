@@ -116,6 +116,7 @@ export default function ChatView({
   const [agentSpeaking, setAgentSpeaking] = useState(false);
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeechRecognition();
   // Recognition is `continuous: true`, so it keeps listening in the
   // background after Send unless explicitly stopped — and a result that was
@@ -188,6 +189,19 @@ export default function ChatView({
     onSend(input);
     setInput("");
   }
+
+  // The default composer is a <textarea rows={1}> that grows with content
+  // (up to a CSS-capped max-height, then scrolls) instead of a single-line
+  // <input> — a plain <input> can never hold a real newline at all, which is
+  // why Shift+Enter had nothing to do and pasted multi-line text silently
+  // lost its line breaks. Re-measured on every keystroke/paste/Send.
+  useEffect(() => {
+    const el = composerTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
+
   const activeSpeakingPrompt = [...chat.messages].reverse().find((message) => message.role === "agent")?.text || "Speak when you are ready.";
 
   useEffect(() => {
@@ -481,13 +495,21 @@ export default function ChatView({
             onDisabled={onAttachDisabled}
             multiple
           />
-          <input
-            type="text"
+          <textarea
+            ref={composerTextareaRef}
+            rows={1}
             placeholder="Message DigiDARA…"
-            autoComplete="off"
             value={input}
             disabled={composerDisabled}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends; Shift+Enter is left alone so the textarea's own
+              // default behavior inserts a real newline instead.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!composerDisabled) e.currentTarget.form?.requestSubmit();
+              }
+            }}
           />
           {speech.supported && (
             <button
