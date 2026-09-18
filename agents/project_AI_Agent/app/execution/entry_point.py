@@ -15,16 +15,36 @@ def _shallowest(paths: list[str]) -> str | None:
     return sorted(paths, key=lambda p: p.count("/"))[0]
 
 
+def _best_named_match(paths: list[str], candidate_names: tuple[str, ...]) -> str | None:
+    """Among files matching any of `candidate_names`, picks the one at the
+    shallowest path overall -- ranking depth first, name priority only as a
+    same-depth tiebreak. Checking one candidate name across every depth
+    before considering the next name (the previous approach) would let a
+    deeply nested `main.py` (e.g. in a tests/fixtures/examples folder) win
+    over a real root-level `app.py`, which is backwards: a project's actual
+    entry point is almost always the shallowest conventionally-named file,
+    regardless of which convention it follows."""
+    matches = [path for path in paths if path.lower().rsplit("/", 1)[-1] in candidate_names]
+    if not matches:
+        return None
+
+    def _rank(path: str) -> tuple[int, int]:
+        depth = path.count("/")
+        name_priority = candidate_names.index(path.lower().rsplit("/", 1)[-1])
+        return (depth, name_priority)
+
+    return min(matches, key=_rank)
+
+
 def find_python_entry_point(zip_code_files: dict[str, str]) -> str | None:
     py_files = {path: content for path, content in zip_code_files.items() if path.endswith(".py")}
     if not py_files:
         return None
 
     # 1. A conventionally-named entry file, preferring the shallowest path.
-    for name in _PY_CANDIDATE_NAMES:
-        match = _shallowest([path for path in py_files if path.lower().rsplit("/", 1)[-1] == name])
-        if match:
-            return match
+    match = _best_named_match(list(py_files), _PY_CANDIDATE_NAMES)
+    if match:
+        return match
 
     # 2. Otherwise, the shallowest file containing a __main__ guard — a
     # strong signal it's meant to be run directly, not just imported.
@@ -43,12 +63,7 @@ def find_node_entry_point(zip_code_files: dict[str, str]) -> str | None:
     if not js_files:
         return None
 
-    for name in _NODE_CANDIDATE_NAMES:
-        match = _shallowest([path for path in js_files if path.lower().rsplit("/", 1)[-1] == name])
-        if match:
-            return match
-
-    return None
+    return _best_named_match(js_files, _NODE_CANDIDATE_NAMES)
 
 
 def find_html_entry_point(zip_code_files: dict[str, str]) -> str | None:
@@ -58,10 +73,9 @@ def find_html_entry_point(zip_code_files: dict[str, str]) -> str | None:
     if not html_files:
         return None
 
-    for name in _HTML_CANDIDATE_NAMES:
-        match = _shallowest([path for path in html_files if path.lower().rsplit("/", 1)[-1] == name])
-        if match:
-            return match
+    match = _best_named_match(html_files, _HTML_CANDIDATE_NAMES)
+    if match:
+        return match
 
     # No conventional index page — fall back to the shallowest HTML file.
     return _shallowest(html_files)

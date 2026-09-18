@@ -22,8 +22,21 @@ router = APIRouter(prefix="/gateway", tags=["gateway"])
 # gateway proxy a request to an arbitrary host on the internal network.
 # Every real agent endpoint is a loopback service on this box or an internal
 # hostname; nothing else should ever be reachable through here.
+#
+# The fallback below must list every agent's actual Compose service hostname
+# (see docker-compose.yml / each agent's AGENT_PUBLIC_URL), not just
+# "127.0.0.1,localhost" -- an env var that's unset or reset to a bare
+# default silently 403s every agent except whichever ones a deploy script
+# has separately patched in (see scripts/prepare-production-env.sh's
+# job-agent-specific repair), which is exactly the class of bug that script
+# had to work around after the fact. Keep this in sync with
+# agents/orchestrator/.env.example's ALLOWED_AGENT_HOSTS.
 ALLOWED_AGENT_HOSTS = {
-    h.strip() for h in os.environ.get("ALLOWED_AGENT_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()
+    h.strip() for h in os.environ.get(
+        "ALLOWED_AGENT_HOSTS",
+        "capstone-agent,codeforge-agent,communication-agent,aptitude-agent,"
+        "resume-builder-agent,certificate-agent,job-agent,127.0.0.1,localhost",
+    ).split(",") if h.strip()
 }
 
 # Used only as a fallback when an agent hasn't yet been upgraded to report

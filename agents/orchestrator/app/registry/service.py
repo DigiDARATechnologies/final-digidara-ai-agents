@@ -79,7 +79,7 @@ def register(payload: AgentRegisterRequest) -> None:
         session.close()
 
 
-def heartbeat(agent_name: str, version: str) -> bool:
+def heartbeat(agent_name: str, version: str, endpoint: str | None = None) -> bool:
     session = get_session()
     try:
         row = session.get(AgentRegistry, (agent_name, version))
@@ -87,6 +87,16 @@ def heartbeat(agent_name: str, version: str) -> bool:
             return False
         row.last_heartbeat = datetime.utcnow()
         row.status = "healthy"
+        # register() only runs once at process boot -- a container that's
+        # been running since before its AGENT_PUBLIC_URL was corrected would
+        # otherwise stay stuck on the stale endpoint until manually
+        # restarted. Resyncing here self-heals that on the next heartbeat.
+        if endpoint and endpoint != row.endpoint:
+            logger.info(
+                "heartbeat resynced stale endpoint for agent_name=%s version=%s old=%s new=%s",
+                agent_name, version, row.endpoint, endpoint,
+            )
+            row.endpoint = endpoint
         session.commit()
         return True
     finally:

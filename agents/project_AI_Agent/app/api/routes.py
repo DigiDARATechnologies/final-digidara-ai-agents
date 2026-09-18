@@ -446,6 +446,21 @@ async def submission_upload(
         assignment = session.get(ProjectAssignment, assignment_id)
         if assignment is None:
             raise HTTPException(404, "Assignment not found.")
+        # Without this, a student who re-drags the same (or corrected) files
+        # a few seconds after seeing "I am validating and grading them now"
+        # (anxious the first drop didn't register) starts a second full
+        # submission-graph run while the first is still in flight. Both
+        # eventually call compiled_graph.update_state(...) on the same
+        # thread's checkpoint; whichever finishes last silently overwrites
+        # the other's grading result / viva questions with no indication
+        # either run was ever discarded.
+        in_flight = (
+            session.query(Submission)
+            .filter_by(assignment_id=assignment_id, status=SubmissionStatus.processing)
+            .first()
+        )
+        if in_flight is not None:
+            raise HTTPException(409, "A previous submission for this project is still being graded. Please wait for that to finish before submitting again.")
         deadline = assignment.deadline_at
         if deadline is not None:
             # SQLite doesn't persist tzinfo on DateTime(timezone=True) columns —
@@ -487,13 +502,45 @@ async def submission_upload(
         "requirements": state["requirements"],
         "submission_guide": state["submission_guide"],
     }
-    result = _run_submission(sub_state)
+    try:
+        result = _run_submission(sub_state)
+    except HTTPException:
+        # _run_submission already converts any graph failure into an
+        # HTTPException -- but the Submission row created above is still
+        # sitting at `processing`. Left alone, that both permanently hides
+        # this failed attempt AND (combined with the in-flight guard above)
+        # would block the student from ever submitting again for this
+        # assignment, since a stuck `processing` row looks identical to a
+        # genuinely in-progress one.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                session.commit()
+        finally:
+            session.close()
+        raise
     logger.info(
         "=== submission result thread=%s status=%s final_score=%s passed=%s",
         _log_id(thread_id), result.get("status"), result.get("final_score"), result.get("passed"),
     )
 
     if result.get("status") == "error":
+        # Otherwise this Submission row (created above) stays stuck at
+        # `processing` forever -- the student can retry fine (the main
+        # thread's status isn't "graded"), but this specific failed attempt
+        # is permanently unlisted, with no error status and no feedback, in
+        # whatever admin/history view later reads Submission rows.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                submission.feedback_text = result.get("feedback")
+                session.commit()
+        finally:
+            session.close()
         compiled_graph.update_state(_thread_config(thread_id), {"status": "error"})
         raise HTTPException(422, result.get("feedback", "Submission could not be processed."))
 
@@ -566,7 +613,18 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
     logger.info("=== POST /api/viva/answer submission=%s question=%s", req.submission_id, req.question_id)
     session = get_session()
     try:
-        submission = session.get(Submission, req.submission_id)
+        # with_for_update: two requests for the same question (a double-click,
+        # or a client retry after a slow/timed-out response) must not both
+        # read the same `answers` list, both append their own answer, and
+        # both commit -- the second commit would silently overwrite the
+        # first's recorded (possibly correct) answer and verdict with no
+        # trace it ever happened. Locking the row here makes the second
+        # request wait for the first's commit, then see its answer already
+        # appended, so its own `expected_index` check below correctly
+        # rejects it as a duplicate instead of racing. (A no-op on SQLite,
+        # which doesn't support row locks -- fine there since tests run
+        # single-threaded; this is a real MySQL production concern.)
+        submission = session.get(Submission, req.submission_id, with_for_update=True)
         if submission is None:
             raise HTTPException(404, "Submission not found.")
         if submission.status != SubmissionStatus.pending_viva:

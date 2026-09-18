@@ -38,6 +38,32 @@ def test_submission_guards(client, workflow, state, database, condition, status)
     with database() as session:
         assert session.query(Submission).count() == 0
 
+def test_upload_rejected_while_a_previous_submission_is_still_processing(client, workflow, database):
+    with database() as session:
+        session.add(Submission(id="in-flight", assignment_id="assignment", docx_path="x", zip_path="y", status=SubmissionStatus.processing))
+        session.commit()
+    response = upload(client)
+    assert response.status_code == 409
+    with database() as session:
+        # Only the pre-existing in-flight row -- no second Submission was created.
+        assert session.query(Submission).count() == 1
+
+def test_a_failed_submission_run_is_marked_error_not_left_stuck_processing(client, workflow, database, monkeypatch):
+    from fastapi import HTTPException
+    monkeypatch.setattr(routes, "_run_submission", Mock(side_effect=HTTPException(502, "AI service unavailable")))
+
+    first = upload(client)
+    assert first.status_code == 502
+    with database() as session:
+        rows = session.query(Submission).all()
+        assert len(rows) == 1
+        assert rows[0].status == SubmissionStatus.error
+
+    # The failed attempt must not permanently block a real retry.
+    monkeypatch.setattr(routes, "_run_submission", lambda value: {"status": "graded", "passed": True, "final_score": 85, "feedback": "Good work"})
+    second = upload(client)
+    assert second.status_code == 200
+
 def test_passing_submission_persists_files_and_hides_score_until_viva(client, workflow, database):
     response = upload(client)
     assert response.status_code == 200

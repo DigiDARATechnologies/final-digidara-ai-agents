@@ -17,6 +17,14 @@ class AgentRegisterRequest(BaseModel):
 class HeartbeatRequest(BaseModel):
     agent_name: str
     version: str
+    # Optional so older agent clients that don't send it yet keep working
+    # unchanged. When present, resyncs the registry's stored endpoint on
+    # every heartbeat (every HEARTBEAT_INTERVAL_SECONDS) instead of only at
+    # process boot -- a long-lived agent process whose AGENT_PUBLIC_URL was
+    # corrected after it last started would otherwise stay registered under
+    # its stale endpoint indefinitely, since register() only runs once at
+    # startup and a plain heartbeat previously never touched `endpoint`.
+    endpoint: str | None = None
 
 
 class AgentOut(BaseModel):

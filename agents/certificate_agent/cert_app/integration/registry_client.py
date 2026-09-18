@@ -37,14 +37,15 @@ def _sign_request(method: str, path: str, body: bytes) -> dict[str, str]:
     }
 
 
+def _endpoint() -> str:
+    return os.environ.get("AGENT_PUBLIC_URL") or f"http://{MANIFEST['host']}:{MANIFEST['port']}{MANIFEST.get('path', '/api/invoke')}"
+
+
 def _registration_payload() -> dict:
-    endpoint = os.environ.get("AGENT_PUBLIC_URL")
-    if not endpoint:
-        endpoint = f"http://{MANIFEST['host']}:{MANIFEST['port']}{MANIFEST.get('path', '/api/invoke')}"
     return {
         "agent_name": MANIFEST["agent_name"],
         "version": MANIFEST["version"],
-        "endpoint": endpoint,
+        "endpoint": _endpoint(),
         "description": MANIFEST["description"],
         "input_schema": MANIFEST["input_schema"],
         "output_schema": MANIFEST.get("output_schema", {}),
@@ -75,7 +76,12 @@ class RegistryClient:
         while True:
             await asyncio.sleep(HEARTBEAT_INTERVAL_SECONDS)
             try:
-                body = json.dumps({"agent_name": MANIFEST["agent_name"], "version": MANIFEST["version"]}).encode("utf-8")
+                # Includes `endpoint` so a long-lived process whose
+                # AGENT_PUBLIC_URL was corrected after it last started
+                # self-heals on the next heartbeat instead of staying
+                # registered under a stale endpoint indefinitely --
+                # _register() only runs once at boot.
+                body = json.dumps({"agent_name": MANIFEST["agent_name"], "version": MANIFEST["version"], "endpoint": _endpoint()}).encode("utf-8")
                 headers = {"content-type": "application/json", **_sign_request("POST", "/registry/heartbeat", body)}
                 async with httpx.AsyncClient(timeout=10) as client:
                     response = await client.post(
