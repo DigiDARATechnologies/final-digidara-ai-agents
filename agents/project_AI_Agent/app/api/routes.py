@@ -61,7 +61,7 @@ from app.db.models import (
 from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
-from app.llm.client import LLMError, call_json
+from app.llm.client import LLMError, call_json, call_text
 from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
