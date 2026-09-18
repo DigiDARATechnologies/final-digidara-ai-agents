@@ -201,3 +201,38 @@ def test_structure_validation_node_still_fails_on_genuinely_missing_section(monk
     score = result["structure_score"]
     assert score["is_complete"] is False
     assert score["missing_sections"] == ["Approach"]
+
+
+# --- final pass/fail: deterministic threshold, not a second LLM judgment -----
+
+def test_score_aggregator_node_ignores_llm_passed_claim_below_threshold(monkeypatch):
+    """The LLM might (wrongly, or via its own variance) claim `passed: true`
+    for a score under the threshold -- pass/fail must be decided purely by
+    comparing final_score to config.PASS_THRESHOLD, not trusted from the
+    LLM's own JSON, so the same score always gets the same verdict."""
+    from app import config as app_config
+    monkeypatch.setattr(app_config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes.config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes, "call_json", lambda **kwargs: {"final_score": 65.0, "passed": True, "reasoning": "looks fine"})
+    result = nodes.score_aggregator_node({})
+    assert result["final_score"] == 65.0
+    assert result["passed"] is False
+
+
+def test_score_aggregator_node_passes_at_or_above_threshold(monkeypatch):
+    from app import config as app_config
+    monkeypatch.setattr(app_config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes.config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes, "call_json", lambda **kwargs: {"final_score": 70.0, "reasoning": "solid submission"})
+    result = nodes.score_aggregator_node({})
+    assert result["passed"] is True
+
+
+def test_score_aggregator_node_is_deterministic_across_repeated_calls(monkeypatch):
+    from app import config as app_config
+    monkeypatch.setattr(app_config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes.config, "PASS_THRESHOLD", 70)
+    monkeypatch.setattr(nodes, "call_json", lambda **kwargs: {"final_score": 69.9, "reasoning": "just under"})
+    first = nodes.score_aggregator_node({})
+    second = nodes.score_aggregator_node({})
+    assert first == second == {"final_score": 69.9, "passed": False, "score_reasoning": "just under"}

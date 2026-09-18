@@ -1,8 +1,9 @@
 # Project AI Agent — Capstone Automation Backend
 
-LangGraph-driven backend for the DigiDARA capstone project flow: eligibility
-check → topic generation → requirement expansion → 7-day timer → submission
-validation (docx + zip) → LLM code review → scored feedback.
+LangGraph-driven backend for the DigiDARA capstone project flow: topic
+generation → requirement expansion → 7-day timer → submission validation
+(docx + zip) → LLM code review → scored feedback. There is no certificate or
+enrollment gate — any student can request a project for any topic.
 
 ## LLM provider — pluggable, not hardcoded
 
@@ -68,7 +69,7 @@ API docs: http://127.0.0.1:8000/docs
 
 | Step | Endpoint | Notes |
 |---|---|---|
-| 1. Check eligibility + generate topics | `POST /api/eligibility/check` | `{name, phone, course_name}` → `thread_id` + 2 topic options (if eligible) |
+| 1. Generate topics for a topic/role/language | `POST /api/eligibility/free` | `{name, email, phone?, course_name, difficulty}` → `thread_id` + 2 topic options. No certificate/enrollment gate — `course_name` doubles as the free-text topic. |
 | 2. Choose a topic | `POST /api/topic/choose` | `{thread_id, topic_id}` → expanded requirements brief |
 | 3. Confirm & start the 7-day timer | `POST /api/timer/confirm` | `{thread_id}` → `deadline_at` + submission guide |
 | 4. Upload submission | `POST /api/submission/upload` | multipart form: `thread_id`, `docx_file`, `zip_file` → score/feedback or revision notes |

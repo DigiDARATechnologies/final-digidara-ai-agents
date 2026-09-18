@@ -193,7 +193,9 @@ def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database
     provider = Mock(side_effect=[{"options": [topic]}, {"features": ["Save tasks"]}, {"sections": ["Introduction"]}])
     monkeypatch.setattr(nodes, "call_json", provider)
     thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
-    first = compiled_graph.invoke({**state, "skip_certificate_check": True}, thread)
+    # No certificate/enrollment gate -- every request starts straight at
+    # topic generation.
+    first = compiled_graph.invoke(state, thread)
     assert first["topic_options"] == [topic]
     assert compiled_graph.get_state(thread).next == ("requirement_expansion",)
     compiled_graph.update_state(thread, {"chosen_topic": topic})
@@ -205,17 +207,6 @@ def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database
     assert final["submission_guide"] == {"sections": ["Introduction"]}
     assert compiled_graph.get_state(thread).next == ()
     assert provider.call_count == 3
-
-def test_real_graph_blocks_ineligible_student(state, monkeypatch):
-    import uuid
-    from app.graph.graph import compiled_graph
-    provider = Mock(return_value={"eligible": False, "eligibility_reason": "Certificate required"})
-    monkeypatch.setattr(nodes, "call_json", provider)
-    result = compiled_graph.invoke({**state, "student_id": "student"}, {"configurable": {"thread_id": uuid.uuid4().hex}})
-    assert result["status"] == "blocked"
-    assert result["feedback"] == "Certificate required"
-    assert "topic_options" not in result
-    provider.assert_called_once()
 
 @pytest.mark.parametrize("failure", ["docx", "zip"])
 def test_real_submission_graph_stops_before_ai_on_invalid_files(state, tmp_path, monkeypatch, failure):

@@ -37,21 +37,6 @@ export interface TopicOption {
   skills_applied: string[];
 }
 
-export interface EligibleCourse {
-  id: string;
-  name: string;
-  medium: string;
-}
-
-export interface EligibleCoursesResult {
-  student_found: boolean;
-  courses: EligibleCourse[];
-}
-
-export function getEligibleCourses(phone: string) {
-  return invoke<EligibleCoursesResult>("eligible_courses", { phone });
-}
-
 export interface EligibilityCheckResult {
   thread_id: string;
   eligible: boolean;
@@ -59,14 +44,10 @@ export interface EligibilityCheckResult {
   topic_options: TopicOption[] | null;
 }
 
-export function checkEligibility(name: string, email: string, phone: string, course_name: string) {
-  return invoke<EligibilityCheckResult>("check_eligibility", { name, email, phone, course_name });
-}
-
 export type ProjectDifficulty = "easy" | "medium" | "hard";
 
-/** Skips the certificate/enrollment gate entirely — course_name doubles as
- * whatever language, role, or topic the student typed. */
+/** No certificate/enrollment gate — course_name doubles as whatever
+ * language, role, or topic the student typed. */
 export function checkEligibilityFree(name: string, email: string, phone: string, topic: string, difficulty: ProjectDifficulty = "easy") {
   return invoke<EligibilityCheckResult>("check_eligibility_free", { name, email, phone, course_name: topic, difficulty });
 }
