@@ -24,4 +24,6 @@ EXPOSE 5030
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,json; req=urllib.request.Request('http://127.0.0.1:5030/api/invoke', data=json.dumps({'action':'health'}).encode(), headers={'Content-Type':'application/json'}); urllib.request.urlopen(req, timeout=3).read()" || exit 1
 
-CMD ["gunicorn", "-w", "4", "--timeout", "240", "-b", "0.0.0.0:5030", "app:app"]
+# 2 workers x 4 threads (the module was built for threaded waitress) keeps the
+# shared MySQL server at 2 x 4 pooled connections instead of 4 x 10.
+CMD ["gunicorn", "-w", "2", "--threads", "4", "--timeout", "240", "-b", "0.0.0.0:5030", "app:app"]
