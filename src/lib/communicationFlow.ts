@@ -13,18 +13,24 @@ import {
   startPronunciationSession,
   startSpeaking,
   startWriting,
+  writingChat,
   submitPronunciation,
   type Difficulty,
   type PronunciationItemPayload,
   type PronunciationMode,
+  type SpeakingTurnResult,
+  type WritingTurnResult,
 } from "./communicationApi";
 
 export type CommunicationStep =
   | "main_menu"
   | "awaiting_writing_topic"
+  | "awaiting_writing_mode"
   | "awaiting_speaking_topic"
   | "awaiting_pronunciation_mode"
   | "writing_turn"
+  | "writing_result"
+  | "writing_chat_turn"
   | "speaking_turn"
   | "pronunciation_turn";
 
@@ -42,6 +48,10 @@ export interface CommunicationFlowState {
   currentItemText?: string;
   currentAttemptId?: string;
   activeModule?: "writing" | "speaking" | "pronunciation";
+  writingMode?: "write" | "chat";
+  writingTopic?: string;
+  writingTopicDescription?: string;
+  writingChatHistory?: Array<{ role: "assistant" | "user"; text: string }>;
   lastScores?: Record<string, number | null>;
   lastFeedback?: string;
 }
@@ -57,11 +67,73 @@ export const MENU_OPTIONS: ChatOption[] = [
   { label: "🔤 Pronunciation Practice", value: "pronunciation" },
 ];
 
+function greetingFor(name?: string): string {
+  const hour = new Date().getHours();
+  const period = hour >= 5 && hour < 12 ? "morning" : hour < 17 ? "afternoon" : hour < 21 ? "evening" : "night";
+  const firstName = String(name || "").trim().split(/\s+/)[0];
+  return firstName ? `Good ${period}, ${firstName}!` : `Good ${period}!`;
+}
+
+function openingSpeakingPrompt(state: CommunicationFlowState, question?: string): string {
+  return [greetingFor(state.userName), question || "What did you do today?"].join(" ");
+}
+
+function normalizedSentence(value?: string): string {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
+  const reaction = String(feedback?.reaction || "You're doing well!").trim();
+  const corrected = String(feedback?.corrected_answer || "").trim();
+  const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
+  const correction = hasCorrection
+    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
+    : "";
+  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
+}
+
 const DIFFICULTY_OPTIONS: ChatOption[] = [
   { label: "Easy", value: "easy" },
   { label: "Medium", value: "medium" },
   { label: "Hard", value: "hard" },
 ];
+
+const WRITING_MODE_OPTIONS: ChatOption[] = [
+  { label: "✍️ Write about the topic with AI", value: "writing_mode_write", description: "Answer a writing prompt in a paragraph" },
+  { label: "💬 Chat with AI", value: "writing_mode_chat", description: "Have a guided conversation about your topic" },
+];
+
+const WRITING_WORD_TARGETS: Record<Difficulty, { range: string; target: number }> = {
+  easy: { range: "80–100", target: 90 },
+  medium: { range: "120–150", target: 135 },
+  hard: { range: "180–200", target: 190 },
+};
+
+function writingExercisePrompt(question: string, difficulty: Difficulty): string {
+  const target = WRITING_WORD_TARGETS[difficulty];
+  return `${question}\n\nWriting instruction: Write a clear paragraph of about ${target.range} words. Explain your ideas clearly and use complete sentences.`;
+}
+
+function writingEvaluationResult(feedback: NonNullable<WritingTurnResult["feedback"]>): string {
+  const scores = feedback.scores || {};
+  const score = (label: string, key: string) => `${label}: ${scores[key] == null ? "—" : scores[key]}/10`;
+  const corrections = (feedback.mistakes || []).filter((item) => item.incorrect && item.correct).slice(0, 6)
+    .map((item) => `• “${item.incorrect}” → “${item.correct}”${item.explanation ? `\n  ${item.explanation}` : ""}`);
+  return [
+    "Focus on grammar and clarity for improvement.",
+    [score("Clarity", "clarity"), score("Grammar", "grammar"), score("Knowledge", "knowledge"), score("Spelling", "spelling"), score("Vocabulary", "vocabulary"), score("Overall", "overall")].join(" · "),
+    corrections.length ? `Grammar corrections:\n${corrections.join("\n")}` : "Grammar corrections: No major grammar corrections were found.",
+    `Corrected paragraph:\n“${feedback.corrected_answer || feedback.better_natural_answer || "Your paragraph was received."}”`,
+  ].join("\n\n");
+}
+
+function writingChatReply(reply: string, originalAnswer?: string, correctedAnswer?: string | null, reaction?: string, nextQuestion?: string): string {
+  const original = String(originalAnswer || "").trim();
+  const corrected = String(correctedAnswer || "").trim();
+  const hasCorrection = Boolean(corrected && original && normalizedSentence(corrected) !== normalizedSentence(original));
+  const correction = hasCorrection ? `Just a small correction: Instead of “${original}”, you can say: “${corrected}”` : "";
+  return [reaction, correction, nextQuestion].filter(Boolean).join("\n\n") || reply;
+}
 
 const PRONUNCIATION_MODE_OPTIONS: ChatOption[] = [
   { label: "Word", value: "word", description: "Practice pronouncing a single word" },
@@ -190,7 +262,7 @@ async function beginPronunciationSession(
         lastFeedback: undefined,
       },
       messages: [{
-        text: `Read this out loud, then type what you said:\n\n"${itemText(item)}"`,
+        text: `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Pronounce this clearly: “${itemText(item)}”\n3. Check the captured text, then press Send for scoring.`,
         options: [{ label: "End session", value: "end_session" }],
       }],
     };
@@ -199,18 +271,51 @@ async function beginPronunciationSession(
   }
 }
 
-async function beginDailyWriting(state: CommunicationFlowState) {
+async function beginDailyWriting(state: CommunicationFlowState): Promise<{ state: CommunicationFlowState; messages: CommunicationFlowMessage[] }> {
   try {
     const result = await startWriting(state.authToken!, { mode: "daily", difficulty: state.difficulty });
     return { state: { ...state, step: "writing_turn" as const, activeModule: "writing" as const, sessionId: result.session_id, turnNumber: result.turn_number, totalTurns: result.total_turns }, messages: [{ text: result.prompt || "Write your response below.", options: [{ label: "End session", value: "end_session" }] }] };
   } catch (error) { return showMenu(state, `Could not start daily writing: ${(error as Error).message}`); }
 }
 
+async function beginWritingMode(state: CommunicationFlowState, writingMode: "write" | "chat"): Promise<{ state: CommunicationFlowState; messages: CommunicationFlowMessage[] }> {
+  const topic = state.writingTopic;
+  if (!topic) return showMenu(state, "Please enter a writing topic first.");
+
+  if (writingMode === "chat") {
+    try {
+      const result = await writingChat(state.authToken!, topic, state.difficulty, []);
+      const reply = writingChatReply(result.reply || `That's an interesting topic! What do you already know about ${topic}?`, undefined, result.corrected_answer, result.reaction, result.next_question);
+      return {
+        state: { ...state, step: "writing_chat_turn", activeModule: "writing", writingMode, writingChatHistory: [{ role: "assistant", text: reply }] },
+        messages: [{ text: reply, options: [{ label: "End session", value: "end_session" }] }],
+      };
+    } catch (error) {
+      return { state, messages: [{ text: `Could not start the writing chat: ${(error as Error).message}`, options: WRITING_MODE_OPTIONS }] };
+    }
+  }
+
+  try {
+    const result = await startWriting(state.authToken!, {
+      mode: "topic",
+      difficulty: state.difficulty,
+      topicTitle: topic,
+      topicDescription: state.writingTopicDescription || `Write about: ${topic}`,
+    });
+    return {
+      state: { ...state, step: "writing_turn", activeModule: "writing", writingMode, sessionId: result.session_id, turnNumber: result.turn_number, totalTurns: result.total_turns, lastScores: undefined, lastFeedback: undefined },
+      messages: [{ text: writingExercisePrompt(result.prompt || "Write your paragraph about this topic.", state.difficulty), options: [{ label: "End session", value: "end_session" }] }],
+    };
+  } catch (error) {
+    return { state, messages: [{ text: `Could not generate a writing prompt: ${(error as Error).message}`, options: WRITING_MODE_OPTIONS }] };
+  }
+}
+
 async function beginDailySpeaking(state: CommunicationFlowState) {
   try {
     const result = await startSpeaking(state.authToken!, { mode: "daily", difficulty: state.difficulty });
     const question = result.turns?.[0]?.ai_question || result.question;
-    return { state: { ...state, step: "speaking_turn" as const, activeModule: "speaking" as const, sessionId: result.session_id ?? result.id }, messages: [{ text: question || "Tell me about it.", options: [{ label: "End session", value: "end_session" }] }] };
+    return { state: { ...state, step: "speaking_turn" as const, activeModule: "speaking" as const, sessionId: result.session_id ?? result.id }, messages: [{ text: openingSpeakingPrompt(state, question), options: [{ label: "End session", value: "end_session" }] }] };
   } catch (error) { return showMenu(state, `Could not start daily speaking: ${(error as Error).message}`); }
 }
 
@@ -224,7 +329,7 @@ async function beginSpeakingPractice(state: CommunicationFlowState, difficulty: 
     const topic = topics[difficulty];
     const result = await startSpeaking(state.authToken!, { mode: "topic", difficulty, topicTitle: topic.title, topicDescription: topic.description });
     const question = result.turns?.[0]?.ai_question || result.question;
-    return { state: { ...state, difficulty, step: "speaking_turn" as const, activeModule: "speaking" as const, sessionId: result.session_id ?? result.id, lastScores: undefined, lastFeedback: undefined }, messages: [{ text: question || "Tell me about your day.", options: [{ label: "End session", value: "end_session" }] }] };
+    return { state: { ...state, difficulty, step: "speaking_turn" as const, activeModule: "speaking" as const, sessionId: result.session_id ?? result.id, lastScores: undefined, lastFeedback: undefined }, messages: [{ text: openingSpeakingPrompt(state, question), options: [{ label: "End session", value: "end_session" }] }] };
   } catch (error) {
     return showMenu(state, `Could not start speaking practice: ${(error as Error).message}`);
   }
@@ -277,30 +382,18 @@ export async function handleCommunicationText(
     if (["easy", "medium", "hard"].includes(command)) {
       return { state: { ...state, difficulty: command as Difficulty }, messages: [{ text: `Difficulty set to ${command}. What topic would you like to write about?` }] };
     }
-    try {
-      const isDaily = command === "daily";
-      const result = await startWriting(state.authToken!, {
-        mode: isDaily ? "daily" : "topic",
-        difficulty: state.difficulty,
-        topicTitle: isDaily ? undefined : trimmed.slice(0, 120),
-        topicDescription: isDaily ? undefined : `Write about: ${trimmed}`.slice(0, 500),
-      });
-      return {
-        state: {
-          ...state,
-          step: "writing_turn",
-          activeModule: "writing",
-          sessionId: result.session_id,
-          turnNumber: result.turn_number,
-          totalTurns: result.total_turns,
-          lastScores: undefined,
-          lastFeedback: undefined,
-        },
-        messages: [{ text: result.prompt || "Write your response below.", options: [{ label: "End session", value: "end_session" }] }],
-      };
-    } catch (error) {
-      return { state, messages: [{ text: `Could not start writing practice: ${(error as Error).message}` }] };
-    }
+    if (command === "daily") return beginDailyWriting(state);
+    if (trimmed.length < 3) return { state, messages: [{ text: "Please enter a topic with at least 3 characters." }] };
+    return {
+      state: { ...state, step: "awaiting_writing_mode", writingTopic: trimmed.slice(0, 120), writingTopicDescription: `Write about: ${trimmed}`.slice(0, 500), writingMode: undefined },
+      messages: [{ text: "How would you like to practise this topic?", options: WRITING_MODE_OPTIONS }],
+    };
+  }
+
+  if (state.step === "awaiting_writing_mode") {
+    if (command === "writing_mode_write") return beginWritingMode(state, "write");
+    if (command === "writing_mode_chat") return beginWritingMode(state, "chat");
+    return { state, messages: [{ text: "Choose Write about the topic with AI or Chat with AI.", options: WRITING_MODE_OPTIONS }] };
   }
 
   if (state.step === "awaiting_speaking_topic") {
@@ -318,7 +411,7 @@ export async function handleCommunicationText(
       const question = result.turns?.[0]?.ai_question || result.question;
       return {
         state: { ...state, step: "speaking_turn", activeModule: "speaking", sessionId: result.session_id ?? result.id, lastScores: undefined, lastFeedback: undefined },
-        messages: [{ text: question || "Tell me about it.", options: [{ label: "End session", value: "end_session" }] }],
+        messages: [{ text: openingSpeakingPrompt(state, question), options: [{ label: "End session", value: "end_session" }] }],
       };
     } catch (error) {
       return { state, messages: [{ text: `Could not start speaking practice: ${(error as Error).message}` }] };
@@ -344,8 +437,15 @@ export async function handleCommunicationText(
       }
     }
     try {
-      const result = await respondWriting(state.authToken!, state.sessionId!, trimmed);
+      const isWriteMode = state.writingMode === "write";
+      const result = await respondWriting(state.authToken!, state.sessionId!, trimmed, isWriteMode);
       const feedback = result.feedback;
+      if (isWriteMode) {
+        return {
+          state: { ...state, step: "writing_result", lastScores: feedback?.scores, lastFeedback: feedback?.short_feedback || feedback?.feedback },
+          messages: [{ text: writingEvaluationResult(feedback || {}), options: [{ label: "End session", value: "end_session" }] }],
+        };
+      }
       const lines = [
         feedback?.short_feedback || feedback?.feedback || "Got it.",
         formatScores(feedback?.scores),
@@ -365,6 +465,33 @@ export async function handleCommunicationText(
       };
     } catch (error) {
       return { state, messages: [{ text: `Could not save your answer: ${(error as Error).message}` }] };
+    }
+  }
+
+  if (state.step === "writing_result") {
+    if (command === "end_session") {
+      try {
+        const summary = await endWriting(state.authToken!, state.sessionId!);
+        return showMenu(state, `Writing practice complete! Overall score: ${summary.overall_score ?? "—"}/10\n${summary.summary_feedback ?? ""}`);
+      } catch (error) {
+        return showMenu(state, `Could not end the session: ${(error as Error).message}`);
+      }
+    }
+    return { state, messages: [{ text: "Your writing evaluation is complete. Choose End session when you are ready.", options: [{ label: "End session", value: "end_session" }] }] };
+  }
+
+  if (state.step === "writing_chat_turn") {
+    if (command === "end_session") return showMenu(state, "Writing chat ended. What would you like to practise next?");
+    try {
+      const history = [...(state.writingChatHistory || []), { role: "user" as const, text: trimmed }];
+      const result = await writingChat(state.authToken!, state.writingTopic || "this topic", state.difficulty, history);
+      const reply = writingChatReply(result.reply || "That's a good start! Could you tell me a little more?", trimmed, result.corrected_answer, result.reaction, result.next_question);
+      return {
+        state: { ...state, writingChatHistory: [...history, { role: "assistant", text: reply }] },
+        messages: [{ text: reply, options: [{ label: "End session", value: "end_session" }] }],
+      };
+    } catch (error) {
+      return { state, messages: [{ text: `Could not continue the writing chat: ${(error as Error).message}` }] };
     }
   }
 
@@ -391,6 +518,7 @@ export async function handleCommunicationText(
         );
       }
       const nextQuestion = result.next_question || "Tell me more.";
+      const coachReply = speakingCoachReply(trimmed, result.feedback, nextQuestion);
       return {
         state: {
           ...state,
@@ -399,7 +527,7 @@ export async function handleCommunicationText(
           lastScores: result.feedback?.scores,
           lastFeedback: result.feedback?.explanation,
         },
-        messages: [{ text: nextQuestion, options: [{ label: "End session", value: "end_session" }] }],
+        messages: [{ text: coachReply, options: [{ label: "End session", value: "end_session" }] }],
       };
     } catch (error) {
       return { state, messages: [{ text: `Could not save your answer: ${(error as Error).message}` }] };
@@ -430,7 +558,7 @@ export async function handleCommunicationText(
       const nextItem: PronunciationItemPayload | undefined = result.next_item;
       if (nextItem) {
         const { data } = await startPronunciationAttempt(state.authToken!, nextItem.item_id);
-        lines.push("", `Next: "${itemText(nextItem)}"`);
+        lines.push("", `Next pronunciation activity:\n1. Click the microphone button below.\n2. Pronounce clearly: “${itemText(nextItem)}”\n3. Check the captured text, then press Send for scoring.`);
         return {
           state: {
             ...state,

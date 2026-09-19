@@ -87,6 +87,46 @@ def generate_writing_prompt(mode, difficulty, topic_title, turn_number, history,
     return prompt.strip().strip('"') or _fallback_writing_prompt(mode, difficulty, topic_title, topic_description)
 
 
+def generate_writing_chat_reply(topic, difficulty, history=None):
+    """Create one short, contextual reply for the optional Writing chat mode."""
+    topic = (topic or "this topic").strip()
+    clean_history = [item for item in (history or []) if isinstance(item, dict)][-6:]
+    history_text = "\n".join(
+        f"{'Student' if item.get('role') == 'user' else 'Coach'}: {str(item.get('text') or '').strip()}"
+        for item in clean_history if str(item.get("text") or "").strip()
+    ) or "This is the first message."
+    fallback = {
+        "reply": (
+            f"That's an interesting topic! What do you already know about {topic}?"
+            if not clean_history else "That's a good start! Can you give me one example from everyday life?"
+        ),
+        "corrected_answer": None,
+    }
+    system_prompt = (
+        "You are a warm English conversation partner helping a student discuss one writing topic. "
+        "Reply naturally in one or two short sentences, acknowledge something specific from the latest student message, "
+        "then ask exactly one related follow-up question. Also give one corrected_answer only if the latest student message "
+        "has a clear grammar or phrasing error. Preserve meaning. Return strict JSON only: "
+        '{"reaction":"friendly acknowledgment","next_question":"one related follow-up question","corrected_answer":"corrected sentence or null"}. '
+        "Do not score, write a long lesson, or use markdown."
+    )
+    user_prompt = (
+        f"Topic: {topic}\nDifficulty: {difficulty}\nConversation:\n{history_text}\n\n"
+        "Return only the JSON object."
+    )
+    try:
+        data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.65, operation="writing.chat_reply", module="writing", service="groq_writing.generate_writing_chat_reply"))
+        if not isinstance(data, dict):
+            return fallback
+        reaction = str(data.get("reaction") or "").strip()
+        next_question = str(data.get("next_question") or "").strip()
+        reply = " ".join(part for part in (reaction, next_question) if part)
+        corrected_answer = str(data.get("corrected_answer") or "").strip() or None
+        return {"reply": reply or fallback["reply"], "reaction": reaction, "next_question": next_question, "corrected_answer": corrected_answer}
+    except Exception:
+        return fallback
+
+
 def _estimate_live_grade(text, issue_count):
     words = len(re.findall(r"\b\w+\b", text or ""))
     if words < 8:
@@ -294,9 +334,8 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
     )
     system_prompt = (
         "You are an expert writing evaluator. Respond with STRICT JSON only, no markdown fences, "
-        "Explain mistakes as short, scannable bullet points in the JSON array 'mistake_points', not as a dense paragraph. "
-        "Use 2-4 distinct bullets under 15 words each. Each bullet should cover one specific problem, one brief reason, "
-        "or one useful correction note. Do not repeat the same idea in different words. "
+        "Focus on grammar, clarity, spelling, and vocabulary. Return at most six important corrections as incorrect → correct, "
+        "with one brief explanation only when useful. Preserve the student's original meaning in corrected_answer. "
         "matching this schema exactly:\n"
         '{"appreciation":"Good attempt.","status":"Needs Improvement","original_answer":"...",'
         '"corrected_answer":"...","better_natural_answer":"...","explanation":"...",'
@@ -314,11 +353,8 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         f"Student's written answer: {answer}\n\n"
         f"Classify status as Correct, Mostly Correct, Partially Correct, Needs Improvement, Off Topic, or No Answer. "
         f"Score grammar, vocabulary, clarity, spelling, and overall from 0.0 to 10.0. {knowledge_instruction} "
-        f"Give a corrected answer, better natural answer, 2-4 strengths, 2-4 areas to improve, "
-        f"and vocabulary suggestions only when useful. Do not score above 10. "
-        f"Return the mistake explanation as a short bullet-point array in 'mistake_points', not a paragraph. "
-        f"Use 2-4 distinct points, each under 15 words and non-repetitive. "
-        f"Each point should name one problem, give one brief reason, or add one correction note."
+        f"Give a corrected answer and up to six distinct grammar corrections. Do not score above 10. "
+        f"Avoid long grammar lessons, generic praise, a next question, or any follow-up task."
     )
     try:
         raw = _chat(system_prompt, user_prompt, temperature=0.3, operation="writing.answer_evaluation", module="writing", service="groq_writing.evaluate_writing_answer")
