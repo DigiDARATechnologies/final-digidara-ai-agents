@@ -393,6 +393,21 @@ Return all {count} questions in one complete response."""
                         internal_values=(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id),
                     ))
                 except ValueError as exc:
+                    # validate_generated_item's messages are fixed strings shared
+                    # by several different checks (e.g. one "structured
+                    # explanation must derive..." message covers every way that
+                    # check can fail), so the message alone can't diagnose a
+                    # recurrence -- log the actual generated content once here,
+                    # the single choke point for every validation failure,
+                    # instead of at each of validate_generated_item's many
+                    # raise sites. No learner data: these are AI-generated
+                    # aptitude questions, not user input.
+                    current_app.logger.error(
+                        "Question validation failed reason=%s attempt=%s item_index=%s category=%s topic=%s "
+                        "explanation=%r correct_answer=%r options=%r",
+                        str(exc),attempt,item_index,slot.get("category"),slot.get("topic"),
+                        str(item.get("explanation",""))[:400],item.get("correct_answer"),item.get("options"),
+                    )
                     raise ValueError(f"question {item_index}: {exc}") from exc
             content_hashes=[item["content_hash"] for item in validated]
             structural_hashes=[item["structural_hash"] for item in validated if item["structural_hash"]]
