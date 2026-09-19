@@ -1,0 +1,28 @@
+{
+  "agent_name": "mock_interview_agent",
+  "version": "v1.0.0",
+  "description": "AI-driven mock technical and HR interviews: question generation, spoken/typed answer evaluation, focus tracking, history, and score dashboards.",
+  "owner": "DigiDARA",
+  "plan_tier": "free",
+  "host": "mock-interview-agent",
+  "port": 5030,
+  "path": "/api/invoke",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "health", "ensure_session", "start_interview", "submit_answer",
+          "end_interview", "exit_interview", "active_interview",
+          "daily_usage", "dashboard", "history", "history_detail",
+          "profile", "update_profile", "record_focus_event",
+          "download_report"
+        ]
+      },
+      "payload": { "type": "object" }
+    },
+    "required": ["action"]
+  },
+  "output_schema": { "type": "object" }
+}

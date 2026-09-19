@@ -101,6 +101,7 @@ jobs:
             agents/codeforge_agent/services/lms-api \
             agents/communication-ai-agent/backend \
             agents/aptitude_agent \
+            agents/mock_interview_agent/backend \
             agents/resume_builder_agent/backend \
             agents/certificate_agent \
             agents/job_agent
@@ -119,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/resume_builder_agent/backend agents/certificate_agent agents/job_agent docker/mysql; do
+          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/mock_interview_agent/backend agents/resume_builder_agent/backend agents/certificate_agent agents/job_agent docker/mysql; do
             if [ -f "$directory/.env.example" ]; then
               cp "$directory/.env.example" "$directory/.env"
             else
@@ -145,6 +146,7 @@ jobs:
           - codeforge-agent
           - communication-agent
           - aptitude-agent
+          - mock-interview-agent
           - resume-builder-agent
           - certificate-agent
           - job-agent
@@ -399,6 +401,7 @@ jobs:
           - codeforge-agent
           - communication-agent
           - aptitude-agent
+          - mock-interview-agent
           - resume-builder-agent
           - certificate-agent
           - job-agent

@@ -35,7 +35,8 @@ ALLOWED_AGENT_HOSTS = {
     h.strip() for h in os.environ.get(
         "ALLOWED_AGENT_HOSTS",
         "capstone-agent,codeforge-agent,communication-agent,aptitude-agent,"
-        "resume-builder-agent,certificate-agent,job-agent,127.0.0.1,localhost",
+        "resume-builder-agent,certificate-agent,job-agent,mock-interview-agent,"
+        "127.0.0.1,localhost",
     ).split(",") if h.strip()
 }
 

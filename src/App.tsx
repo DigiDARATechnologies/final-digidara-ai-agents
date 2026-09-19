@@ -53,6 +53,7 @@ import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeB
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
+import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
@@ -132,6 +133,7 @@ export default function App() {
   const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>(() => loadCommunicationStates(loadUser()?.email));
   const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>(() => loadResumeBuilderStates(loadUser()?.email));
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>(() => loadCertificateStates(loadUser()?.email));
+  const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
   const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>(() => loadJobFetchStates(loadUser()?.email));
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [capstoneOnline, setCapstoneOnline] = useState(false);
@@ -685,6 +687,10 @@ export default function App() {
       const { state, messages } = await openJobFetchChat(user);
       setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
+    } else if (agent.kind === "mock-interview") {
+      const { state, messages } = await openMockInterviewChat(user);
+      setMockInterviewStates((prev) => ({ ...prev, [chatId]: state }));
+      appendAgentMessages(chatId, messages);
     }
     setTyping(false);
   }
@@ -830,6 +836,20 @@ export default function App() {
         });
         setTyping(false);
       });
+    } else if (agent.kind === "mock-interview") {
+      setDashboardOpen(false);
+      setTyping(true);
+      openMockInterviewChat(user).then(({ state, messages }) => {
+        setMockInterviewStates((prev) => ({ ...prev, [chat.id]: state }));
+        setChats((prev) => {
+          const next = prev.map((c) => c.id === chat.id
+            ? { ...c, messages: messages.map((m) => ({ role: "agent" as const, text: m.text, options: m.options, time: nowStr() })), updatedAt: Date.now() }
+            : c);
+          saveChats(next);
+          return next;
+        });
+        setTyping(false);
+      });
     }
     switchView("chat");
   }
@@ -891,6 +911,7 @@ export default function App() {
     if (kind === "communication") return communicationStates[chatId];
     if (kind === "certificate") return certificateStates[chatId];
     if (kind === "job-fetch") return jobFetchStates[chatId];
+    if (kind === "mock-interview") return mockInterviewStates[chatId];
     return undefined;
   }
 
@@ -1027,6 +1048,20 @@ export default function App() {
           appendAgentMessages(chatId, [{
             text: "I couldn’t complete that certificate request right now. Your certificate records are safe. Please try again in a moment.",
           }]);
+        })
+        .finally(() => setTyping(false));
+      return;
+    }
+
+    if (agent?.kind === "mock-interview") {
+      const flowState = mockInterviewStates[chatId] ?? createInitialMockInterviewState();
+      handleMockInterviewText(flowState, user, text)
+        .then(({ state, messages }) => {
+          setMockInterviewStates((prev) => ({ ...prev, [chatId]: state }));
+          appendAgentMessages(chatId, messages);
+        })
+        .catch((error) => {
+          appendAgentMessages(chatId, [{ text: `Mock Interview request failed: ${(error as Error).message}` }]);
         })
         .finally(() => setTyping(false));
       return;
