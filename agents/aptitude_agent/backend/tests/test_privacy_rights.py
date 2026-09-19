@@ -1,5 +1,16 @@
 from backend.app.extensions import db
-from backend.app.models import AptitudeAnswer, AptitudeTest, Student
+from backend.app.models import AptitudeAnswer, AptitudeTest, AptitudeTestQuestion, Student
+
+
+def make_question(question_id, test_id, sequence_no=1):
+    return AptitudeTestQuestion(
+        id=question_id, test_id=test_id, sequence_no=sequence_no,
+        category="Quantitative", topic="Percentages", difficulty="Easy",
+        question_text="What is 10% of 200?",
+        option_a="20", option_b="10", option_c="30", option_d="40",
+        correct_answer="A", explanation="10% of 200 is 20.",
+        content_hash=f"hash-{question_id}",
+    )
 
 
 def test_privacy_endpoints_require_auth(client):
@@ -31,6 +42,8 @@ def test_export_returns_profile_and_answers(client, auth_headers, app):
         test = AptitudeTest(id="test-1", student_id=student.id, status="completed", score=8, percentage=80, test_mode="mixed")
         db.session.add(test)
         db.session.flush()
+        db.session.add(make_question("question-1", "test-1"))
+        db.session.flush()
         db.session.add(AptitudeAnswer(
             id="answer-1", test_id="test-1", student_id=student.id,
             question_id="question-1", correct_answer="A", is_correct=True,
@@ -52,6 +65,8 @@ def test_erase_anonymizes_profile_and_answers_and_revokes_token(client, auth_hea
         student = Student.query.filter_by(email="learner@example.com").first()
         test = AptitudeTest(id="test-2", student_id=student.id, status="completed", score=5, percentage=50, test_mode="mixed")
         db.session.add(test)
+        db.session.flush()
+        db.session.add(make_question("question-2", "test-2"))
         db.session.flush()
         db.session.add(AptitudeAnswer(
             id="answer-2", test_id="test-2", student_id=student.id,
