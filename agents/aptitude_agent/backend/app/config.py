@@ -41,7 +41,14 @@ class Config:
     OPENAI_BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("OPENAI_BACKGROUND_TIMEOUT_SECONDS", "20"))
     BATCH_GENERATION_DEADLINE_SECONDS = max(30.0, float(os.getenv("BATCH_GENERATION_DEADLINE_SECONDS", "180")))
     OPENAI_BATCH_TIMEOUT_SECONDS = max(15.0, float(os.getenv("OPENAI_BATCH_TIMEOUT_SECONDS", "120")))
-    BATCH_GENERATION_MAX_ATTEMPTS = max(1, min(3, int(os.getenv("BATCH_GENERATION_MAX_ATTEMPTS", "2"))))
+    # A batch discards and fully regenerates ALL of its questions if even one
+    # fails content validation (see test_generation.py), so one bad draw for
+    # one topic burns a whole attempt. 2 left production with no headroom:
+    # a mixed test that draws an unlucky topic twice in a row (each attempt
+    # took ~15s here, well under the 180s deadline) hits "exhausted" and
+    # 503s with ALLOW_DEMO_QUESTIONS off, instead of getting the one more
+    # independently-varied retry that would likely have succeeded.
+    BATCH_GENERATION_MAX_ATTEMPTS = max(1, min(3, int(os.getenv("BATCH_GENERATION_MAX_ATTEMPTS", "3"))))
     HINT_TIMEOUT_SECONDS = float(os.getenv("HINT_TIMEOUT_SECONDS", "5"))
     RECOMMENDATION_TIMEOUT_SECONDS = max(1.0, min(8.0, float(os.getenv("RECOMMENDATION_TIMEOUT_SECONDS", "7"))))
     HINT_MAX_COMPLETION_TOKENS = max(64, min(128, int(os.getenv("HINT_MAX_COMPLETION_TOKENS", "96"))))
