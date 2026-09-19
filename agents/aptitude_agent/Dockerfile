@@ -24,4 +24,9 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,json; req=urllib.request.Request('http://127.0.0.1:5000/api/invoke', data=json.dumps({'action':'health'}).encode(), headers={'Content-Type':'application/json'}); urllib.request.urlopen(req, timeout=3).read()" || exit 1
 
-CMD ["gunicorn", "-w", "4", "--timeout", "240", "-b", "0.0.0.0:5000", "app:app"]
+# Apply pending Alembic migrations once, before any worker starts. Nothing else
+# in deploy ran them, so a model change with a new column (e.g. 0028) broke
+# every request in production until someone ran `flask db upgrade` by hand.
+# Doing it here (not in each of the 4 workers) avoids concurrent-upgrade races,
+# and a failed migration keeps the container unhealthy instead of serving errors.
+CMD ["sh", "-c", "flask --app app db upgrade && exec gunicorn -w 4 --timeout 240 -b 0.0.0.0:5000 app:app"]
