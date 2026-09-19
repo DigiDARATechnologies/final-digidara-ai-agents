@@ -37,6 +37,11 @@ export interface ChatOption {
   label: string;
   value: string;
   description?: string;
+  /** When set, the option renders as a download link to this URL instead of
+   * a button that sends `value` back to the agent flow. */
+  href?: string;
+  /** Suggested filename for `href` (same-origin downloads only). */
+  download?: string;
 }
 
 export interface ChatMessage {

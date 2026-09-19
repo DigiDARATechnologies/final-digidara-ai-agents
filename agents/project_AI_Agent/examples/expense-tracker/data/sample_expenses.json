@@ -1,0 +1,8 @@
+[
+  {"date": "2026-09-01", "amount": 250.0, "category": "Food", "note": "Lunch"},
+  {"date": "2026-09-02", "amount": 120.0, "category": "Transport", "note": "Metro card"},
+  {"date": "2026-09-03", "amount": 1499.0, "category": "Bills", "note": "Internet"},
+  {"date": "2026-09-04", "amount": 560.0, "category": "Shopping", "note": "Notebooks"},
+  {"date": "2026-09-05", "amount": 180.0, "category": "Food", "note": "Dinner"},
+  {"date": "2026-09-06", "amount": 300.0, "category": "Health", "note": "Pharmacy"}
+]

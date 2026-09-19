@@ -739,6 +739,8 @@ body.glow-off .send-btn:hover{
 .msg.agent .bubble{ border-bottom-left-radius:4px; }
 .chat-options{display:flex;flex-direction:column;gap:8px;margin-top:9px;min-width:min(420px,70vw);}
 .chat-options button{text-align:left;border:1px solid #dbf3fc;background:#fff;color:var(--text);padding:10px 12px;border-radius:11px;transition:.15s;}
+.chat-options a.chat-option-link{display:block;text-align:left;text-decoration:none;border:1px solid #dbf3fc;background:#fff;color:var(--text);padding:10px 12px;border-radius:11px;transition:.15s;}
+.chat-options a.chat-option-link:hover{border-color:var(--accent1);background:var(--accent-soft);transform:translateY(-1px);}
 .chat-options button:not(:disabled):hover{border-color:var(--accent1);background:var(--accent-soft);transform:translateY(-1px);}
 .chat-options button:disabled{cursor:default;opacity:.55;}
 .chat-options strong,.chat-options span{display:block;}

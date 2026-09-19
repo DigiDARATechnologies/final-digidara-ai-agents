@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+...import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
@@ -20,12 +20,12 @@ interface ChatViewProps {
   /** `value` is the internal action; `label` is what the learner sees. */
   onChooseOption: (value: string, label?: string) => void;
   /** Replaces the user message at `index` with `newText` and discards
-   * everything after it, resuming the flow from that point ΓÇö see
+   * everything after it, resuming the flow from that point ... see
    * App.tsx's sendMessage(text, editIndex) for how the resume actually
    * works. Absent means editing isn't offered (e.g. no host wired it up). */
   onEditMessage?: (index: number, newText: string) => void;
   attachEnabled: boolean;
-  /** File input `accept` string ΓÇö varies per agent (Capstone wants
+  /** File input `accept` string ... varies per agent (Capstone wants
    * `.docx,.zip`; Resume Builder wants resume documents). */
   attachAccept?: string;
   pendingFiles: File[];
@@ -39,7 +39,7 @@ interface ChatViewProps {
   onRunCode?: (code: string) => void;
   onSubmitCode?: (code: string) => void;
   /** When set, the composer becomes a resizable multi-line textarea instead
-   * of the normal single-line input ΓÇö needed for pasting a full resume or a
+   * of the normal single-line input ... needed for pasting a full resume or a
    * job description, since a single-line input silently loses newlines. */
   multilineMode?: boolean;
   multilinePlaceholder?: string;
@@ -47,7 +47,7 @@ interface ChatViewProps {
   multilineClassName?: string;
   multilineWordTarget?: number;
   /** ChatGPT/Claude-style header pill: agent status, its pending task (if
-   * any), and ΓÇö for agents that have one ΓÇö a quick per-agent option
+   * any), and ... for agents that have one ... a quick per-agent option
    * (Capstone's project difficulty). Absent for the general chat. */
   connectorStatus?: string;
   connectorPendingTask?: string | null;
@@ -57,7 +57,7 @@ interface ChatViewProps {
   dailyChallengeStatus?: "pending" | "completed";
   onDailyChallenge?: () => void;
   immersiveSpeaking?: boolean;
-  /** Extra panel rendered inside the latest agent message, above its text ΓÇö
+  /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
   certificateExamInstructions?: {
@@ -71,7 +71,7 @@ interface ChatViewProps {
     currentQuestion: number;
     totalQuestions: number;
   };
-  /** Extra panel rendered above the message list ΓÇö used by the Aptitude
+  /** Extra panel rendered above the message list ... used by the Aptitude
    * Trainer Agent to show its practice controls alongside the chat. */
   contextPanel?: ReactNode;
 }
@@ -98,7 +98,7 @@ export default function ChatView({
   onRunCode,
   onSubmitCode,
   multilineMode = false,
-  multilinePlaceholder = "Paste text hereΓÇª",
+  multilinePlaceholder = "Paste text here...",
   multilineSubmitLabel = "Send",
   multilineClassName = "",
   multilineWordTarget,
@@ -126,7 +126,7 @@ export default function ChatView({
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeechRecognition();
   // Recognition is `continuous: true`, so it keeps listening in the
-  // background after Send unless explicitly stopped ΓÇö and a result that was
+  // background after Send unless explicitly stopped ... and a result that was
   // already in flight can still land *after* stop() and repopulate the box
   // right after it was cleared. Bumping this on every stop/submit lets the
   // result callback recognize and drop those now-stale updates.
@@ -162,7 +162,7 @@ export default function ChatView({
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      return; // Clipboard access denied/unavailable ΓÇö silently skip rather than show a false "Copied".
+      return; // Clipboard access denied/unavailable ... silently skip rather than show a false "Copied".
     }
     setCopiedIndex(index);
     window.clearTimeout(copiedTimerRef.current);
@@ -191,7 +191,7 @@ export default function ChatView({
     e.preventDefault();
     const text = input.trim();
     if (!text) {
-      setInputError(multilineMode ? "Please write your paragraph before submitting. ≡ƒÿè" : "Please enter a message before sending.");
+      setInputError(multilineMode ? "Please write your paragraph before submitting. ??" : "Please enter a message before sending.");
       return;
     }
     setInputError("");
@@ -203,7 +203,7 @@ export default function ChatView({
 
   // The default composer is a <textarea rows={1}> that grows with content
   // (up to a CSS-capped max-height, then scrolls) instead of a single-line
-  // <input> — a plain <input> can never hold a real newline at all, which is
+  // <input> ... a plain <input> can never hold a real newline at all, which is
   // why Shift+Enter had nothing to do and pasted multi-line text silently
   // lost its line breaks. Re-measured on every keystroke/paste/Send.
   useEffect(() => {
@@ -261,7 +261,7 @@ export default function ChatView({
     };
 
     if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-      const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[┬╖ΓÇö]/g, " "));
+      const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[...]/g, " "));
       utterance.rate = 0.96;
       utterance.pitch = 1;
       utterance.onstart = () => setAgentSpeaking(true);
@@ -316,7 +316,7 @@ export default function ChatView({
         )}
         {dailyChallengeStatus && (
           <button type="button" className={`daily-challenge-pill ${dailyChallengeStatus}`} onClick={onDailyChallenge}>
-            <span>≡ƒôà</span><span>Daily Challenge</span>
+            <span>...</span><span>Daily Challenge</span>
             <i>{dailyChallengeStatus === "completed" ? "Completed" : "Pending"}</i>
           </button>
         )}
@@ -330,7 +330,7 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next questionΓÇª" : agentSpeaking ? "Coach is speakingΓÇª" : speech.listening ? "Listening automatically ┬╖ sends after 3 seconds of silence" : "Starting conversationΓÇª"}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening automatically ... sends after 3 seconds of silence" : "Starting conversation..."}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const visibleOptions = agent.kind === "communication"
@@ -377,7 +377,12 @@ export default function ChatView({
                     <div className="bubble">{m.text}</div>
                     {!!visibleOptions?.length && (
                       <div className="chat-options">
-                        {visibleOptions.map((option) => (
+                        {visibleOptions.map((option) => option.href ? (
+                          <a key={option.value} className="chat-option-link" href={option.href} download={option.download ?? ""}>
+                            <strong>{option.label}</strong>
+                            {option.description && <span>{option.description}</span>}
+                          </a>
+                        ) : (
                           <button key={option.value} type="button" disabled={!optionsActive} onClick={() => onChooseOption(option.value, option.label)}>
                             <strong>{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
@@ -421,7 +426,7 @@ export default function ChatView({
       {certificateExamInstructions && (
         <div className="certificate-instructions-backdrop" role="dialog" aria-modal="true" aria-labelledby="certificate-instructions-title">
           <section className="certificate-instructions-modal">
-            <div className="certificate-instructions-icon">≡ƒÄô</div>
+            <div className="certificate-instructions-icon">...</div>
             <p className="certificate-instructions-eyebrow">Certification exam ready</p>
             <h2 id="certificate-instructions-title">{certificateExamInstructions.topic} Certification</h2>
             <p className="certificate-instructions-lead">Read these instructions before beginning your {certificateExamInstructions.totalQuestions}-question exam.</p>
@@ -442,7 +447,7 @@ export default function ChatView({
         <div className="attach-chips">
           {pendingFiles.map((f) => (
             <span className="attach-chip" key={f.name}>
-              ≡ƒôÄ {f.name}
+              ... {f.name}
             </span>
           ))}
         </div>
@@ -455,14 +460,14 @@ export default function ChatView({
             spellCheck={false}
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Write your solution hereΓÇª"
+            placeholder="Write your solution here..."
           />
           <div className="code-composer-actions">
             <button type="button" className="btn btn-outline" disabled={codeBusy} onClick={() => onRunCode?.(code)}>
-              {codeBusy ? "RunningΓÇª" : "Γû╢ Run public tests"}
+              {codeBusy ? "Running..." : "... Run public tests"}
             </button>
             <button type="button" className="btn btn-primary" disabled={codeBusy} onClick={() => onSubmitCode?.(code)}>
-              {codeBusy ? "SubmittingΓÇª" : "Γ£ô Submit solution"}
+              {codeBusy ? "Submitting..." : "... Submit solution"}
             </button>
           </div>
         </div>
@@ -513,7 +518,7 @@ export default function ChatView({
           <textarea
             ref={composerTextareaRef}
             rows={1}
-            placeholder="Message DigiDARA…"
+            placeholder="Message DigiDARA..."
             value={input}
             disabled={composerDisabled}
             onChange={(e) => { setInput(e.target.value); if (inputError) setInputError(""); }}
@@ -556,3 +561,5 @@ export default function ChatView({
     </section>
   );
 }
+
+
