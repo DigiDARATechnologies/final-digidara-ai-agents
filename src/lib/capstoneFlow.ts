@@ -1,3 +1,4 @@
+import { CAPSTONE_EXAMPLE_OPTIONS } from "./capstoneExamples";
 import type { ChatOption, User } from "../types";
 import {
   askProjectQuestion,
@@ -232,7 +233,10 @@ export async function handleCapstoneText(
         const result = await chooseTopic(state.threadId!, topic.id);
         return {
           state: { ...state, chosenTopic: topic, requirements: result.requirements, step: "awaiting_timer_confirm" },
-          messages: [{ text: `${formatRequirements(result.requirements)}\n\nStart the 7-day project timer when you are ready.`, options: [{ label: "Start 7-day timer", value: "confirm" }] }],
+          messages: [{
+            text: `${formatRequirements(result.requirements)}\n\nNot sure how your report and zip should look? Download the examples below. Start the 7-day project timer when you are ready.`,
+            options: [{ label: "Start 7-day timer", value: "confirm" }, ...CAPSTONE_EXAMPLE_OPTIONS],
+          }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not lock that project: ${(error as Error).message}` }] };
@@ -267,7 +271,10 @@ export async function handleCapstoneText(
         const result = await confirmTimer(state.threadId!);
         return {
           state: { ...state, deadlineAt: result.deadline_at, submissionGuide: result.submission_guide, step: "awaiting_submission" },
-          messages: [{ text: `${formatSubmissionGuide(result.submission_guide, result.deadline_at)}\n\nI will monitor your project here. Attach the .docx report and .zip source code in this chat when ready.` }],
+          messages: [{
+            text: `${formatSubmissionGuide(result.submission_guide, result.deadline_at)}\n\nI will monitor your project here. Attach the .docx report and .zip source code in this chat when ready. The example report and example project below show the expected format.`,
+            options: CAPSTONE_EXAMPLE_OPTIONS,
+          }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not start the timer: ${(error as Error).message}`, options: [{ label: "Try again", value: "confirm" }] }] };
