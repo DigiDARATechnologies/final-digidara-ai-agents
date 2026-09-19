@@ -348,3 +348,22 @@ def test_generation_retries_structurally_duplicate_batch(monkeypatch):
     assert len(calls)==2
     assert questions[0]["structural_hash"]!=questions[1]["structural_hash"]
     assert usage["total_tokens"]==60
+
+
+def test_a_rejected_item_logs_its_actual_content_not_just_the_static_message(monkeypatch,caplog):
+    # validate_generated_item's error text is a fixed string shared by several
+    # different checks, so it alone can't diagnose a recurrence in production
+    # (see the live "structured explanation must derive..." 503s). The batch
+    # loop must log the real explanation/options once, so the *next*
+    # occurrence is diagnosable from one log pull instead of a guessing loop.
+    bad_explanation="Step 1: This looks tricky. Step 2: Going with intuition. Answer = 42."
+    bad_item={**SLOT,"question":"What is the value described in this scenario?","options":{"A":"10","B":"20","C":"42","D":"50"},"correct_answer":"C","explanation":bad_explanation}
+    response=({"questions":[bad_item]},{"input_tokens":10,"output_tokens":5,"total_tokens":15})
+    monkeypatch.setattr(test_generation,"json_completion",lambda *a,**k:response)
+    app=Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key",OPENAI_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context(), pytest.raises(Exception):
+        test_generation.generate_questions([SLOT],max_validation_attempts=1)
+    logged=" ".join(record.getMessage() for record in caplog.records if "Question validation failed" in record.getMessage())
+    assert bad_explanation in logged
+    assert "42" in logged and "Quantitative Aptitude" in logged
