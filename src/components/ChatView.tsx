@@ -43,6 +43,9 @@ interface ChatViewProps {
    * job description, since a single-line input silently loses newlines. */
   multilineMode?: boolean;
   multilinePlaceholder?: string;
+  multilineSubmitLabel?: string;
+  multilineClassName?: string;
+  multilineWordTarget?: number;
   /** ChatGPT/Claude-style header pill: agent status, its pending task (if
    * any), and — for agents that have one — a quick per-agent option
    * (Capstone's project difficulty). Absent for the general chat. */
@@ -96,6 +99,9 @@ export default function ChatView({
   onSubmitCode,
   multilineMode = false,
   multilinePlaceholder = "Paste text here…",
+  multilineSubmitLabel = "Send",
+  multilineClassName = "",
+  multilineWordTarget,
   connectorStatus,
   connectorPendingTask,
   connectorDifficultyPicker,
@@ -114,6 +120,7 @@ export default function ChatView({
   const [editDraft, setEditDraft] = useState("");
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [agentSpeaking, setAgentSpeaking] = useState(false);
+  const [inputError, setInputError] = useState("");
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const speech = useSpeechRecognition();
@@ -182,7 +189,11 @@ export default function ChatView({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    if (!text) {
+      setInputError(multilineMode ? "Please write your paragraph before submitting. 😊" : "Please enter a message before sending.");
+      return;
+    }
+    setInputError("");
     voiceSessionRef.current += 1;
     if (speech.listening) speech.stop();
     onSend(input);
@@ -442,13 +453,18 @@ export default function ChatView({
           </div>
         </div>
       ) : multilineMode ? (
-        <form className="paste-composer" onSubmit={handleSubmit}>
+        <form className={`paste-composer ${multilineClassName}`.trim()} onSubmit={handleSubmit}>
           <textarea
             className="paste-textarea"
             placeholder={multilinePlaceholder}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            disabled={composerDisabled}
+            onChange={(e) => { setInput(e.target.value); if (inputError) setInputError(""); }}
           />
+          {multilineWordTarget && (
+            <div className="writing-word-count">Words: {input.trim() ? input.trim().split(/\s+/).length : 0} / {multilineWordTarget}</div>
+          )}
+          {inputError && <p className="composer-input-error" role="alert">{inputError}</p>}
           <div className="paste-composer-actions">
             {attachEnabled && (
               <AttachMenu
@@ -459,7 +475,7 @@ export default function ChatView({
                 variant="text"
               />
             )}
-            <button type="submit" className="btn btn-primary">Send</button>
+            <button type="submit" className="btn btn-primary" disabled={composerDisabled}>{multilineSubmitLabel}</button>
           </div>
         </form>
       ) : (
@@ -477,7 +493,7 @@ export default function ChatView({
             autoComplete="off"
             value={input}
             disabled={composerDisabled}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); if (inputError) setInputError(""); }}
           />
           {speech.supported && (
             <button

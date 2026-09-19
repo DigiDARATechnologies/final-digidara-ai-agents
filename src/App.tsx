@@ -1414,7 +1414,7 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={isCertificateChat && typing}
+                composerDisabled={(isCertificateChat || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write")) && typing}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
@@ -1429,6 +1429,13 @@ export default function App() {
                 codeBusy={codeBusy}
                 onRunCode={handleRunCode}
                 onSubmitCode={handleSubmitCode}
+                multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
+                multilinePlaceholder="Write your paragraph here..."
+                multilineSubmitLabel="Submit Answer"
+                multilineClassName="writing-paragraph-composer"
+                multilineWordTarget={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"
+                  ? ({ easy: 90, medium: 135, hard: 190 }[communicationState.difficulty])
+                  : undefined}
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}

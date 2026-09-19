@@ -563,17 +563,17 @@ export default function Speaking() {
     setAnswerLimitSeconds(limitSeconds);
     finalTranscriptRef.current = "";
     setState("ai_speaking");
-    speak(greetingText, () => {
+    // Keep the greeting and first question together so the learner hears one
+    // natural opening, e.g. "Good morning, Harini! What did you do today?"
+    const openingPrompt = [greetingText, questionText].filter(Boolean).join(" ");
+    speak(openingPrompt, () => {
       if (isLeavingRef.current) return;
       setMessages((items) => (
         items.some((item) => item.type === "question" && item.turnNumber === questionMessage.turnNumber)
           ? items
           : [...items, questionMessage]
       ));
-      speak(questionText, () => {
-        if (isLeavingRef.current) return;
-        startListening();
-      });
+      startListening();
     });
   };
 
@@ -2158,9 +2158,27 @@ function getFeedbackSpeechParts(feedback, submittedAnswer) {
       ? feedback.corrected_answer
       : "";
 
-  const spokenExplanation = reaction ? `${reaction} ${explanation}` : explanation;
+  const originalAnswer = String(submittedAnswer || feedback?.original_answer || "").trim();
+  const hasUsefulCorrection = Boolean(
+    correctedAnswer
+    && originalAnswer
+    && normalizeForCorrectionComparison(correctedAnswer) !== normalizeForCorrectionComparison(originalAnswer)
+  );
+  const encouragement = reaction || "You're doing well!";
+  const spokenExplanation = hasUsefulCorrection
+    ? `${encouragement} Just a small correction. Instead of: ${originalAnswer}. You can say: ${correctedAnswer}.`
+    : `${encouragement} ${explanation}`.trim();
 
-  return { explanation: spokenExplanation, displayExplanation: explanation, correctedAnswer };
+  // The correction is already part of the coach's natural spoken response.
+  // Do not read it again as a disconnected second message.
+  return { explanation: spokenExplanation, displayExplanation: explanation, correctedAnswer: "" };
+}
+
+function normalizeForCorrectionComparison(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function normalizeDifficulty(difficulty) {
