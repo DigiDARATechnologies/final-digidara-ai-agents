@@ -19,3 +19,7 @@ slowapi>=0.1.9,<1
 # Production process manager target (see ecosystem.config.js) — not used by
 # `uvicorn --reload` in local dev, and doesn't run as a server on Windows.
 gunicorn>=23.0,<24
+# PDF invoices (app/billing/invoice.py). Same pins the other agents already
+# pass the pip-audit/Trivy gate with; Pillow is reportlab's own dependency.
+reportlab==5.0.1
+Pillow==12.3.0
