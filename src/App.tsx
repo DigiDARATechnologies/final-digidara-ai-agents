@@ -1424,7 +1424,7 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={(isCertificateChat || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write")) && typing}
+                composerDisabled={((isCertificateChat || isAptitudeChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
