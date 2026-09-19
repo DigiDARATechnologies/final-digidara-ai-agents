@@ -80,7 +80,11 @@ def validate_fenced_code(value, expected_language=None):
         if expected_language and match.group("language").casefold()!=str(expected_language).casefold():
             raise ValueError(f"technical code language must be {str(expected_language).lower()}")
     outside=FENCE_PATTERN.sub(" ",raw)
-    if LIKELY_CODE_PATTERN.search(outside):
+    # A single inline token such as ``print()`` or ``class`` is often normal
+    # technical prose. Require a multiline layout, or multiple code cues on
+    # one line, before treating the content as an unfenced program.
+    code_cues=LIKELY_CODE_PATTERN.findall(outside)
+    if ("\n" in outside and code_cues) or len(code_cues)>=2:
         raise ValueError("technical code must be inside a language-labelled fenced code block")
 
 

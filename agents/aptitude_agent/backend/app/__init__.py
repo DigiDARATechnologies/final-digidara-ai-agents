@@ -110,12 +110,10 @@ def create_app(config_object=Config):
         from .services.operations_service import operations_snapshot
         snapshot=operations_snapshot(stale_seconds=app.config["WORKER_STALE_SECONDS"])
         worker_ready=any(worker["online"] for worker in snapshot["workers"])
-        # Live question generation is handled by the web process and its
-        # ephemeral prefetch executor. The worker is still required for
-        # recommendations/analytics, but readiness no longer depends on a
-        # reusable question bank.
+        # Complete question batches are prepared by the web process before a
+        # test becomes ready. The worker remains responsible for analytics.
         ready_now=worker_ready
-        return {"status":"ready" if ready_now else "not_ready","database":"mysql","worker_ready":worker_ready,"question_generation":"live_openai_with_memory_prefetch","pending_jobs":snapshot["jobs"]["pending"]},200 if ready_now else 503
+        return {"status":"ready" if ready_now else "not_ready","database":"mysql","worker_ready":worker_ready,"question_generation":"openai_complete_batch","pending_jobs":snapshot["jobs"]["pending"]},200 if ready_now else 503
 
     @app.get("/")
     def index():

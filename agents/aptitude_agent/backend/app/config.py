@@ -36,15 +36,12 @@ class Config:
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     OPENAI_FALLBACK_MODELS = tuple(model.strip() for model in os.getenv("OPENAI_FALLBACK_MODELS", "").split(",") if model.strip())
-    # Learner-facing OpenAI calls are strictly bounded. In-memory question
-    # prefetch may use the full background deadline because it never blocks
-    # the learner response that started it.
+    # Learner-facing OpenAI calls are strictly bounded.
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12"))
     OPENAI_BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("OPENAI_BACKGROUND_TIMEOUT_SECONDS", "20"))
-    # One call normally finishes in 2-12 seconds. Leave enough shared budget
-    # for one quality retry/topic rotation when a candidate is rejected as a
-    # recent duplicate.
-    LIVE_QUESTION_DEADLINE_SECONDS = float(os.getenv("LIVE_QUESTION_DEADLINE_SECONDS", "30"))
+    BATCH_GENERATION_DEADLINE_SECONDS = max(30.0, float(os.getenv("BATCH_GENERATION_DEADLINE_SECONDS", "180")))
+    OPENAI_BATCH_TIMEOUT_SECONDS = max(15.0, float(os.getenv("OPENAI_BATCH_TIMEOUT_SECONDS", "120")))
+    BATCH_GENERATION_MAX_ATTEMPTS = max(1, min(3, int(os.getenv("BATCH_GENERATION_MAX_ATTEMPTS", "2"))))
     HINT_TIMEOUT_SECONDS = float(os.getenv("HINT_TIMEOUT_SECONDS", "5"))
     RECOMMENDATION_TIMEOUT_SECONDS = max(1.0, min(8.0, float(os.getenv("RECOMMENDATION_TIMEOUT_SECONDS", "7"))))
     HINT_MAX_COMPLETION_TOKENS = max(64, min(128, int(os.getenv("HINT_MAX_COMPLETION_TOKENS", "96"))))
@@ -52,10 +49,8 @@ class Config:
     # truncate the hidden reasoning plus the JSON document before the closing
     # brace, producing json_validate_failed even for a single question.
     OPENAI_JSON_MAX_COMPLETION_TOKENS = max(1024, int(os.getenv("OPENAI_JSON_MAX_COMPLETION_TOKENS", "2048")))
-    # A single aptitude question does not need the generic 4K JSON budget.
-    # Keeping this below the provider TPM limit materially reduces 429s while
-    # still leaving room for hidden reasoning and a complete JSON document.
-    QUESTION_GENERATION_MAX_COMPLETION_TOKENS = max(1024, min(2048, int(os.getenv("QUESTION_GENERATION_MAX_COMPLETION_TOKENS", "1536"))))
+    # A complete mixed test can contain up to sixty questions.
+    QUESTION_GENERATION_MAX_COMPLETION_TOKENS = max(4096, min(24000, int(os.getenv("QUESTION_GENERATION_MAX_COMPLETION_TOKENS", "16000"))))
     OPENAI_CIRCUIT_FAILURE_THRESHOLD = max(1, int(os.getenv("OPENAI_CIRCUIT_FAILURE_THRESHOLD", "5")))
     OPENAI_CIRCUIT_COOLDOWN_SECONDS = max(1, int(os.getenv("OPENAI_CIRCUIT_COOLDOWN_SECONDS", "90")))
     OPENAI_INPUT_COST_PER_MILLION = float(os.getenv("OPENAI_INPUT_COST_PER_MILLION", "0.15"))
@@ -78,10 +73,7 @@ class Config:
     WORKER_HEARTBEAT_SECONDS = max(2, int(os.getenv("WORKER_HEARTBEAT_SECONDS", "10")))
     WORKER_STALE_SECONDS = max(10, int(os.getenv("WORKER_STALE_SECONDS", "45")))
     RECENT_QUESTION_HISTORY_LIMIT = max(1, int(os.getenv("RECENT_QUESTION_HISTORY_LIMIT", "30")))
-    QUESTION_PREFETCH_ENABLED = flag("QUESTION_PREFETCH_ENABLED", True)
-    QUESTION_PREFETCH_TTL_SECONDS = max(15, int(os.getenv("QUESTION_PREFETCH_TTL_SECONDS", "120")))
-    QUESTION_PREFETCH_TIMEOUT_SECONDS = max(1.0, float(os.getenv("QUESTION_PREFETCH_TIMEOUT_SECONDS", "9")))
-    QUESTION_PREFETCH_WORKERS = max(1, min(4, int(os.getenv("QUESTION_PREFETCH_WORKERS", "2"))))
+    HINT_CACHE_TTL_SECONDS = max(15, int(os.getenv("HINT_CACHE_TTL_SECONDS", "120")))
 
     @classmethod
     def validate(cls, app):

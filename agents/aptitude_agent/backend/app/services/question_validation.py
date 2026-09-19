@@ -87,7 +87,12 @@ def _states_correct_answer(explanation, option_text, answer_key):
     conclusion = explanation[-180:]
     explicit_correct_option=re.search(r"\b(?:option|choice)\s*([A-D])\s+is\s+correct\b",conclusion,re.IGNORECASE)
     if explicit_correct_option:return explicit_correct_option.group(1).upper()==answer_key
-    explicit_key = re.search(r"\b(?:answer|correct\s+(?:answer|option|choice))\s*(?:is|=|:)?\s*(?:option\s*)?([A-D])\b",conclusion,re.IGNORECASE)
+    # Treat A-D as an answer key only when it is the complete conclusion.
+    # Values such as "A stack" and "C++" are option text, not bare keys.
+    explicit_key = re.search(
+        r"\b(?:answer|correct\s+(?:answer|option|choice))\s*(?:is|=|:)?\s*(?:option\s*)?([A-D])\s*[.!]?\s*$",
+        conclusion,re.IGNORECASE,
+    )
     if explicit_key:return explicit_key.group(1).upper()==answer_key
     normalized_explanation = _normalized_words(explanation)
     normalized_option = _normalized_words(option_text)
@@ -168,6 +173,11 @@ def validate_generated_item(item, slot, internal_values=()):
     options = item["options"]
     if not isinstance(options, dict) or set(options) != {"A","B","C","D"}: raise ValueError("options must be A-D")
     technical=slot["category"]=="Technical Aptitude"
+    if technical:
+        # Validate before prose normalization: clean_text folds newlines and
+        # can otherwise hide an unfenced multi-line program.
+        for value in (item["question"],*options.values(),item["explanation"]):
+            validate_fenced_code(canonicalize_unlabelled_fences(value,selected_language),selected_language)
     options = {
         key:(normalize_fenced_text(canonicalize_unlabelled_fences(value,selected_language),500) if technical else clean_text(value,500))
         for key,value in options.items()

@@ -16,6 +16,8 @@ from reportlab.platypus import (
 
 from .test_label import test_label
 from ..utils.code_formatting import FENCE_PATTERN, LIKELY_CODE_PATTERN, decode_literal_layout
+from ..utils.timezone import format_local_datetime, valid_timezone
+from ..topic_config import topic_is_starred
 
 
 PURPLE=colors.HexColor("#7657F6")
@@ -86,12 +88,12 @@ def _content_flowables(value,prose_style,code_style,technical=False):
     ]
 
 
-def _completed_at(test):
+def _completed_at(test, fallback_timezone=None):
     value=test.completed_at
     if not value:
         return ""
-    suffix=" UTC" if value.tzinfo is None or value.utcoffset() is not None else ""
-    return value.strftime("%d %b %Y, %I:%M %p")+suffix
+    timezone_name=valid_timezone(getattr(test,"timezone",None)) or valid_timezone(fallback_timezone)
+    return format_local_datetime(value,timezone_name)
 
 
 def _styles():
@@ -153,29 +155,29 @@ def _page_footer(canvas,doc):
     canvas.setStrokeColor(LINE);canvas.setLineWidth(.5)
     canvas.line(doc.leftMargin,13*mm,width-doc.rightMargin,13*mm)
     canvas.setFillColor(MUTED);canvas.setFont("Helvetica",8)
-    canvas.drawString(doc.leftMargin,8*mm,"AptiDARA assessment result")
+    canvas.drawString(doc.leftMargin,8*mm,"Aptitude Test Result")
     canvas.drawRightString(width-doc.rightMargin,8*mm,f"Page {doc.page}")
     canvas.restoreState()
 
 
-def generate_test_results_pdf(test,student):
+def generate_test_results_pdf(test,student,fallback_timezone=None):
     """Return a complete assessment report as PDF bytes."""
     output=BytesIO()
     document=SimpleDocTemplate(
         output,pagesize=A4,rightMargin=17*mm,leftMargin=17*mm,
         topMargin=17*mm,bottomMargin=20*mm,
-        title=f"{test_label(test)} results",author="AptiDARA",
+        title=f"Aptitude Test - {test_label(test)} results",author="Aptitude Test",
     )
     style=_styles();story=[]
     story.extend([
-        Paragraph("Apti<span color='#7657F6'>DARA</span>",style["subtitle"]),
-        Paragraph("Assessment Results",style["title"]),
+        Paragraph("APTITUDE TEST",style["title"]),
+        Paragraph("Assessment Results",style["subtitle"]),
         Paragraph(_html(test_label(test)),style["subtitle"]),
     ])
     test_type="Category Practice" if test.test_mode=="category_practice" else "Mixed Test"
     details=[
         [Paragraph("STUDENT",style["label"]),Paragraph("TEST TYPE",style["label"]),Paragraph("COMPLETED",style["label"])],
-        [Paragraph(_html(student.name),style["value"]),Paragraph(_html(test_type),style["value"]),Paragraph(_html(_completed_at(test)),style["value"])],
+        [Paragraph(_html(student.name),style["value"]),Paragraph(_html(test_type),style["value"]),Paragraph(_html(_completed_at(test,fallback_timezone)),style["value"])],
     ]
     detail_table=Table(details,colWidths=[55*mm,46*mm,58*mm],hAlign="CENTER")
     detail_table.setStyle(TableStyle([
@@ -188,7 +190,7 @@ def generate_test_results_pdf(test,student):
     story.extend([detail_table,Spacer(1,7*mm)])
 
     category=test.selected_category if test.test_mode=="category_practice" else "All configured categories"
-    difficulty=test.selected_level if test.test_mode=="category_practice" else "Adaptive"
+    difficulty=test.selected_level if test.test_mode=="category_practice" else "Easy, Medium & Hard"
     summary=[
         ["SCORE",f"{test.score} / {test.total_questions}"],
         ["PERCENTAGE",f"{float(test.percentage):g}%"],
@@ -208,7 +210,24 @@ def generate_test_results_pdf(test,student):
         ("RIGHTPADDING",(0,0),(-1,-1),9),("TOPPADDING",(0,0),(-1,-1),7),
         ("BOTTOMPADDING",(0,0),(-1,-1),7),
     ]))
-    story.extend([summary_table,Spacer(1,8*mm),Paragraph("Question Review",style["question_title"]),HRFlowable(width="100%",thickness=1,color=PURPLE),Spacer(1,4*mm)])
+    story.extend([summary_table,Spacer(1,5*mm),Paragraph("Priority Topics to Improve",style["question_title"]),HRFlowable(width="100%",thickness=1,color=PURPLE),Spacer(1,3*mm)])
+    priority_topics=[]
+    seen_topics=set()
+    for question in test.questions:
+        category=str(question.category or "").strip()
+        topic=str(question.topic or "").strip()
+        key=(category.casefold(),topic.casefold())
+        if category and topic and key not in seen_topics and topic_is_starred(category,topic):
+            priority_topics.append((category,topic));seen_topics.add(key)
+    if priority_topics:
+        for category,topic in priority_topics:
+            story.append(Paragraph(
+                f"<font color='#7657F6'><b>PRIORITY</b></font> &nbsp; {_html(category)} - {_html(topic)}",
+                style["body"],
+            ))
+    else:
+        story.append(Paragraph("No priority topics identified for this assessment.",style["body"]))
+    story.extend([Spacer(1,4*mm),Paragraph("Question Review",style["question_title"]),HRFlowable(width="100%",thickness=1,color=PURPLE),Spacer(1,4*mm)])
 
     for question in test.questions:
         answer=question.answer

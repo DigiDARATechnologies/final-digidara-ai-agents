@@ -162,6 +162,7 @@ export default function App() {
   const toastTimer = useRef<number | undefined>(undefined);
   const replyTimer = useRef<number | undefined>(undefined);
   const aptitudeTimeoutSubmissions = useRef(new Set<string>());
+  const aptitudeFinalizedAttempts = useRef(new Set<string>());
   // A timeout belongs to a particular question, not an entire session. A
   // single session contains 30 questions, each with its own three minutes.
   const certificateTimeoutQuestionRef = useRef<string | null>(null);
@@ -979,6 +980,8 @@ export default function App() {
       const flowState = aptitudeStates[chatId] ?? createInitialAptitudeState();
       handleAptitudeText(flowState, text, user)
         .then(({ state: nextState, messages }) => {
+          if (flowState.testId && aptitudeFinalizedAttempts.current.has(flowState.testId)) return;
+          if (flowState.testId && (nextState.step === "completed" || !nextState.testId)) aptitudeFinalizedAttempts.current.add(flowState.testId);
           setAptitudeStates((prev) => ({ ...prev, [chatId]: nextState as AptitudeFlowState }));
           appendAgentMessages(chatId, messages);
         })
@@ -1080,6 +1083,8 @@ export default function App() {
     setTyping(true);
     handleAptitudeText(flowState, "__aptitude_timeout__", user)
       .then(({ state: nextState, messages }) => {
+        if (flowState.testId && aptitudeFinalizedAttempts.current.has(flowState.testId)) return;
+        if (flowState.testId && (nextState.step === "completed" || !nextState.testId)) aptitudeFinalizedAttempts.current.add(flowState.testId);
         setAptitudeStates((prev) => ({ ...prev, [chatId]: nextState as AptitudeFlowState }));
         appendAgentMessages(chatId, messages);
       })
@@ -1310,7 +1315,12 @@ export default function App() {
       : null;
   } else if (isAptitudeChat && aptitudeState) {
     connectorStatus = aptitudeState.step === "completed" ? "Test completed" : aptitudeState.step === "awaiting_next_question" ? "Next question pending" : aptitudeState.question ? `Question ${aptitudeState.question.sequence}` : "Ready to practice";
-    connectorPendingTask = aptitudeState.question ? `${aptitudeState.question.category} · ${aptitudeState.question.difficulty}` : null;
+    connectorPendingTask = typing && ["awaiting_level", "awaiting_language"].includes(aptitudeState.step)
+      ? "Generating and validating all test questions..."
+      : aptitudeState.question ? `${aptitudeState.question.category} · ${aptitudeState.question.difficulty}` : null;
+    if (typing && ["awaiting_level", "awaiting_language"].includes(aptitudeState.step)) {
+      typingLabel = "Generating your complete aptitude test…";
+    }
   } else if (isCommunicationChat && communicationState) {
     connectorStatus = COMMUNICATION_STEP_LABELS[communicationState.step] ?? communicationState.step;
     connectorPendingTask = communicationState.activeModule && communicationState.currentItemText
@@ -1439,7 +1449,7 @@ export default function App() {
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
-                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} /> : undefined}
+                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
                 dailyChallengeStatus={isCommunicationChat ? dailyChallengeStatus : undefined}
