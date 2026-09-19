@@ -110,6 +110,9 @@ def run_agent(agent, skip_build):
                         ('agents/resume_builder_agent/SECURITY_AUDIT.md', '/SECURITY_AUDIT.md'),
                     ]:
                         command += ['-v', f'{(ROOT / source).as_posix()}:{target}:ro']
+                if name == 'mock-interview-agent':
+                    # Source-contract tests read the module's React files next to the backend.
+                    command += ['-v', f'{(ROOT / "agents/mock_interview_agent/frontend").as_posix()}:/frontend:ro']
                 command += ['--entrypoint', 'python', name, '/test_runner.py', *SUITES[name]]
                 with (artifacts / 'suite.log').open('w', encoding='utf-8') as log:
                     suite_result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200)
