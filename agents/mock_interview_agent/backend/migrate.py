@@ -353,32 +353,39 @@ def ensure_ai_usage_records():
 
 
 def bootstrap_base_schema():
-    """Apply schema.sql's ``CREATE TABLE IF NOT EXISTS`` statements.
+    """Create the base tables on an empty database from schema.sql.
 
-    Existing installations already have these tables from a manual initial
-    setup; run_sql_migrations() below only ever applied the incremental
-    migrations/*.sql files on top of that. A fresh database (a new
-    docker-compose service, a CI test database) has neither, so this makes
-    the base schema itself part of the same idempotent startup path other
-    DigiDARA agents already have (see app/db/database.py's init_db() in
-    agents/project_AI_Agent for the equivalent).
+    Existing installations already have them and only ever applied the
+    incremental migrations/*.sql files, so this is a no-op once ``students``
+    exists -- schema.sql's tail (RENAME TABLE ai_usage ...) is not safe to
+    replay. A fresh database (a new docker-compose service, a CI test
+    database) has nothing, so this makes the base schema part of the same
+    startup path other DigiDARA agents have (see app/db/database.py's
+    init_db() in agents/project_AI_Agent).
     """
     if not SCHEMA_FILE.exists():
         report("schema_bootstrap_missing", "schema.sql not found; skipping base schema bootstrap", level=logging.WARNING)
         return
-    statements = split_sql_statements(SCHEMA_FILE.read_text(encoding="utf-8"))
     conn = db.get_conn()
-    cursor = conn.cursor()
+    cursor = conn.cursor(buffered=True)
     try:
-        for statement in statements:
+        cursor.execute("SHOW TABLES LIKE 'students'")
+        if cursor.fetchall():
+            report("schema_bootstrap_skipped", "Base schema already present; skipping bootstrap")
+            return
+        for statement in split_sql_statements(SCHEMA_FILE.read_text(encoding="utf-8")):
+            # The connection already targets DB_NAME; schema.sql's own
+            # CREATE DATABASE/USE would point it at a hardcoded name instead.
+            if statement.upper().startswith(("CREATE DATABASE", "USE ")):
+                continue
             try:
                 cursor.execute(statement)
+                if cursor.with_rows:
+                    cursor.fetchall()
             except Exception as exc:
-                # IF NOT EXISTS makes CREATE TABLE/DATABASE idempotent already;
-                # 1050 (table exists) only shows up for the rare statement
-                # that lacks it (e.g. a stray ALTER), and 1060/1061 mirror the
-                # already-exists tolerance run_sql_migrations() uses below.
-                if getattr(exc, "errno", None) in {1050, 1060, 1061}:
+                # Already-exists errors from a concurrent worker booting at the
+                # same time (table, column, key, procedure, trigger, constraint).
+                if getattr(exc, "errno", None) in {1050, 1060, 1061, 1304, 1359, 1826}:
                     continue
                 raise
         conn.commit()

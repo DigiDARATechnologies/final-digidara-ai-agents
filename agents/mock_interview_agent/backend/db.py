@@ -18,9 +18,24 @@ dbconfig = {
     "database": os.environ.get("DB_NAME", "mock_interview_db"),
 }
 
+MAX_POOL_SIZE = 4
+
+
+def pool_size_from_env(value):
+    """mysql-connector opens every pooled connection eagerly, per gunicorn
+    worker, on a MySQL server shared with the other agents. The old default of
+    10 x 4 workers hit "1040 Too many connections" on deploy, so cap it even
+    if an older .env still says DB_POOL_SIZE=10."""
+    try:
+        requested = int(value) if value else MAX_POOL_SIZE
+    except ValueError:
+        requested = MAX_POOL_SIZE
+    return max(1, min(requested, MAX_POOL_SIZE))
+
+
 pool = pooling.MySQLConnectionPool(
     pool_name="mi_pool",
-    pool_size=int(os.environ.get("DB_POOL_SIZE", "10")),
+    pool_size=pool_size_from_env(os.environ.get("DB_POOL_SIZE")),
     pool_reset_session=True,
     **dbconfig,
 )
