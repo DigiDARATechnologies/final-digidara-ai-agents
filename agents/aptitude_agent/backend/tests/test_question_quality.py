@@ -103,6 +103,34 @@ def test_rejects_final_numeric_answer_not_derived_by_prior_steps():
         validate_generated_item(item(explanation),SLOT)
 
 
+def test_accepts_a_final_step_narrated_in_words_instead_of_repeating_the_digits():
+    # Production failure: 20% of 250 is spelled out, but the final subtraction
+    # is only narrated ("Subtract 50 from 250"), never repeating "200" before
+    # the answer line. That is still a real, correct derivation.
+    generated=item("Step 1: Find 20% of 250 = 50. Step 2: Subtract 50 from 250. Answer = 200.")
+    generated["options"]={"A":"150","B":"180","C":"200","D":"250"}
+    assert validate_generated_item(generated,SLOT)["correct_answer"]=="C"
+
+
+def test_accepts_imperative_arithmetic_phrasing_in_the_final_step():
+    generated=item("Step 1: The two prices are 120 and 30. Step 2: Add 120 to 30. Answer = 150.")
+    generated["options"]={"A":"90","B":"120","C":"150","D":"180"}
+    assert validate_generated_item(generated,SLOT)["correct_answer"]=="C"
+
+    generated=item("Step 1: Start with 200 units. Step 2: Divide 200 by 4. Answer = 50.")
+    generated["options"]={"A":"25","B":"40","C":"50","D":"80"}
+    assert validate_generated_item(generated,SLOT)["correct_answer"]=="C"
+
+
+def test_still_rejects_an_unrelated_calculation_narrated_in_words():
+    # An explanation that narrates *some* arithmetic, but not the one that
+    # reaches the stated option, must still be rejected -- the fix must not
+    # accept an explanation just because it contains any calculation at all.
+    explanation="Step 1: Find 20% of 250 = 50. Step 2: Subtract 10 from 90. Answer = 200."
+    with pytest.raises(ValueError,match="derive"):
+        validate_generated_item(item(explanation),SLOT)
+
+
 def test_generation_retries_invalid_explanation_and_accumulates_usage(monkeypatch):
     calls=[]
     responses=[

@@ -135,6 +135,56 @@ def _has_self_correction(explanation):
     ))
 
 
+_NUM=r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+# (left-operand pattern, right-operand pattern, op) for each supported phrasing,
+# in the order (a, b) -> a OP b as written. Symbols and "plus/minus/..." read
+# left-to-right; the imperative/passive forms ("Subtract A from B", "B minus
+# A" said as "A subtracted from B") reorder the operands to match.
+_ARITHMETIC_PATTERNS=(
+    (re.compile(rf"({_NUM})\s*%\s*of\s*({_NUM})",re.IGNORECASE),lambda a,b:a/100*b),
+    (re.compile(rf"({_NUM})\s*[+]\s*({_NUM})"),lambda a,b:a+b),
+    (re.compile(rf"({_NUM})\s*plus\s*({_NUM})",re.IGNORECASE),lambda a,b:a+b),
+    (re.compile(rf"({_NUM})\s*added\s+to\s*({_NUM})",re.IGNORECASE),lambda a,b:a+b),
+    (re.compile(rf"add\s*({_NUM})\s*to\s*({_NUM})",re.IGNORECASE),lambda a,b:a+b),
+    (re.compile(rf"({_NUM})\s*[-−]\s*({_NUM})"),lambda a,b:a-b),
+    (re.compile(rf"({_NUM})\s*minus\s*({_NUM})",re.IGNORECASE),lambda a,b:a-b),
+    (re.compile(rf"({_NUM})\s*subtracted\s+from\s*({_NUM})",re.IGNORECASE),lambda a,b:b-a),
+    (re.compile(rf"subtract\s*({_NUM})\s*from\s*({_NUM})",re.IGNORECASE),lambda a,b:b-a),
+    (re.compile(rf"({_NUM})\s*[*×]\s*({_NUM})"),lambda a,b:a*b),
+    (re.compile(rf"({_NUM})\s*times\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
+    (re.compile(rf"({_NUM})\s*multiplied\s+by\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
+    (re.compile(rf"multiply\s*({_NUM})\s*by\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
+    (re.compile(rf"({_NUM})\s*[/÷]\s*({_NUM})"),lambda a,b:a/b if b else None),
+    (re.compile(rf"({_NUM})\s*divided\s+by\s*({_NUM})",re.IGNORECASE),lambda a,b:a/b if b else None),
+    (re.compile(rf"divide\s*({_NUM})\s*by\s*({_NUM})",re.IGNORECASE),lambda a,b:a/b if b else None),
+)
+
+
+def _derived_numbers(text):
+    """Numbers actually reachable by evaluating the arithmetic written in
+    `text` (e.g. `250 - 50` or the imperative `Subtract 50 from 250` both
+    yield 200), in the same `numeric_pattern` format ("number:200").
+
+    Real model output often narrates its last step in words instead of
+    digits ("Subtract 50 from 250. Answer = 200") and never repeats the
+    literal result before the answer line. Evaluating what the words say
+    confirms that specific result was actually derived -- unlike merely
+    checking that *some* calculation appears somewhere, this can't be
+    fooled by an unrelated computation elsewhere in the explanation.
+    """
+    results=set()
+    for pattern,op in _ARITHMETIC_PATTERNS:
+        for match in pattern.finditer(text):
+            try:
+                a,b=(Decimal(group.replace(",","")) for group in match.groups())
+                value=op(a,b)
+            except (InvalidOperation,ZeroDivisionError):
+                continue
+            if value is None:continue
+            results.add(f"number:{format(value.normalize(),'f')}")
+    return results
+
+
 def _has_matching_math_conclusion(explanation, option_text):
     steps=list(re.finditer(r"\bStep\s+\d+\s*:",explanation,re.IGNORECASE))
     if len(steps)<2:return False
@@ -160,8 +210,9 @@ def _has_matching_math_conclusion(explanation, option_text):
     preceding_steps=explanation[:steps[-1].start()]
     derivation_text=f"{preceding_steps} {final_step[:match.start()]}"
     option_numbers=set(numeric_pattern(option_text))
-    preceding_numbers=set(numeric_pattern(derivation_text))
-    if option_numbers:return option_numbers.issubset(preceding_numbers)
+    known_numbers=set(numeric_pattern(derivation_text))|_derived_numbers(derivation_text)
+    if option_numbers:
+        return option_numbers.issubset(known_numbers)
     return bool(re.search(rf"(?<!\w){re.escape(normalized_option)}(?!\w)",_normalized_words(derivation_text)))
 
 
