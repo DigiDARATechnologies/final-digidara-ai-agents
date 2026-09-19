@@ -12,8 +12,6 @@ from app import config
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
-    Certificate,
-    Enrollment,
     ProjectAssignment,
     Submission,
     SubmissionStatus,
@@ -22,8 +20,10 @@ from app.execution.browser_check import BrowserCheckUnavailable, run_html_submis
 from app.execution.entry_point import find_html_entry_point, find_node_entry_point, find_python_entry_point
 from app.execution.judge0_client import Judge0Unavailable, run_node_submission, run_python_submission
 from app.graph import prompts
+from app.graph.report import build_about_markdown, build_review_markdown
 from app.graph.state import ProjectAgentState
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
+from app.ingestion.structure_check import check_required_paths, check_required_sections
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
 
@@ -61,58 +61,7 @@ def log_node(fn):
     return wrapper
 
 
-# --- Node 1: EligibilityCheckNode (facts from DB, verdict decided by the LLM) ---
-
-@log_node
-def eligibility_check_node(state: ProjectAgentState) -> dict:
-    """The DB query below is fact retrieval, not a decision — the LLM has no
-    other way to learn enrollment/certificate status. The eligibility verdict
-    itself (and the message the student reads) is the LLM's call, applying the
-    stated rule to those facts."""
-    if state.get("skip_certificate_check"):
-        return {
-            "eligible": True,
-            "eligibility_reason": "No certificate required — generating project options for your requested topic.",
-        }
-
-    session = get_session()
-    try:
-        enrollment = (
-            session.query(Enrollment)
-            .filter_by(student_id=state["student_id"], course_id=state["course_id"])
-            .first()
-        )
-        certificate = (
-            session.query(Certificate)
-            .filter_by(student_id=state["student_id"], course_id=state["course_id"])
-            .first()
-        )
-        facts = {
-            "student_name": state["student_name"],
-            "course_name": state["course_name"],
-            "enrollment_exists": enrollment is not None,
-            "enrollment_status": enrollment.status.value if enrollment else "none",
-            "certificate_exists": certificate is not None,
-        }
-    finally:
-        session.close()
-
-    result = call_json(
-        system=prompts.eligibility_decision_prompt(facts),
-        user="Decide eligibility now.",
-    )
-    return {
-        "eligible": bool(result.get("eligible", False)),
-        "eligibility_reason": result.get("eligibility_reason", ""),
-    }
-
-
-@log_node
-def blocked_exit_node(state: ProjectAgentState) -> dict:
-    return {"status": "blocked", "feedback": state.get("eligibility_reason", "Not eligible.")}
-
-
-# --- Node 2: TopicGeneratorNode (LLM) ---------------------------------------
+# --- Node 1: TopicGeneratorNode (LLM) ---------------------------------------
 
 _TOPIC_ANGLES = [
     "personal productivity or habit tracking",
@@ -182,6 +131,20 @@ def requirement_expansion_node(state: ProjectAgentState) -> dict:
         system=prompts.requirement_expansion_prompt(state),
         user="Write the full requirements brief now.",
     )
+
+    # Persisted (not just kept in the LangGraph checkpoint) so the Q&A agent
+    # can answer a doubt about the requirements as soon as they're shown --
+    # including before the timer is confirmed, when about_markdown doesn't
+    # exist yet.
+    session = get_session()
+    try:
+        assignment = session.get(ProjectAssignment, state["assignment_id"])
+        if assignment:
+            assignment.requirements_json = result
+            session.commit()
+    finally:
+        session.close()
+
     return {"requirements": result}
 
 
@@ -214,7 +177,18 @@ def submission_guide_node(state: ProjectAgentState) -> dict:
         system=prompts.submission_guide_prompt(state),
         user="Write the submission guide now.",
     )
-    return {"submission_guide": result}
+    about_markdown = build_about_markdown({**state, "submission_guide": result})
+
+    session = get_session()
+    try:
+        assignment = session.get(ProjectAssignment, state["assignment_id"])
+        if assignment:
+            assignment.about_markdown = about_markdown
+            session.commit()
+    finally:
+        session.close()
+
+    return {"submission_guide": result, "about_markdown": about_markdown}
 
 
 # --- Node 6: DocxIngestNode (deterministic) ---------------------------------
@@ -246,27 +220,50 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
     }
 
 
-# --- Node 8: StructureValidationNode (LLM) ----------------------------------
+# --- Node 8: StructureValidationNode (deterministic presence check + LLM content quality) ---
 
 @log_node
 def structure_validation_node(state: ProjectAgentState) -> dict:
+    guide = state.get("submission_guide") or {}
+    deterministic = check_required_sections(guide.get("docx_required_sections"), state.get("doc_sections"))
+
     result = call_json(
-        system=prompts.structure_validation_prompt(state),
+        system=prompts.structure_validation_prompt(state, deterministic),
         user="Validate the document structure now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    # Whether a required section EXISTS is decided by check_required_sections, never
+    # by the LLM (see app/ingestion/structure_check.py) -- an auto-numbered heading
+    # like "2. Approach" must always match a plain "Approach" requirement the same
+    # way on every run, not depend on the model noticing it that particular time.
+    # The LLM's own is_complete is content-quality judgment ONLY (weak/placeholder
+    # sections, screenshot evidence); the final verdict requires both to pass.
+    result["missing_sections"] = deterministic["missing_sections"]
+    result["matched_sections"] = deterministic["matched_sections"]
+    result["is_complete"] = deterministic["is_complete"] and bool(result.get("is_complete", True))
     return {"structure_score": result}
 
 
-# --- Node 9: ZipStructureValidationNode (LLM) -------------------------------
+# --- Node 9: ZipStructureValidationNode (deterministic presence check + LLM commentary) ---
 
 @log_node
 def zip_structure_validation_node(state: ProjectAgentState) -> dict:
+    guide = state.get("submission_guide") or {}
+    deterministic = check_required_paths(guide.get("required_paths"), state.get("zip_file_tree"))
+
     result = call_json(
-        system=prompts.zip_structure_validation_prompt(state),
+        system=prompts.zip_structure_validation_prompt(state, deterministic),
         user="Validate the zip folder structure now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    # Presence/absence of required paths is decided by check_required_paths, never
+    # by the LLM (see app/ingestion/structure_check.py) -- this is what makes the
+    # same zip always get the same "missing folder" verdict on resubmission. The
+    # LLM call above only supplies clutter_flags/structure_quality/notes on top.
+    result["is_complete"] = deterministic["is_complete"]
+    result["missing_items"] = [item["path"] for item in deterministic["missing_items"]]
+    result["matched_items"] = [item["path"] for item in deterministic["matched_items"]]
+    result["required_paths_detail"] = deterministic
     return {"zip_structure_score": result}
 
 
@@ -341,6 +338,7 @@ def request_revision_node(state: ProjectAgentState) -> dict:
     if not zip_structure.get("is_complete", True):
         notes.append(f"Code zip: {zip_structure.get('notes', 'Folder structure incomplete.')}")
     revision_notes = "\n".join(notes) or "Submission is incomplete — see validation notes."
+    review_markdown = build_review_markdown({**state, "status": "needs_revision", "revision_notes": revision_notes})
 
     session = get_session()
     try:
@@ -349,11 +347,12 @@ def request_revision_node(state: ProjectAgentState) -> dict:
             submission.status = SubmissionStatus.needs_revision
             submission.docx_validation_json = structure
             submission.zip_validation_json = zip_structure
+            submission.review_markdown = review_markdown
             session.commit()
     finally:
         session.close()
 
-    return {"status": "needs_revision", "revision_notes": revision_notes}
+    return {"status": "needs_revision", "revision_notes": revision_notes, "review_markdown": review_markdown}
 
 
 # --- Node 10: OutputVerificationNode (LLM, OCR-based) -----------------------
@@ -394,9 +393,17 @@ def score_aggregator_node(state: ProjectAgentState) -> dict:
         user="Decide the final score now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    final_score = float(result.get("final_score", 0))
+    # Pass/fail is a deterministic threshold comparison, not a second
+    # independent LLM judgment call -- letting the model decide "passed"
+    # on top of (and potentially disagreeing with) its own score meant two
+    # submissions with the identical final_score could get different
+    # verdicts purely from LLM variance, with no way for a student to
+    # understand why. The score itself is still the LLM's qualitative call;
+    # only the pass/fail line drawn on top of it is deterministic now.
     return {
-        "final_score": float(result.get("final_score", 0)),
-        "passed": bool(result.get("passed", False)),
+        "final_score": final_score,
+        "passed": final_score >= config.PASS_THRESHOLD,
         "score_reasoning": result.get("reasoning", ""),
     }
 
@@ -419,6 +426,7 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
     submission_status = SubmissionStatus.graded if passed else SubmissionStatus.needs_revision
     assignment_status = AssignmentStatus.graded if passed else AssignmentStatus.needs_revision
     result_status = "graded" if passed else "needs_revision"
+    review_markdown = build_review_markdown({**state, "status": result_status, "revision_notes": None if passed else feedback_text})
 
     session = get_session()
     try:
@@ -435,6 +443,7 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
                 "zip_structure_score": state.get("zip_structure_score"),
             }
             submission.feedback_text = feedback_text
+            submission.review_markdown = review_markdown
             session.commit()
         assignment = session.get(ProjectAssignment, state["assignment_id"])
         if assignment:
@@ -449,4 +458,5 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
         "revision_notes": None if passed else feedback_text,
         "final_score": state["final_score"],
         "passed": passed,
+        "review_markdown": review_markdown,
     }

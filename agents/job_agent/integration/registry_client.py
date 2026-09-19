@@ -92,7 +92,13 @@ def _register():
 
 
 def _heartbeat():
-    body = json.dumps({"agent_name": MANIFEST["agent_name"], "version": MANIFEST["version"]}).encode("utf-8")
+    # Includes `endpoint` (not just agent_name/version) so a long-lived
+    # process whose AGENT_PUBLIC_URL was corrected after it last started
+    # self-heals on the next heartbeat instead of staying registered under a
+    # stale endpoint until manually restarted -- register() only runs once
+    # at boot, so this was the only thing keeping a live process's
+    # registered endpoint in sync with its actual current config.
+    body = json.dumps({"agent_name": MANIFEST["agent_name"], "version": MANIFEST["version"], "endpoint": _endpoint()}).encode("utf-8")
     headers = {"Content-Type": "application/json", **_sign_request("POST", "/registry/heartbeat", body)}
     try:
         response = requests.post(

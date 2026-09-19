@@ -38,6 +38,32 @@ def test_submission_guards(client, workflow, state, database, condition, status)
     with database() as session:
         assert session.query(Submission).count() == 0
 
+def test_upload_rejected_while_a_previous_submission_is_still_processing(client, workflow, database):
+    with database() as session:
+        session.add(Submission(id="in-flight", assignment_id="assignment", docx_path="x", zip_path="y", status=SubmissionStatus.processing))
+        session.commit()
+    response = upload(client)
+    assert response.status_code == 409
+    with database() as session:
+        # Only the pre-existing in-flight row -- no second Submission was created.
+        assert session.query(Submission).count() == 1
+
+def test_a_failed_submission_run_is_marked_error_not_left_stuck_processing(client, workflow, database, monkeypatch):
+    from fastapi import HTTPException
+    monkeypatch.setattr(routes, "_run_submission", Mock(side_effect=HTTPException(502, "AI service unavailable")))
+
+    first = upload(client)
+    assert first.status_code == 502
+    with database() as session:
+        rows = session.query(Submission).all()
+        assert len(rows) == 1
+        assert rows[0].status == SubmissionStatus.error
+
+    # The failed attempt must not permanently block a real retry.
+    monkeypatch.setattr(routes, "_run_submission", lambda value: {"status": "graded", "passed": True, "final_score": 85, "feedback": "Good work"})
+    second = upload(client)
+    assert second.status_code == 200
+
 def test_passing_submission_persists_files_and_hides_score_until_viva(client, workflow, database):
     response = upload(client)
     assert response.status_code == 200
@@ -167,29 +193,25 @@ def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database
     provider = Mock(side_effect=[{"options": [topic]}, {"features": ["Save tasks"]}, {"sections": ["Introduction"]}])
     monkeypatch.setattr(nodes, "call_json", provider)
     thread = {"configurable": {"thread_id": uuid.uuid4().hex}}
-    first = compiled_graph.invoke({**state, "skip_certificate_check": True}, thread)
+    # No certificate/enrollment gate -- every request starts straight at
+    # topic generation.
+    first = compiled_graph.invoke(state, thread)
     assert first["topic_options"] == [topic]
     assert compiled_graph.get_state(thread).next == ("requirement_expansion",)
     compiled_graph.update_state(thread, {"chosen_topic": topic})
     second = compiled_graph.invoke(None, thread)
     assert second["requirements"] == {"features": ["Save tasks"]}
+    with database() as session:
+        # Persisted so the Q&A agent can answer a requirements doubt before
+        # the timer is confirmed (and about_markdown exists) -- not just
+        # kept in the LangGraph checkpoint.
+        assert session.get(ProjectAssignment, "assignment").requirements_json == {"features": ["Save tasks"]}
     assert compiled_graph.get_state(thread).next == ("timer_init",)
     final = compiled_graph.invoke(None, thread)
     assert final["deadline_at"]
     assert final["submission_guide"] == {"sections": ["Introduction"]}
     assert compiled_graph.get_state(thread).next == ()
     assert provider.call_count == 3
-
-def test_real_graph_blocks_ineligible_student(state, monkeypatch):
-    import uuid
-    from app.graph.graph import compiled_graph
-    provider = Mock(return_value={"eligible": False, "eligibility_reason": "Certificate required"})
-    monkeypatch.setattr(nodes, "call_json", provider)
-    result = compiled_graph.invoke({**state, "student_id": "student"}, {"configurable": {"thread_id": uuid.uuid4().hex}})
-    assert result["status"] == "blocked"
-    assert result["feedback"] == "Certificate required"
-    assert "topic_options" not in result
-    provider.assert_called_once()
 
 @pytest.mark.parametrize("failure", ["docx", "zip"])
 def test_real_submission_graph_stops_before_ai_on_invalid_files(state, tmp_path, monkeypatch, failure):

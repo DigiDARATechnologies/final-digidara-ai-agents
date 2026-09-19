@@ -1,5 +1,6 @@
 import type { ChatOption, User } from "../types";
 import {
+  askProjectQuestion,
   checkEligibilityFree,
   chooseTopic,
   clarifyTopicRequest,
@@ -12,13 +13,29 @@ import {
   type TopicOption,
 } from "./capstoneApi";
 
+/** A rough, deliberately over-inclusive heuristic: is this message the
+ * student asking something or disputing a finding, rather than a plain
+ * answer/instruction-following action (a viva answer, or just re-attaching
+ * files)? Covers two shapes seen in practice: a genuine question ("what
+ * does X mean?"), and a dispute/objection ("already have the approach
+ * section", "that's wrong", "no I did include that"). False positives (a
+ * genuine answer misread as one of these) just cost one extra turn where
+ * the student re-sends their answer — cheap. False negatives (a real
+ * question/dispute silently consumed as a literal viva answer, or dropped
+ * with a canned reminder) are the actual bug this exists to prevent, so
+ * this errs toward catching more, not fewer. */
+function looksLikeQuestionOrDispute(text: string): boolean {
+  const trimmed = text.trim();
+  if (/\?\s*$/.test(trimmed)) return true;
+  return /^(hey|hi|hello|wait|excuse me|sorry|actually|no[,]?\s|already|i (already )?(have|wrote|did|add(ed)?|includ(e|ed)|do have)|that'?s (wrong|not right|incorrect)|this is (already|not)|i don'?t (think|agree)|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
+}
+
 export type CapstoneStep =
   | "awaiting_topic_request"
   | "awaiting_topic_choice"
   | "awaiting_timer_confirm"
   | "awaiting_submission"
   | "awaiting_viva_answer"
-  | "not_eligible"
   | "graded";
 
 export interface CapstoneFlowMessage {
@@ -223,7 +240,29 @@ export async function handleCapstoneText(
     }
 
     case "awaiting_timer_confirm": {
-      if (!/^(confirm|yes|start)/i.test(trimmed)) return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
+      if (!/^(confirm|yes|start)/i.test(trimmed)) {
+        // The only valid action here is confirming the timer, so anything
+        // else typed is by definition a doubt about the requirements just
+        // shown -- e.g. "what does 'must run offline' mean?" -- not just
+        // messages that happen to match the question/dispute heuristic
+        // used elsewhere. Answer it before the student starts an
+        // irreversible 7-day clock over a misunderstanding.
+        if (state.threadId) {
+          try {
+            const qa = await askProjectQuestion(state.threadId, trimmed);
+            return {
+              state,
+              messages: [
+                { text: qa.answer },
+                { text: "Start the 7-day project timer when you're ready.", options: [{ label: "Start 7-day timer", value: "confirm" }] },
+              ],
+            };
+          } catch {
+            // Q&A itself failed -- fall through to the plain reminder below.
+          }
+        }
+        return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
+      }
       try {
         const result = await confirmTimer(state.threadId!);
         return {
@@ -241,6 +280,21 @@ export async function handleCapstoneText(
       }
       if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
         return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
+      }
+      if (state.threadId && looksLikeQuestionOrDispute(trimmed)) {
+        try {
+          const qa = await askProjectQuestion(state.threadId, trimmed);
+          return {
+            state,
+            messages: [
+              { text: qa.answer },
+              { text: `Shall we continue the viva? Here's the question again —\n\nQuestion ${state.vivaProgress}:\n\n${state.vivaQuestionText}` },
+            ],
+          };
+        } catch {
+          // Q&A itself failed (e.g. thread expired) — fall through and treat
+          // the text as a literal viva answer rather than silently dropping it.
+        }
       }
       try {
         const result = await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
@@ -273,10 +327,20 @@ export async function handleCapstoneText(
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
       }
     }
-    case "awaiting_submission":
+    case "awaiting_submission": {
+      // A student disputing a revision note ("already have the approach
+      // section") deserves an actual answer grounded in their submission,
+      // not the same canned reminder every other message gets here.
+      if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+        try {
+          const qa = await askProjectQuestion(state.threadId, trimmed);
+          return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
+        } catch {
+          // Q&A itself failed -- fall through to the normal reminder below.
+        }
+      }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
-    case "not_eligible":
-      return { state, messages: [{ text: "This project request could not proceed. Start a new chat to try again." }] };
+    }
     case "graded":
       return { state, messages: [{ text: "This project has already been graded. Open the dashboard to review the result." }] };
   }

@@ -16,6 +16,7 @@ AGENTS = {
     "codeforge-agent": (4000, "codeforge_agent"),
     "communication-agent": (5001, "communication_agent"),
     "aptitude-agent": (5000, "aptitude_agent"),
+    "mock-interview-agent": (5030, "mock_interview_agent"),
     "resume-builder-agent": (5010, "resume_builder_agent"),
     "certificate-agent": (8008, "certificate_agent"),
     "job-agent": (5020, "job_agent"),

@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,7 +36,19 @@ class AgentRegistry(Base):
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
     plan_tier: Mapped[str] = mapped_column(String(20), default="free")
     status: Mapped[str] = mapped_column(String(20), default="healthy")
-    last_heartbeat: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    # MySQL's plain DATETIME has no fractional-seconds precision (fsp=0) --
+    # it silently truncates every value written here to the whole second,
+    # unlike SQLite (used by the default unit-test suite), which keeps full
+    # microsecond precision natively. resolve_healthy() picks the "freshest"
+    # of possibly several healthy versions of the same agent by ordering on
+    # this column during a version rollout; two versions that register or
+    # heartbeat within the same second could tie -- or even invert -- once
+    # truncated, so the gateway could nondeterministically route to the
+    # stale version instead of the new one. fsp=6 keeps microsecond
+    # precision on MySQL too; SQLite is unaffected either way.
+    last_heartbeat: Mapped[datetime] = mapped_column(
+        DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"), default=_utc_now
+    )
 
     __table_args__ = (PrimaryKeyConstraint("agent_name", "version"),)
 

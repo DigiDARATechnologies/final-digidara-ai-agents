@@ -133,11 +133,22 @@ def _record_usage(usage: Any, caller: str, model: str) -> None:
 
 
 def _complete(
-    system: str, user: str, json_mode: bool, caller: str, call_id: int, temperature: float, web_search: bool = False
+    system: str, user: str, json_mode: bool, caller: str, call_id: int, temperature: float,
+    web_search: bool = False, image_data_url: str | None = None,
 ) -> str:
+    # A vision-capable model (the default gpt-4o-mini included) accepts the
+    # user message as a content-parts list instead of a plain string --
+    # only build it that way when an image is actually attached, so every
+    # existing text-only call site is unaffected.
+    user_content: Any = user
+    if image_data_url:
+        user_content = [
+            {"type": "text", "text": user},
+            {"type": "image_url", "image_url": {"url": image_data_url}},
+        ]
     messages = [
         {"role": "system", "content": system},
-        {"role": "user", "content": user},
+        {"role": "user", "content": user_content},
     ]
     # web_search routes to a dedicated OpenAI search-preview model rather
     # than switching the whole app's LLM_MODEL — keeps the (pricier, slower)
@@ -196,7 +207,8 @@ def _complete(
 
 
 def call_json(
-    system: str, user: str, retries: int = 1, temperature: float = 0.2, web_search: bool = False
+    system: str, user: str, retries: int = 1, temperature: float = 0.2, web_search: bool = False,
+    image_data_url: str | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed JSON. Retries once with a
     stricter reminder if the first response isn't valid JSON.
@@ -226,7 +238,7 @@ def call_json(
         try:
             raw = _complete(
                 system, prompt, json_mode=True, caller=caller, call_id=call_id,
-                temperature=temperature, web_search=web_search,
+                temperature=temperature, web_search=web_search, image_data_url=image_data_url,
             )
             parsed = _extract_json(raw)
             logger.info("[LLM #%d] %s parsed JSON keys: %s", call_id, caller, list(parsed.keys()))
@@ -237,9 +249,22 @@ def call_json(
     raise last_error or LLMError("LLM call failed with no captured error")
 
 
-def call_text(system: str, user: str, temperature: float = 0.2) -> str:
+def call_text(
+    system: str, user: str, temperature: float = 0.2, web_search: bool = False, image_data_url: str | None = None,
+) -> str:
     """Call the configured LLM and return plain text (for the final,
     human-readable feedback message — not routed on, so no JSON needed)."""
     caller = _caller_name()
     call_id = next(_call_counter)
-    return _complete(system, user, json_mode=False, caller=caller, call_id=call_id, temperature=temperature).strip()
+    return _complete(
+        system, user, json_mode=False, caller=caller, call_id=call_id,
+        temperature=temperature, web_search=web_search, image_data_url=image_data_url,
+    ).strip()
+
+
+def record_usage(usage: Any, caller: str, model: str) -> None:
+    """Public entry point for callers that talk to litellm directly (e.g. the
+    tool-calling Q&A agent, which needs the `tool_calls` field _complete
+    doesn't expose) but still want their token spend attributed the same way
+    as every call routed through call_json/call_text."""
+    _record_usage(usage, caller, model)

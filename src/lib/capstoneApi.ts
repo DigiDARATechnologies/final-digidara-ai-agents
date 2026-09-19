@@ -37,21 +37,6 @@ export interface TopicOption {
   skills_applied: string[];
 }
 
-export interface EligibleCourse {
-  id: string;
-  name: string;
-  medium: string;
-}
-
-export interface EligibleCoursesResult {
-  student_found: boolean;
-  courses: EligibleCourse[];
-}
-
-export function getEligibleCourses(phone: string) {
-  return invoke<EligibleCoursesResult>("eligible_courses", { phone });
-}
-
 export interface EligibilityCheckResult {
   thread_id: string;
   eligible: boolean;
@@ -59,14 +44,10 @@ export interface EligibilityCheckResult {
   topic_options: TopicOption[] | null;
 }
 
-export function checkEligibility(name: string, email: string, phone: string, course_name: string) {
-  return invoke<EligibilityCheckResult>("check_eligibility", { name, email, phone, course_name });
-}
-
 export type ProjectDifficulty = "easy" | "medium" | "hard";
 
-/** Skips the certificate/enrollment gate entirely — course_name doubles as
- * whatever language, role, or topic the student typed. */
+/** No certificate/enrollment gate — course_name doubles as whatever
+ * language, role, or topic the student typed. */
 export function checkEligibilityFree(name: string, email: string, phone: string, topic: string, difficulty: ProjectDifficulty = "easy") {
   return invoke<EligibilityCheckResult>("check_eligibility_free", { name, email, phone, course_name: topic, difficulty });
 }
@@ -168,4 +149,17 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
 
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
   return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
+}
+
+export interface QAAskResult {
+  answer: string;
+  tools_used: string[];
+}
+
+/** Project-scoped Q&A, grounded only in this student's own topic/requirements/
+ * submitted code/report/grading result (see the backend's app/agentic/qa_agent.py).
+ * Used mid-viva when the student is asking something rather than answering
+ * the pending question — see capstoneFlow.ts's looksLikeQuestionNotAnswer. */
+export function askProjectQuestion(thread_id: string, question: string) {
+  return invoke<QAAskResult>("ask_project_question", { thread_id, question });
 }

@@ -1,8 +1,9 @@
 # Project AI Agent — Capstone Automation Backend
 
-LangGraph-driven backend for the DigiDARA capstone project flow: eligibility
-check → topic generation → requirement expansion → 7-day timer → submission
-validation (docx + zip) → LLM code review → scored feedback.
+LangGraph-driven backend for the DigiDARA capstone project flow: topic
+generation → requirement expansion → 7-day timer → submission validation
+(docx + zip) → LLM code review → scored feedback. There is no certificate or
+enrollment gate — any student can request a project for any topic.
 
 ## LLM provider — pluggable, not hardcoded
 
@@ -68,11 +69,15 @@ API docs: http://127.0.0.1:8000/docs
 
 | Step | Endpoint | Notes |
 |---|---|---|
-| 1. Check eligibility + generate topics | `POST /api/eligibility/check` | `{name, phone, course_name}` → `thread_id` + 2 topic options (if eligible) |
+| 1. Generate topics for a topic/role/language | `POST /api/eligibility/free` | `{name, email, phone?, course_name, difficulty}` → `thread_id` + 2 topic options. No certificate/enrollment gate — `course_name` doubles as the free-text topic. |
 | 2. Choose a topic | `POST /api/topic/choose` | `{thread_id, topic_id}` → expanded requirements brief |
 | 3. Confirm & start the 7-day timer | `POST /api/timer/confirm` | `{thread_id}` → `deadline_at` + submission guide |
 | 4. Upload submission | `POST /api/submission/upload` | multipart form: `thread_id`, `docx_file`, `zip_file` → score/feedback or revision notes |
 | Poll progress | `GET /api/status/{thread_id}` | current stage + status |
+| Download the project brief | `GET /api/assignment/{thread_id}/about.md` | raw Markdown: topic, requirements, required folder/report structure |
+| Download the review report | `GET /api/submission/{submission_id}/review.md` | raw Markdown: full checklist-style review of one submission attempt |
+| Troubleshoot a missing folder via screenshot | `POST /api/submission/{submission_id}/structure-screenshot` | multipart form: `image` — a screenshot of the student's file explorer / extracted zip / IDE tree, checked against whichever required folders/files that submission is still missing |
+| Ask about your own project | `POST /api/qa/ask` | multipart form: `thread_id`, `question`, optional `attachment` (image or `.docx`) — a tool-calling agent answers using only that student's own topic/requirements/code/report/grading result, with web search available to verify a technical claim or current requirement |
 
 State between steps is persisted by LangGraph's MySQL checkpointer
 ([`langgraph-checkpoint-mysql`](https://github.com/tjni/langgraph-checkpoint-mysql),

@@ -55,6 +55,12 @@ export const AGENTS: Agent[] = [
     greeting: "Let's practice! Pick a topic: quantitative aptitude, logical reasoning, or verbal ability.",
   },
   {
+    id: "mock-interview", name: "Mock Interview Agent", icon: "🎤", color: "#8b5cf6", author: "DigiDARA", rating: 4.7,
+    category: ["Top Picks", "Career", "Education"], featured: true, kind: "mock-interview", backendAgentName: "mock_interview_agent",
+    desc: "Runs AI-driven technical and HR mock interviews, scores each answer and gives feedback you can review later.",
+    greeting: "Ready for a mock interview? Choose a technical or HR round and I'll get started.",
+  },
+  {
     id: "video-ai", name: "Video AI Agent", icon: "🎬", color: "#6366f1", author: "DigiDARA", rating: 4.4,
     category: ["Productivity"], featured: false,
     desc: "Generates and edits short-form videos from a script or prompt, complete with captions and voiceover.",

@@ -1,12 +1,14 @@
+import base64
 import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
 from starlette.concurrency import run_in_threadpool
 
@@ -19,14 +21,14 @@ def _log_id(thread_id: str) -> str:
     return hashlib.sha256(thread_id.encode()).hexdigest()[:8]
 
 from app import config
+from app.agentic.qa_agent import ProjectNotFound, ask_project_question
 from app.api.schemas import (
     ConfigOut,
-    CourseOut,
-    EligibleCoursesResponse,
-    EligibilityCheckRequest,
     EligibilityCheckResponse,
     FreeTopicRequest,
+    QAAskResponse,
     StatusResponse,
+    StructureScreenshotResponse,
     SubmissionResultResponse,
     TimerConfirmRequest,
     TimerConfirmResponse,
@@ -42,11 +44,8 @@ from app.viva import VIVA_PASS_THRESHOLD, generate_viva_questions, verify_viva_a
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
-    Certificate,
     Course,
     CourseMedium,
-    Enrollment,
-    EnrollmentStatus,
     LlmUsage,
     ProjectAssignment,
     Student,
@@ -55,51 +54,11 @@ from app.db.models import (
 )
 from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
-from app.llm.client import LLMError, call_json
+from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
+from app.llm.client import LLMError, call_json, call_text
+from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
-
-
-@router.get("/eligibility/courses", response_model=EligibleCoursesResponse)
-def eligible_courses(phone: str = Query(min_length=1)) -> EligibleCoursesResponse:
-    """Return only completed courses with an issued certificate for this mobile number."""
-    session = get_session()
-    try:
-        student = session.query(Student).filter_by(phone=phone).first()
-        if student is None:
-            return EligibleCoursesResponse(student_found=False, courses=[])
-
-        courses = (
-            session.query(Course)
-            .join(Enrollment, Enrollment.course_id == Course.id)
-            .join(
-                Certificate,
-                (Certificate.course_id == Course.id) & (Certificate.student_id == student.id),
-            )
-            .filter(
-                Enrollment.student_id == student.id,
-                Enrollment.status == EnrollmentStatus.completed,
-            )
-            .distinct()
-            .order_by(Course.name)
-            .all()
-        )
-        return EligibleCoursesResponse(
-            student_found=True,
-            courses=[CourseOut(id=c.id, name=c.name, medium=c.medium.value) for c in courses],
-        )
-    finally:
-        session.close()
-
-
-@router.get("/courses", response_model=list[CourseOut])
-def list_courses() -> list[CourseOut]:
-    session = get_session()
-    try:
-        courses = session.query(Course).order_by(Course.name).all()
-        return [CourseOut(id=c.id, name=c.name, medium=c.medium.value) for c in courses]
-    finally:
-        session.close()
 
 
 @router.get("/config", response_model=ConfigOut)
@@ -216,59 +175,6 @@ def _run_submission(sub_state: dict) -> dict:
         )
 
 
-@router.post("/eligibility/check", response_model=EligibilityCheckResponse)
-def eligibility_check(req: EligibilityCheckRequest) -> EligibilityCheckResponse:
-    logger.info("=== POST /api/eligibility/check name=%r phone=%r course=%r", req.name, req.phone, req.course_name)
-    session = get_session()
-    try:
-        student = session.query(Student).filter_by(phone=req.phone).first()
-        if student is None:
-            student = Student(name=req.name, email=req.email, phone=req.phone)
-            session.add(student)
-            session.flush()
-        elif req.email and student.email != req.email:
-            student.email = req.email
-
-        course = session.query(Course).filter_by(name=req.course_name).first()
-        if course is None:
-            raise HTTPException(404, f"Unknown course: {req.course_name!r}")
-
-        assignment = ProjectAssignment(
-            student_id=student.id,
-            course_id=course.id,
-            medium=course.medium,
-            status=AssignmentStatus.awaiting_topic_choice,
-        )
-        session.add(assignment)
-        session.commit()
-
-        thread_id = assignment.thread_id
-        initial_state = {
-            "student_id": student.id,
-            "course_id": course.id,
-            "assignment_id": assignment.id,
-            "student_name": student.name,
-            "phone": student.phone,
-            "course_name": course.name,
-            "course_medium": course.medium.value,
-        }
-    finally:
-        session.close()
-
-    result = _invoke_graph(initial_state, thread_id)
-
-    logger.info(
-        "=== eligibility=%s thread=%s reason=%r",
-        result.get("eligible"), _log_id(thread_id), result.get("eligibility_reason"),
-    )
-    return EligibilityCheckResponse(
-        thread_id=thread_id,
-        eligible=result.get("eligible", False),
-        eligibility_reason=result.get("eligibility_reason", ""),
-        topic_options=result.get("topic_options"),
-    )
-
-
 @router.post("/topic/clarify", response_model=TopicClarifyResponse)
 def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
     """Stateless pre-check for a free-topic request — deliberately not part
@@ -292,13 +198,13 @@ def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
 
 @router.post("/eligibility/free", response_model=EligibilityCheckResponse)
 def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
-    """Skip the certificate gate entirely: generate project topics for any
-    language, role, or topic the student names. `req.course_name` doubles as
-    that free-text topic here. A `Course` row is looked up or created for it
-    (medium defaults to `local`) purely so course_id-keyed tables/queries
-    downstream (ProjectAssignment, topic_generator_node's past-topic dedup)
-    keep working unchanged; eligibility_check_node skips its enrollment/
-    certificate DB check via the skip_certificate_check state flag below."""
+    """Generate project topics for any language, role, or topic the student
+    names -- the only entry point this app has; there is no certificate/
+    enrollment gate. `req.course_name` doubles as that free-text topic here.
+    A `Course` row is looked up or created for it (medium defaults to
+    `local`) purely so course_id-keyed tables/queries downstream
+    (ProjectAssignment, topic_generator_node's past-topic dedup) keep
+    working unchanged."""
     logger.info(
         "=== POST /api/eligibility/free name=%r phone=%r topic=%r difficulty=%r",
         req.name, req.phone, req.course_name, req.difficulty,
@@ -307,10 +213,8 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
 
     session = get_session()
     try:
-        # Keyed on email, not phone — this flow has no enrollment records to
-        # match a phone against (that's what eligibility_check/eligible_courses
-        # use it for), and a logged-in account's email is always present,
-        # unlike an optionally-blank phone (e.g. Google sign-in).
+        # Keyed on email, not phone -- a logged-in account's email is always
+        # present, unlike an optionally-blank phone (e.g. Google sign-in).
         student = session.query(Student).filter_by(email=email).first()
         if student is None:
             student = Student(name=req.name, email=email, phone=req.phone or None)
@@ -355,7 +259,6 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
             "phone": student.phone or "",
             "course_name": req.course_name,
             "course_medium": course.medium.value,
-            "skip_certificate_check": True,
             "free_topic_request": True,
             "difficulty": req.difficulty,
         }
@@ -402,6 +305,7 @@ def timer_confirm(req: TimerConfirmRequest) -> TimerConfirmResponse:
         thread_id=req.thread_id,
         deadline_at=result["deadline_at"],
         submission_guide=result["submission_guide"],
+        about_markdown=result.get("about_markdown"),
     )
 
 
@@ -438,6 +342,21 @@ async def submission_upload(
         assignment = session.get(ProjectAssignment, assignment_id)
         if assignment is None:
             raise HTTPException(404, "Assignment not found.")
+        # Without this, a student who re-drags the same (or corrected) files
+        # a few seconds after seeing "I am validating and grading them now"
+        # (anxious the first drop didn't register) starts a second full
+        # submission-graph run while the first is still in flight. Both
+        # eventually call compiled_graph.update_state(...) on the same
+        # thread's checkpoint; whichever finishes last silently overwrites
+        # the other's grading result / viva questions with no indication
+        # either run was ever discarded.
+        in_flight = (
+            session.query(Submission)
+            .filter_by(assignment_id=assignment_id, status=SubmissionStatus.processing)
+            .first()
+        )
+        if in_flight is not None:
+            raise HTTPException(409, "A previous submission for this project is still being graded. Please wait for that to finish before submitting again.")
         deadline = assignment.deadline_at
         if deadline is not None:
             # SQLite doesn't persist tzinfo on DateTime(timezone=True) columns —
@@ -479,13 +398,45 @@ async def submission_upload(
         "requirements": state["requirements"],
         "submission_guide": state["submission_guide"],
     }
-    result = _run_submission(sub_state)
+    try:
+        result = _run_submission(sub_state)
+    except HTTPException:
+        # _run_submission already converts any graph failure into an
+        # HTTPException -- but the Submission row created above is still
+        # sitting at `processing`. Left alone, that both permanently hides
+        # this failed attempt AND (combined with the in-flight guard above)
+        # would block the student from ever submitting again for this
+        # assignment, since a stuck `processing` row looks identical to a
+        # genuinely in-progress one.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                session.commit()
+        finally:
+            session.close()
+        raise
     logger.info(
         "=== submission result thread=%s status=%s final_score=%s passed=%s",
         _log_id(thread_id), result.get("status"), result.get("final_score"), result.get("passed"),
     )
 
     if result.get("status") == "error":
+        # Otherwise this Submission row (created above) stays stuck at
+        # `processing` forever -- the student can retry fine (the main
+        # thread's status isn't "graded"), but this specific failed attempt
+        # is permanently unlisted, with no error status and no feedback, in
+        # whatever admin/history view later reads Submission rows.
+        session = get_session()
+        try:
+            submission = session.get(Submission, submission_id)
+            if submission:
+                submission.status = SubmissionStatus.error
+                submission.feedback_text = result.get("feedback")
+                session.commit()
+        finally:
+            session.close()
         compiled_graph.update_state(_thread_config(thread_id), {"status": "error"})
         raise HTTPException(422, result.get("feedback", "Submission could not be processed."))
 
@@ -500,11 +451,13 @@ async def submission_upload(
                 "feedback": result.get("feedback"),
                 "score_reasoning": result.get("score_reasoning"),
                 "code_quality_score": result.get("code_quality_score"),
+                "review_markdown": result.get("review_markdown"),
             },
         )
         return SubmissionResultResponse(
             thread_id=thread_id,
             status="needs_revision",
+            submission_id=submission_id,
             revision_notes=result.get("revision_notes"),
             # Present when this was a failed *content* grade being sent back
             # for another attempt (not just a packaging/structure issue) —
@@ -513,6 +466,7 @@ async def submission_upload(
             passed=result.get("passed"),
             score_reasoning=result.get("score_reasoning"),
             code_quality_score=result.get("code_quality_score"),
+            review_markdown=result.get("review_markdown"),
         )
 
     # Content grade passed -- hold the score back and run the viva before
@@ -555,7 +509,18 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
     logger.info("=== POST /api/viva/answer submission=%s question=%s", req.submission_id, req.question_id)
     session = get_session()
     try:
-        submission = session.get(Submission, req.submission_id)
+        # with_for_update: two requests for the same question (a double-click,
+        # or a client retry after a slow/timed-out response) must not both
+        # read the same `answers` list, both append their own answer, and
+        # both commit -- the second commit would silently overwrite the
+        # first's recorded (possibly correct) answer and verdict with no
+        # trace it ever happened. Locking the row here makes the second
+        # request wait for the first's commit, then see its answer already
+        # appended, so its own `expected_index` check below correctly
+        # rejects it as a duplicate instead of racing. (A no-op on SQLite,
+        # which doesn't support row locks -- fine there since tests run
+        # single-threaded; this is a real MySQL production concern.)
+        submission = session.get(Submission, req.submission_id, with_for_update=True)
         if submission is None:
             raise HTTPException(404, "Submission not found.")
         if submission.status != SubmissionStatus.pending_viva:
@@ -621,17 +586,20 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
                 "feedback": combined_feedback,
                 "score_reasoning": code_result.get("score_reasoning"),
                 "code_quality_score": code_result.get("code_quality_score"),
+                "review_markdown": submission.review_markdown,
             },
         )
 
         return SubmissionResultResponse(
             thread_id=thread_id,
             status=final_status.value,
+            submission_id=req.submission_id,
             final_score=code_result.get("final_score"),
             passed=overall_passed,
             feedback=combined_feedback,
             score_reasoning=code_result.get("score_reasoning"),
             code_quality_score=code_result.get("code_quality_score"),
+            review_markdown=submission.review_markdown,
             viva_score=submission.viva_score,
             viva_passed=viva_passed,
         )
@@ -676,13 +644,166 @@ def get_status(thread_id: str) -> StatusResponse:
         chosen_topic=values.get("chosen_topic"),
         requirements=values.get("requirements"),
         submission_guide=values.get("submission_guide"),
+        about_markdown=values.get("about_markdown"),
         final_score=values.get("final_score"),
         passed=values.get("passed"),
         feedback=values.get("feedback"),
         revision_notes=values.get("revision_notes"),
         score_reasoning=values.get("score_reasoning"),
         code_quality_score=values.get("code_quality_score"),
+        review_markdown=values.get("review_markdown"),
     )
+
+
+@router.get("/assignment/{thread_id}/about.md")
+def get_about_markdown(thread_id: str) -> PlainTextResponse:
+    """Downloadable "about this project" doc -- topic, requirements, and the
+    required folder/report structure -- generated once the submission guide
+    is ready. Useful as a reference while building, and to bring to the viva."""
+    values = _get_state_values(thread_id)
+    markdown = values.get("about_markdown")
+    if not markdown:
+        raise HTTPException(404, "No project brief has been generated yet for this thread.")
+    return PlainTextResponse(markdown, media_type="text/markdown")
+
+
+@router.get("/submission/{submission_id}/review.md")
+def get_review_markdown(submission_id: str) -> PlainTextResponse:
+    """Downloadable full review report for one submission attempt -- see
+    app/graph/report.py:build_review_markdown. Available as soon as a
+    submission attempt finishes (including a structure-gate rejection),
+    regardless of whether the content score itself is still held back
+    pending the viva."""
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+    if not submission.review_markdown:
+        raise HTTPException(404, "No review report is available for this submission yet.")
+    return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
+
+
+@router.post("/submission/{submission_id}/structure-screenshot", response_model=StructureScreenshotResponse)
+async def structure_screenshot(submission_id: str, image: UploadFile = File(...)) -> StructureScreenshotResponse:
+    """Phase 3: a student confused by a "missing folder" verdict attaches a
+    screenshot of their file explorer / extracted zip / IDE tree, and a
+    vision-capable LLM call points at exactly what's missing from THAT
+    screenshot -- grounded in the same deterministic missing-items list the
+    review report already used (see app/ingestion/structure_check.py)."""
+    logger.info("=== POST /api/submission/%s/structure-screenshot", submission_id)
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+    finally:
+        session.close()
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+
+    zip_score = submission.zip_validation_json or (submission.score_json or {}).get("zip_structure_score") or {}
+    detail = zip_score.get("required_paths_detail") or {}
+    missing_items = detail.get("missing_items") or []
+    if not missing_items:
+        raise HTTPException(400, "This submission has no missing required folders/files to check a screenshot against.")
+
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(400, "Please attach an image file (a screenshot).")
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(400, "The screenshot is empty.")
+    if len(image_bytes) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Screenshot must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+    result = analyze_structure_screenshot(image_bytes, image.content_type, missing_items, detail.get("matched_items") or [])
+    return StructureScreenshotResponse(**result)
+
+
+@router.post("/qa/ask", response_model=QAAskResponse)
+async def qa_ask(
+    thread_id: str = Form(...),
+    question: str = Form(...),
+    attachment: UploadFile | None = File(None),
+) -> QAAskResponse:
+    """Phase 4: project-scoped Q&A. Answers are grounded ONLY in this
+    student's own topic/requirements/submitted code/report/grading result
+    (see app/agentic/qa_agent.py) -- the agent decides which of those to
+    look at via real tool calls, using web search only to verify a
+    technical claim or a current requirement. An optional image or .docx
+    attachment is analyzed and folded into that single question's context;
+    it is not persisted."""
+    logger.info("=== POST /api/qa/ask thread=%s", _log_id(thread_id))
+    if not question.strip():
+        raise HTTPException(400, "Question must not be empty.")
+
+    extra_context: str | None = None
+    if attachment is not None:
+        attachment_bytes = await attachment.read()
+        if not attachment_bytes:
+            raise HTTPException(400, "The attachment is empty.")
+        if len(attachment_bytes) > config.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"Attachment must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+        content_type = attachment.content_type or ""
+        filename = (attachment.filename or "").lower()
+        if content_type.startswith("image/"):
+            data_url = f"data:{content_type};base64,{base64.b64encode(attachment_bytes).decode('ascii')}"
+            description = call_text(
+                system="Describe what is shown in this image in plain language, in under 150 words. "
+                "If it looks like a file explorer, archive tool, or code editor file tree, list the "
+                "folder/file names you can actually read in it.",
+                user="Describe the attached image now.",
+                image_data_url=data_url,
+            )
+            extra_context = f"[Image attached by the student]\n{description}"
+        elif filename.endswith(".docx"):
+            tmp_dir = config.UPLOAD_DIR / "qa_attachments"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+            tmp_path = tmp_dir / f"{uuid.uuid4().hex}.docx"
+            tmp_path.write_bytes(attachment_bytes)
+            try:
+                parsed = ingest_docx(str(tmp_path))
+            except DocxIngestError as exc:
+                raise HTTPException(400, str(exc))
+            finally:
+                tmp_path.unlink(missing_ok=True)
+            sections_text = json.dumps(parsed["sections"], ensure_ascii=False)
+            if len(sections_text) > 6000:
+                sections_text = sections_text[:6000] + "... [truncated]"
+            extra_context = f"[.docx document attached by the student]\n{sections_text}"
+        elif filename.endswith(".pdf"):
+            raise HTTPException(415, "PDF attachments aren't supported yet — please attach a .docx report or an image screenshot instead.")
+        else:
+            raise HTTPException(415, "Unsupported attachment type — please attach a .docx report or an image screenshot.")
+
+    try:
+        result = ask_project_question(thread_id, question, extra_context=extra_context)
+    except ProjectNotFound:
+        raise HTTPException(404, "Unknown or expired thread_id.")
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}")
+    return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
+
+
+def qa_ask_action(payload: dict) -> QAAskResponse:
+    """Text-only entry point for the /api/invoke JSON gateway contract (the
+    path the frontend chat actually calls) -- same agent as POST /api/qa/ask,
+    just without multipart attachment support, since a JSON invoke payload
+    has nowhere to carry a file. Used by capstoneFlow.ts to let a student ask
+    a genuine question mid-viva without it being consumed as their literal
+    answer to the pending viva question."""
+    thread_id = str(payload.get("thread_id", ""))
+    question = str(payload.get("question", ""))
+    if not question.strip():
+        raise HTTPException(400, "Question must not be empty.")
+    try:
+        result = ask_project_question(thread_id, question)
+    except ProjectNotFound:
+        raise HTTPException(404, "Unknown or expired thread_id.")
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}")
+    return QAAskResponse(answer=result["answer"], tools_used=result["tools_used"])
 
 
 @router.post("/invoke")
@@ -711,12 +832,8 @@ async def invoke(request: Request) -> JSONResponse:
     payload = body.get("payload") or {}
     if action == "health":
         result = {"status": "ok", "agent_name": "capstone_project_agent"}
-    elif action == "eligible_courses":
-        result = await run_in_threadpool(eligible_courses, str(payload.get("phone", "")))
     elif action == "clarify_topic_request":
         result = await run_in_threadpool(topic_clarify, TopicClarifyRequest(**payload))
-    elif action == "check_eligibility":
-        result = await run_in_threadpool(eligibility_check, EligibilityCheckRequest(**payload))
     elif action == "check_eligibility_free":
         result = await run_in_threadpool(eligibility_check_free, FreeTopicRequest(**payload))
     elif action == "choose_topic":
@@ -729,6 +846,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(usage_summary, request.headers.get("x-digidara-user-id"))
     elif action == "submit_viva_answer":
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
+    elif action == "ask_project_question":
+        result = await run_in_threadpool(qa_ask_action, payload)
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

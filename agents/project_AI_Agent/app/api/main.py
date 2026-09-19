@@ -10,6 +10,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
 
+from app.api.privacy import router as privacy_router  # noqa: E402
 from app.api.routes import router  # noqa: E402
 from app.db.database import init_db  # noqa: E402
 from app.integration.registry_client import registry_client  # noqa: E402
@@ -70,6 +71,7 @@ async def bind_request_user(request, call_next):
         current_request_tokens.reset(counter_token)
 
 app.include_router(router)
+app.include_router(privacy_router)
 
 @app.get("/health")
 def health() -> dict:

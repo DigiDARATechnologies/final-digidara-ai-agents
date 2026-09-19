@@ -451,7 +451,7 @@ OPENAI_API_KEY=your-key
 JWT_SECRET=generate-with-openssl-rand-hex-32
 AGENT_SHARED_SECRET=generate-with-openssl-rand-hex-32
 ALLOWED_ORIGINS=http://localhost:5173
-ALLOWED_AGENT_HOSTS=127.0.0.1,localhost
+ALLOWED_AGENT_HOSTS=capstone-agent,codeforge-agent,communication-agent,aptitude-agent,resume-builder-agent,certificate-agent,job-agent,127.0.0.1,localhost
 CHAT_RATE_LIMIT_PER_MIN=20
 ENV=dev
 ```
@@ -948,10 +948,14 @@ openssl rand -hex 32
 - `ALLOWED_ORIGINS` — comma-separated browser origins allowed to call this
   API (CORS). Defaults to `http://localhost:5173` for local dev only.
 - `ALLOWED_AGENT_HOSTS` — comma-separated hostnames the gateway is allowed to
-  proxy `/gateway/agents/{name}/invoke` calls to. Defaults to
-  `127.0.0.1,localhost`; anything else is rejected with 403. This is what
-  actually stops a registered (or tampered-with) agent endpoint from turning
-  the gateway into an open SSRF proxy into the internal network.
+  proxy `/gateway/agents/{name}/invoke` calls to. Defaults to every agent's
+  Compose service hostname plus `127.0.0.1,localhost` (see
+  `agents/orchestrator/.env.example`); anything else is rejected with 403.
+  This is what actually stops a registered (or tampered-with) agent endpoint
+  from turning the gateway into an open SSRF proxy into the internal
+  network — set it explicitly outside Docker Compose (a bare-metal or
+  differently-orchestrated deploy) to whatever hostnames your agents
+  actually run under.
 - `CHAT_RATE_LIMIT_PER_MIN` — per-user requests/minute on `/chat` and
   `/chat/route` (default 20; 429 with `Retry-After` on breach).
 - `ENV` — set to anything other than `dev` (e.g. `production`) on a real

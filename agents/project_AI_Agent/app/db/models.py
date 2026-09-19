@@ -52,12 +52,9 @@ class Student(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Required for the certificate-gated flow (eligibility_check/eligible_courses
-    # key student lookup on it, matching real enrollment records). Nullable
-    # because the free-topic flow (eligibility_check_free) has no enrollment
-    # records to match against and keys students on their verified email
-    # instead — a logged-in account with no phone on file (e.g. Google
-    # sign-in) shouldn't be unable to use it.
+    # Nullable -- students are keyed on their verified email
+    # (eligibility_check_free), which is always present; phone is optional
+    # contact info only, not a lookup key (e.g. Google sign-in has none).
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -101,6 +98,12 @@ class ProjectAssignment(Base):
     student_id: Mapped[str] = mapped_column(String(32), ForeignKey("students.id"), nullable=False)
     course_id: Mapped[str] = mapped_column(String(32), ForeignKey("courses.id"), nullable=False)
     topic_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # RequirementExpansionNode's output (objective, functional_requirements,
+    # technical_constraints, expected_deliverables, evaluation_criteria) --
+    # persisted (not just kept in the LangGraph checkpoint) so the Q&A agent
+    # can answer a doubt about the requirements as soon as they're shown,
+    # even before the timer is confirmed and about_markdown exists.
+    requirements_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     medium: Mapped[CourseMedium] = mapped_column(Enum(CourseMedium), nullable=False)
     chosen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -108,6 +111,15 @@ class ProjectAssignment(Base):
         Enum(AssignmentStatus), nullable=False, default=AssignmentStatus.awaiting_topic_choice
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # "About this project" doc -- see app/graph/report.py:build_about_markdown.
+    # Populated by submission_guide_node once the topic/requirements/folder
+    # structure are known.
+    about_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Buffer window memory for the project Q&A agent (see
+    # app/agentic/qa_agent.py) -- the last few (question, answer) turns of
+    # this thread's conversation, so a follow-up question has the earlier
+    # exchange to refer back to. Trimmed to a bounded window on every save.
+    qa_conversation_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     submissions: Mapped[list["Submission"]] = relationship(back_populates="assignment")
 
@@ -124,6 +136,8 @@ class Submission(Base):
     zip_validation_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     score_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     feedback_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Full plain-language review report -- see app/graph/report.py:build_review_markdown.
+    review_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SubmissionStatus] = mapped_column(
         Enum(SubmissionStatus), nullable=False, default=SubmissionStatus.processing
     )

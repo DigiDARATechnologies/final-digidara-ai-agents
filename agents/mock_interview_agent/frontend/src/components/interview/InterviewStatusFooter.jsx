@@ -1,0 +1,3 @@
+export default function InterviewStatusFooter({ voiceState, voiceStateLabel, manualAnswerMode, statusSteps }) {
+  return <footer className="interview-status-footer"><div className="status-summary"><span className={`status-dot status-dot-${voiceState}`} /><strong>{voiceStateLabel}</strong><span className="subtle">{manualAnswerMode ? "Submit your typed answer before the question timer expires." : "Listening continues until you say “I’m done” or the question timer expires."}</span></div><div className="status-rail" aria-label="Interview status">{statusSteps.map((step) => <span key={step.key} className={`status-step ${voiceState === step.key ? "status-step-active" : ""}`}>{step.label}</span>)}</div></footer>;
+}

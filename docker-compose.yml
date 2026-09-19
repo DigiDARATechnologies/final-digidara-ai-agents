@@ -96,6 +96,18 @@ services:
       orchestrator:
         condition: service_healthy
 
+  mock-interview-agent:
+    build:
+      context: ./agents/mock_interview_agent/backend
+    restart: unless-stopped
+    env_file:
+      - ./agents/mock_interview_agent/backend/.env
+    depends_on:
+      mysql:
+        condition: service_healthy
+      orchestrator:
+        condition: service_healthy
+
   resume-builder-agent:
     build:
       context: ./agents/resume_builder_agent/backend

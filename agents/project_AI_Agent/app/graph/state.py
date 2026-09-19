@@ -15,19 +15,14 @@ class ProjectAgentState(TypedDict, total=False):
     course_medium: str  # "local" | "api"
     difficulty: str  # "easy" | "medium" | "hard" — free-topic requests only; defaults to "easy"
 
-    eligible: bool
-    eligibility_reason: str
-    # Set when the request came through /eligibility/free — skips the
-    # enrollment/certificate DB check in eligibility_check_node entirely.
-    skip_certificate_check: bool
-    # Also set on that same path. `course_name` there is actually the
-    # student's free-text description (role/company/domain/technology), not
-    # a real completed course — topic_generator_prompt and topic_generator_node
-    # both need to know this so they frame it as the student's own brief
-    # (and the primary steering signal) instead of "a course they finished",
-    # and skip the random generic angle_hint that's meant to add variety to
-    # an otherwise-underspecified real course, not override an already-specific
-    # free-text request.
+    # There is no certificate/enrollment gate -- every request is a free-topic
+    # request. `course_name` here is actually the student's free-text
+    # description (role/company/domain/technology), not a real completed
+    # course — topic_generator_prompt and topic_generator_node both need to
+    # know this so they frame it as the student's own brief (and the primary
+    # steering signal) instead of "a course they finished", and skip the
+    # random generic angle_hint that's meant to add variety to an otherwise-
+    # underspecified real course, not override an already-specific request.
     free_topic_request: bool
 
     topic_options: list[dict[str, Any]]  # [{id, title, summary, medium, skills_applied}]
@@ -36,6 +31,9 @@ class ProjectAgentState(TypedDict, total=False):
     deadline_at: str
 
     submission_guide: dict[str, Any]  # SubmissionGuideNode output
+    # Plain-language "about this project" doc, built alongside submission_guide
+    # (see app/graph/report.py) -- downloadable via GET /api/assignment/{thread_id}/about.md
+    about_markdown: str
 
     docx_path: str
     doc_sections: dict[str, str]
@@ -58,9 +56,12 @@ class ProjectAgentState(TypedDict, total=False):
     code_quality_score: dict[str, Any]
 
     final_score: float
-    passed: bool  # LLM-decided in ScoreAggregatorNode, not a threshold comparison
+    passed: bool  # deterministic final_score >= config.PASS_THRESHOLD, decided in ScoreAggregatorNode
     score_reasoning: str
     feedback: str
+    # Full plain-language review report (see app/graph/report.py), built after
+    # every submission attempt -- downloadable via GET /api/submission/{id}/review.md
+    review_markdown: str
 
     status: str  # routes control flow / mirrors AssignmentStatus or SubmissionStatus
     revision_notes: str

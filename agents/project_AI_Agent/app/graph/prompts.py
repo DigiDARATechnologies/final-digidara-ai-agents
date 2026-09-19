@@ -77,45 +77,21 @@ OUTPUT FORMAT (strict JSON, no prose outside the JSON):
 }}"""
 
 
-def eligibility_decision_prompt(facts: dict[str, Any]) -> str:
-    return f"""You are the Eligibility Decision Agent for DigiDARA Technologies capstone projects.
-
-FACTS (retrieved from the student records system — treat these as ground truth,
-do not assume anything beyond what is stated here):
-- Student: {facts['student_name']}
-- Course: {facts['course_name']}
-- Enrollment record exists: {facts['enrollment_exists']}
-- Enrollment status: {facts['enrollment_status']}
-- Certificate issued for this course: {facts['certificate_exists']}
-
-RULE: A student unlocks the capstone project only if all three are true: an
-enrollment record exists, its status is "completed", and a certificate has been
-issued for this course. Apply this rule to the facts above.
-
-TASK:
-Decide whether this student is eligible right now, and write the reason the
-student will read.
-
-OUTPUT FORMAT (strict JSON):
-{{
-  "eligible": <true|false>,
-  "eligibility_reason": "<one clear sentence, second person. If not eligible, say exactly what's missing — e.g. 'You have not yet registered for this course.' / 'Course in progress — finish all modules to unlock the capstone.' / 'Course complete, certificate pending issuance.' If eligible, just 'Eligible.'>"
-}}"""
-
-
 def final_score_decision_prompt(state: dict[str, Any], pass_threshold: int) -> str:
     difficulty = state.get("difficulty", "easy")
     return f"""You are the Final Score Decision Agent for a DigiDARA capstone project.
 Four independent reviewers have already assessed different aspects of this
-submission. Your job is to weigh their findings and make the final call — the
-score and pass/fail decision are yours to decide, not a fixed formula.
+submission. Your job is to weigh their findings into a single fair score — not
+to decide pass/fail, which is a deterministic threshold comparison the code
+applies to whatever score you produce (see below), not a judgment call.
 
 CONTEXT:
 - Course medium: {_effective_medium(state)}
 - Requested difficulty: {difficulty} — the code quality reviewer already calibrated
   its scoring to this level, so trust its scores as difficulty-appropriate rather
   than re-discounting or re-inflating them here for difficulty a second time.
-- Pass threshold (reference target, not a rigid cutoff — use your judgment): {pass_threshold} / 100
+- Pass threshold: {pass_threshold} / 100 — applied automatically by code once you
+  return a score; you are not deciding pass/fail, only the score itself.
 - Docx structure validation: {json.dumps(state.get('structure_score', {}), ensure_ascii=False)}
 - Zip structure validation: {json.dumps(state.get('zip_structure_score', {}), ensure_ascii=False)}
 - Output verification: {json.dumps(state.get('output_verification', {}), ensure_ascii=False)}
@@ -133,17 +109,16 @@ submissions with different total_code_score values (e.g. 87 vs. 85) should almos
 never land on the exact same final_score; if your adjustments genuinely cancel
 out to a round number, that's fine, but it should be the result of the math, not
 a shortcut. Weigh code correctness and quality most heavily; treat documentation
-and packaging quality as secondary factors. Then decide pass/fail: use the pass
-threshold as your primary reference point, but you may deviate from it if the
-overall picture clearly warrants it (e.g. borderline score but genuinely broken
-output should not pass; a slightly-below-threshold score with excellent code and
-only minor doc gaps could still pass at your discretion).
+and packaging quality as secondary factors. If the output verification shows
+genuinely broken/contradicted output (e.g. a real stderr traceback contradicting
+a "success" screenshot), that must pull the score down through the output
+verification adjustment above, not through a separate override of the pass/fail
+call you're not making.
 
 OUTPUT FORMAT (strict JSON):
 {{
   "final_score": <0-100, one decimal place>,
-  "passed": <true|false>,
-  "reasoning": "<2-3 sentences on how you weighed the inputs to reach this decision>"
+  "reasoning": "<2-3 sentences on how you weighed the inputs to reach this score>"
 }}"""
 
 
@@ -294,6 +269,7 @@ def submission_guide_prompt(state: dict[str, Any]) -> str:
 CONTEXT:
 - Chosen topic: {topic_title}
 - Deliverables required: {requirements.get('expected_deliverables')}
+- Functional requirements: {requirements.get('functional_requirements')}
 
 TASK:
 Produce a submission guide the student will read right after the timer starts. It
@@ -312,10 +288,35 @@ must cover:
 2. Exact section headings required inside the .docx report, in order.
 3. A short worked example for ONE section (e.g., what a good "Output Screenshots" section looks like) so the format is unambiguous.
 4. Common mistakes to avoid (e.g., missing screenshots, code pasted as image instead of text, no explanation of approach).
+5. The SAME folder structure as `required_paths`: a flat list, one entry per required
+   folder or file, each with its path relative to the project root, its type, and a
+   one-sentence plain-language description of what belongs there and why it's checked
+   (this is what a deterministic checker and the student-facing review report both use
+   — it must include at minimum one "dir" entry for source code and one "dir" entry
+   for output/screenshots, matching the folder tree above exactly).
+6. Exactly which screenshots must go in that output/screenshots folder AND be embedded
+   in the .docx report: one entry per functional requirement above that has a visible
+   UI proof point (e.g. "pie chart of expenses by category" -> one screenshot showing
+   that pie chart actually rendered with real data; "edit/delete an entry" -> a
+   before/after pair). Skip a requirement only if it genuinely has nothing to show on
+   screen (e.g. "data persists locally" has no single screenshot that proves it on its
+   own — note in that item's description how the student CAN demonstrate it, e.g.
+   "reload the page and show the data is still there", rather than omitting it
+   silently). Be as specific as the requirement itself — "a screenshot of the app" is
+   not acceptable, "a screenshot showing the pie chart of expenses by category with at
+   least two categories visible" is.
 
 OUTPUT FORMAT (strict JSON):
 {{
   "folder_structure": ["<tree line 1>", "<tree line 2>", "..."],
+  "required_paths": [
+    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}},
+    {{"path": "<slug>/output_screenshots", "type": "dir", "description": "<why this exists / what goes here>"}}
+  ],
+  "required_screenshots": [
+    {{"description": "<exactly what this screenshot must show, specific to the requirement below>",
+      "linked_requirement": "<the functional requirement text this proves>"}}
+  ],
   "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
   "worked_example_section": "<name of section>",
   "worked_example_text": "<the example content, 3-6 sentences or a short snippet>",
@@ -326,30 +327,52 @@ Tone: instructional, concise, no ambiguity — a first-time submitter should not
 to ask a follow-up question after reading this."""
 
 
-def structure_validation_prompt(state: dict[str, Any]) -> str:
+def structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
+    deterministic = deterministic or {}
     return f"""You are the Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
 - Required sections: {guide.get('docx_required_sections')}
+- Required screenshots (exactly what each one must show, from the submission guide):
+  {json.dumps(guide.get('required_screenshots', []), ensure_ascii=False)}
 - Parsed document sections and content: {json.dumps(state['doc_sections'], ensure_ascii=False)}
 - Screenshot evidence found in the document (extracted via OCR): {state.get('screenshot_ocr_text', 'none')}
 - Screenshots present in document: {state.get('screenshots_present', False)}
 
+DETERMINISTIC CHECK RESULT (already computed by code from the actual heading text, not
+your judgment — never contradict it, and never tell the student a required section is
+missing if this result says it was found, even if its heading is auto-numbered like
+"2. Approach" or worded slightly differently than the requirement name):
+- Sections found: {json.dumps(deterministic.get('matched_sections', []), ensure_ascii=False)}
+- Sections NOT found: {json.dumps(deterministic.get('missing_sections', []), ensure_ascii=False)}
+
 TASK:
-Check whether the submitted document contains all required sections with
-substantive (non-empty, non-placeholder) content, and whether output screenshots
-are actually present as images (not described in words only) — use the
-"Screenshots present" flag and OCR text above as your evidence for this, since you
-cannot see the images directly.
+Whether each required section EXISTS is already decided above — do not re-derive it and
+do not add a section to missing_sections that the deterministic result already found.
+Your job is the judgment code can't make: for each section that WAS found, is its
+content actually substantive (real explanation/detail) or just a placeholder/filler (1-2
+throwaway sentences, a heading with nothing under it, "TBD", etc.)? List those as
+weak_sections. Also judge whether output screenshots are actually present as images (not
+described in words only) — use the "Screenshots present" flag and OCR text as your
+evidence, since you cannot see the images directly.
+
+Then, for EACH item in "Required screenshots" above, decide whether the OCR text gives
+enough evidence that a screenshot matching that specific description exists (e.g. OCR
+text containing category labels and percentages is evidence of a pie chart; OCR text
+naming two comparable totals is evidence of a bar/comparison chart). OCR text is
+imperfect (garbled characters, missed layout) — don't demand a perfect textual match,
+but a required screenshot with literally no supporting OCR text or surrounding
+paragraph context should be listed as missing. Never guess visual details (colors,
+exact chart type) you have no textual evidence for.
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "is_complete": <true|false>,
-  "missing_sections": ["<section name>", "..."],
+  "is_complete": <true|false — based ONLY on weak_sections/screenshot content-quality judgment below, not section presence>,
   "weak_sections": ["<section name: reason>", "..."],
   "screenshots_present": <true|false>,
-  "notes": "<short explanation for the student if incomplete>"
+  "missing_screenshots": ["<description of the required screenshot that has no evidence>", "..."],
+  "notes": "<short explanation for the student if incomplete — if a section is in weak_sections, say specifically what's missing from it, not just that it's 'weak'>"
 }}
 
 Be strict but fair: a section with only 1-2 filler sentences counts as "weak", not complete.
@@ -357,8 +380,9 @@ If is_complete is false, the submission is routed back to the student for revisi
 your notes field is what they will read, so be specific about what to add."""
 
 
-def zip_structure_validation_prompt(state: dict[str, Any]) -> str:
+def zip_structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
+    deterministic = deterministic or {}
     return f"""You are the Code Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
@@ -366,31 +390,37 @@ CONTEXT:
 - Actual file tree extracted from the submitted zip: {json.dumps(state['zip_file_tree'], ensure_ascii=False)}
 - Course medium: {_effective_medium(state)}
 
+DETERMINISTIC CHECK RESULT (already computed by code, not your judgment — never
+contradict it, and never tell the student a required item is present/missing if this
+result says otherwise):
+- Matched required items: {json.dumps(deterministic.get('matched_items', []), ensure_ascii=False)}
+- Missing required items: {json.dumps(deterministic.get('missing_items', []), ensure_ascii=False)}
+
 NOTE: The .docx report is uploaded as a SEPARATE file alongside this zip, not inside
 it — never flag a missing report.docx or any .docx file as an issue here. A short
 README is normal, good practice and is not clutter on its own.
 
 TASK:
-Compare the actual zip contents against the required folder structure. Check for:
-1. Missing required folders/files (e.g., no `/output_screenshots`, no recognizable entry point).
-2. Irrelevant or excessive clutter (e.g., IDE config folders, committed dependency folders,
+Whether required folders/files are present or missing is ALREADY DECIDED above — do
+not re-derive it. Your job is to add the qualitative judgment code can't make:
+1. Irrelevant or excessive clutter (e.g., IDE config folders, committed dependency folders,
    duplicate/backup copies of the same file) that suggests careless packaging.
-3. Whether the code appears organized into the expected structure at all, or dumped as a
-   flat pile of files with no separation.
-4. Whether the zip contains actual source files at all, versus only screenshots/docs
+2. Whether the code appears organized into the expected structure at all, or dumped as a
+   flat pile of files with no separation, even where the required folders technically exist.
+3. Whether the zip contains actual source files at all, versus only screenshots/docs
    (which would belong in the docx, not here).
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "is_complete": <true|false>,
-  "missing_items": ["<expected item not found>", "..."],
   "clutter_flags": ["<file/folder that shouldn't be there>", "..."],
   "structure_quality": "<poor|acceptable|good>",
-  "notes": "<short explanation for the student if incomplete>"
+  "notes": "<short explanation for the student, in plain language — if the deterministic
+    result found missing items, explain what each one is for and where to add it; always
+    end with any additional organization/clutter observations>"
 }}
 
 Be strict but fair — a slightly different-but-sensible folder name is fine; a flat dump of
-files with no organization, or a zip missing the actual code, is not."""
+files with no organization is not."""
 
 
 def _execution_context_block(state: dict[str, Any]) -> str:
@@ -645,3 +675,50 @@ STUDENT'S ANSWER: {answer}
 Judge whether the answer demonstrates genuine understanding of the core concept(s) above. Be lenient on phrasing -- this is a typed spoken-style answer, not a formal essay -- but it must show real understanding, not just repeat the question back or give an unrelated/evasive response. A blank or "I don't know" answer is always incorrect.
 
 Respond as JSON: {{"correct": true or false, "note": "one short sentence explaining why"}}"""
+
+
+def screenshot_structure_prompt(missing_items: list[dict], matched_items: list[dict]) -> str:
+    """Phase 3: a confused student uploads a screenshot of their local file
+    explorer, their extracted zip contents, or their IDE's file tree -- this
+    prompt (used with a vision-capable call_json, see app/vision/
+    structure_screenshot.py) reads that image and points at exactly what's
+    missing, in terms of what's actually visible in the screenshot."""
+    return f"""You are the Folder Structure Screenshot Reviewer for a DigiDARA capstone project.
+
+A student's zip submission was already checked by code (never by you) and found to be
+MISSING these required folders/files:
+{json.dumps(missing_items, ensure_ascii=False)}
+
+These required items were already found in the zip and are fine -- do not tell the
+student to add them again unless they are visibly ABSENT from the screenshot too, in
+which case say the screenshot doesn't match what was actually in the uploaded zip and
+they should re-check which folder they zipped:
+{json.dumps(matched_items, ensure_ascii=False)}
+
+The student has now attached a screenshot. It could be their local file explorer, an
+archive tool showing the extracted contents of their zip, or their code editor's file
+tree -- you cannot know which in advance; read the image itself to work out what kind
+of view it is.
+
+TASK:
+For EACH missing item listed above, look at the screenshot and determine:
+1. Is it actually visible in this screenshot (the student already has it locally, they
+   just forgot to include it when they made the zip, or it's named slightly differently
+   than expected)?
+2. Give the student a short, concrete instruction for exactly what to create (or move,
+   or rename) and where -- reference actual folder/file names you can see in the
+   screenshot, not generic advice.
+
+OUTPUT FORMAT (strict JSON):
+{{
+  "observations": [
+    {{"path": "<the missing item's path, exactly as given above>",
+      "found_in_screenshot": <true|false>,
+      "guidance": "<specific instruction, referencing what you see in THIS screenshot>"}}
+  ],
+  "summary": "<2-4 sentence plain-language summary of what to do next, written directly to the student>"
+}}
+
+Be concrete. If the screenshot is unrelated to a project folder view entirely (e.g. an
+error message, a random photo), say so plainly in "summary" and leave "guidance" as an
+instruction to upload the right kind of screenshot instead."""
