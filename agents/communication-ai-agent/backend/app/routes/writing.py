@@ -586,6 +586,36 @@ def start_session():
     }), 201
 
 
+@writing_bp.post("/chat")
+@jwt_required()
+def writing_chat():
+    """A lightweight topic conversation, intentionally separate from scored writing turns."""
+    data = request.get_json(silent=True) or {}
+    topic = str(data.get("topic") or "").strip()
+    difficulty = str(data.get("difficulty") or "medium").strip().lower()
+    history = data.get("history") if isinstance(data.get("history"), list) else []
+    if len(topic) < 3 or len(topic) > 120:
+        return _api_error("Please enter a valid writing topic.", "INVALID_CUSTOM_TOPIC")
+    if difficulty not in ALLOWED_DIFFICULTIES:
+        return _api_error("difficulty must be easy, medium or hard", "INVALID_DIFFICULTY")
+    sanitized_history = []
+    for item in history[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        message = str(item.get("text") or "").strip()
+        if role in {"assistant", "user"} and message:
+            sanitized_history.append({"role": role, "text": message[:1500]})
+    try:
+        result = groq_service.generate_writing_chat_reply(topic, difficulty, sanitized_history)
+        if not isinstance(result, dict):
+            result = {"reply": str(result or ""), "corrected_answer": None}
+        return jsonify({"success": True, "reply": result.get("reply"), "reaction": result.get("reaction"), "next_question": result.get("next_question"), "corrected_answer": result.get("corrected_answer")})
+    except Exception:
+        current_app.logger.exception("Writing chat reply failed")
+        return _api_error("The writing chat is unavailable right now. Please try again.", "WRITING_CHAT_UNAVAILABLE", 503)
+
+
 @writing_bp.put("/draft")
 @jwt_required()
 def save_draft():
@@ -789,6 +819,7 @@ def respond():
 
     session_id = data.get("session_id")
     answer = (data.get("answer") or "").strip()
+    finalize_after_submission = bool(data.get("finalize_after_submission"))
     if not answer:
         return _api_error("Please type your answer before submitting.", "EMPTY_ANSWER")
 
@@ -827,24 +858,24 @@ def respond():
         if session.mode == "daily":
             complete_daily_activity(user_id, WRITING_DAILY, session.id, result_id=current_turn.id)
 
-        history = [{"question": t.ai_prompt, "answer": t.user_response} for t in session.turns]
-        next_turn_number = current_turn.turn_number + 1
-        next_prompt = groq_service.generate_writing_prompt(
-            session.mode,
-            session.difficulty,
-            session.topic_title,
-            next_turn_number,
-            history,
-            topic_description=session.topic_description,
-        )
-        next_turn = WritingTurn(session_id=session.id, turn_number=next_turn_number, ai_prompt=next_prompt)
-        db.session.add(next_turn)
+        next_turn = None
+        next_prompt = None
+        next_turn_number = current_turn.turn_number
+        if not finalize_after_submission:
+            history = [{"question": t.ai_prompt, "answer": t.user_response} for t in session.turns]
+            next_turn_number = current_turn.turn_number + 1
+            next_prompt = groq_service.generate_writing_prompt(
+                session.mode, session.difficulty, session.topic_title, next_turn_number, history,
+                topic_description=session.topic_description,
+            )
+            next_turn = WritingTurn(session_id=session.id, turn_number=next_turn_number, ai_prompt=next_prompt)
+            db.session.add(next_turn)
         db.session.commit()
 
         return jsonify({
-            "done": False,
+            "done": finalize_after_submission,
             "session_id": session.id,
-            "turn_id": next_turn.id,
+            "turn_id": next_turn.id if next_turn else None,
             "submitted_turn_id": current_turn.id,
             "turn_number": next_turn_number,
             "total_turns": session.total_turns or DEFAULT_OPEN_ENDED_TURNS,

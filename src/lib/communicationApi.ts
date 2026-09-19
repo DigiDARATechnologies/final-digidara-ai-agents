@@ -83,6 +83,7 @@ export interface WritingTurnResult {
     scores?: Record<string, number | null>;
     corrected_answer?: string;
     better_natural_answer?: string;
+    mistakes?: Array<{ incorrect?: string; correct?: string; explanation?: string }>;
   };
   last_turn_scores?: Record<string, any>;
 }
@@ -101,12 +102,23 @@ export function startWriting(
   });
 }
 
-export function respondWriting(authToken: string, sessionId: number, answer: string) {
-  return invoke<WritingTurnResult>("writing_respond", { authToken, session_id: sessionId, answer });
+export function respondWriting(authToken: string, sessionId: number, answer: string, finalizeAfterSubmission = false) {
+  return invoke<WritingTurnResult>("writing_respond", {
+    authToken, session_id: sessionId, answer, finalize_after_submission: finalizeAfterSubmission,
+  });
 }
 
 export function endWriting(authToken: string, sessionId: number) {
   return invoke<Record<string, any>>("writing_end", { authToken, session_id: sessionId });
+}
+
+export function writingChat(
+  authToken: string,
+  topic: string,
+  difficulty: Difficulty,
+  history: Array<{ role: "assistant" | "user"; text: string }>,
+) {
+  return invoke<{ reply: string; reaction?: string; next_question?: string; corrected_answer?: string | null }>("writing_chat", { authToken, topic, difficulty, history });
 }
 
 // ── Speaking ───────────────────────────────────────────────────────────────
@@ -117,7 +129,13 @@ export interface SpeakingTurnResult {
   total_turns?: number;
   next_question?: string;
   done?: boolean;
-  feedback?: { scores?: Record<string, number | null>; explanation?: string; status?: string };
+  feedback?: {
+    scores?: Record<string, number | null>;
+    explanation?: string;
+    status?: string;
+    reaction?: string;
+    corrected_answer?: string | null;
+  };
   summary?: Record<string, any>;
 }
 
