@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 SCHEMA_FILE = Path(__file__).resolve().parent / "schema.sql"
 
+# MySQL errors meaning "this schema object is already there": table (1050),
+# column (1060), key (1061), procedure/function (1304), trigger (1359), event
+# (1537), foreign key (1826) and CHECK constraint (3822). DDL auto-commits, so
+# a database can be left half-migrated by an interrupted or concurrent run;
+# treating these as "already done" lets a re-run finish instead of failing on
+# the first object that survived, on every start, forever.
+ALREADY_EXISTS_ERRORS = {1050, 1060, 1061, 1304, 1359, 1537, 1826, 3822}
+
 
 def report(event, message, level=logging.INFO, *, exc_info=False):
     log_event(logger, level, event, message, exc_info=exc_info)
@@ -137,7 +145,7 @@ def run_sql_migrations():
                         # already-present column as an idempotent statement so
                         # legacy migrations can be recorded and later files
                         # are not permanently blocked.
-                        if getattr(exc, "errno", None) in {1060, 1061}:
+                        if getattr(exc, "errno", None) in ALREADY_EXISTS_ERRORS:
                             report(
                                 "migration_statement_skipped",
                                 f"{filename} statement {statement_number}/{len(statements)} "
@@ -402,7 +410,7 @@ def bootstrap_base_schema():
             except Exception as exc:
                 # Already-exists errors from a concurrent worker booting at the
                 # same time (table, column, key, procedure, trigger, constraint).
-                if getattr(exc, "errno", None) in {1050, 1060, 1061, 1304, 1359, 1826}:
+                if getattr(exc, "errno", None) in ALREADY_EXISTS_ERRORS:
                     continue
                 raise
         # schema.sql is the fresh-install schema: it already contains everything

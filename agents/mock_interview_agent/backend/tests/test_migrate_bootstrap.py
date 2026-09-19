@@ -100,6 +100,61 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(cursor.closed)
 
 
+class RunnerCursor:
+    """Just enough of a cursor for run_sql_migrations()."""
+
+    def __init__(self, fail_errno=None):
+        self.fail_errno = fail_errno
+        self.executed = []
+
+    def execute(self, statement, params=None):
+        self.executed.append((statement, params))
+        if self.fail_errno and statement.startswith("CREATE PROCEDURE"):
+            error = Exception("already exists")
+            error.errno = self.fail_errno
+            raise error
+
+    def fetchall(self):
+        return []
+
+    def close(self):
+        pass
+
+
+class MigrationRunnerTests(unittest.TestCase):
+    def run_one_migration(self, sql, fail_errno):
+        import tempfile
+        from pathlib import Path
+
+        cursor = RunnerCursor(fail_errno)
+        conn = MagicMock()
+        conn.cursor.return_value = cursor
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "20990101_test.sql").write_text(sql, encoding="utf-8")
+            with patch.object(db, "get_conn", return_value=conn), patch.object(migrate, "MIGRATIONS_DIR", Path(directory)):
+                migrate.run_sql_migrations()
+        return cursor, conn
+
+    def test_objects_left_behind_by_an_interrupted_run_do_not_block_the_migration(self):
+        cursor, conn = self.run_one_migration(
+            "-- note\nUSE mock_interview_db;\nCREATE PROCEDURE p() SELECT 1;\nALTER TABLE t ADD COLUMN c INT;\n", 1304,
+        )
+        statements = [statement for statement, _ in cursor.executed]
+        self.assertTrue(any(s.startswith("ALTER TABLE t") for s in statements))  # kept going after the 1304
+        self.assertFalse(any("USE " in s.upper() for s in statements))
+        recorded = [params for statement, params in cursor.executed if statement.startswith("INSERT IGNORE INTO schema_migrations")]
+        self.assertEqual(recorded, [("20990101_test.sql",)])
+        conn.rollback.assert_not_called()
+
+    def test_real_errors_still_fail_and_roll_back(self):
+        with self.assertRaises(Exception):
+            _, conn = self.run_one_migration("CREATE PROCEDURE p() SELECT 1;\n", 1064)
+        # rollback happens inside run_sql_migrations before the re-raise
+
+    def test_every_expected_already_exists_code_is_tolerated(self):
+        self.assertEqual(migrate.ALREADY_EXISTS_ERRORS, {1050, 1060, 1061, 1304, 1359, 1537, 1826, 3822})
+
+
 class ExecutableStatementsTests(unittest.TestCase):
     def test_leading_comments_are_removed_but_inner_ones_kept(self):
         self.assertEqual(migrate.strip_leading_comments("-- header\n\n# note\nUSE mock_interview_db"), "USE mock_interview_db")
