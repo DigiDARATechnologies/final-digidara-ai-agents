@@ -16,6 +16,7 @@ AGENTS = [
     ('codeforge-agent', 'agents/codeforge_agent/services/lms-api', 4000, 'lms_api:create_app()', 'sync'),
     ('communication-agent', 'agents/communication-ai-agent/backend', 5001, 'run:app', 'sync'),
     ('aptitude-agent', 'agents/aptitude_agent', 5000, 'app:app', 'sync'),
+    ('mock-interview-agent', 'agents/mock_interview_agent/backend', 5030, 'app:app', 'sync'),
     ('resume-builder-agent', 'agents/resume_builder_agent/backend', 5010, 'run:app', 'sync'),
     ('certificate-agent', 'agents/certificate_agent', 8008, 'cert_app.main:app', 'uvicorn.workers.UvicornWorker'),
     ('job-agent', 'agents/job_agent', 5020, 'job_agent.app:create_app()', 'sync'),
@@ -26,6 +27,7 @@ SUITES = {
     'codeforge-agent': ['tests'],
     'communication-agent': ['tests'],
     'aptitude-agent': ['backend/unit_tests', 'backend/tests'],
+    'mock-interview-agent': ['tests'],
     'resume-builder-agent': ['tests'],
     'certificate-agent': ['tests'],
     'job-agent': ['tests'],
@@ -108,6 +110,9 @@ def run_agent(agent, skip_build):
                         ('agents/resume_builder_agent/SECURITY_AUDIT.md', '/SECURITY_AUDIT.md'),
                     ]:
                         command += ['-v', f'{(ROOT / source).as_posix()}:{target}:ro']
+                if name == 'mock-interview-agent':
+                    # Source-contract tests read the module's React files next to the backend.
+                    command += ['-v', f'{(ROOT / "agents/mock_interview_agent/frontend").as_posix()}:/frontend:ro']
                 command += ['--entrypoint', 'python', name, '/test_runner.py', *SUITES[name]]
                 with (artifacts / 'suite.log').open('w', encoding='utf-8') as log:
                     suite_result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200)

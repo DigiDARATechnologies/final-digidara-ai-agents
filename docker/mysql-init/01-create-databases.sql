@@ -12,3 +12,4 @@ CREATE DATABASE IF NOT EXISTS aptitude_ai;          -- aptitude_agent
 CREATE DATABASE IF NOT EXISTS resume_builder;       -- resume_builder_agent
 CREATE DATABASE IF NOT EXISTS career_agent_db;      -- certificate_agent
 CREATE DATABASE IF NOT EXISTS job_agent;             -- job_agent
+CREATE DATABASE IF NOT EXISTS mock_interview_db;     -- mock_interview_agent
