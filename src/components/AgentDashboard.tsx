@@ -1,3 +1,4 @@
+import { CAPSTONE_EXAMPLE_FILES } from "../lib/capstoneExamples";
 import type { CapstoneFlowState, CapstoneStep } from "../lib/capstoneFlow";
 import type { User } from "../types";
 
@@ -37,6 +38,19 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
         <div className="dashboard-status-row"><strong>{STEP_LABELS[state.step]}</strong><span>{STEP_PROGRESS[state.step]}%</span></div>
         <div className="progress-track"><span style={{ width: `${STEP_PROGRESS[state.step]}%` }} /></div>
         <p>The agent is monitoring this workflow and will keep all verification, choices, uploads, and feedback in the same chat.</p>
+      </div>
+
+      <div className="dashboard-section">
+        <h3>Example files</h3>
+        <p className="muted">See the expected report format and zip folder structure. They are the same for every project; write your own for yours.</p>
+        <div className="chat-options">
+          {CAPSTONE_EXAMPLE_FILES.map((file) => (
+            <a key={file.href} className="chat-option-link" href={file.href} download={file.download}>
+              <strong>{file.label}</strong>
+              <span>{file.description}</span>
+            </a>
+          ))}
+        </div>
       </div>
 
       <div className="dashboard-section">

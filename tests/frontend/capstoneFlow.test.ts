@@ -105,3 +105,26 @@ describe('requirements doubts before the timer is confirmed', () => {
     expect(result.messages[0].text).toBe('Use the button when you are ready. The timer cannot be paused.');
   });
 });
+
+describe('example report and zip downloads', () => {
+  const exampleHrefs = ['/capstone-examples/capstone-example-report.docx', '/capstone-examples/capstone-example-project.zip'];
+
+  test('the requirements message offers the examples next to the start button', async () => {
+    jest.mocked(api.chooseTopic).mockResolvedValue({ thread_id: 'thread', requirements: {} } as never);
+    const result = await handleCapstoneText(
+      { ...timerConfirmState, step: 'awaiting_topic_choice', topicOptions: [{ id: 'A', title: 'Tracker', summary: 's' }] } as CapstoneFlowState,
+      'A',
+    );
+    const options = result.messages[0].options ?? [];
+    expect(options[0]).toMatchObject({ value: 'confirm' });
+    expect(options.filter((option) => option.href).map((option) => option.href)).toEqual(exampleHrefs);
+  });
+
+  test('the submission guide offers the examples again once the timer starts', async () => {
+    jest.mocked(api.confirmTimer).mockResolvedValue({ thread_id: 'thread', deadline_at: '2026-09-25T00:00:00Z', submission_guide: {} });
+    const result = await handleCapstoneText(timerConfirmState, 'confirm');
+    expect(result.state.step).toBe('awaiting_submission');
+    expect(result.messages[0].options?.map((option) => option.href)).toEqual(exampleHrefs);
+    expect(result.messages[0].text).toContain('example report');
+  });
+});

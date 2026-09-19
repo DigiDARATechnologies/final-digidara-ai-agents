@@ -366,7 +366,12 @@ export default function ChatView({
                     <div className="bubble">{m.text}</div>
                     {!!visibleOptions?.length && (
                       <div className="chat-options">
-                        {visibleOptions.map((option) => (
+                        {visibleOptions.map((option) => option.href ? (
+                          <a key={option.value} className="chat-option-link" href={option.href} download={option.download ?? ""}>
+                            <strong>{option.label}</strong>
+                            {option.description && <span>{option.description}</span>}
+                          </a>
+                        ) : (
                           <button key={option.value} type="button" disabled={!optionsActive} onClick={() => onChooseOption(option.value, option.label)}>
                             <strong>{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
