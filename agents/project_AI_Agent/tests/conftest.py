@@ -18,6 +18,7 @@ checkpointer = MemorySaver()
 checkpointer.setup = lambda: None
 with patch("pymysql.connect", return_value=MagicMock()), patch("langgraph.checkpoint.mysql.pymysql.PyMySQLSaver", return_value=checkpointer):
     from app.api import routes
+from app.api import privacy
 from app import config
 from app.agentic import qa_agent
 from app.db.database import Base
@@ -43,6 +44,7 @@ def database(monkeypatch, tmp_path):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(routes, "get_session", factory)
+    monkeypatch.setattr(privacy, "get_session", factory)
     monkeypatch.setattr(nodes, "get_session", factory)
     monkeypatch.setattr(qa_agent, "get_session", factory)
     monkeypatch.setattr(config, "UPLOAD_DIR", tmp_path)
@@ -64,6 +66,7 @@ def state(database):
 def client(database):
     app = FastAPI()
     app.include_router(routes.router)
+    app.include_router(privacy.router)
     with TestClient(app) as client:
         yield client
 

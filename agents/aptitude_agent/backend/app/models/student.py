@@ -19,4 +19,9 @@ class Student(db.Model):
     profile_photo_mime = db.Column(db.String(40))
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    # DPDP (Digital Personal Data Protection Act) consent record -- when the
+    # learner last agreed to a specific version of the data-processing
+    # notice. See routes/privacy.py.
+    data_consent_at = db.Column(db.DateTime(timezone=True))
+    data_consent_version = db.Column(db.String(20))
     __table_args__ = (db.UniqueConstraint("email", name="uq_students_email"),)
