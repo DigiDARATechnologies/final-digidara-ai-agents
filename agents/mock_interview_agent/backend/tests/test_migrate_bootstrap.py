@@ -1,5 +1,6 @@
 """Base-schema bootstrap: only on an empty database, tolerant of races."""
 import os
+import re
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +18,7 @@ class FakeCursor:
         self.with_rows = False
         self.drained = 0
         self.closed = False
+        self.ledger_rows = []
 
     def execute(self, statement):
         self.executed.append(statement)
@@ -26,6 +28,10 @@ class FakeCursor:
                 error = Exception("boom")
                 error.errno = errno
                 raise error
+
+    def executemany(self, statement, rows):
+        self.ledger_statement = statement
+        self.ledger_rows = list(rows)
 
     def fetchall(self):
         self.drained += 1
@@ -50,6 +56,7 @@ class BootstrapTests(unittest.TestCase):
         cursor = FakeCursor(has_students=True)
         conn = run_bootstrap(cursor)
         self.assertEqual(len(cursor.executed), 1)
+        self.assertEqual(cursor.ledger_rows, [])
         conn.commit.assert_not_called()
         self.assertTrue(cursor.closed)
 
@@ -58,8 +65,21 @@ class BootstrapTests(unittest.TestCase):
         conn = run_bootstrap(cursor)
         joined = "\n".join(cursor.executed).upper()
         self.assertIn("CREATE TABLE IF NOT EXISTS STUDENTS", joined)
-        self.assertFalse(any(s.upper().startswith(("CREATE DATABASE", "USE ")) for s in cursor.executed))
+        # schema.sql glues "-- comment" lines onto CREATE DATABASE / USE, so
+        # check the text itself rather than only the start of each statement.
+        for statement in cursor.executed:
+            self.assertNotIn("CREATE DATABASE", statement.upper())
+            self.assertIsNone(re.search(r"(^|\n)\s*USE\s", statement, re.I))
+            self.assertFalse(statement.lstrip().startswith("--"))
         conn.commit.assert_called_once()
+
+    def test_fresh_install_records_every_shipped_migration_as_applied(self):
+        cursor = FakeCursor(has_students=False)
+        run_bootstrap(cursor)
+        shipped = sorted(path.name for path in migrate.MIGRATIONS_DIR.glob("*.sql"))
+        self.assertGreater(len(shipped), 10)
+        self.assertEqual([name for (name,) in cursor.ledger_rows], shipped)
+        self.assertIn("INSERT IGNORE INTO schema_migrations", cursor.ledger_statement)
 
     def test_row_returning_statements_are_read(self):
         cursor = FakeCursor(has_students=False)
@@ -78,6 +98,22 @@ class BootstrapTests(unittest.TestCase):
         with self.assertRaises(Exception):
             run_bootstrap(cursor)
         self.assertTrue(cursor.closed)
+
+
+class ExecutableStatementsTests(unittest.TestCase):
+    def test_leading_comments_are_removed_but_inner_ones_kept(self):
+        self.assertEqual(migrate.strip_leading_comments("-- header\n\n# note\nUSE mock_interview_db"), "USE mock_interview_db")
+        self.assertEqual(migrate.strip_leading_comments("SELECT 1 -- inline\n, 2"), "SELECT 1 -- inline\n, 2")
+        self.assertEqual(migrate.strip_leading_comments("-- only a comment"), "")
+
+    def test_use_and_create_database_are_dropped_even_behind_comments(self):
+        sql = "-- header\nCREATE DATABASE IF NOT EXISTS x;\n-- switch\nUSE x;\nuse x;\nALTER TABLE t ADD COLUMN c INT;\n"
+        self.assertEqual(migrate.executable_statements(sql), ["ALTER TABLE t ADD COLUMN c INT"])
+
+    def test_every_shipped_migration_is_free_of_hardcoded_database_switches(self):
+        for path in migrate.MIGRATIONS_DIR.glob("*.sql"):
+            for statement in migrate.executable_statements(path.read_text(encoding="utf-8")):
+                self.assertFalse(statement.upper().startswith(("USE ", "CREATE DATABASE")), path.name)
 
 
 class PoolSizeTests(unittest.TestCase):

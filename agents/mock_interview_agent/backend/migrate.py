@@ -74,6 +74,27 @@ def applied_migration_names(cursor):
     return {row[0] for row in cursor.fetchall()}
 
 
+def strip_leading_comments(statement):
+    lines = statement.splitlines()
+    while lines and (not lines[0].strip() or lines[0].lstrip().startswith(("--", "#"))):
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def executable_statements(sql):
+    """Split SQL into statements, dropping comments and USE/CREATE DATABASE.
+
+    The files hardcode ``USE mock_interview_db`` (often with a comment glued
+    on top), which retargets the connection away from DB_NAME -- fatal
+    whenever the configured database has any other name.
+    """
+    cleaned = (strip_leading_comments(statement) for statement in split_sql_statements(sql))
+    return [
+        statement for statement in cleaned
+        if statement and not statement.upper().startswith(("CREATE DATABASE", "USE "))
+    ]
+
+
 def run_sql_migrations():
     """Run every unapplied ``migrations/*.sql`` file in filename order."""
     migration_paths = sorted(MIGRATIONS_DIR.glob("*.sql"))
@@ -97,7 +118,7 @@ def run_sql_migrations():
                 report("migration_file_skipped", f"{filename} already applied")
                 continue
 
-            statements = split_sql_statements(path.read_text(encoding="utf-8"))
+            statements = executable_statements(path.read_text(encoding="utf-8"))
             if not statements:
                 report("migration_file_skipped", f"{filename} contains no statements")
                 continue
@@ -373,11 +394,7 @@ def bootstrap_base_schema():
         if cursor.fetchall():
             report("schema_bootstrap_skipped", "Base schema already present; skipping bootstrap")
             return
-        for statement in split_sql_statements(SCHEMA_FILE.read_text(encoding="utf-8")):
-            # The connection already targets DB_NAME; schema.sql's own
-            # CREATE DATABASE/USE would point it at a hardcoded name instead.
-            if statement.upper().startswith(("CREATE DATABASE", "USE ")):
-                continue
+        for statement in executable_statements(SCHEMA_FILE.read_text(encoding="utf-8")):
             try:
                 cursor.execute(statement)
                 if cursor.with_rows:
@@ -388,6 +405,15 @@ def bootstrap_base_schema():
                 if getattr(exc, "errno", None) in {1050, 1060, 1061, 1304, 1359, 1826}:
                     continue
                 raise
+        # schema.sql is the fresh-install schema: it already contains everything
+        # the shipped migrations add (verified against a real MySQL), and it
+        # only records two of them in the ledger itself. Replaying the rest on
+        # top fails on duplicates (e.g. 3822 duplicate CHECK constraint), so
+        # record them as applied; migrations added later still run normally.
+        cursor.executemany(
+            "INSERT IGNORE INTO schema_migrations (migration_name) VALUES (%s)",
+            [(path.name,) for path in sorted(MIGRATIONS_DIR.glob("*.sql"))],
+        )
         conn.commit()
         report("schema_bootstrap_completed", "Base schema bootstrap complete")
     finally:
