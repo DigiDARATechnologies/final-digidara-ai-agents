@@ -1,4 +1,4 @@
-...import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
