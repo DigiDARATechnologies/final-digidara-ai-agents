@@ -2,25 +2,21 @@ import { useEffect, useState } from "react";
 import type { Chat, User } from "../types";
 import { AGENTS } from "../data/agents";
 import { fetchAllUsageSummaries, type AgentUsageResult } from "../lib/usageApi";
-import { createBillingOrder, createTopupOrder, fetchBillingSummary, fetchTokenBalance, loadRazorpay, verifyBillingPayment, type BillingSummary } from "../lib/billingApi";
+import BillingPanel from "./BillingPanel";
 import { bridgeIdentity, getDashboard, getHistory, type DashboardData } from "../lib/communicationApi";
 
 interface Props { open: boolean; user: User; chats: Chat[]; glowOn: boolean; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
 type Tab = "general" | "billing" | "usage" | "agent-chats";
-type CheckoutResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
-type RazorpayConstructor = new (options: Record<string, unknown>) => { open: () => void; on: (event: string, callback: (response: { error?: { description?: string } }) => void) => void };
-
 function formatTokens(value: number) { return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : String(value); }
-function money(amount: number) { return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(amount / 100); }
 
 export default function SettingsModal({ open, user, chats, glowOn, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
-  const [tab, setTab] = useState<Tab>("general"); const [billing, setBilling] = useState<BillingSummary | null>(null); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [busy, setBusy] = useState(false); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); const [tokenBalance, setTokenBalance] = useState<number | null>(null); const [topupAmount, setTopupAmount] = useState(10);
+  const [tab, setTab] = useState<Tab>("general"); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); 
   const [exporting, setExporting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
-  useEffect(() => { if (!open) return; fetchBillingSummary().then(setBilling).catch(() => setBilling({ plan: "free", payments: [] })); fetchAllUsageSummaries().then(setUsage); fetchTokenBalance().then((r) => setTokenBalance(r.balance)).catch(() => setTokenBalance(null)); }, [open]);
+  useEffect(() => { if (!open) return; fetchAllUsageSummaries().then(setUsage); }, [open]);
   const [coachProgress, setCoachProgress] = useState<{ dashboard: DashboardData; history: Array<Record<string, any>> } | null>(null);
   const [coachProgressLoading, setCoachProgressLoading] = useState(false);
   const totalTokens = usage?.reduce((sum, item) => sum + (item.usage?.total_tokens ?? 0), 0) ?? 0; const totalRequests = usage?.reduce((sum, item) => sum + (item.usage?.total_requests ?? 0), 0) ?? 0;
@@ -49,32 +45,6 @@ export default function SettingsModal({ open, user, chats, glowOn, onClose, onOp
     return () => { active = false; };
   }, [open, detailAgentId, user.name, user.email]);
 
-  async function checkout(planId: string) {
-    setBusy(true);
-    try {
-      const order = await createBillingOrder(planId); await loadRazorpay();
-      const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
-      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} plan`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#365f91" },
-        handler: async (response: CheckoutResponse) => { try { await verifyBillingPayment(response); setBilling(await fetchBillingSummary()); onToast("Payment verified. Your plan is active."); } catch (error) { onToast((error as Error).message); } finally { setBusy(false); } },
-        modal: { ondismiss: () => setBusy(false) },
-      });
-      checkoutInstance.on("payment.failed", (response) => { onToast(response.error?.description || "Payment failed."); setBusy(false); }); checkoutInstance.open();
-    } catch (error) { onToast((error as Error).message); setBusy(false); }
-  }
-
-  async function topup(amountInr: number) {
-    setBusy(true);
-    try {
-      const order = await createTopupOrder(amountInr); await loadRazorpay();
-      const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
-      const checkoutInstance = new Razorpay({ key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: `${order.name} top-up`, order_id: order.order_id, prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#365f91" },
-        handler: async (response: CheckoutResponse) => { try { await verifyBillingPayment(response); const balance = await fetchTokenBalance(); setTokenBalance(balance.balance); onToast(`Payment verified. ${order.tokens.toLocaleString()} tokens added.`); } catch (error) { onToast((error as Error).message); } finally { setBusy(false); } },
-        modal: { ondismiss: () => setBusy(false) },
-      });
-      checkoutInstance.on("payment.failed", (response) => { onToast(response.error?.description || "Payment failed."); setBusy(false); }); checkoutInstance.open();
-    } catch (error) { onToast((error as Error).message); setBusy(false); }
-  }
-
   async function handleExport() {
     setExporting(true);
     try { await onExportData(); } finally { setExporting(false); }
@@ -101,7 +71,7 @@ export default function SettingsModal({ open, user, chats, glowOn, onClose, onOp
             <div className="setting-row"><div><b>Delete my account</b><p>Permanently erase your account and personal data. This also withdraws your consent to processing and cannot be undone.</p></div><button className="btn btn-outline btn-danger" onClick={() => { setDeleteConfirmOpen(true); setDeleteError(""); setDeletePassword(""); }}>Delete account</button></div>
             <div className="setting-row"><div><b>Grievance Officer</b><p>Questions or complaints about how your data is handled: <a href="mailto:privacy@digidaraaiagents.com">privacy@digidaraaiagents.com</a>.</p></div></div>
           </div></>}
-        {tab === "billing" && <><h2>Billing</h2><div className="current-plan"><div><small>Current plan</small><strong>{billing?.plan === "free" ? "DigiDARA Free" : "DigiDARA Pro"}</strong><span>{billing?.plan === "free" ? "Upgrade for higher limits and full agent access." : "Your paid plan is active."}</span></div><span className="plan-badge">{billing?.plan === "free" ? "Free" : "Active"}</span></div><h3 className="settings-title">Token balance</h3><div className="current-plan"><div><small>Available tokens</small><strong>{tokenBalance === null ? "—" : tokenBalance.toLocaleString()}</strong><span>Each agent request costs a small number of tokens. Top up any time.</span></div></div><div className="plan-grid"><article><h3>Quick top-up</h3><input type="number" min={1} value={topupAmount} onChange={(event) => setTopupAmount(Math.max(1, Number(event.target.value) || 1))} style={{ width: "100%", marginBottom: 8, padding: 8, borderRadius: 8, border: "1px solid var(--border)" }} /><p>₹1 = 1,000 tokens. You'll get {(topupAmount * 1000).toLocaleString()} tokens.</p><button disabled={busy} onClick={() => topup(topupAmount)}>Pay with Razorpay</button></article></div><h3 className="settings-title">Choose a plan</h3><div className="plan-grid"><article><h3>Pro Monthly</h3><strong>₹999 <small>/ month</small></strong><p>Higher usage limits, all specialized agents and priority workflows.</p><button disabled={busy} onClick={() => checkout("pro_monthly")}>Pay with Razorpay</button></article><article className="recommended"><span>Best value</span><h3>Pro Annual</h3><strong>₹9,999 <small>/ year</small></strong><p>Everything in Pro with two months of savings.</p><button disabled={busy} onClick={() => checkout("pro_yearly")}>Pay with Razorpay</button></article></div><h3 className="settings-title">Transaction history</h3><div className="transaction-list">{billing?.payments.length ? billing.payments.map((payment) => <div key={payment.id}><span><b>{payment.plan_id === "pro_yearly" ? "Pro Annual" : "Pro Monthly"}</b><small>{new Date(payment.created_at).toLocaleDateString()}</small></span><span className={`payment-status ${payment.status}`}>{payment.status}</span><strong>{money(payment.amount)}</strong></div>) : <p>No transactions yet.</p>}</div><p className="secure-payment">🔒 Payments are securely processed by Razorpay. Card or UPI details never pass through DigiDARA servers.</p></>}
+        {tab === "billing" && <BillingPanel open={open} user={user} onToast={onToast} />}
         {tab === "usage" && <><h2>Usage</h2><p className="settings-subtitle">Track usage across your DigiDARA agents.</p><div className="settings-usage-summary"><div className="settings-platform-total"><span>Your usage</span><strong>{formatTokens(totalTokens)} tokens</strong><small>· {totalRequests} requests</small></div><div className="profile-usage-limit"><div><b>Monthly usage</b><span>{Math.max(0, 100 - usagePercent)}% remaining</span></div><div className="usage-progress"><span style={{ width: `${usagePercent}%` }} /></div><small>{formatTokens(totalTokens)} of {formatTokens(monthlyLimit)} tokens used</small></div></div><h3 className="settings-title">Agent usage</h3><div className="usage-settings-list">{usage?.map((item) => <div key={item.id}><span className="profile-agent-icon" style={{ background: item.color }}>{item.icon}</span><span><b>{item.label}</b><small>{item.usage ? `${formatTokens(item.usage.total_tokens)} tokens · ${item.usage.total_requests} requests` : "Not reachable"}</small></span><i className={item.online ? "" : "offline"} /></div>) ?? <p>Loading usage…</p>}</div></>}
         {tab === "agent-chats" && <><h2>Agent chats</h2><p className="settings-subtitle">Conversation activity and request history for every agent.</p><label className="agent-chat-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg><input value={agentSearch} onChange={(event) => setAgentSearch(event.target.value)} placeholder="Search agents by name, category or capability…" /><span>{filteredAgentChatRows.length} agents</span>{agentSearch && <button onClick={() => setAgentSearch("")} aria-label="Clear search">×</button>}</label><div className="agent-chat-table">{filteredAgentChatRows.map(({ agent, chats: agentChats, requests, lastUsed }) => <article key={agent.id}><span className="agent-chat-icon" style={{ background: agent.color }}>{agent.icon}</span><div className="agent-chat-main"><b>{agent.name}</b><small>{agent.desc}</small></div><div className="agent-chat-metric"><b>{requests}</b><small>requests</small></div><div className="agent-chat-metric"><b>{agentChats.length}</b><small>chats</small></div><div className="agent-chat-last"><b>{lastUsed ? new Date(lastUsed).toLocaleDateString() : "Never"}</b><small>{lastUsed ? new Date(lastUsed).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Not used"}</small></div><button onClick={() => setDetailAgentId(agent.id)}>More details</button></article>)}{filteredAgentChatRows.length === 0 && <div className="agent-chat-empty">No agents match “{agentSearch}”.</div>}</div></>}
       </main>

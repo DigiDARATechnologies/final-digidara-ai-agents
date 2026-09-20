@@ -4,23 +4,27 @@ import os
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy import update
 
 from app.auth import service as auth_service
 from app.auth.security import get_current_user_id
+from app.billing import invoice as invoice_pdf
+from app.billing.plans import (
+    PLANS,
+    TOKENS_PER_RUPEE,
+    active_plan,
+    custom_plan,
+    offered_plans,
+    payment_label,
+    plan_name,
+    tokens_for_plan_id,
+)
 from app.db import get_session
 from app.models import Payment
 
 router = APIRouter(prefix="/billing", tags=["billing"])
-
-PLANS = {
-    "pro_monthly": {"name": "Pro", "amount": 99900, "currency": "INR", "period": "month"},
-    "pro_yearly": {"name": "Pro Annual", "amount": 999900, "currency": "INR", "period": "year"},
-}
-
-# Rupees paid -> tokens credited. ₹1 = 1,000 tokens.
-TOKENS_PER_RUPEE = 1000
 
 
 class OrderRequest(BaseModel):
@@ -45,14 +49,33 @@ def _credentials() -> tuple[str, str]:
     return key_id, key_secret
 
 
-def _tokens_for_topup_plan(plan_id: str) -> int | None:
-    """Returns the token count if plan_id is a topup marker, else None."""
-    if not plan_id.startswith("topup_"):
-        return None
-    try:
-        return int(plan_id.split("_", 1)[1])
-    except (IndexError, ValueError):
-        return None
+def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bool:
+    """Flip a payment to paid exactly once; True only for the caller that did it.
+
+    A conditional UPDATE, not read-then-write: verify and the Razorpay webhook
+    can arrive together for the same payment, and both used to see "created"
+    and both credit tokens. Only the request whose UPDATE changes a row may
+    credit.
+    """
+    result = session.execute(
+        update(Payment)
+        .where(Payment.id == payment.id, Payment.status != "paid")
+        .values(status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow())
+    )
+    session.commit()
+    return result.rowcount == 1
+
+
+def _credit_for_payment(payment: Payment) -> None:
+    tokens = tokens_for_plan_id(payment.plan_id)
+    if tokens:
+        auth_service.credit_tokens(payment.user_id, tokens)
+
+
+@router.get("/plans")
+def plans() -> dict:
+    """The plans on sale, so prices live in one place (app/billing/plans.py)."""
+    return {"plans": offered_plans(), "custom": custom_plan()}
 
 
 @router.get("/summary")
@@ -60,10 +83,20 @@ def summary(user_id: str = Depends(get_current_user_id)) -> dict:
     session = get_session()
     try:
         payments = session.query(Payment).filter_by(user_id=user_id).order_by(Payment.created_at.desc()).limit(25).all()
-        active = next((p for p in payments if p.status == "paid"), None)
+        paid = sorted((p for p in payments if p.status == "paid"), key=lambda p: p.paid_at or p.created_at, reverse=True)
+        plan_id, expires = active_plan(paid)
         return {
-            "plan": active.plan_id if active else "free",
-            "payments": [{"id": p.id, "plan_id": p.plan_id, "amount": p.amount, "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id, "created_at": p.created_at.isoformat()} for p in payments],
+            "plan": plan_id,
+            "plan_name": plan_name(plan_id),
+            "plan_expires_at": expires.isoformat() if expires else None,
+            "payments": [
+                {
+                    "id": p.id, "plan_id": p.plan_id, "label": payment_label(p.plan_id), "amount": p.amount,
+                    "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id,
+                    "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid",
+                }
+                for p in payments
+            ],
         }
     finally:
         session.close()
@@ -97,7 +130,7 @@ def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id))
         session.commit()
     finally:
         session.close()
-    return {"key_id": key_id, "order_id": order["id"], "amount": plan["amount"], "currency": plan["currency"], "name": plan["name"]}
+    return {"key_id": key_id, "order_id": order["id"], "amount": plan["amount"], "currency": plan["currency"], "name": f"{plan['name']} plan"}
 
 
 @router.post("/topup-order", status_code=201)
@@ -144,18 +177,29 @@ def verify_payment(req: VerifyRequest, user_id: str = Depends(get_current_user_i
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Unable to confirm payment status.") from exc
         if remote.get("order_id") != payment.razorpay_order_id or remote.get("amount") != payment.amount or remote.get("currency") != payment.currency or remote.get("status") != "captured":
             raise HTTPException(status.HTTP_409_CONFLICT, "Payment has not been captured yet.")
-        # Capture BEFORE mutating, so a repeat call (e.g. the client retries
-        # after a network blip) can never credit tokens twice for one payment.
-        already_paid = payment.status == "paid"
-        payment.razorpay_payment_id = req.razorpay_payment_id
-        payment.status = "paid"
-        payment.paid_at = datetime.utcnow()
-        session.commit()
-        if not already_paid:
-            tokens = _tokens_for_topup_plan(payment.plan_id)
-            if tokens:
-                auth_service.credit_tokens(user_id, tokens)
+        # Only the request that actually flips the row credits tokens, so a
+        # client retry or a concurrent webhook can never credit twice.
+        if _mark_paid(session, payment, req.razorpay_payment_id):
+            _credit_for_payment(payment)
         return {"verified": True, "plan": payment.plan_id}
+    finally:
+        session.close()
+
+
+@router.get("/invoices/{payment_id}")
+def download_invoice(payment_id: str, user_id: str = Depends(get_current_user_id)) -> Response:
+    session = get_session()
+    try:
+        payment = session.query(Payment).filter_by(id=payment_id, user_id=user_id).first()
+        if not payment:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice not found.")
+        if payment.status != "paid" or payment.paid_at is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "An invoice is available once the payment is complete.")
+        user = auth_service.get_by_id(user_id)
+        customer = {"name": getattr(user, "name", ""), "email": getattr(user, "email", ""), "mobile": getattr(user, "mobile", "") or ""}
+        pdf = invoice_pdf.build_invoice_pdf(payment=payment, description=payment_label(payment.plan_id), customer=customer)
+        filename = f"{invoice_pdf.invoice_number(payment.id, payment.paid_at)}.pdf"
+        return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "private, no-store"})
     finally:
         session.close()
 
@@ -177,15 +221,8 @@ async def webhook(request: Request) -> dict:
         try:
             payment = session.query(Payment).filter_by(razorpay_order_id=entity.get("order_id")).first()
             if payment and entity.get("amount") == payment.amount and entity.get("currency") == payment.currency:
-                already_paid = payment.status == "paid"
-                payment.razorpay_payment_id = entity.get("id")
-                payment.status = "paid"
-                payment.paid_at = datetime.utcnow()
-                session.commit()
-                if not already_paid:
-                    tokens = _tokens_for_topup_plan(payment.plan_id)
-                    if tokens:
-                        auth_service.credit_tokens(payment.user_id, tokens)
+                if _mark_paid(session, payment, entity.get("id")):
+                    _credit_for_payment(payment)
         finally:
             session.close()
     return {"ok": True}

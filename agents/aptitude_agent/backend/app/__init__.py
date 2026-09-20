@@ -4,10 +4,10 @@ import uuid
 import click
 from flask import Flask, jsonify, request, send_from_directory, g
 from flask_cors import CORS
-from sqlalchemy.exc import OperationalError
 from .config import Config
 from .extensions import db, migrate
 from .utils.errors import APIError
+from .utils.database_errors import register_database_error_handler
 from .utils.logging import configure_logging
 
 
@@ -80,11 +80,7 @@ def create_app(config_object=Config):
         if error.details: payload["details"] = error.details
         return jsonify(payload), error.status
 
-    @app.errorhandler(OperationalError)
-    def database_unavailable(error):
-        db.session.rollback()
-        app.logger.error("MySQL connection failed: %s", type(getattr(error, "orig", error)).__name__)
-        return jsonify(error="MySQL is unavailable or rejected the configured account. Check DATABASE_URL and MySQL grants.", code="database_unavailable", request_id=request.environ.get("aptitude.request_id")), 503
+    register_database_error_handler(app, db.session.rollback)
 
     @app.errorhandler(404)
     def not_found(_):
