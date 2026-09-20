@@ -316,7 +316,7 @@ export default function ChatView({
         )}
         {dailyChallengeStatus && (
           <button type="button" className={`daily-challenge-pill ${dailyChallengeStatus}`} onClick={onDailyChallenge}>
-            <span>...</span><span>Daily Challenge</span>
+            <span>📅</span><span>Daily Challenge</span>
             <i>{dailyChallengeStatus === "completed" ? "Completed" : "Pending"}</i>
           </button>
         )}
