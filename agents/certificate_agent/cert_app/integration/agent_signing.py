@@ -16,6 +16,7 @@ the tests in step with orchestrator/tests/test_agent_signing.py.
 from __future__ import annotations
 
 import hashlib
+import contextvars
 import hmac
 import json
 import logging
@@ -34,6 +35,11 @@ _nonces: dict[str, float] = {}
 _nonce_lock = threading.Lock()
 _last_sweep = 0.0
 _verified_logged = False
+# True while an already-accepted request is being handled in this task. A handler
+# may call its own routes in-process (httpx.ASGITransport); those internal calls
+# carry no signature and must not be verified a second time. A ContextVar follows
+# the awaiting task (and threadpool hops) but never leaks between requests.
+_outer_active: contextvars.ContextVar[bool] = contextvars.ContextVar("digidara_signing_outer_active", default=False)
 
 
 def mode() -> str:
@@ -120,7 +126,7 @@ class GatewaySignatureMiddleware:
     async def __call__(self, scope, receive, send):
         global _verified_logged
         current = mode()
-        if scope["type"] != "http" or current == "off" or scope["path"] == "/health":
+        if scope["type"] != "http" or current == "off" or scope["path"] == "/health" or _outer_active.get():
             await self.app(scope, receive, send)
             return
 
@@ -161,4 +167,8 @@ class GatewaySignatureMiddleware:
                 return {"type": "http.request", "body": body, "more_body": False}
             return await receive()
 
-        await self.app(scope, replay, send)
+        marker = _outer_active.set(True)
+        try:
+            await self.app(scope, replay, send)
+        finally:
+            _outer_active.reset(marker)

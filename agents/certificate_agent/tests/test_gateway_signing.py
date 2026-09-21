@@ -1,10 +1,12 @@
 """Gateway signature verification (certificate_agent). Kept in step with orchestrator/tests/test_agent_signing.py."""
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from cert_app.integration import agent_signing as signing
 
 AGENT = "certificate_agent"
+INTERNAL_HITS = []
 
 import hashlib
 import hmac
@@ -143,7 +145,25 @@ def make_client():
     def health():
         return {"status": "ok"}
 
-    return TestClient(app)
+    @app.get("/internal")
+    def internal():
+        INTERNAL_HITS.append(1)
+        return {"inner": True}
+
+    @app.post("/api/reenter")
+    async def reenter(request: Request):
+        # What certificate_agent's invoke handler does: call its own route in-process.
+        async with AsyncClient(transport=ASGITransport(app=request.app), base_url="http://testserver") as client:
+            inner = await client.get("/internal")
+        return {"status": inner.status_code, "inner": inner.json()}
+
+    @app.post("/api/explode")
+    async def explode(request: Request):
+        async with AsyncClient(transport=ASGITransport(app=request.app), base_url="http://testserver") as client:
+            await client.get("/internal")
+        raise RuntimeError("boom")
+
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def test_warn_mode_serves_unsigned_requests_but_logs_them(caplog):
@@ -195,3 +215,46 @@ def test_enforce_still_allows_the_docker_healthcheck_and_health_route(monkeypatc
 def test_off_mode_skips_verification(monkeypatch):
     monkeypatch.setenv("AGENT_SIGNATURE_MODE", "off")
     assert make_client().post("/api/invoke", json={}).status_code == 200
+
+
+def test_enforce_does_not_reject_the_handlers_own_in_process_calls(monkeypatch):
+    # Production: certificate_agent's /api/invoke calls /api/certificate/download/N and
+    # /api/chat/start in-process via httpx.ASGITransport, unsigned.
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    body = b"{}"
+    headers = sign(body, path="/api/reenter", user_id="u1", is_admin="false") | {"content-type": "application/json"}
+    response = make_client().post("/api/reenter", content=body, headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"status": 200, "inner": {"inner": True}}
+
+
+def test_unsigned_outer_request_is_still_rejected_before_any_internal_call(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    INTERNAL_HITS.clear()
+    response = make_client().post("/api/reenter", json={}, headers={"x-digidara-is-admin": "true"})
+    assert response.status_code == 401
+    assert INTERNAL_HITS == []
+
+
+def test_reentry_exemption_does_not_leak_to_the_next_request(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    client = make_client()
+    body = b"{}"
+    ok = client.post("/api/reenter", content=body, headers=sign(body, path="/api/reenter") | {"content-type": "application/json"})
+    assert ok.status_code == 200
+    assert client.get("/internal").status_code == 401
+    assert client.post("/api/reenter", json={}).status_code == 401
+
+
+def test_reentry_exemption_is_cleared_even_when_the_handler_raises(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    client = make_client()
+    body = b"{}"
+    assert client.post("/api/explode", content=body, headers=sign(body, path="/api/explode") | {"content-type": "application/json"}).status_code == 500
+    assert client.get("/internal").status_code == 401
+
+
+def test_warn_mode_logs_one_warning_per_outer_request_not_per_internal_call(caplog):
+    with caplog.at_level("WARNING", logger="digidara.signing"):
+        assert make_client().post("/api/reenter", json={}).status_code == 200
+    assert caplog.text.count("gateway_signature_invalid") == 1
