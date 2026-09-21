@@ -9,6 +9,7 @@ import re
 
 from backend.app.extensions import db
 from backend.app.models import AptitudeTest, AptitudeTestQuestion
+from backend.app.models.operations import AuditEvent
 
 
 class ScriptedProvider:
@@ -68,7 +69,10 @@ def test_one_degenerate_question_is_replaced_alone_and_the_test_is_created(app, 
 
     created = client.post("/api/aptitude/tests", headers=auth_headers, json={"mode": "mixed"})
 
-    assert created.status_code == 201, created.get_json()
+    if created.status_code != 201:
+        with app.app_context():
+            reasons = [e.metadata_json for e in AuditEvent.query.filter_by(event_type="generation_failed").all()]
+        raise AssertionError((created.get_json(), reasons, provider.asked_for))
     # 21 questions asked for once; the retry asked for the single bad slot, not 21 again.
     assert provider.asked_for == [21, 1]
     assert "Generate exactly 1 original" in provider.prompts[1]
