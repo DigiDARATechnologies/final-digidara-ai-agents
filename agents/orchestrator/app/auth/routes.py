@@ -14,7 +14,7 @@ from app.auth.schemas import (
 from app.auth.security import create_access_token, get_current_user_id, hash_password, verify_password
 from app.models import User
 from app.rate_limit import limiter
-from app import job_data
+from app import agent_data, job_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -97,7 +97,8 @@ def export_my_data(user_id: str = Depends(get_current_user_id)) -> dict:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
     try:
         data["job_agent"] = job_data.export_user_data(user_id)
-    except job_data.JobDataUnavailable as exc:
+        data.update(agent_data.export_user_data(user_id, data["account"]["email"]))
+    except (job_data.JobDataUnavailable, agent_data.AgentDataUnavailable) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     return data
 
@@ -133,7 +134,8 @@ def delete_my_account(req: AccountDeleteRequest, user_id: str = Depends(get_curr
         if not req.password or not verify_password(req.password, user.password_hash):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect password.")
     try:
+        agent_data.delete_user_data(user_id, user.email)
         job_data.delete_user_data(user_id)
-    except job_data.JobDataUnavailable as exc:
+    except (job_data.JobDataUnavailable, agent_data.AgentDataUnavailable) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     service.delete_user(user_id)

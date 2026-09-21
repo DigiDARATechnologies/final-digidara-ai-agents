@@ -17,7 +17,7 @@
           "end_interview", "exit_interview", "active_interview",
           "daily_usage", "dashboard", "history", "history_detail",
           "profile", "update_profile", "record_focus_event",
-          "download_report"
+          "download_report", "export_user_data", "delete_user_data"
         ]
       },
       "payload": { "type": "object" }

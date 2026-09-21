@@ -155,3 +155,19 @@ def erase_my_data(req: PrivacyRequest, x_digidara_user_id: str | None = Header(d
         return {"status": "erased", "id": student.id}
     finally:
         session.close()
+
+
+def personal_data_action(action: str, payload: dict, caller_id: str | None) -> dict:
+    """Invoke-contract entry for the platform account bridge (export/erase).
+
+    A learner with no capstone record simply has nothing to export or erase,
+    which must not make the platform-wide operation fail.
+    """
+    request = PrivacyRequest(email=str(payload.get("email") or ""))
+    handler = export_my_data if action == "export_user_data" else erase_my_data
+    try:
+        return handler(request, caller_id)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {"profile": None} if action == "export_user_data" else {"status": "no_data"}
+        raise

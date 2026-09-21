@@ -95,3 +95,36 @@ def test_erase_anonymizes_profile_and_answers_and_revokes_token(client, auth_hea
         answer = db.session.get(AptitudeAnswer, "answer-2")
         assert answer.reasoning_text is None
         assert answer.mistake_explanation is None
+
+
+BRIDGE_HEADERS = {"X-DigiDARA-User-ID": "platform-user-1"}
+
+
+def _bridge(client, action, email="learner@example.com", headers=BRIDGE_HEADERS):
+    return client.post("/api/invoke", json={"action": action, "payload": {"email": email}}, headers=headers)
+
+
+def test_platform_bridge_requires_verified_identity(client, auth_headers):
+    assert _bridge(client, "export_user_data", headers={}).status_code == 401
+    assert _bridge(client, "delete_user_data", headers={}).status_code == 401
+
+
+def test_platform_bridge_exports_and_erases_the_learner(client, auth_headers, app):
+    exported = _bridge(client, "export_user_data")
+    assert exported.status_code == 200
+    assert exported.get_json()["profile"]["email"] == "learner@example.com"
+
+    erased = _bridge(client, "delete_user_data")
+    assert erased.status_code == 200
+    assert erased.get_json()["status"] == "erased"
+    with app.app_context():
+        student = Student.query.filter_by(email="learner@example.com").first()
+        assert student is None
+        assert Student.query.filter(Student.email.like("erased-%@erased.invalid")).count() == 1
+
+
+def test_platform_bridge_for_unknown_learner_is_not_an_error(client, app):
+    exported = _bridge(client, "export_user_data", email="nobody@example.com")
+    assert exported.status_code == 200 and exported.get_json() == {"profile": None}
+    erased = _bridge(client, "delete_user_data", email="nobody@example.com")
+    assert erased.status_code == 200 and erased.get_json() == {"status": "no_data"}

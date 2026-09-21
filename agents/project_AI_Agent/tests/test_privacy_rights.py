@@ -76,3 +76,33 @@ def test_erase_anonymizes_profile_and_submission_text(client, database):
         headers={"x-digidara-user-id": "gateway-user-1"},
     )
     assert followup.status_code == 404
+
+
+def _invoke(client, action, email="learner@example.test", headers=None):
+    return client.post(
+        "/api/invoke",
+        json={"action": action, "payload": {"email": email}},
+        headers={"x-digidara-user-id": "gateway-user-1"} if headers is None else headers,
+    )
+
+
+def test_invoke_export_and_erase_serve_the_platform_bridge(client, database):
+    exported = _invoke(client, "export_user_data")
+    assert exported.status_code == 200
+    assert exported.json()["profile"]["email"] == "learner@example.test"
+
+    erased = _invoke(client, "delete_user_data")
+    assert erased.status_code == 200
+    assert erased.json()["status"] == "erased"
+
+
+def test_invoke_privacy_actions_need_verified_identity(client, database):
+    assert _invoke(client, "export_user_data", headers={}).status_code == 401
+    assert _invoke(client, "delete_user_data", headers={}).status_code == 401
+
+
+def test_invoke_privacy_for_learner_with_no_capstone_data_is_not_an_error(client, database):
+    exported = _invoke(client, "export_user_data", email="nobody@example.test")
+    assert exported.status_code == 200 and exported.json() == {"profile": None}
+    erased = _invoke(client, "delete_user_data", email="nobody@example.test")
+    assert erased.status_code == 200 and erased.json() == {"status": "no_data"}

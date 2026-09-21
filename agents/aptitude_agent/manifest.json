@@ -10,7 +10,7 @@
   "input_schema": {
     "type": "object",
     "properties": {
-      "action": { "type": "string", "enum": ["health", "ensure_session", "dashboard", "history", "analytics", "usage_summary", "profile", "mixed_test_config", "save_mixed_test_config", "create_test", "status", "question", "answer", "hint", "abandon", "results", "download_report"] },
+      "action": { "type": "string", "enum": ["health", "ensure_session", "dashboard", "history", "analytics", "usage_summary", "profile", "mixed_test_config", "save_mixed_test_config", "create_test", "status", "question", "answer", "hint", "abandon", "results", "download_report", "export_user_data", "delete_user_data"] },
       "payload": { "type": "object" }
     },
     "required": ["action"]

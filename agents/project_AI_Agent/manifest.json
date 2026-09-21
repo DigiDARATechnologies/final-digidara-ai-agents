@@ -12,7 +12,7 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["health", "clarify_topic_request", "check_eligibility_free", "choose_topic", "confirm_timer", "status", "upload_submission", "usage_summary", "submit_viva_answer", "ask_project_question"]
+        "enum": ["health", "clarify_topic_request", "check_eligibility_free", "choose_topic", "confirm_timer", "status", "upload_submission", "usage_summary", "submit_viva_answer", "ask_project_question", "export_user_data", "delete_user_data"]
       },
       "payload": { "type": "object" }
     },

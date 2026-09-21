@@ -12,10 +12,25 @@ _SCHEMA_LOCK_NAME = "digidara_job_agent_schema_init"
 _SCHEMA_LOCK_TIMEOUT_SECONDS = 120
 
 
+MAX_POOL_SIZE = 4
+
+
+def _pool_size():
+    # mysql-connector opens every pooled connection eagerly, per gunicorn
+    # worker (4) plus the worker container, on a MySQL server shared with the
+    # other agents. Mock Interview hit "1040 Too many connections" at 10 x 4;
+    # cap here too so an older .env still saying DB_POOL_SIZE=10 is safe.
+    try:
+        requested = int(os.getenv("DB_POOL_SIZE", str(MAX_POOL_SIZE)))
+    except ValueError:
+        requested = MAX_POOL_SIZE
+    return max(1, min(requested, MAX_POOL_SIZE))
+
+
 def _pool_config():
     return {
         "pool_name": "job_agent_pool",
-        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+        "pool_size": _pool_size(),
         "host": os.getenv("DB_HOST", "localhost"),
         "user": os.getenv("DB_USER", "root"),
         "password": os.getenv("DB_PASSWORD", ""),
