@@ -1,9 +1,10 @@
 """Gateway signature verification (mock_interview_agent). Kept in step with orchestrator/tests/test_agent_signing.py."""
-from flask import Flask, jsonify, request
+from flask import Flask, current_app, jsonify, request
 
 from integration import agent_signing as signing
 
 AGENT = "mock_interview_agent"
+INTERNAL_HITS = []
 
 import hashlib
 import hmac
@@ -142,6 +143,22 @@ def make_client():
     def health():
         return jsonify(status="ok")
 
+    @app.get("/internal")
+    def internal():
+        INTERNAL_HITS.append(1)
+        return jsonify(inner=True)
+
+    @app.post("/api/reenter")
+    def reenter():
+        # What every Flask invoke handler does: call its own route in-process.
+        inner = current_app.test_client().get("/internal")
+        return jsonify(status=inner.status_code, inner=inner.get_json())
+
+    @app.post("/api/explode")
+    def explode():
+        current_app.test_client().get("/internal")
+        raise RuntimeError("boom")
+
     return app.test_client()
 
 
@@ -195,3 +212,46 @@ def test_enforce_still_allows_the_docker_healthcheck_and_health_route(monkeypatc
 def test_off_mode_skips_verification(monkeypatch):
     monkeypatch.setenv("AGENT_SIGNATURE_MODE", "off")
     assert make_client().post("/api/invoke", json={}).status_code == 200
+
+
+def test_enforce_does_not_reject_the_handlers_own_in_process_calls(monkeypatch):
+    # The production bug: invoke handlers re-enter their own routes with app.test_client(),
+    # and those internal calls carry no signature.
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    body = b"{}"
+    headers = sign(body, path="/api/reenter", user_id="u1", is_admin="false") | {"content-type": "application/json"}
+    response = make_client().post("/api/reenter", data=body, headers=headers)
+    assert response.status_code == 200
+    assert response.get_json() == {"status": 200, "inner": {"inner": True}}
+
+
+def test_unsigned_outer_request_is_still_rejected_before_any_internal_call(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    INTERNAL_HITS.clear()
+    response = make_client().post("/api/reenter", json={}, headers={"x-digidara-is-admin": "true"})
+    assert response.status_code == 401
+    assert INTERNAL_HITS == []
+
+
+def test_reentry_exemption_does_not_leak_to_the_next_request(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    client = make_client()
+    body = b"{}"
+    ok = client.post("/api/reenter", data=body, headers=sign(body, path="/api/reenter") | {"content-type": "application/json"})
+    assert ok.status_code == 200
+    assert client.get("/internal").status_code == 401
+    assert client.post("/api/reenter", json={}).status_code == 401
+
+
+def test_reentry_exemption_is_cleared_even_when_the_handler_raises(monkeypatch):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+    client = make_client()
+    body = b"{}"
+    assert client.post("/api/explode", data=body, headers=sign(body, path="/api/explode") | {"content-type": "application/json"}).status_code == 500
+    assert client.get("/internal").status_code == 401
+
+
+def test_warn_mode_logs_one_warning_per_outer_request_not_per_internal_call(caplog):
+    with caplog.at_level("WARNING", logger="digidara.signing"):
+        assert make_client().post("/api/reenter", json={}).status_code == 200
+    assert caplog.text.count("gateway_signature_invalid") == 1
