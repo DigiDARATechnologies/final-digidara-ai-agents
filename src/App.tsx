@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
 import { newChatId, nowStr, useChats } from "./hooks/useChats";
+import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
   createInitialCapstoneState,
@@ -35,6 +36,7 @@ import SettingsModal from "./components/SettingsModal";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import ProfilePage from "./components/ProfilePage";
 import Toast from "./components/Toast";
+import SaveIndicator from "./components/SaveIndicator";
 import AgentDashboard from "./components/AgentDashboard";
 import CodeForgeDashboard from "./components/CodeForgeDashboard";
 import AptitudeDashboard from "./components/AptitudeDashboard";
@@ -79,44 +81,6 @@ function toUser(authUser: AuthUser): User {
   return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(), isAdmin: authUser.is_admin };
 }
 
-function capstoneKey(email: string) {
-  return `digidara_capstone_${email.trim().toLowerCase()}`;
-}
-
-function loadCapstoneStates(email?: string): Record<string, CapstoneFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(capstoneKey(email)) || "{}");
-}
-
-function codeforgeKey(email: string) {
-  return `digidara_codeforge_${email.trim().toLowerCase()}`;
-}
-
-function loadCodeForgeStates(email?: string): Record<string, CodeForgeFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(codeforgeKey(email)) || "{}");
-}
-
-function aptitudeKey(email: string) { return `digidara_aptitude_${email.trim().toLowerCase()}`; }
-function loadAptitudeStates(email?: string): Record<string, AptitudeFlowState> { if (!email) return {}; return JSON.parse(localStorage.getItem(aptitudeKey(email)) || "{}"); }
-
-function communicationKey(email: string) {
-  return `digidara_communication_${email.trim().toLowerCase()}`;
-}
-
-function loadCommunicationStates(email?: string): Record<string, CommunicationFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(communicationKey(email)) || "{}");
-}
-
-function resumeBuilderKey(email: string) { return `digidara_resume_builder_${email.trim().toLowerCase()}`; }
-function loadResumeBuilderStates(email?: string): Record<string, ResumeBuilderFlowState> { return email ? JSON.parse(localStorage.getItem(resumeBuilderKey(email)) || "{}") : {}; }
-
-function certificateKey(email: string) { return `digidara_certificate_${email.trim().toLowerCase()}`; }
-function loadCertificateStates(email?: string): Record<string, CertificateFlowState> { return email ? JSON.parse(localStorage.getItem(certificateKey(email)) || "{}") : {}; }
-
-function jobFetchKey(email: string) { return `digidara_job_fetch_${email.trim().toLowerCase()}`; }
-function loadJobFetchStates(email?: string): Record<string, JobFetchFlowState> { return email ? JSON.parse(localStorage.getItem(jobFetchKey(email)) || "{}") : {}; }
 
 export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
@@ -127,14 +91,14 @@ export default function App() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [newChatPending, setNewChatPending] = useState(true);
   const [chats, setChats] = useState<Chat[]>([]);
-  const [capstoneStates, setCapstoneStates] = useState<Record<string, CapstoneFlowState>>(() => loadCapstoneStates(loadUser()?.email));
-  const [codeforgeStates, setCodeforgeStates] = useState<Record<string, CodeForgeFlowState>>(() => loadCodeForgeStates(loadUser()?.email));
-  const [aptitudeStates, setAptitudeStates] = useState<Record<string, AptitudeFlowState>>(() => loadAptitudeStates(loadUser()?.email));
-  const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>(() => loadCommunicationStates(loadUser()?.email));
-  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>(() => loadResumeBuilderStates(loadUser()?.email));
-  const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>(() => loadCertificateStates(loadUser()?.email));
+  const [capstoneStates, setCapstoneStates] = useState<Record<string, CapstoneFlowState>>({});
+  const [codeforgeStates, setCodeforgeStates] = useState<Record<string, CodeForgeFlowState>>({});
+  const [aptitudeStates, setAptitudeStates] = useState<Record<string, AptitudeFlowState>>({});
+  const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>({});
+  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>({});
+  const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>({});
   const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
-  const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>(() => loadJobFetchStates(loadUser()?.email));
+  const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>({});
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [capstoneOnline, setCapstoneOnline] = useState(false);
   const [codeforgeOnline, setCodeforgeOnline] = useState(false);
@@ -146,9 +110,6 @@ export default function App() {
   const [certificateSecondsLeft, setCertificateSecondsLeft] = useState<number | null>(null);
   const [dailyChallengeStatus, setDailyChallengeStatus] = useState<"pending" | "completed">("pending");
   const [codeBusy, setCodeBusy] = useState(false);
-  const skipCapstoneSave = useRef(true);
-  const skipCodeforgeSave = useRef(true);
-  const skipCommunicationSave = useRef(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -171,6 +132,18 @@ export default function App() {
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
   const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
+
+  // Per-agent conversation progress lives in the database, not browser storage.
+  const agentState = useAgentStatePersistence(user?.email, [
+    { agentId: "capstone", states: capstoneStates, merge: setCapstoneStates,
+      serialize: (state) => { const { docxFile: _docxFile, zipFile: _zipFile, ...saved } = state; return saved; } },
+    { agentId: "codeforge", states: codeforgeStates, merge: setCodeforgeStates },
+    { agentId: "aptitude", states: aptitudeStates, merge: setAptitudeStates },
+    { agentId: "communication", states: communicationStates, merge: setCommunicationStates },
+    { agentId: "resume_builder", states: resumeBuilderStates, merge: setResumeBuilderStates },
+    { agentId: "certificate", states: certificateStates, merge: setCertificateStates },
+    { agentId: "job_fetch", states: jobFetchStates, merge: setJobFetchStates },
+  ]);
 
   // Must run before the `!user` early return below — React requires every
   // render to call the same hooks in the same order, and this one used to
@@ -279,12 +252,6 @@ export default function App() {
       loadAccountChats(localChats).then((accountChats) => {
         if (active && accountChats) setChats(accountChats);
       });
-      setCapstoneStates(loadCapstoneStates(user.email));
-      setCodeforgeStates(loadCodeForgeStates(user.email));
-      setAptitudeStates(loadAptitudeStates(user.email));
-      setCommunicationStates(loadCommunicationStates(user.email));
-      setCertificateStates(loadCertificateStates(user.email));
-      setJobFetchStates(loadJobFetchStates(user.email));
     } else {
       setChats([]);
       setCapstoneStates({});
@@ -294,61 +261,11 @@ export default function App() {
       setCertificateStates({});
       setJobFetchStates({});
     }
-    skipCapstoneSave.current = true;
-    skipCodeforgeSave.current = true;
-    skipCommunicationSave.current = true;
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (skipCapstoneSave.current) {
-      skipCapstoneSave.current = false;
-      return;
-    }
-    const serializable = Object.fromEntries(
-      Object.entries(capstoneStates).map(([id, state]) => {
-        const { docxFile: _docxFile, zipFile: _zipFile, ...saved } = state;
-        return [id, saved];
-      }),
-    );
-    localStorage.setItem(capstoneKey(user.email), JSON.stringify(serializable));
-  }, [capstoneStates, user]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (skipCodeforgeSave.current) {
-      skipCodeforgeSave.current = false;
-      return;
-    }
-    localStorage.setItem(codeforgeKey(user.email), JSON.stringify(codeforgeStates));
-  }, [codeforgeStates, user]);
-
-  useEffect(() => { if (!user) return; localStorage.setItem(aptitudeKey(user.email), JSON.stringify(aptitudeStates)); }, [aptitudeStates, user]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (skipCommunicationSave.current) {
-      skipCommunicationSave.current = false;
-      return;
-    }
-    localStorage.setItem(communicationKey(user.email), JSON.stringify(communicationStates));
-  }, [communicationStates, user]);
-
-  useEffect(() => {
-    if (user) localStorage.setItem(resumeBuilderKey(user.email), JSON.stringify(resumeBuilderStates));
-  }, [resumeBuilderStates, user]);
-
-  useEffect(() => {
-    if (user) localStorage.setItem(certificateKey(user.email), JSON.stringify(certificateStates));
-  }, [certificateStates, user]);
-
-  useEffect(() => {
-    if (user) localStorage.setItem(jobFetchKey(user.email), JSON.stringify(jobFetchStates));
-  }, [jobFetchStates, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -550,6 +467,7 @@ export default function App() {
   }
 
   function handleLogout() {
+    void agentState.flushNow(); // starts saving before the login token is cleared
     localStorage.removeItem("digidara_user");
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
@@ -1556,6 +1474,7 @@ export default function App() {
       />
 
       <Toast message={toastMsg} show={toastShow} />
+      <SaveIndicator status={agentState.status} />
     </>
   );
 }
