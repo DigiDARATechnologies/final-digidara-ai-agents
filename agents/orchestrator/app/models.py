@@ -133,6 +133,21 @@ class ConversationMessage(Base):
     )
 
 
+class AgentChatState(Base):
+    """A learner's progress in one chat with one agent, kept server-side so it
+    follows them across devices instead of living in browser storage."""
+
+    __tablename__ = "agent_chat_state"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
+    agent_id: Mapped[str] = mapped_column(String(64))
+    chat_id: Mapped[str] = mapped_column(String(128))
+    state: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("user_id", "agent_id", "chat_id"),)
+
+
 class Payment(Base):
     __tablename__ = "payments"
 

@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 
 from app.auth.security import hash_password
+from app.agent_state import service as agent_state_service
 from app.chat_history import service as chat_history_service
 from app.db import get_session
 from app.models import Payment, User
@@ -81,6 +82,7 @@ def delete_user(user_id: str) -> None:
     which hold no name/email/mobile of their own -- see app/models.py) but
     are no longer reachable through any authenticated account afterwards."""
     chat_history_service.purge_history(user_id)
+    agent_state_service.purge_state(user_id)
     session = get_session()
     try:
         user = session.get(User, user_id)
@@ -95,6 +97,7 @@ def export_user_data(user_id: str) -> dict | None:
     """DPDP Act 2023 right to access -- a machine-readable dump of every
     piece of personal data this service holds about the requesting user."""
     chats, _ = chat_history_service.get_history(user_id)
+    saved_states = agent_state_service.get_all(user_id)
     session = get_session()
     try:
         user = session.get(User, user_id)
@@ -125,6 +128,7 @@ def export_user_data(user_id: str) -> dict | None:
                 for payment in payments
             ],
             "chat_history": chats,
+            "agent_state": saved_states,
         }
     finally:
         session.close()
