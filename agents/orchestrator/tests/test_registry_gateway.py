@@ -153,6 +153,37 @@ def test_job_database_actions_are_not_billed(client, upstream, database, action)
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000
 
+FREE_APTITUDE_AND_MOCK_ACTIONS = [
+    "dashboard", "history", "history_detail", "profile", "analytics", "mixed_test_config",
+    "save_mixed_test_config", "daily_usage", "active_interview", "status", "download_report",
+    "record_focus_event", "question", "answer", "skip", "abandon", "exit_interview",
+]
+LLM_ACTIONS = ["create_test", "hint", "results", "start_interview", "submit_answer", "end_interview"]
+
+
+@pytest.mark.parametrize("action", FREE_APTITUDE_AND_MOCK_ACTIONS)
+def test_aptitude_and_mock_interview_non_llm_actions_are_not_billed(client, upstream, database, action):
+    assert invoke(client, action).status_code == 200
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+
+
+@pytest.mark.parametrize("action", FREE_APTITUDE_AND_MOCK_ACTIONS)
+def test_free_actions_still_work_with_an_empty_balance(client, upstream, database, action):
+    with database() as session:
+        session.get(User, "learner").token_balance = 0
+        session.commit()
+    assert invoke(client, action).status_code == 200
+
+
+@pytest.mark.parametrize("action", LLM_ACTIONS)
+def test_llm_actions_stay_billable(client, upstream, database, action):
+    assert action not in gateway.FREE_ACTIONS
+    assert invoke(client, action).status_code == 200
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000 - gateway.TOKEN_COST_PER_CALL
+
+
 @pytest.mark.parametrize("reported,cost", [("25", 25), ("bad", gateway.TOKEN_COST_PER_CALL), ("0", gateway.TOKEN_COST_PER_CALL)])
 def test_billing_and_binary_response_forwarding(client, upstream, database, reported, cost):
     upstream.response = httpx.Response(201, content=b"%PDF-test", headers={"content-type": "application/pdf", "content-disposition": "attachment; filename=report.pdf", "x-tokens-used": reported})
