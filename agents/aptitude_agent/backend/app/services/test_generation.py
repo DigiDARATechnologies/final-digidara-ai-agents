@@ -287,21 +287,11 @@ def _minimal_safe_item(item,slot,internal_values=()):
     return {**slot,"question":question,"options":options,"correct_answer":answer,"explanation":explanation,"content_hash":content_hash(question),"structural_hash":structural_hash(question,slot["category"],slot["topic"])}
 
 
-def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
-    total_started=time.perf_counter()
-    if not current_app.config.get("OPENAI_API_KEY"):
-        if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
-        raise RuntimeError("OpenAI question generation is unavailable")
-    prompt_slots=[{**slot,"variation_seed":secrets.randbelow(900000)+100000,"scenario_seed":str(uuid.uuid4())[:8]} for slot in slots]
-    batch_id=str(uuid.uuid4())
-    # Normalize once, then use this exact full set in both the prompt and the
-    # near-duplicate validator. This prevents the model from colliding with a
-    # question that validation checks but generation was never told about.
-    forbidden_questions=_normalized_exclusions(avoid_questions)
-    recent_count=len(forbidden_questions)
-    blocked_patterns=(avoid_number_patterns or [])[:24]
-    count=len(slots)
-    prompt = f"""Generate exactly {count} original four-option aptitude MCQs: one for each of the {count} ordered slots below.
+def _batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id):
+    """The generation prompt for exactly these slots (all of a batch, or just the
+    ones still needing a valid question on a partial retry)."""
+    count=len(prompt_slots)
+    return f"""Generate exactly {count} original four-option aptitude MCQs: one for each of the {count} ordered slots below.
 The questions array MUST contain exactly {count} objects in slot order. Do not stop early, skip a slot, add a slot, or return partial output.
 Copy each slot's category, topic, and difficulty exactly. Omit all seed fields. Keep question text under 280 characters, every option under 140 characters, and every explanation under 300 characters. Use concise options and compact JSON.
 For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Use reason only for non-quantitative items; use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
@@ -319,6 +309,23 @@ Quality:
 Batch ID: {batch_id}
 Ordered slots ({count} total): {json.dumps(prompt_slots,separators=(',',':'))}
 Return all {count} questions in one complete response."""
+
+
+def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
+    total_started=time.perf_counter()
+    if not current_app.config.get("OPENAI_API_KEY"):
+        if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
+        raise RuntimeError("OpenAI question generation is unavailable")
+    prompt_slots=[{**slot,"variation_seed":secrets.randbelow(900000)+100000,"scenario_seed":str(uuid.uuid4())[:8]} for slot in slots]
+    batch_id=str(uuid.uuid4())
+    # Normalize once, then use this exact full set in both the prompt and the
+    # near-duplicate validator. This prevents the model from colliding with a
+    # question that validation checks but generation was never told about.
+    forbidden_questions=_normalized_exclusions(avoid_questions)
+    recent_count=len(forbidden_questions)
+    blocked_patterns=(avoid_number_patterns or [])[:24]
+    count=len(slots)
+    prompt=_batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id)
     current_app.logger.info(
         "Batch generation timing step=prompt_build duration_ms=%.2f slots=%s prompt_chars=%s recent_exclusions=%s",
         (time.perf_counter()-total_started)*1000,len(slots),len(prompt),len(forbidden_questions),
@@ -327,6 +334,10 @@ Return all {count} questions in one complete response."""
     accumulated_usage=empty_usage()
     retry_prompt=prompt
     rejected_questions=[]
+    # slot index -> question that already passed validation. Kept across
+    # attempts so a retry only has to replace the slots that failed, instead
+    # of discarding every good question because one was bad.
+    accepted={}
     max_validation_attempts=max(1,int(max_validation_attempts))
     last_minimal=None;last_model=None
     for attempt in range(1,max_validation_attempts+1):
@@ -338,10 +349,13 @@ Return all {count} questions in one complete response."""
             raise TimeoutError("live question generation deadline exceeded")
         attempt_started=time.perf_counter()
         candidate_questions=[]
+        pending=[index for index in range(count) if index not in accepted]
+        attempt_slots=[slots[index] for index in pending]
+        attempt_prompt_slots=[prompt_slots[index] for index in pending]
         try:
             current_app.logger.info(
                 "OpenAI question-generation attempt=%s/%s slots=%s categories=%s recent_exclusions=%s",
-                attempt,max_validation_attempts,len(slots),sorted({slot["category"] for slot in slots}),
+                attempt,max_validation_attempts,len(attempt_slots),sorted({slot["category"] for slot in attempt_slots}),
                 len(forbidden_questions),
             )
             provider_started=time.perf_counter()
@@ -350,7 +364,7 @@ Return all {count} questions in one complete response."""
                 retry_prompt,0,deadline=deadline,
                 timeout=request_timeout or (current_app.config.get("OPENAI_BACKGROUND_TIMEOUT_SECONDS",20) if background else current_app.config.get("OPENAI_TIMEOUT_SECONDS",6)),
                 maximum_tokens=current_app.config.get("QUESTION_GENERATION_MAX_COMPLETION_TOKENS",1536),
-                response_schema=_batch_response_schema(slots),
+                response_schema=_batch_response_schema(attempt_slots),
                 schema_name="aptitude_question_batch",
             )
             current_app.logger.info(
@@ -361,26 +375,28 @@ Return all {count} questions in one complete response."""
             payload,usage=result
             accumulated_usage=merge_usage(accumulated_usage,usage)
             last_model=usage.get("model") or last_model
-            items,response_shape=_extract_question_items(payload,len(slots))
+            items,response_shape=_extract_question_items(payload,len(attempt_slots))
             current_app.logger.info(
                 "Batch generation response shape attempt=%s shape=%s payload_keys=%s questions_count=%s expected_count=%s finish_reason=%s response_truncated=%s",
-                attempt,response_shape,sorted(str(key) for key in payload),len(items),len(slots),
+                attempt,response_shape,sorted(str(key) for key in payload),len(items),len(attempt_slots),
                 usage.get("finish_reason"),usage.get("response_truncated",False),
             )
             candidate_questions=_candidate_question_texts(items)
-            if len(items)==len(slots):
-                canonical_items=[_canonicalize_batch_item(item,slot) for item,slot in zip(items,slots)]
-                minimal=[_minimal_safe_item(item,slot,(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id)) for item,slot,prompt_slot in zip(canonical_items,slots,prompt_slots)]
+            if len(items)==len(attempt_slots):
+                canonical_items=[_canonicalize_batch_item(item,slot) for item,slot in zip(items,attempt_slots)]
+                minimal=[_minimal_safe_item(item,slot,(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id)) for item,slot,prompt_slot in zip(canonical_items,attempt_slots,attempt_prompt_slots)]
                 if all(minimal) and not any(questions_are_near_duplicates(item["question"],seen) for item in minimal for seen in forbidden_questions):
                     # Keep the singleton fallback used by callers outside the
                     # complete-test flow. Batch callers require an exact count.
-                    if len(minimal)==1:last_minimal=minimal[0]
-            if len(items)!=len(slots): raise ValueError(f"expected {len(slots)} questions")
+                    if count==1:last_minimal=minimal[0]
+            if len(items)!=len(attempt_slots): raise ValueError(f"expected {len(attempt_slots)} questions")
             validation_started=time.perf_counter()
-            validated=[]
-            for item_index,(item,slot,prompt_slot) in enumerate(zip(canonical_items,slots,prompt_slots),start=1):
+            new_items={}
+            first_failure=None
+            for position,(item,slot,prompt_slot) in enumerate(zip(canonical_items,attempt_slots,attempt_prompt_slots)):
+                slot_index=pending[position]
                 try:
-                    validated.append(validate_generated_item(
+                    new_items[slot_index]=validate_generated_item(
                     # category/topic/difficulty (and technical_language) are
                     # already known server-side from `slot` — the model is
                     # asked to echo them back, but that's an unforced,
@@ -391,7 +407,7 @@ Return all {count} questions in one complete response."""
                     # `_minimal_safe_item` above.
                     {**item,**slot},slot,
                         internal_values=(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id),
-                    ))
+                    )
                 except ValueError as exc:
                     # validate_generated_item's messages are fixed strings shared
                     # by several different checks (e.g. one "structured
@@ -405,22 +421,41 @@ Return all {count} questions in one complete response."""
                     current_app.logger.error(
                         "Question validation failed reason=%s attempt=%s item_index=%s category=%s topic=%s "
                         "explanation=%r correct_answer=%r options=%r",
-                        str(exc),attempt,item_index,slot.get("category"),slot.get("topic"),
+                        str(exc),attempt,slot_index+1,slot.get("category"),slot.get("topic"),
                         str(item.get("explanation",""))[:400],item.get("correct_answer"),item.get("options"),
                     )
-                    raise ValueError(f"question {item_index}: {exc}") from exc
-            content_hashes=[item["content_hash"] for item in validated]
-            structural_hashes=[item["structural_hash"] for item in validated if item["structural_hash"]]
-            if len(content_hashes)!=len(set(content_hashes)):raise ValueError("response contains duplicate question wording")
-            if len(structural_hashes)!=len(set(structural_hashes)):raise ValueError("response contains structurally duplicate numeric questions")
-            if any(
-                questions_are_near_duplicates(item["question"], previous["question"])
-                for index, item in enumerate(validated)
-                for previous in validated[:index]
-            ):
-                raise ValueError("response contains near-duplicate question concepts")
-            if any(questions_are_near_duplicates(item["question"],seen) for item in validated for seen in forbidden_questions):
-                raise ValueError("response repeats a recent or in-test question concept")
+                    if first_failure is None:
+                        first_failure=ValueError(f"question {slot_index+1}: {exc}")
+                        first_failure.__cause__=exc
+            # Keep every question that passed. One bad slot used to discard the
+            # whole batch (~20 questions) and burn an entire attempt on it; now
+            # the next attempt asks only for the slots still missing.
+            accepted.update(new_items)
+            if first_failure is not None:
+                current_app.logger.warning(
+                    "Batch generation kept %s/%s valid questions; %s slot(s) still need a valid question",
+                    len(accepted),count,count-len(accepted),
+                )
+                raise first_failure
+            validated=[accepted[index] for index in range(count)]
+            try:
+                content_hashes=[item["content_hash"] for item in validated]
+                structural_hashes=[item["structural_hash"] for item in validated if item["structural_hash"]]
+                if len(content_hashes)!=len(set(content_hashes)):raise ValueError("response contains duplicate question wording")
+                if len(structural_hashes)!=len(set(structural_hashes)):raise ValueError("response contains structurally duplicate numeric questions")
+                if any(
+                    questions_are_near_duplicates(item["question"], previous["question"])
+                    for index, item in enumerate(validated)
+                    for previous in validated[:index]
+                ):
+                    raise ValueError("response contains near-duplicate question concepts")
+                if any(questions_are_near_duplicates(item["question"],seen) for item in validated for seen in forbidden_questions):
+                    raise ValueError("response repeats a recent or in-test question concept")
+            except ValueError:
+                # These checks compare questions with each other, so a failure
+                # can't be pinned on one slot: start the whole batch over.
+                accepted.clear()
+                raise
             current_app.logger.info(
                 "Batch generation timing step=parse_validate attempt=%s duration_ms=%.2f items=%s",
                 attempt,(time.perf_counter()-validation_started)*1000,len(validated),
@@ -458,7 +493,18 @@ Return all {count} questions in one complete response."""
                 attempt,(time.perf_counter()-attempt_started)*1000,type(exc).__name__,
             )
             current_app.logger.warning("OpenAI question validation attempt %s/%s failed: %s",attempt,max_validation_attempts,str(exc)[:240])
-            retry_prompt=_retry_context(prompt,exc,rejected_questions,attempt)
+            pending_now=[index for index in range(count) if index not in accepted]
+            if len(pending_now)==count:
+                retry_base=prompt
+            else:
+                # Ask only for the slots without a valid question, and tell the
+                # model about the ones already accepted so replacements can't
+                # repeat them.
+                retry_base=_batch_prompt(
+                    [prompt_slots[index] for index in pending_now],blocked_patterns,
+                    forbidden_questions+_normalized_exclusions([accepted[index]["question"] for index in sorted(accepted)]),batch_id,
+                )
+            retry_prompt=_retry_context(retry_base,exc,rejected_questions,attempt)
             if deadline is not None and time.monotonic()>=deadline and last_minimal:
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
