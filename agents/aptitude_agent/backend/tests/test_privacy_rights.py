@@ -128,3 +128,13 @@ def test_platform_bridge_for_unknown_learner_is_not_an_error(client, app):
     assert exported.status_code == 200 and exported.get_json() == {"profile": None}
     erased = _bridge(client, "delete_user_data", email="nobody@example.com")
     assert erased.status_code == 200 and erased.get_json() == {"status": "no_data"}
+
+
+def test_platform_bridge_refuses_while_single_user_mode_is_on(client, app, monkeypatch):
+    # Every request is served as one shared student in this mode, so an export or
+    # erasure would act on the wrong person.
+    monkeypatch.setitem(app.config, "SINGLE_USER_MODE", True)
+    for action in ("export_user_data", "delete_user_data"):
+        response = _bridge(client, action)
+        assert response.status_code == 503
+        assert response.get_json()["code"] == "single_user_mode"
