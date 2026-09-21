@@ -68,6 +68,29 @@ def _ensure_session(payload: dict):
     return jsonify({"sessionToken": token, "expires_at": expires_at, "student": {"id": student.id, "name": student.name, "email": student.email, "mobile": student.phone or ""}})
 
 
+def _personal_data(action: str, payload: dict):
+    """DPDP export/erasure on behalf of the platform account bridge.
+
+    Only the gateway-verified identity header authorizes this; the email comes
+    from the orchestrator's own account record, and the request then re-enters
+    the learner's normal privacy routes under a token for that one student.
+    """
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+    email = str(payload.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify(error="A valid email is required", code="invalid_email"), 400
+    student = Student.query.filter_by(email=email).first()
+    if student is None:
+        return jsonify({"profile": None} if action == "export_user_data" else {"status": "no_data"})
+    token, _ = issue_token(student, auth_source="strategy_f")
+    headers = {"Authorization": f"Bearer {token}"}
+    client = current_app.test_client()
+    if action == "export_user_data":
+        return client.get("/api/aptitude/me/export", headers=headers)
+    return client.delete("/api/aptitude/me", headers=headers)
+
+
 ROUTES = {
     "dashboard": ("GET", "/api/aptitude/dashboard"),
     "history": ("GET", "/api/aptitude/history"),
@@ -131,6 +154,8 @@ def invoke():
         return jsonify(status="ok", agent_name="aptitude_agent")
     if action == "ensure_session":
         return _ensure_session(payload)
+    if action in {"export_user_data", "delete_user_data"}:
+        return _personal_data(action, payload)
     if action == "usage_summary":
         response = _invoke_internal(action, payload)
         if response.status_code != 200:

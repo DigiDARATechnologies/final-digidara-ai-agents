@@ -22,6 +22,7 @@ def _log_id(thread_id: str) -> str:
 
 from app import config
 from app.agentic.qa_agent import ProjectNotFound, ask_project_question
+from app.api.privacy import personal_data_action
 from app.api.schemas import (
     ConfigOut,
     EligibilityCheckResponse,
@@ -848,6 +849,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
     elif action == "ask_project_question":
         result = await run_in_threadpool(qa_ask_action, payload)
+    elif action in {"export_user_data", "delete_user_data"}:
+        result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

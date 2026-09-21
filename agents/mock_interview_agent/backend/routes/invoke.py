@@ -19,6 +19,7 @@ import logging
 from flask import Blueprint, current_app, jsonify, request
 
 import db
+import privacy
 from session_auth import InvalidSessionToken, issue_session_token, student_id_from_token
 
 bp = Blueprint("invoke", __name__)
@@ -79,6 +80,19 @@ def _ensure_session(payload: dict):
 
     token = issue_session_token(student_id)
     return jsonify({"sessionToken": token, "student_id": student_id})
+
+
+def _personal_data(action: str, payload: dict):
+    # Gateway-verified identity only; the email is the orchestrator's own
+    # account record, so this never trusts a browser-supplied identity.
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+    email = str(payload.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return _error("A valid email is required", "invalid_email", 400)
+    if action == "export_user_data":
+        return jsonify(privacy.export_student(email))
+    return jsonify(privacy.erase_student(email))
 
 
 def _owns_interview(student_id: int, interview_id) -> bool:
@@ -159,6 +173,8 @@ def invoke():
         return jsonify(status="ok", agent_name=AGENT_NAME)
     if action == "ensure_session":
         return _ensure_session(payload)
+    if action in {"export_user_data", "delete_user_data"}:
+        return _personal_data(action, payload)
 
     logger.info("mock_interview invoke action=%s", action)
     return _dispatch(action, payload)
