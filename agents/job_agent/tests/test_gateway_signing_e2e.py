@@ -72,3 +72,16 @@ def test_a_signed_request_is_accepted(client):
 def test_docker_healthcheck_still_works_while_enforcing(client):
     assert client.post("/api/invoke", data=b'{"action":"health"}', headers={"content-type": "application/json"}).status_code == 200
     assert client.get("/health").status_code == 200
+
+
+def test_a_signed_real_action_that_re_enters_the_app_works_while_enforcing(client):
+    # The production bug: /api/invoke re-enters /api/jobs/me/categories in-process, unsigned.
+    body = json.dumps({"action": "get_categories", "payload": {}}).encode()
+    response = client.post("/api/invoke", data=body, headers=sign(body, user_id="learner-1", is_admin="false"))
+    assert response.status_code == 200
+    assert response.get_json()["categories"]
+
+
+def test_the_same_real_action_unsigned_is_rejected_while_enforcing(client):
+    response = client.post("/api/invoke", json={"action": "get_categories"}, headers={"x-digidara-user-id": "learner-1"})
+    assert response.status_code == 401

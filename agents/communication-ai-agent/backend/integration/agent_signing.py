@@ -36,6 +36,11 @@ _nonces: dict[str, float] = {}
 _nonce_lock = threading.Lock()
 _last_sweep = 0.0
 _verified_logged = False
+# Set while an already-accepted request is being handled on this thread. Invoke
+# handlers re-enter the app's own routes in-process via app.test_client(); those
+# internal calls carry no signature and must not be verified a second time.
+_state = threading.local()
+OUTER_MARKER = "digidara.signing.outer"
 
 
 def mode() -> str:
@@ -116,6 +121,8 @@ def install(app, agent_name: str) -> None:
     @app.before_request
     def verify_gateway_signature():
         global _verified_logged
+        if getattr(_state, "outer_active", False):
+            return None
         current = mode()
         if current == "off" or request.path == "/health":
             return None
@@ -124,6 +131,8 @@ def install(app, agent_name: str) -> None:
             return None
         reason = check(request.headers.get, request.method, request.path, body, agent_name)
         if reason is None:
+            _state.outer_active = True
+            request.environ[OUTER_MARKER] = True
             if not _verified_logged:
                 _verified_logged = True
                 logger.info("gateway_signature_verified agent=%s (first verified request in this process)", agent_name)
@@ -134,4 +143,12 @@ def install(app, agent_name: str) -> None:
         )
         if current == "enforce":
             return jsonify(error="Invalid service signature", code="invalid_service_signature"), 401
+        _state.outer_active = True
+        request.environ[OUTER_MARKER] = True
         return None
+
+    @app.teardown_request
+    def end_outer_request(_exc):
+        # Only the request that set the flag clears it, never an internal re-entry.
+        if request.environ.get(OUTER_MARKER):
+            _state.outer_active = False
