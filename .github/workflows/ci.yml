@@ -374,6 +374,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Use an npm that supports the bulk advisory endpoint
+        run: npm install -g npm@latest
       - name: Audit frontend dependencies
         run: npm audit --audit-level=high --json > npm-audit.json
       - name: Upload npm audit report
