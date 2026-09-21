@@ -19,6 +19,15 @@ echo "Deploying commit: $NEW_COMMIT"
 # either value. Existing job-agent configuration is never overwritten.
 bash scripts/prepare-production-env.sh
 
+# Warn (never fail the deploy) when a real .env lacks keys its .env.example
+# documents: those silently fall back to a code default. Prints names only.
+if command -v python3 >/dev/null 2>&1; then
+  echo "Checking .env drift (warning only)..."
+  python3 scripts/check_env_drift.py || echo "WARNING: env drift check could not run."
+else
+  echo "WARNING: python3 not found; skipping the .env drift check."
+fi
+
 # Catch missing env files and other Compose configuration errors before any
 # containers are touched.
 docker compose config --quiet
