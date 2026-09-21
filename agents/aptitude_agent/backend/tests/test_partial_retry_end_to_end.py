@@ -32,7 +32,8 @@ class ScriptedProvider:
         if slot["category"] == "Quantitative Aptitude":
             a, b = 40 + self._word * 7, 13 + self._word * 3
             total = a + b
-            return {**base, "question": f"A {word} crate weighs {a} kg while the {word[::-1]} crate weighs {b} kg. Find the sum weight.",
+            other = word[::-1]
+            return {**base, "question": f"{word.capitalize()} holds {a} {other} and {other[2:]} adds {b} more {other}. How many {other} are there in all?",
                     "correct_option": str(total), "distractors": [str(total + 5), str(total + 11), str(total - 9)],
                     "reason": "", "calculation_step_1": f"{a} + {b} = {total}", "calculation_step_2": f"Combined load = {total}"}
         return {**base, "question": f"Among {word}, {word[::-1]}, {word[2:]+word[:2]} and {word[3:]+word[:3]}, which one best fits {word[4:]+word[:4]}?",
