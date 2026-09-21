@@ -93,6 +93,8 @@ jobs:
           path: artifacts/python-unit.xml
           if-no-files-found: warn
 
+      - name: Check every env key the code reads is documented (warning only)
+        run: python scripts/check_env_drift.py --code | grep -E 'UNDOCUMENTED' | sed 's/^/::warning::/' || true
       - name: Compile Python services
         run: |
           python -m compileall -q \
