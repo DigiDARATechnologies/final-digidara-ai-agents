@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from app import config
+from app.auth.agent_signing import sign_headers
 from app.auth.security import decode_access_token
 from app.auth import service as auth_service
 from app.registry import service as registry_service
@@ -167,6 +168,12 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         if agent_name == "aptitude_agent" and action_name == "create_test"
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
+    # Sign last, over the final body and the exact identity headers set above,
+    # so agents can trust x-digidara-user-id / x-digidara-is-admin.
+    headers.update(sign_headers(
+        agent.agent_name, "POST", agent.endpoint, body,
+        headers.get("x-digidara-user-id"), headers.get("x-digidara-is-admin"),
+    ))
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             upstream = await client.post(agent.endpoint, content=body, headers=headers)

@@ -124,6 +124,8 @@ def create_app(config_object: str | None = None) -> Flask:
     app = Flask(__name__)
     if config_object:
         app.config.from_object(config_object)
+    from integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "resume_builder_agent")
 
     is_production = os.getenv("FLASK_ENV") == "production"
     secret_key = app.config.get("SECRET_KEY") or os.getenv("SECRET_KEY")

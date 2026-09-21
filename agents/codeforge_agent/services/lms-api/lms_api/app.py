@@ -15,6 +15,8 @@ def create_app(config=None, repository=None):
     app.config.from_object(Config)
     if config:
         app.config.update(config)
+    from integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "codeforge_agent")
     if not app.config.get("TESTING"):
         Config.validate()
 

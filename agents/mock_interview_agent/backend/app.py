@@ -40,6 +40,8 @@ def create_app():
         expose_headers=["X-Request-ID"],
     )
     configure_structured_logging(app)
+    from integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "mock_interview_agent")
     register_http_context(app)
     register_error_handlers(app)
     register_blueprints(app)

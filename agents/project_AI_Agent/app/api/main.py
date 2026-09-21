@@ -51,6 +51,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.integration.agent_signing import GatewaySignatureMiddleware  # noqa: E402
+
+
 @app.middleware("http")
 async def bind_request_user(request, call_next):
     # Lets deep call sites (e.g. app/llm/client.py's usage logging) attribute
@@ -72,6 +75,7 @@ async def bind_request_user(request, call_next):
 
 app.include_router(router)
 app.include_router(privacy_router)
+app.add_middleware(GatewaySignatureMiddleware, agent_name="capstone_project_agent")  # added last = outermost
 
 @app.get("/health")
 def health() -> dict:
