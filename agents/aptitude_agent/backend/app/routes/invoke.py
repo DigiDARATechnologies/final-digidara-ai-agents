@@ -80,6 +80,11 @@ def _personal_data(action: str, payload: dict):
     email = str(payload.get("email") or "").strip().lower()
     if not email or "@" not in email:
         return jsonify(error="A valid email is required", code="invalid_email"), 400
+    if current_app.config["SINGLE_USER_MODE"]:
+        # In single-user mode every request is served as one shared student
+        # whatever token it carries, so an export or erasure would act on the
+        # wrong person. Refuse rather than touch someone else's data.
+        return jsonify(error="Personal-data requests are unavailable while SINGLE_USER_MODE is on", code="single_user_mode"), 503
     student = Student.query.filter_by(email=email).first()
     if student is None:
         return jsonify({"profile": None} if action == "export_user_data" else {"status": "no_data"})

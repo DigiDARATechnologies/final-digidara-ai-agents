@@ -105,17 +105,54 @@ def test_a_wrong_count_on_the_retry_is_retried_without_losing_accepted_questions
     assert [q["question"] for q in questions] == [Q_MANAGER, Q_AGES, Q_CHAIRS]
 
 
-def test_a_duplicate_between_questions_starts_the_whole_batch_over(monkeypatch):
-    # A duplicate involves two questions, so it can't be pinned on one slot;
-    # the accepted questions are discarded and the full batch is regenerated.
+def test_a_replacement_that_repeats_an_accepted_question_is_asked_for_again_alone(monkeypatch):
     provider = Provider(
         [good(Q_MANAGER), bad(Q_CODE), good(Q_CHAIRS)],
-        [good(Q_MANAGER)],  # replacement repeats an accepted question
-        [good(Q_MANAGER), good(Q_CODE), good(Q_CHAIRS)],
+        [good(Q_MANAGER)],  # replacement repeats an accepted question: only the replacement is blamed
+        [good(Q_CODE)],
     )
     questions, _model, _usage = run(monkeypatch, provider, [SLOT] * 3)
-    assert provider.asked_for == [3, 1, 3]
+    assert provider.asked_for == [3, 1, 1]  # never a full 3 again
     assert [q["question"] for q in questions] == [Q_MANAGER, Q_CODE, Q_CHAIRS]
+
+
+def test_two_valid_but_duplicate_questions_replace_only_the_later_one(monkeypatch):
+    twin = "Every manager checks reports, and Kiran is a manager. Which conclusion must hold?"
+    provider = Provider(
+        [good(Q_MANAGER), good(Q_CHAIRS), good(twin)],  # 3 is a paraphrase of 1
+        [good(Q_AGES)],
+    )
+    questions, _model, _usage = run(monkeypatch, provider, [SLOT] * 3)
+    assert provider.asked_for == [3, 1]
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_CHAIRS, Q_AGES]
+
+
+def test_a_question_repeating_a_recent_one_is_the_only_one_replaced(monkeypatch):
+    provider = Provider(
+        [good(Q_MANAGER), good(Q_CODE), good(Q_CHAIRS)],
+        [good(Q_AGES)],
+    )
+    monkeypatch.setattr(test_generation, "json_completion", provider)
+    app = Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context():
+        questions, _model, _usage = test_generation.generate_questions(
+            [SLOT] * 3, avoid_questions=["In a row of five chairs, Meera sits left of Ravi and right of Tara. Who sits in the middle?"],
+            max_validation_attempts=3,
+        )
+    assert provider.asked_for == [3, 1]
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_CODE, Q_AGES]
+
+
+def test_offender_selection_prefers_the_fresh_question_and_otherwise_the_later_one():
+    def item(text):
+        return {"question": text, "content_hash": text, "structural_hash": None}
+    twin_a, twin_b = "What is the purpose of RAM?", "What function does RAM perform in a computer?"
+    validated = [item(twin_a), item("Which protocol assigns IP addresses on a network?"), item(twin_b)]
+    assert test_generation._cross_check_offenders(validated, {0, 1, 2}, [])[0] == {2}  # all fresh: later one
+    assert test_generation._cross_check_offenders(validated, {0}, [])[0] == {0}  # only the first is fresh
+    assert test_generation._cross_check_offenders(validated, set(), [])[0] == {2}  # neither fresh: later one
+    assert test_generation._cross_check_offenders(validated[1:2], {0}, [])[0] == set()
 
 
 def test_a_single_slot_batch_still_works(monkeypatch):
