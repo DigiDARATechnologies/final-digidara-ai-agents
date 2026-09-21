@@ -19,13 +19,16 @@ keep local chat history; the graph itself carries no memory of past turns.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, TypedDict
 
 import httpx
+
 from langgraph.graph import END, StateGraph
 
 from app import config
+from app.auth.agent_signing import sign_headers
 from app.llm.client import call_text, call_with_tools
 from app.orchestrator import prompts
 from app.orchestrator.tools import build_tools, endpoint_for
@@ -85,7 +88,13 @@ def invoke_agent_node(state: OrchestratorState) -> dict:
         return {"agent_error": "this agent just went offline", "agent_used": tool_name}
 
     try:
-        resp = httpx.post(endpoint, json=state.get("tool_args") or {}, timeout=config.AGENT_CALL_TIMEOUT_SECONDS)
+        body = json.dumps(state.get("tool_args") or {}).encode()
+        resp = httpx.post(
+            endpoint,
+            content=body,
+            headers={"Content-Type": "application/json", **sign_headers(tool_name, "POST", endpoint, body)},
+            timeout=config.AGENT_CALL_TIMEOUT_SECONDS,
+        )
         resp.raise_for_status()
         return {"agent_result": resp.json(), "agent_used": tool_name}
     except Exception as exc:  # noqa: BLE001 — any transport/HTTP failure becomes a clean chat reply, not a crash

@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 from cert_app.db.database import init_db
 from cert_app.api import auth, exam, certificate, chat, invoke
+from cert_app.integration.agent_signing import GatewaySignatureMiddleware
 from cert_app.integration.registry_client import registry_client
 from cert_app.config import get_settings
 
@@ -35,6 +36,8 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+app.add_middleware(GatewaySignatureMiddleware, agent_name="certificate_agent")
 
 # Static files
 app.mount("/static", StaticFiles(directory="cert_app/ui/static"), name="static")

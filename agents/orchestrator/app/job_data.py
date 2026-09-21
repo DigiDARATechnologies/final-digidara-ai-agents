@@ -16,9 +16,12 @@ here per agent, following this file's shape, to close that gap.
 """
 from urllib.parse import urlparse
 
+import json
+
 import httpx
 
 from app import config
+from app.auth.agent_signing import sign_headers
 from app.gateway.routes import ALLOWED_AGENT_HOSTS
 from app.registry import service as registry_service
 
@@ -34,10 +37,16 @@ def _invoke(action: str, user_id: str) -> dict:
     if urlparse(agent.endpoint).hostname not in ALLOWED_AGENT_HOSTS:
         raise JobDataUnavailable("Job Agent endpoint is not allowed by the gateway policy.")
     try:
+        body = json.dumps({"action": action, "payload": {}}).encode()
         response = httpx.post(
             agent.endpoint,
-            json={"action": action, "payload": {}},
-            headers={"X-Digidara-User-Id": user_id, "X-Digidara-Is-Admin": "false"},
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Digidara-User-Id": user_id,
+                "X-Digidara-Is-Admin": "false",
+                **sign_headers("job_agent", "POST", agent.endpoint, body, user_id, "false"),
+            },
             timeout=config.AGENT_CALL_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

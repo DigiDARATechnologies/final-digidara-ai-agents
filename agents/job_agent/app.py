@@ -8,6 +8,8 @@ from .routes import job_bp
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
     app.config["TESTING"] = testing
+    from .integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "job_agent")
 
     app.register_blueprint(job_bp)
     app.register_blueprint(invoke_bp)

@@ -20,6 +20,8 @@ def create_app(config_object=Config):
     migrate.init_app(app, db, directory=str(Path(__file__).resolve().parents[1] / "migrations"))
     CORS(app, origins=[app.config["FRONTEND_ORIGIN"]], supports_credentials=False)
     configure_logging(app)
+    from .integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "aptitude_agent")
 
     from .models import load_models
     load_models()
