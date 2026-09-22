@@ -3,10 +3,13 @@
 # service, view logs, health-check everything).
 #
 # Judge0 already ships its own docker-compose.yml (agents/codeforge_agent/judge0/)
-# and is deliberately left untouched — `include:` folds its services (server,
-# worker, db, redis) into this same project so `docker compose up -d` starts
-# everything with one command, on the same default network as the services
-# below, without editing anything inside judge0/.
+# -- `include:` folds its services (server, worker, db, redis) into this same
+# project so `docker compose up -d` starts everything with one command, on the
+# same default network as the services below. Compose treats a top-level
+# service here with the same name as one from an `include:`d file as a hard
+# conflict, not a mergeable override (unlike stacking multiple `-f` files), so
+# judge0's own server/worker images can't be swapped from this file -- see the
+# one edit inside agents/codeforge_agent/judge0/docker-compose.yml instead.
 include:
   - agents/codeforge_agent/judge0/docker-compose.yml
 

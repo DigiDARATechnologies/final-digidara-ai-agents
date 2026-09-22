@@ -6,8 +6,16 @@ x-logging:
       max-size: 100M
 
 services:
+  # image/build below: the only intentional edit in this otherwise-untouched
+  # vendored file. Building agents/codeforge_agent/judge0-worker-image adds
+  # pandas/numpy to Judge0's Python 3.8.1 sandbox for the CodeForge Pandas/
+  # NumPy courses -- see that Dockerfile for why. Compose treats a same-named
+  # service redefined at the including project's top level as a conflict, not
+  # a mergeable override, so this can't be done from the root docker-compose.yml.
   server:
-    image: judge0/judge0:latest
+    build:
+      context: ../judge0-worker-image
+    image: digidara-judge0-pandas-numpy:latest
     volumes:
       - ./judge0.conf:/judge0.conf:ro
     ports:
@@ -17,7 +25,9 @@ services:
     restart: always
 
   worker:
-    image: judge0/judge0:latest
+    build:
+      context: ../judge0-worker-image
+    image: digidara-judge0-pandas-numpy:latest
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro
