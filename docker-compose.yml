@@ -3,14 +3,13 @@
 # service, view logs, health-check everything).
 #
 # Judge0 already ships its own docker-compose.yml (agents/codeforge_agent/judge0/)
-# and is deliberately left untouched — `include:` folds its services (server,
-# worker, db, redis) into this same project so `docker compose up -d` starts
-# everything with one command, on the same default network as the services
-# below, without editing anything inside judge0/. The one exception: the
-# `server`/`worker` overrides near the bottom of this file build a local image
-# instead of pulling judge0/judge0:latest, so the CodeForge Pandas/NumPy
-# courses have pandas/numpy available -- see
-# agents/codeforge_agent/judge0-worker-image/Dockerfile.
+# -- `include:` folds its services (server, worker, db, redis) into this same
+# project so `docker compose up -d` starts everything with one command, on the
+# same default network as the services below. Compose treats a top-level
+# service here with the same name as one from an `include:`d file as a hard
+# conflict, not a mergeable override (unlike stacking multiple `-f` files), so
+# judge0's own server/worker images can't be swapped from this file -- see the
+# one edit inside agents/codeforge_agent/judge0/docker-compose.yml instead.
 include:
   - agents/codeforge_agent/judge0/docker-compose.yml
 
@@ -185,23 +184,6 @@ services:
     depends_on:
       orchestrator:
         condition: service_healthy
-
-  # Overrides judge0/docker-compose.yml's `server`/`worker` (same service
-  # names, merged by `include:` above) to build from a local image instead of
-  # pulling judge0/judge0:latest, without editing anything inside the
-  # deliberately-untouched judge0/ directory. See
-  # agents/codeforge_agent/judge0-worker-image/Dockerfile for why: the CodeForge
-  # Pandas/NumPy courses need pandas/numpy in Judge0's Python 3.8.1 sandbox,
-  # which the stock image doesn't have.
-  server:
-    build:
-      context: agents/codeforge_agent/judge0-worker-image
-    image: digidara-judge0-pandas-numpy:latest
-
-  worker:
-    build:
-      context: agents/codeforge_agent/judge0-worker-image
-    image: digidara-judge0-pandas-numpy:latest
 
 volumes:
   mysql_data:
