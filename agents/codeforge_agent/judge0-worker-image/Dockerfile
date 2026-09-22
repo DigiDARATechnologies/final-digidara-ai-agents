@@ -17,6 +17,12 @@
 FROM judge0/judge0:latest
 
 USER root
+# ensurepip alone left pip too old to recognize modern manylinux wheel tags,
+# so it silently fell back to compiling pandas/numpy from source (~10+
+# minutes on a production box -- long enough to blow past the deploy SSH
+# step's timeout). Upgrading pip/setuptools/wheel first lets it find and use
+# the real prebuilt wheels instead.
 RUN /usr/local/python-3.8.1/bin/python3 -m ensurepip --upgrade && \
+    /usr/local/python-3.8.1/bin/python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     /usr/local/python-3.8.1/bin/python3 -m pip install --no-cache-dir pandas==2.0.3 numpy==1.24.4
 USER judge0
