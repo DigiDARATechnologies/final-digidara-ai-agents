@@ -19,11 +19,22 @@ from lms_api.problem_catalog import PROBLEMS
 
 
 def run(fixture, query):
+    """A reference query may be several statements (an INSERT/UPDATE/CREATE
+    VIEW/CREATE INDEX followed by a fixed readback SELECT) -- sqlite3's
+    execute() only accepts one statement, so split and run each in order,
+    keeping only the last statement's rows. The non-final statements never
+    return rows here by construction, matching what `sqlite3 db < script.sql`
+    would print for the same script."""
     con = sqlite3.connect(":memory:")
     try:
         con.executescript(fixture)
-        cur = con.execute(query)
-        lines = ["|".join("" if v is None else str(v) for v in row) for row in cur.fetchall()]
+        statements = [stmt.strip() for stmt in query.split(";") if stmt.strip()]
+        rows = []
+        for index, statement in enumerate(statements):
+            cursor = con.execute(statement)
+            if index == len(statements) - 1:
+                rows = cursor.fetchall()
+        lines = ["|".join("" if v is None else str(v) for v in row) for row in rows]
         return ("\n".join(lines) + "\n") if lines else ""
     finally:
         con.close()
