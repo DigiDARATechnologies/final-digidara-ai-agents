@@ -266,6 +266,36 @@ jobs:
       - name: Run Pandas catalog content tests
         run: python -m pytest agents/codeforge_agent/services/lms-api/tests/test_pandas_catalog_content.py -v
 
+  judge0-pandas-numpy:
+    name: Judge0 image - pandas/numpy import
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker builder
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the Judge0 image with pandas/numpy
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/codeforge_agent/judge0-worker-image
+          load: true
+          tags: digidara-test/judge0-pandas-numpy:local
+          cache-from: type=gha,scope=judge0-pandas-numpy
+          cache-to: type=gha,mode=max,scope=judge0-pandas-numpy
+
+      # This is the only place that actually proves the build works -- the
+      # deploy server builds the same Dockerfile with `docker compose up
+      # --build`, but nothing there checks that the import succeeds; a
+      # broken build would just leave production on the previous image
+      # (deploy.sh's existing health-check rollback), not surface as a
+      # merge-time failure the way this does.
+      - name: Import pandas and numpy in Judge0's Python 3.8.1
+        run: |
+          docker run --rm --entrypoint /usr/local/python-3.8.1/bin/python3 digidara-test/judge0-pandas-numpy:local \
+            -c "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
+
   frontend-docker:
     name: Frontend Docker build
     runs-on: ubuntu-latest
@@ -521,7 +551,7 @@ jobs:
   deploy:
     name: Deploy to production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [publish-ghcr, publish-ghcr-frontend, pandas-catalog-content]
+    needs: [publish-ghcr, publish-ghcr-frontend, pandas-catalog-content, judge0-pandas-numpy]
     runs-on: ubuntu-latest
     steps:
       - name: Record promoted images
