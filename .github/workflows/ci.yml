@@ -315,16 +315,53 @@ jobs:
           cache-from: type=gha,scope=judge0-pandas-numpy
           cache-to: type=gha,mode=max,scope=judge0-pandas-numpy
 
-      # This is the only place that actually proves the build works -- the
-      # deploy server builds the same Dockerfile with `docker compose up
-      # --build`, but nothing there checks that the import succeeds; a
-      # broken build would just leave production on the previous image
-      # (deploy.sh's existing health-check rollback), not surface as a
-      # merge-time failure the way this does.
+      # publish-ghcr-judge0 (below) publishes this same Dockerfile's build to
+      # GHCR on merge; production only ever pulls that image, it never builds
+      # it. This step is what actually proves the build and the import work,
+      # gating that publish -- a broken build fails here, at merge time,
+      # instead of reaching GHCR (or previously, timing out mid-build on the
+      # deploy server itself).
       - name: Import pandas and numpy in Judge0's Python 3.8.1
         run: |
           docker run --rm --entrypoint /usr/local/python-3.8.1/bin/python3 digidara-test/judge0-pandas-numpy:local \
             -c "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
+
+  publish-ghcr-judge0:
+    name: Publish Judge0 (pandas/numpy) image to GHCR
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [judge0-pandas-numpy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compute lowercase image owner
+        id: owner
+        run: echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker builder
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Judge0 image
+        uses: docker/build-push-action@v6
+        with:
+          context: agents/codeforge_agent/judge0-worker-image
+          push: true
+          tags: |
+            ghcr.io/${{ steps.owner.outputs.name }}/digidara-judge0-pandas-numpy:${{ github.sha }}
+            ghcr.io/${{ steps.owner.outputs.name }}/digidara-judge0-pandas-numpy:latest
+          cache-from: type=gha,scope=judge0-pandas-numpy
+          cache-to: type=gha,mode=max,scope=judge0-pandas-numpy
 
   frontend-docker:
     name: Frontend Docker build
@@ -581,7 +618,7 @@ jobs:
   deploy:
     name: Deploy to production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [publish-ghcr, publish-ghcr-frontend, pandas-catalog-content, numpy-catalog-content, judge0-pandas-numpy]
+    needs: [publish-ghcr, publish-ghcr-frontend, publish-ghcr-judge0, pandas-catalog-content, numpy-catalog-content]
     runs-on: ubuntu-latest
     steps:
       - name: Record promoted images
