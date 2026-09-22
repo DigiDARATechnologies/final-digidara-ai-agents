@@ -257,8 +257,11 @@ jobs:
       # codeforge-agent's own requirements.txt, since the API service itself
       # never imports pandas; this is authoring-time content verification
       # only, same reasoning as the js/sql catalog content tests.
-      - name: Install pytest and pinned pandas/numpy
-        run: python -m pip install 'pytest>=8.3,<10' pandas==2.0.3 numpy==1.24.4
+      # -r requirements.txt: importing lms_api.problem_catalog runs
+      # lms_api/__init__.py (imports .app -> Flask, PyMySQL, ...), same as
+      # any submodule import of a package -- not just the one module we test.
+      - name: Install pytest, lms-api's dependencies, and pinned pandas/numpy
+        run: python -m pip install 'pytest>=8.3,<10' -r agents/codeforge_agent/services/lms-api/requirements.txt pandas==2.0.3 numpy==1.24.4
 
       - name: Run Pandas catalog content tests
         run: python -m pytest agents/codeforge_agent/services/lms-api/tests/test_pandas_catalog_content.py -v
