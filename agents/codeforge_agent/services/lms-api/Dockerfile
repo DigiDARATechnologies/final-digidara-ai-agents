@@ -28,4 +28,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # any real deployment, so the container started against a schema that never
 # picked up 004_llm_usage_user_id (production hit "Unknown column user_id").
 # Run it once per boot, same pattern as aptitude_agent's "flask db upgrade".
-CMD ["sh", "-c", "python scripts/migrate.py up && exec gunicorn -w 4 -b 0.0.0.0:4000 lms_api:create_app()"]
+CMD ["sh", "-c", "python scripts/migrate.py up && exec gunicorn -w 4 -b 0.0.0.0:4000 'lms_api:create_app()'"]
