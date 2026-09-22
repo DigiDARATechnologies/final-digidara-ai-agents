@@ -639,7 +639,7 @@ jobs:
             previous_commit="$(git rev-parse HEAD)"
             git fetch origin main
             git reset --hard "${{ github.sha }}"
-            PREVIOUS_COMMIT="$previous_commit" DEPLOY_COMMIT="${{ github.sha }}" bash deploy.sh
+            PREVIOUS_COMMIT="$previous_commit" DEPLOY_COMMIT="${{ github.sha }}" GHCR_PULL_TOKEN="${{ secrets.GHCR_PULL_TOKEN }}" bash deploy.sh
 
   notify-failure:
     name: Notify Slack on CI failure
