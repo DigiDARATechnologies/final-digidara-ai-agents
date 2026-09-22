@@ -1,6 +1,18 @@
 from .errors import ApiError
 from .judge0_client import Judge0Client
 
+# Judge0 "SQL (SQLite 3.27.2)" -- db/languages/active.rb:304 in the vendored
+# judge0/ checkout. Its run_cmd is `cat script.sql | sqlite3 db.sqlite`: `cat`
+# with a filename argument never reads its own stdin, so whatever a submission
+# sends as "stdin" is silently discarded -- proven with `printf X | (cat file |
+# cat)`, which prints only the file's content. Every other language here reuses
+# one submission across differently-parameterized stdin to catch hardcoded
+# answers; SQL can't, so its test cases instead store a full fixture script
+# (schema + sample rows) in stdin_text, which is prepended to the student's
+# submitted query to form the actual script. Nothing is sent to Judge0 as
+# stdin for this language.
+SQL_LANGUAGE_ID = 82
+
 
 class EvaluationService:
     def __init__(self, repository, judge=None):
@@ -22,8 +34,11 @@ class EvaluationService:
         total_weight = sum(int(case["score_weight"]) for case in cases)
         if total_weight <= 0:
             raise ApiError("The problem test weights are invalid.", 409, "invalid_test_weights")
+        is_sql = problem["judge0_language_id"] == SQL_LANGUAGE_ID
         for index, case in enumerate(cases, start=1):
-            result = self.judge.execute(source_code, problem["judge0_language_id"], case["stdin_text"], case["expected_output"])
+            effective_source = f"{case['stdin_text']}\n{source_code}" if is_sql else source_code
+            judge_stdin = "" if is_sql else case["stdin_text"]
+            result = self.judge.execute(effective_source, problem["judge0_language_id"], judge_stdin, case["expected_output"])
             if result["passed"]:
                 passed_weight += int(case["score_weight"])
             hidden = bool(case["is_hidden"])
