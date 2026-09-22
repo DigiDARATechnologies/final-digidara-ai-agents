@@ -41,6 +41,7 @@ import AgentDashboard from "./components/AgentDashboard";
 import CodeForgeDashboard from "./components/CodeForgeDashboard";
 import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
+import MockInterviewPanel from "./components/MockInterviewPanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
 import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
 import JobFetchDashboard from "./components/JobFetchDashboard";
@@ -55,7 +56,7 @@ import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeB
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
-import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
+import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
@@ -840,7 +841,7 @@ export default function App() {
    * Capstone topic-request message regenerate topics from the new wording:
    * it's just re-running the normal flow handler with different text from
    * the same starting point, not a special "edit" code path per agent. */
-  function sendMessage(text: string, editIndex?: number, internal = false, displayText?: string) {
+  function sendMessage(text: string, editIndex?: number, internal = false, displayText?: string, mockAnswer?: { answer: string; timing: MockInterviewAnswerTiming }) {
     if (!text.trim() || !currentChatId || !user) return;
     const chatId = currentChatId;
     const chat = chats.find((c) => c.id === chatId);
@@ -973,7 +974,7 @@ export default function App() {
 
     if (agent?.kind === "mock-interview") {
       const flowState = mockInterviewStates[chatId] ?? createInitialMockInterviewState();
-      handleMockInterviewText(flowState, user, text)
+      handleMockInterviewText(flowState, user, mockAnswer?.answer ?? text, mockAnswer?.timing)
         .then(({ state, messages }) => {
           setMockInterviewStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
@@ -1192,6 +1193,7 @@ export default function App() {
   const isResumeBuilderChat = currentAgent.kind === "resume-builder";
   const isCertificateChat = currentAgent.kind === "certificate";
   const isJobFetchChat = currentAgent.kind === "job-fetch";
+  const isMockInterviewChat = currentAgent.kind === "mock-interview";
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
   const codeforgeState = currentChat ? codeforgeStates[currentChat.id] : undefined;
   const aptitudeState = currentChat ? aptitudeStates[currentChat.id] : undefined;
@@ -1199,6 +1201,7 @@ export default function App() {
   const resumeBuilderState = currentChat ? resumeBuilderStates[currentChat.id] : undefined;
   const certificateState = currentChat ? certificateStates[currentChat.id] : undefined;
   const jobFetchState = currentChat ? jobFetchStates[currentChat.id] : undefined;
+  const mockInterviewState = currentChat ? mockInterviewStates[currentChat.id] : undefined;
 
   const pendingFiles = capstoneState ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f) : [];
   const systemOnline = isCapstoneChat ? capstoneOnline : isCodeForgeChat ? codeforgeOnline : isAptitudeChat ? aptitudeOnline : isCommunicationChat ? communicationOnline : isResumeBuilderChat ? resumeBuilderOnline : isCertificateChat ? certificateOnline : isJobFetchChat ? jobFetchOnline : true;
@@ -1274,6 +1277,11 @@ export default function App() {
     if (typing && ["awaiting_level", "awaiting_language"].includes(aptitudeState.step)) {
       typingLabel = "Generating your complete aptitude test…";
     }
+  } else if (isMockInterviewChat && mockInterviewState) {
+    connectorStatus = mockInterviewState.step === "in_interview"
+      ? `Question ${mockInterviewState.realQuestionIndex ?? mockInterviewState.questionOrder ?? 1} of ${mockInterviewState.totalQuestions ?? 10}`
+      : mockInterviewState.step === "completed" ? "Interview complete" : "Ready to interview";
+    connectorPendingTask = typing ? "Preparing interview response…" : null;
   } else if (isCommunicationChat && communicationState) {
     connectorStatus = COMMUNICATION_STEP_LABELS[communicationState.step] ?? communicationState.step;
     connectorPendingTask = communicationState.activeModule && communicationState.currentItemText
@@ -1377,11 +1385,12 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={((isCertificateChat || isAptitudeChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
-                onEditMessage={editMessage}
+                onEditMessage={isMockInterviewChat ? undefined : editMessage}
                 attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
                 attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
@@ -1402,7 +1411,9 @@ export default function App() {
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
-                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : undefined}
+                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} />
+                  : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
                 dailyChallengeStatus={isCommunicationChat ? dailyChallengeStatus : undefined}

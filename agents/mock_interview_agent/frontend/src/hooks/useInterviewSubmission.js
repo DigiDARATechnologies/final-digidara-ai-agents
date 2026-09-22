@@ -103,7 +103,7 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
         if (!isExitStarted()) onFinished(finalResult);
         return;
       }
-      const nextRealQuestionIndex = res.is_followup === false ? realQuestionIndexRef.current + 1 : realQuestionIndexRef.current;
+      const nextRealQuestionIndex = realQuestionIndexRef.current + 1;
       if (nextRealQuestionIndex > totalQuestions) {
         setPhase("finishing");
         requestTimeout = window.setTimeout(() => { requestTimedOut = true; controller.abort(); }, FINAL_RESULT_TIMEOUT_MS);

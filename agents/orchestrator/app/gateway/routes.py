@@ -160,12 +160,14 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             envelope["payload"] = payload
             body = json.dumps(envelope).encode("utf-8")
 
-    # A complete aptitude assessment is prepared in one batch before the
-    # first question is returned. Its provider deadline is longer than the
-    # normal gateway timeout; apply the larger budget only to this action.
+    # Aptitude batch creation and mock-interview question planning/final
+    # evaluation can outlast ordinary agent calls. Keep their larger budgets
+    # scoped to the actions that actually do this work.
     timeout_seconds = (
         config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
         if agent_name == "aptitude_agent" and action_name == "create_test"
+        else config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
+        if agent_name == "mock_interview_agent" and action_name in {"start_interview", "end_interview"}
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
     # Sign last, over the final body and the exact identity headers set above,

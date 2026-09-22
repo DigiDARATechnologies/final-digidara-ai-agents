@@ -15,6 +15,8 @@ interface ChatViewProps {
   /** Locks the normal composer for agent flows that must not accept a second
    * turn while their backend is generating or grading. */
   composerDisabled?: boolean;
+  /** A live interview supplies its own voice and typed-answer controls. */
+  hideComposer?: boolean;
   onBack: () => void;
   onSend: (text: string) => void;
   /** `value` is the internal action; `label` is what the learner sees. */
@@ -83,6 +85,7 @@ export default function ChatView({
   typing,
   typingLabel,
   composerDisabled = false,
+  hideComposer = false,
   onBack,
   onSend,
   onChooseOption,
@@ -340,14 +343,14 @@ export default function ChatView({
           const isEditing = editingIndex === i;
           const hasContextPanel = m.role === "agent" && i === chat.messages.length - 1 && !!contextPanel;
           return (
-            <div className={`msg ${m.role === "user" ? "user" : "agent"}`} key={i}>
+            <div className={`msg ${m.role === "user" ? "user" : "agent"}${agent.kind === "mock-interview" ? " mock-interview-msg" : ""}`} key={i}>
               <span
                 className="avatar"
                 style={{ background: m.role === "user" ? "var(--accent-grad)" : msgAgent.color || "var(--accent-grad)" }}
               >
                 {m.role === "user" ? user.initial : msgAgent.icon}
               </span>
-              <div className={`msg-content${hasContextPanel ? " aptitude-question-section" : ""}`}>
+              <div className={`msg-content${hasContextPanel ? agent.kind === "mock-interview" ? " mock-interview-question-section" : " aptitude-question-section" : ""}`}>
                 {isEditing ? (
                   <div className="bubble-edit">
                     <textarea
@@ -453,7 +456,7 @@ export default function ChatView({
         </div>
       )}
 
-      {codeMode ? (
+      {hideComposer ? null : codeMode ? (
         <div className="code-composer">
           <textarea
             className="code-editor"

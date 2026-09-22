@@ -76,6 +76,65 @@ class RoleSkillScopingTests(unittest.TestCase):
         self.assertTrue(all(item["assigned_skill_area"] in skills for item in plan))
         self.assertEqual(plan[0]["source"], "ai_generated")
 
+    def test_batch_prompt_assigns_every_skill_slot_with_level_calibration(self):
+        skills = ["Pandas and DataFrames", "SQL basics"]
+        chat = Mock(return_value=json.dumps({"questions": [
+            {"topic_area": "Pandas and DataFrames", "question": "What is a DataFrame?"},
+            {"topic_area": "SQL basics", "question": "What is a SQL query?"},
+        ]}))
+        questions.build_interview_questions(
+            "Data Analyst", "beginner", "technical", 2,
+            chat_fn=chat, generate_ai_question=Mock(),
+            rng=Mock(shuffle=lambda _items: None), role_skills=skills,
+        )
+        prompt = chat.call_args.args[0][0]["content"]
+        self.assertIn("Item 1: Pandas and DataFrames", prompt)
+        self.assertIn("Item 2: SQL basics", prompt)
+        self.assertIn("define one everyday term", prompt)
+
+    def test_mismatched_topic_area_is_replaced_by_the_assigned_skill_fallback(self):
+        skills = ["Pandas and DataFrames"]
+        chat = Mock(return_value=json.dumps({"questions": [
+            {"topic_area": "Flask basics", "question": "What is a Flask route?"},
+        ]}))
+        plan = questions.build_interview_questions(
+            "Data Analyst", "beginner", "technical", 1,
+            chat_fn=chat, generate_ai_question=Mock(),
+            rng=Mock(shuffle=lambda _items: None), role_skills=skills,
+        )
+        self.assertEqual(plan[0]["assigned_skill_area"], "Pandas and DataFrames")
+        self.assertNotIn("Flask", plan[0]["question"])
+
+    def test_custom_advanced_fallback_stays_advanced_and_names_skill(self):
+        fallback = questions._safe_fallback_question(
+            "Infrastructure as Code (IaC) with Terraform or CloudFormation",
+            "advanced", [],
+        )
+        self.assertTrue(
+            "trade-off" in fallback.casefold()
+            or "reliability" in fallback.casefold()
+            or "failure mode" in fallback.casefold()
+        )
+        self.assertIn("infrastructure as code", fallback.casefold())
+        self.assertNotIn("terraform or?", fallback.casefold())
+        self.assertNotIn("one core concept", fallback.casefold())
+
+    def test_hr_generation_ignores_role_and_technical_skill_context(self):
+        chat = Mock(return_value=json.dumps({
+            "topic_area": "teamwork",
+            "question": "Can you describe a time you helped a teammate?",
+        }))
+        questions.generate_question(
+            "hr", "Data Analyst", "beginner", [],
+            role_context="technical role context",
+            role_skills=["SQL and statistics"],
+            chat_fn=chat, rng=Mock(),
+        )
+        prompt = chat.call_args.args[0][0]["content"].casefold()
+        self.assertNotIn("data analyst", prompt)
+        self.assertNotIn("sql and statistics", prompt)
+        self.assertNotIn("technical role context", prompt)
+
     def test_initial_question_plan_generates_slots_concurrently(self):
         """Ten independent LLM slots should take roughly one call, not ten."""
         def slow_question(_asked, skill):

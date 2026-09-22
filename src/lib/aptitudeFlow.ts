@@ -17,7 +17,7 @@ export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ te
 function questionMessage(question: AptitudeQuestion): AptitudeFlowMessage {
   const priority = question.topic_is_starred ? " ★ Priority topic" : "";
   const state = question.status === "answered" ? "Answered" : question.status === "timed_out" ? "Timed out" : "Unanswered";
-  return { text: `Question ${question.sequence}/${question.total_questions} · ${question.category} · ${question.topic}${priority} · ${question.difficulty}\n\n${question.question}\n\n${state}${question.status === "unanswered" ? ". Answer before the live timer reaches zero." : ". This question is already submitted."}`, options: question.status === "unanswered" ? optionMap(question.options) : [] };
+  return { text: `${question.category} · ${question.topic}${priority} · ${question.difficulty}\n\n${question.sequence}. ${question.question}\n\n${state}${question.status === "unanswered" ? ". Answer before the live timer reaches zero." : ". This question is already submitted."}`, options: question.status === "unanswered" ? optionMap(question.options) : [] };
 }
 async function startTest(state: AptitudeFlowState, user?: User) {
   // Refresh the agent session immediately before starting. This also

@@ -58,3 +58,36 @@ __pycache__/
 
 # Generated CI and local test reports
 artifacts/
+
+# Python packaging and test output
+*.pyo
+*.egg-info/
+pytestdebug.log
+test-output/
+test_output_*
+test-artifacts/
+test_artifacts/
+.tmp_*.py
+*.tmp.py
+*_test_report.*
+*_test_output.*
+
+# Frontend build and test output
+build/
+coverage/
+.vite/
+screenshots/
+screenshot*/
+
+# Local calibration and live-test dumps
+*_calibration_live.json
+*_calibration_live.md
+mock_difficulty_live_*.json
+mock_difficulty_live_*.md
+mock_custom_topic_hr_independence_live.md
+mock_difficulty_calibration_prompts.md
+mock_role_skill_calibration_live.md
+mock_followup_removal_review.diff
+
+# Local-only hook/test harness files
+.githooks/.cache/
