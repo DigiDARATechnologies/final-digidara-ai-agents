@@ -242,10 +242,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # 3.11, not 3.12: numpy==1.24.4 (pinned below to match the Judge0
+      # image) ships no cp312 wheels, so pip would try to build from source
+      # and fail on the sandboxed Python 3.12 runner's build backend
+      # ("Cannot import 'setuptools.build_meta'"). 3.11 has a real wheel.
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       # Pinned to the exact version baked into the Judge0 image (see
       # agents/codeforge_agent/judge0-worker-image/Dockerfile) -- not added to
