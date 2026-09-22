@@ -235,6 +235,37 @@ jobs:
           path: artifacts/agent-tests/${{ matrix.agent }}/
           if-no-files-found: warn
 
+  pandas-catalog-content:
+    name: CodeForge Pandas problems - content verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # 3.11, not 3.12: pandas==2.0.3/numpy==1.24.4 (pinned below to match the
+      # Judge0 image) ship no cp312 wheels, so pip would try to build from
+      # source and fail on the sandboxed Python 3.12 runner's build backend
+      # ("No module named 'pkg_resources'" / "Cannot import
+      # 'setuptools.build_meta'"). 3.11 has real wheels for both.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Pinned to the exact versions baked into the Judge0 image (see
+      # agents/codeforge_agent/judge0-worker-image/Dockerfile) -- not added to
+      # codeforge-agent's own requirements.txt, since the API service itself
+      # never imports pandas; this is authoring-time content verification
+      # only, same reasoning as the js/sql catalog content tests.
+      # -r requirements.txt: importing lms_api.problem_catalog runs
+      # lms_api/__init__.py (imports .app -> Flask, PyMySQL, ...), same as
+      # any submodule import of a package -- not just the one module we test.
+      - name: Install pytest, lms-api's dependencies, and pinned pandas/numpy
+        run: python -m pip install 'pytest>=8.3,<10' -r agents/codeforge_agent/services/lms-api/requirements.txt pandas==2.0.3 numpy==1.24.4
+
+      - name: Run Pandas catalog content tests
+        run: python -m pytest agents/codeforge_agent/services/lms-api/tests/test_pandas_catalog_content.py -v
+
   judge0-pandas-numpy:
     name: Judge0 image - pandas/numpy import
     runs-on: ubuntu-latest
@@ -520,7 +551,7 @@ jobs:
   deploy:
     name: Deploy to production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [publish-ghcr, publish-ghcr-frontend, judge0-pandas-numpy]
+    needs: [publish-ghcr, publish-ghcr-frontend, pandas-catalog-content, judge0-pandas-numpy]
     runs-on: ubuntu-latest
     steps:
       - name: Record promoted images
