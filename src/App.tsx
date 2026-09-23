@@ -83,44 +83,7 @@ function toUser(authUser: AuthUser): User {
   return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(), isAdmin: authUser.is_admin };
 }
 
-function capstoneKey(email: string) {
-  return `digidara_capstone_${email.trim().toLowerCase()}`;
-}
 
-function loadCapstoneStates(email?: string): Record<string, CapstoneFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(capstoneKey(email)) || "{}");
-}
-
-function codeforgeKey(email: string) {
-  return `digidara_codeforge_${email.trim().toLowerCase()}`;
-}
-
-function loadCodeForgeStates(email?: string): Record<string, CodeForgeFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(codeforgeKey(email)) || "{}");
-}
-
-function aptitudeKey(email: string) { return `digidara_aptitude_${email.trim().toLowerCase()}`; }
-function loadAptitudeStates(email?: string): Record<string, AptitudeFlowState> { if (!email) return {}; return JSON.parse(localStorage.getItem(aptitudeKey(email)) || "{}"); }
-
-function communicationKey(email: string) {
-  return `digidara_communication_${email.trim().toLowerCase()}`;
-}
-
-function loadCommunicationStates(email?: string): Record<string, CommunicationFlowState> {
-  if (!email) return {};
-  return JSON.parse(localStorage.getItem(communicationKey(email)) || "{}");
-}
-
-function resumeBuilderKey(email: string) { return `digidara_resume_builder_${email.trim().toLowerCase()}`; }
-function loadResumeBuilderStates(email?: string): Record<string, ResumeBuilderFlowState> { return email ? JSON.parse(localStorage.getItem(resumeBuilderKey(email)) || "{}") : {}; }
-
-function certificateKey(email: string) { return `digidara_certificate_${email.trim().toLowerCase()}`; }
-function loadCertificateStates(email?: string): Record<string, CertificateFlowState> { return email ? JSON.parse(localStorage.getItem(certificateKey(email)) || "{}") : {}; }
-
-function jobFetchKey(email: string) { return `digidara_job_fetch_${email.trim().toLowerCase()}`; }
-function loadJobFetchStates(email?: string): Record<string, JobFetchFlowState> { return email ? JSON.parse(localStorage.getItem(jobFetchKey(email)) || "{}") : {}; }
 
 export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
