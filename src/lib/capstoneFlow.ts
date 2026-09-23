@@ -139,14 +139,19 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
  * as "both of these apply" even when the student's answer is actually a
  * correction (e.g. "python developer role" then, asked for more detail,
  * "html developer" — they meant "switch to HTML", not "combine Python and
- * HTML"). Telling the model a conflicting answer wins lets the free-text
- * interpretation already done in topic_generator_prompt resolve that
- * correctly instead of building a literal mashup of both. Kept short —
- * the backend's Course.name dedup key is capped at 255 chars (see
- * eligibility_check_free), and a shorter, cleaner string also stays a more
- * meaningful dedup key than a long one that gets truncated anyway. */
+ * HTML"). Earlier wording told the model the newer answer wins whenever the
+ * two "conflict" — but that framing was too eager: given a non-conflicting
+ * pair like "portfolio website" then "python", the model still dropped
+ * "portfolio website" entirely and generated generic Python topics instead
+ * of a Python-based portfolio site. Spelling out that most answers are
+ * *additions*, and only a genuinely different role/language/domain is a
+ * replacement, keeps the free-text interpretation in topic_generator_prompt
+ * from over-applying the override case. Kept short — the backend's
+ * Course.name dedup key is capped at 255 chars (see eligibility_check_free),
+ * and a shorter, cleaner string also stays a more meaningful dedup key than
+ * a long one that gets truncated anyway. */
 function combineWithClarifyingAnswer(originalRequest: string, answer: string): string {
-  return `${answer} (a correction/follow-up to "${originalRequest}" — if they conflict, e.g. a different role or language, go with this one)`;
+  return `${originalRequest} — additional detail from a follow-up question: "${answer}" (combine both; only drop "${originalRequest}" if "${answer}" genuinely names a different role, language, or domain instead of the same one)`;
 }
 
 /** The actual eligibility+topic-generation call, shared by both the
@@ -204,7 +209,7 @@ export async function handleCapstoneText(
       // if it's still vague, so this can never turn into a back-and-forth.
       if (state.pendingTopicSeed) {
         const combined = combineWithClarifyingAnswer(state.pendingTopicSeed, trimmed);
-        return generateTopicsFor(state, combined, trimmed);
+        return generateTopicsFor(state, combined, `${state.pendingTopicSeed} — ${trimmed}`);
       }
 
       try {
