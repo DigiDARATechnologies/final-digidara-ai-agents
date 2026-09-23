@@ -1408,6 +1408,7 @@ export default function App() {
                 dailyChallengeStatus={isCommunicationChat ? dailyChallengeStatus : undefined}
                 onDailyChallenge={() => sendMessage("daily_challenge")}
                 immersiveSpeaking={isCommunicationChat && communicationState?.step === "speaking_turn"}
+                autoStopVoiceOnSilence={isCommunicationChat && communicationState?.step === "pronunciation_turn"}
                 certificateExamInstructions={isCertificateChat && certificateState?.step === "exam_instructions"
                   ? {
                       topic: certificateState.topic || "Certification",

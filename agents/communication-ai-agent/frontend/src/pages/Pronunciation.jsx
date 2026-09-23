@@ -398,8 +398,6 @@ export default function Pronunciation() {
       recognitionStartTimeRef.current = null;
       setAttemptId(null);
       setAttemptNumber(1);
-      setMinimalPairStep(0);
-      setMinimalPairResponses([]);
       setItem(nextItem);
       setQuestionNumber((prev) => prev + 1);
       setNextItem(null);

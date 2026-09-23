@@ -810,6 +810,7 @@ body.glow-off .send-btn:hover{
 .icon-btn.mic-recording:hover{ background:var(--red); color:#fff; }
 @keyframes micPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,.45); } 50%{ box-shadow:0 0 0 7px rgba(239,68,68,0); } }
 .mic-error{ margin:-14px 10% 14px; font-size:12.5px; color:var(--red); text-align:center; }
+.voice-capture-status{ margin:-8px 10% 10px; color:var(--accent1); font-size:12px; font-weight:700; text-align:center; }
 
 /* ===================== CODE COMPOSER (CodeForge) ===================== */
 .code-composer{
@@ -850,17 +851,26 @@ body.glow-off .send-btn:hover{
 }
 .paste-composer-actions .btn{ padding:9px 16px; font-size:13.5px; }
 .writing-paragraph-composer .paste-textarea{
-  min-height:260px;
-  resize:both;
-  overflow-y:scroll;
-  overflow-x:auto;
-  scrollbar-gutter:stable;
+  min-height:180px;
+  max-height:260px;
+  resize:vertical;
+  overflow-y:auto;
 }
 .writing-paragraph-composer{ flex:0 0 auto; margin:14px 6% 18px; }
-.writing-paragraph-composer .paste-composer-actions{ position:sticky; bottom:0; }
 .writing-paragraph-composer .paste-composer-actions .btn{ min-width:150px; }
 .writing-word-count{ padding:0 18px 10px; color:var(--text-dim); font-size:12px; font-weight:700; }
 .composer-input-error{ margin:0 14px 10px; color:#c13e50; font-size:12px; font-weight:700; }
+
+@media (max-width:760px){
+  .writing-paragraph-composer{ margin:12px 5% 16px; }
+  .writing-paragraph-composer .paste-textarea{
+    min-height:150px;
+    max-height:220px;
+    padding:13px 14px;
+  }
+  .writing-paragraph-composer .paste-composer-actions{ padding:9px 12px; }
+  .writing-paragraph-composer .paste-composer-actions .btn{ min-width:0; width:100%; }
+}
 
 /* ===================== AGENT DASHBOARD ===================== */
 .agent-dashboard{width:370px;flex:0 0 370px;border-left:1px solid var(--border);background:var(--bg-soft);padding:20px;overflow-y:auto;animation:dashboardIn .2s ease;}
