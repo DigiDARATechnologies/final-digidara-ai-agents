@@ -1,22 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 44" fill="none">
   <defs>
-    <linearGradient id="brand-grad-dl" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+    <linearGradient id="brand-grad-rb" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#2563EB"/>
       <stop offset="100%" stop-color="#4F46E5"/>
     </linearGradient>
-    <linearGradient id="spark-grad-dl" x1="18" y1="12" x2="32" y2="26" gradientUnits="userSpaceOnUse">
+    <linearGradient id="spark-grad-rb" x1="18" y1="12" x2="32" y2="26" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#38BDF8"/>
       <stop offset="100%" stop-color="#818CF8"/>
     </linearGradient>
   </defs>
   <g transform="translate(2, 2)">
-    <rect x="6" y="5" width="22" height="30" rx="4" fill="url(#brand-grad-dl)" />
+    <rect x="6" y="5" width="22" height="30" rx="4" fill="url(#brand-grad-rb)" />
     <rect x="11" y="11" width="8" height="2" rx="1" fill="#FFFFFF" fill-opacity="0.9" />
     <rect x="11" y="16" width="12" height="2" rx="1" fill="#FFFFFF" fill-opacity="0.7" />
     <rect x="11" y="21" width="9" height="2" rx="1" fill="#FFFFFF" fill-opacity="0.7" />
     <rect x="11" y="26" width="6" height="2" rx="1" fill="#FFFFFF" fill-opacity="0.5" />
     <circle cx="28" cy="26" r="8" fill="#0F172A" />
-    <path d="M28 20L29.6 24.4L34 26L29.6 27.6L28 32L26.4 27.6L22 26L26.4 24.4L28 20Z" fill="url(#spark-grad-dl)" />
+    <path d="M28 20L29.6 24.4L34 26L29.6 27.6L28 32L26.4 27.6L22 26L26.4 24.4L28 20Z" fill="url(#spark-grad-rb)" />
   </g>
   <text x="48" y="27" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="800" fill="#0F172A" letter-spacing="-0.5">Digi<tspan fill="#2563EB">DARA</tspan></text>
   <rect x="156" y="12" width="68" height="20" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>

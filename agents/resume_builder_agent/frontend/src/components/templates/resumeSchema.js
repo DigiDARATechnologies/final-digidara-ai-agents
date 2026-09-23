@@ -199,13 +199,16 @@ export function getTargetRole(resume = {}) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export const DEFAULT_DECLARATION =
+  "I hereby declare that the information provided in this resume is true and accurate to the best of my knowledge and belief.";
+
 export function normalizeResumeForTemplate(resume = {}) {
   const hiddenSections = new Set(resume.hidden_sections ?? []);
   const savedOrder = Array.isArray(resume.section_order) ? resume.section_order : [];
-  const sectionOrder = [
+  const sectionOrder = Array.from(new Set([
     ...savedOrder.filter((section) => DEFAULT_SECTION_ORDER.includes(section)),
     ...DEFAULT_SECTION_ORDER.filter((section) => !savedOrder.includes(section)),
-  ];
+  ]));
 
   const canonicalRole = getTargetRole(resume);
 
@@ -215,8 +218,8 @@ export function normalizeResumeForTemplate(resume = {}) {
     target_role: canonicalRole,
     personal_info: resume.personal_info ?? {},
     summary: resume.summary ?? "",
-    declaration: resume.declaration ?? "I hereby declare that the information provided above is true and correct to the best of my knowledge.\n\nPlace: Chennai\nDate: DD/MM/YYYY\nSignature: Arun Kuma",
-    declaration_enabled: resume.declaration_enabled ?? (resume.declaration !== null && resume.declaration !== undefined ? Boolean(String(resume.declaration).trim()) : false),
+    declaration: resume.declaration ?? DEFAULT_DECLARATION,
+    declaration_enabled: resume.declaration_enabled !== undefined ? Boolean(resume.declaration_enabled) : (resume.declaration !== null && resume.declaration !== undefined ? Boolean(String(resume.declaration).trim()) : true),
     skills: normalizeCollection(resume.skills),
     experience: normalizeCollection(resume.experience),
     education: normalizeCollection(resume.education),
@@ -248,9 +251,9 @@ export function sectionHasContent(section, resume) {
     return Boolean(resume.summary?.trim());
   }
   if (section === "declaration") {
-    const isEnabled = resume.declaration_enabled ?? (resume.declaration !== null && resume.declaration !== undefined ? Boolean(String(resume.declaration).trim()) : false);
+    const isEnabled = resume.declaration_enabled !== false;
     if (!isEnabled) return false;
-    const text = resume.declaration ?? "I hereby declare that the information provided above is true and correct to the best of my knowledge.\n\nPlace: Chennai\nDate: DD/MM/YYYY\nSignature: Arun Kuma";
+    const text = resume.declaration ?? "";
     return Boolean(text && text.trim() && !isPlaceholderValue(text));
   }
   if (section === "skills") {
@@ -273,5 +276,9 @@ function normalizeCollection(value) {
 }
 
 function isPlaceholderValue(value) {
-  return /\[\s*add\b/i.test(String(value || ""));
+  const str = String(value || "").trim();
+  if (!str) return true;
+  if (/^(none|null|n\/a|undefined)$/i.test(str)) return true;
+  if (/^\[.*\]$/.test(str)) return true;
+  return /\[\s*add\b/i.test(str);
 }

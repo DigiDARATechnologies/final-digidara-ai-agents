@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
+import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 
 interface LoginOverlayProps {
@@ -45,8 +46,7 @@ function BrandPanel() {
       <div className="login-illustration-glow login-illustration-glow--b" aria-hidden="true" />
 
       <div className="login-illustration-brand">
-        <span className="logo-mark small">⚡</span>
-        <span className="logo-text">Digi<b>DARA</b></span>
+        <Logo theme="dark" size="sm" />
       </div>
 
       <div className="login-illustration-copy">
@@ -137,8 +137,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
         <div className="login-form-panel">
           <div className="login-card">
             <div className="login-logo login-logo--mobile-only">
-              <span className="logo-mark small">⚡</span>
-              <span className="logo-text">Digi<b>DARA</b></span>
+              <Logo theme="light" size="sm" />
             </div>
 
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>

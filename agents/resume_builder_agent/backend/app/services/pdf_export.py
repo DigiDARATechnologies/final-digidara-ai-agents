@@ -61,6 +61,7 @@ def render_reportlab_resume_pdf(resume, template_choice):
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import inch
         from reportlab.platypus import (
+            KeepTogether,
             ListFlowable,
             ListItem,
             Paragraph,
@@ -74,7 +75,7 @@ def render_reportlab_resume_pdf(resume, template_choice):
         return render_basic_resume_pdf(resume, template_choice)
 
     if template_choice == "navy-portrait":
-        return render_reportlab_navy_portrait_pdf(resume, colors, A4, ParagraphStyle, getSampleStyleSheet, inch, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle)
+        return render_reportlab_navy_portrait_pdf(resume, colors, A4, ParagraphStyle, getSampleStyleSheet, inch, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, keep_together=KeepTogether)
     if template_choice in VALID_TEMPLATE_IDS:
         return render_reportlab_analyst_pro_pdf(
             resume,
@@ -92,6 +93,7 @@ def render_reportlab_resume_pdf(resume, template_choice):
             Spacer,
             Table,
             TableStyle,
+            keep_together=KeepTogether,
         )
 
     buffer = BytesIO()
@@ -299,7 +301,7 @@ def render_reportlab_resume_pdf(resume, template_choice):
         ListFlowable,
         ListItem,
     )
-    declaration_text = resume.get("declaration")
+    declaration_text = resolved_declaration(resume)
     if declaration_text and declaration_text.strip():
         add_declaration_section(
             story,
@@ -308,13 +310,14 @@ def render_reportlab_resume_pdf(resume, template_choice):
             styles,
             body_style,
             Paragraph,
+            keep_together=KeepTogether,
         )
 
     doc.build(story)
     return buffer.getvalue()
 
 
-def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_style, get_styles, inch, list_flowable, list_item, paragraph, document, spacer, table, table_style):
+def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_style, get_styles, inch, list_flowable, list_item, paragraph, document, spacer, table, table_style, keep_together=None):
     """FlowCV-inspired navy template with a readable, ATS-safe text structure."""
     buffer = BytesIO()
     page_width, _ = page_size
@@ -335,7 +338,7 @@ def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_styl
     header_rows = [paragraph(pdf_text(info.get("name") or "Your Name"), name)]
     if any(tag_parts): header_rows.append(paragraph(pdf_text(" - ".join(part for part in tag_parts if part)), tagline))
     first_contact = " | ".join(part for part in [info.get("email"), info.get("phone")] if part)
-    second_contact = " | ".join(part for part in [info.get("location")] + [format_profile_link(link) for link in info.get("links", []) if format_profile_link(link)])
+    second_contact = " | ".join(part for part in [clean_location(info.get("location"))] + [format_profile_link(link) for link in info.get("links", []) if format_profile_link(link)])
     if first_contact: header_rows.append(paragraph(pdf_text(first_contact), contact))
     if second_contact: header_rows.append(paragraph(pdf_text(second_contact), contact))
     photo_name = str(resume.get("profile_photo") or "")
@@ -361,7 +364,7 @@ def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_styl
     def heading(label): story.append(paragraph(pdf_text(label.upper()), section))
     def entry(item, kind):
         if kind == "experience":
-            left = "<br/>".join(filter(None, [pdf_text(date_range(item.get("start_date"), item.get("end_date"))), pdf_text(item.get("location") or "")]))
+            left = "<br/>".join(filter(None, [pdf_text(date_range(item.get("start_date"), item.get("end_date"))), pdf_text(clean_location(item.get("location")))]))
             right = [paragraph(pdf_text(item.get("company") or ""), title), paragraph(pdf_text(item.get("role") or ""), role)]
             bullets = item.get("ai_generated_bullets") or ([item.get("raw_input")] if item.get("raw_input") else [])
         else:
@@ -400,6 +403,16 @@ def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_styl
             for item in resume[key]:
                 if key == "certifications": item = {"title": item.get("name"), "description": item.get("issuer"), "date": item.get("date")}
                 entry(item, mapper)
+    declaration_text = resolved_declaration(resume)
+    if declaration_text and declaration_text.strip():
+        decl_flowables = [
+            paragraph(pdf_text("DECLARATION"), section),
+            paragraph(pdf_text(declaration_text), body),
+        ]
+        if keep_together:
+            story.append(keep_together(decl_flowables))
+        else:
+            story.extend(decl_flowables)
     doc.build(story)
     return buffer.getvalue()
 
@@ -420,6 +433,7 @@ def render_reportlab_analyst_pro_pdf(
     spacer,
     table,
     table_style,
+    keep_together=None,
 ):
     buffer = BytesIO()
     doc = document(
@@ -604,17 +618,7 @@ def render_reportlab_analyst_pro_pdf(
         [generic_pdf_entry(item) for item in resume.get("achievements", [])],
         stacked=profile["two_column"],
     )
-    declaration_text = resume.get("declaration")
-    if declaration_text and declaration_text.strip():
-        add_rl_declaration_section(
-            side if profile["two_column"] else main,
-            "Declaration",
-            declaration_text,
-            section_style,
-            body_style,
-            paragraph_style,
-            paragraph,
-        )
+    declaration_text = resolved_declaration(resume)
     if profile["two_column"]:
         story.append(
             table(
@@ -636,7 +640,32 @@ def render_reportlab_analyst_pro_pdf(
                 hAlign="CENTER",
             )
         )
+        if declaration_text and declaration_text.strip():
+            story.append(spacer(1, 6))
+            story.append(indenter(left=content_margin, right=content_margin))
+            add_rl_declaration_section(
+                story,
+                "Declaration",
+                declaration_text,
+                section_style,
+                body_style,
+                paragraph_style,
+                paragraph,
+                keep_together=keep_together,
+            )
+            story.append(indenter(left=-content_margin, right=-content_margin))
     else:
+        if declaration_text and declaration_text.strip():
+            add_rl_declaration_section(
+                main,
+                "Declaration",
+                declaration_text,
+                section_style,
+                body_style,
+                paragraph_style,
+                paragraph,
+                keep_together=keep_together,
+            )
         story.append(spacer(1, profile["content_gap"] * inch))
         story.append(indenter(left=content_margin, right=content_margin))
         story.extend(main + side)
@@ -721,6 +750,12 @@ def add_paragraph_section(story, title, value, styles, body_style, paragraph):
     story.append(paragraph(pdf_text(value), body_style))
 
 
+DEFAULT_DECLARATION = (
+    "I hereby declare that the information provided in this resume is true and accurate "
+    "to the best of my knowledge and belief."
+)
+
+
 def split_declaration(value):
     lines = [
         line.strip()
@@ -736,13 +771,36 @@ def split_declaration(value):
     return " ".join(lines[:detail_start]), lines[detail_start:]
 
 
-def add_declaration_section(story, title, value, styles, body_style, paragraph):
+def resolved_declaration(resume):
+    if not resume.get("declaration_enabled", True):
+        return ""
+    value = str(resume.get("declaration") or "").strip()
+    if not value:
+        return ""
+    normalized = re.sub(r"\s+", " ", value).strip().lower()
+    if normalized in {"none", "null", "n/a", "na", "undefined"} or normalized.startswith("[") or "placeholder" in normalized or normalized == "lorem ipsum":
+        return ""
+    info = resume.get("personal_info") or {}
+    identity = {
+        re.sub(r"\s+", " ", str(info.get("name") or "").strip().lower()),
+        re.sub(r"\s+", " ", str(info.get("location") or "").strip().lower()),
+    }
+    if normalized and normalized in identity:
+        return DEFAULT_DECLARATION
+    return value
+
+
+def add_declaration_section(story, title, value, styles, body_style, paragraph, keep_together=None):
     statement, details = split_declaration(value)
-    story.append(paragraph(pdf_text(title.upper()), styles["ResumeSection"]))
+    flowables = [paragraph(pdf_text(title.upper()), styles["ResumeSection"])]
     if statement:
-        story.append(paragraph(pdf_text(statement), body_style))
+        flowables.append(paragraph(pdf_text(statement), body_style))
     if details:
-        story.append(paragraph(pdf_markup("\n".join(details)), body_style))
+        flowables.append(paragraph(pdf_markup("\n".join(details)), body_style))
+    if keep_together:
+        story.append(keep_together(flowables))
+    else:
+        story.extend(flowables)
 
 
 def add_list_section(story, title, items, styles, body_style, paragraph):
@@ -801,11 +859,11 @@ def add_rl_paragraph_section(story, title, value, section_style, body_style, par
     story.append(paragraph(pdf_markup(value), body_style))
 
 
-def add_rl_declaration_section(story, title, value, section_style, body_style, paragraph_style, paragraph):
+def add_rl_declaration_section(story, title, value, section_style, body_style, paragraph_style, paragraph, keep_together=None):
     statement, details = split_declaration(value)
-    story.append(paragraph(pdf_text(title).upper(), section_style))
+    flowables = [paragraph(pdf_text(title).upper(), section_style)]
     if statement:
-        story.append(paragraph(pdf_text(statement), body_style))
+        flowables.append(paragraph(pdf_text(statement), body_style))
     if details:
         detail_style = paragraph_style(
             name=f"{body_style.name}DeclarationDetails",
@@ -813,7 +871,11 @@ def add_rl_declaration_section(story, title, value, section_style, body_style, p
             alignment=2,
             spaceBefore=4,
         )
-        story.append(paragraph(pdf_markup("\n".join(details)), detail_style))
+        flowables.append(paragraph(pdf_markup("\n".join(details)), detail_style))
+    if keep_together:
+        story.append(keep_together(flowables))
+    else:
+        story.extend(flowables)
 
 
 def add_rl_skills_section(story, skills, section_style, chip_style, paragraph):
@@ -934,22 +996,91 @@ def clean_pdf_entry(item):
 
 
 def is_placeholder(value):
-    return "[add" in str(value or "").lower()
+    val = str(value or "").lower()
+    return "[add" in val or "you can improve" in val or "lorem ipsum" in val or "enter details" in val
+
+
+def clean_location(location):
+    loc = str(location or "").strip()
+    if not loc or is_placeholder(loc):
+        return ""
+    if ";" in loc or ":" in loc:
+        sep = ";" if ";" in loc else ":"
+        parts = [p.strip() for p in loc.split(sep)]
+        filtered = [p for p in parts if p.lower() not in {"city", "state", "country", "location", "address"}]
+        loc = ", ".join(filtered) if filtered else loc
+    loc = re.sub(r"^(?:city|state|location|address)\s*[:\-;\s]+", "", loc, flags=re.I).strip()
+    return loc.title() if loc.islower() else loc
+
+
+def normalize_render_skills(skills):
+    result = []
+    seen = set()
+    for item in skills or []:
+        val = item.get("skill_name") if isinstance(item, dict) else str(item or "")
+        val = str(val or "").strip()
+        if not val or is_placeholder(val):
+            continue
+        val = re.sub(r"^Technical Skills:\s*", "", val, flags=re.I).strip()
+        category_chunks = re.findall(r"(?:^|,\s*)([A-Za-z0-9 &]+):\s*([^:]+?)(?=(?:,\s*[A-Za-z0-9 &]+:|$))", val)
+        if category_chunks:
+            for cat, items_str in category_chunks:
+                for sub in items_str.split(","):
+                    clean = sub.strip()
+                    if clean and not is_placeholder(clean):
+                        if clean.lower() not in seen:
+                            seen.add(clean.lower())
+                            result.append(clean)
+        else:
+            for sub in val.split(","):
+                clean = sub.strip()
+                if clean and not is_placeholder(clean):
+                    if ":" in clean:
+                        clean = clean.split(":")[-1].strip()
+                    if clean and clean.lower() not in seen:
+                        seen.add(clean.lower())
+                        result.append(clean)
+    return result
+
+
+def apply_content_density(profile, resume):
+    prof = dict(profile)
+    exp_count = len(resume.get("experience") or [])
+    proj_count = len(resume.get("projects") or [])
+    edu_count = len(resume.get("education") or [])
+    summary_len = len(str(resume.get("summary") or ""))
+    total_entries = exp_count + proj_count + edu_count
+    
+    if total_entries <= 3 and summary_len < 300:
+        prof["content_gap"] = prof.get("content_gap", 0.11) * 1.2
+        prof["section_leading"] = prof.get("section_leading", 12) + 0.5
+        prof["section_before"] = 20
+        prof["body_size"] = max(9.5, prof.get("body_size", 9.5))
+    elif total_entries > 7 or summary_len > 800:
+        prof["content_gap"] = prof.get("content_gap", 0.11) * 0.85
+        prof["body_size"] = max(7.8, prof.get("body_size", 8.6) - 0.2)
+    return prof
 
 
 def education_pdf_entry(item):
-    subtitle = ", ".join(
-        filter(
-            None,
-            [
-                item.get("degree"),
-                item.get("field"),
-                f"CGPA: {item.get('cgpa')}" if item.get("cgpa") else None,
-            ],
-        )
-    )
+    degree_field = ", ".join(filter(None, [item.get("degree"), item.get("field")]))
+    scores = []
+    if item.get("cgpa"):
+        scores.append(f"CGPA: {item.get('cgpa')}")
+    if item.get("percentage"):
+        pct = str(item.get("percentage")).strip()
+        scores.append(f"Percentage: {pct if pct.endswith('%') else pct + '%'}")
+    score_str = " | ".join(scores)
+
+    if degree_field:
+        title = degree_field
+        subtitle = " | ".join(filter(None, [item.get("school"), score_str]))
+    else:
+        title = item.get("school") or "Education"
+        subtitle = score_str
+
     return {
-        "title": item.get("school"),
+        "title": title,
         "subtitle": subtitle,
         "dates": date_range(item.get("start_date"), item.get("end_date")),
     }
@@ -1800,7 +1931,7 @@ def render_html_sections(resume, section_ids):
         if section_id == "summary":
             rendered.append(summary_section(resume.get("summary")))
         elif section_id == "declaration":
-            declaration_text = resume.get("declaration")
+            declaration_text = resolved_declaration(resume)
             if declaration_text and declaration_text.strip():
                 rendered.append(f'<section class="resume-section"><h2>Declaration</h2><p class="resume-declaration">{text(declaration_text)}</p></section>')
         elif section_id == "skills":
@@ -1813,7 +1944,7 @@ def render_html_sections(resume, section_ids):
 def render_contact_block(info):
     contact_items = [
         item
-        for item in [info.get("email"), info.get("phone"), info.get("location")]
+        for item in [info.get("email"), info.get("phone"), clean_location(info.get("location"))]
         if item and not is_placeholder(item)
     ]
     links = [
@@ -1830,7 +1961,7 @@ def render_contact_block(info):
 def contact_line(info):
     return " | ".join(
         item
-        for item in [info.get("email"), info.get("phone"), info.get("location")]
+        for item in [info.get("email"), info.get("phone"), clean_location(info.get("location"))]
         if item and not is_placeholder(item)
     )
 
@@ -2014,7 +2145,23 @@ def split_project_description(description):
     subtitles = []
     bullets = []
     for line in lines:
-        if line.lower().startswith(("technologies:", "tech stack:", "tools used:")):
+        match = re.match(r"^(Technologies|Tech Stack|Tools used):\s*(.*)", line, flags=re.I)
+        if match:
+            prefix = match.group(1)
+            val = match.group(2).strip()
+            verb_match = re.search(r"\b(Developed|Built|Implemented|Designed|Created|Engineered|Deployed|Integrated|Automated|Managed|Led|Provided|Achieved|Constructed|Configured)\b", val)
+            if verb_match:
+                tech_part = val[:verb_match.start()].strip().rstrip(",;.")
+                narrative_part = val[verb_match.start():].strip()
+                if tech_part:
+                    subtitles.append(f"{prefix}: {tech_part}")
+                else:
+                    subtitles.append(f"{prefix}:")
+                if narrative_part:
+                    bullets.append(narrative_part.lstrip("-* "))
+            else:
+                subtitles.append(f"{prefix}: {val}")
+        elif line.lower().startswith(("technologies:", "tech stack:", "tools used:")):
             subtitles.append(line)
         else:
             bullets.append(line.lstrip("-* "))
@@ -2095,7 +2242,7 @@ def summary_section(summary):
 
 
 def date_range(start_date, end_date):
-    return " – ".join(
+    return " \u2013 ".join(
         compact_resume_date(value)
         for value in (start_date, end_date)
         if value
@@ -2196,7 +2343,7 @@ def build_plain_resume_lines(resume, template_choice="modern"):
     lines = [
         name.upper() if template_choice == "classic" else name,
         header_role(resume),
-        " | ".join(filter(None, [info.get("email"), info.get("phone"), info.get("location")])),
+        " | ".join(filter(None, [info.get("email"), info.get("phone"), clean_location(info.get("location"))])),
         links_line(info),
         "",
     ]

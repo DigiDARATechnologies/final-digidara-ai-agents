@@ -9,6 +9,18 @@ from app.services.import_review import ImportValidationError, analyze_resume_tex
 from app.routes import ai
 
 
+def test_extract_professional_links_keeps_bare_profile_domains_without_fetching_them():
+    links = import_review.extract_professional_links(
+        "LinkedIn linkedin.com/in/alex GitHub github.com/alex Portfolio alex-portfolio.onrender.com"
+    )
+
+    assert links == {
+        "linkedin": "linkedin.com/in/alex",
+        "github": "github.com/alex",
+        "portfolio": "alex-portfolio.onrender.com",
+    }
+
+
 COMPLETE_RESUME = """Alex Morgan
 DATA ANALYST
 alex@example.com | +91 98765 43210 | Chennai, India
@@ -203,6 +215,54 @@ Technologies: Python, SQL, Power BI
         "title": "Customer Retention Analytics Platform",
         "description": "Technologies: Python, SQL, Power BI\n- Built a churn dashboard for weekly leadership reviews.\n- Combined customer events and billing records into a reusable data model.",
     }]
+
+
+def test_import_parser_preserves_every_publication_with_its_own_details():
+    parsed, _ = import_review.parse_resume_text(
+        """Alex Morgan
+Data Analyst
+alex@example.com
+
+Publications
+Data Quality in Operational Analytics
+January 2024
+Published a reproducible dashboard quality framework.
+Forecasting Demand with Transparent Models
+February 2025
+Presented a practical demand forecasting evaluation.
+"""
+    )
+
+    assert [item["title"] for item in parsed["publications"]] == [
+        "Data Quality in Operational Analytics",
+        "Forecasting Demand with Transparent Models",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("score_line", "expected_score"),
+    [
+        ("CGPA: 8.5", "8.5"),
+        ("CGPA: 8.5/10", "8.5/10"),
+        ("Percentage: 85%", "Percentage: 85%"),
+        ("CGPA: 8.5/10 | Percentage: 85%", "8.5/10 | Percentage: 85%"),
+    ],
+)
+def test_import_parser_preserves_cgpa_and_percentage(score_line, expected_score):
+    parsed, _ = import_review.parse_resume_text(
+        f"""Alex Morgan
+Data Analyst
+alex@example.com
+
+Education
+Example University
+Master of Computer Applications
+2024 - 2026
+{score_line}
+"""
+    )
+
+    assert parsed["education"][0]["cgpa"] == expected_score
 
 
 def test_import_parser_keeps_role_dates_and_bullets_in_one_experience_record():

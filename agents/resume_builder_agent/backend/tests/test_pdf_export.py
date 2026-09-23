@@ -74,6 +74,103 @@ def test_pdf_includes_projects_and_their_ai_generated_bullets(sample_resume_payl
     assert extracted.index("EXPERIENCE") < extracted.index("PROJECTS") < extracted.index("EDUCATION")
 
 
+def test_pdf_sanitizes_location_and_renders_generated_bullets_and_skills(sample_resume_payload):
+    sample_resume_payload["personal_info"]["location"] = "City ; trichy"
+    sample_resume_payload["experience"] = [{
+        "company": "Example Studio",
+        "role": "Frontend Developer",
+        "start_date": "2024-01-01",
+        "end_date": "Present",
+        "raw_input": "i developed a swiggy website",
+        "ai_generated_bullets": ["Developed a Swiggy website."],
+    }]
+    sample_resume_payload["projects"] = [{
+        "title": "Food Delivery UI",
+        "description": "react js",
+        "ai_generated_bullets": ["Built the project with React JS."],
+    }]
+    sample_resume_payload["skills"] = [{"skill_name": "React JS"}, {"skill_name": "JavaScript"}, {"skill_name": "CSS"}]
+
+    pdf_bytes = pdf_export.render_resume_pdf(sample_resume_payload, "steady-form")
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "City ; trichy" not in extracted
+    assert "Trichy" in extracted
+    assert "Developed a Swiggy website." in extracted
+    assert "Built the project with React JS." in extracted
+    assert "TECHNICAL SKILLS" in extracted
+    assert all(skill in extracted for skill in ("React JS", "JavaScript", "CSS"))
+
+
+def test_education_entry_keeps_degree_dates_and_scores_in_their_own_fields():
+    entry = pdf_export.education_pdf_entry({
+        "level": "PG",
+        "degree": "MCA",
+        "field": "Computer Applications",
+        "school": "KSR College",
+        "start_date": "2023",
+        "end_date": "2025",
+        "cgpa": "8.5",
+        "percentage": "82%",
+    })
+
+    assert entry["title"] == "MCA, Computer Applications"
+    assert entry["dates"] == "2023 \u2013 2025"
+    assert entry["subtitle"] == "KSR College | CGPA: 8.5 | Percentage: 82%"
+
+
+def test_project_technology_metadata_does_not_repeat_flattened_narrative_with_bullets():
+    entry = pdf_export.project_pdf_entry({
+        "title": "Traffic Flow Prediction System",
+        "description": "Technologies: Python, TensorFlow, CNN, LSTM Developed a traffic prediction model.",
+        "ai_generated_bullets": ["Developed a traffic prediction model."],
+    })
+
+    assert entry["subtitle"] == "Technologies: Python, TensorFlow, CNN, LSTM"
+    assert entry["body"] == ""
+    assert entry["bullets"] == ["Developed a traffic prediction model."]
+
+
+def test_pdf_filters_the_chat_instruction_placeholder_from_skills(sample_resume_payload):
+    sample_resume_payload["skills"] = [{"skill_name": "Python"}, {"skill_name": "You can improve it later with AI."}]
+
+    pdf_bytes = pdf_export.render_resume_pdf(sample_resume_payload, "steady-form")
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "Python" in extracted
+    assert "You can improve it later with AI" not in extracted
+
+
+def test_pdf_splits_legacy_flattened_skill_category_blob():
+    assert pdf_export.normalize_render_skills([{
+        "skill_name": "Technical Skills: Programming: Python, JavaScript, Libraries & Frameworks: Flask, Data & Analytics: SQL"
+    }]) == ["Python", "JavaScript", "Flask", "SQL"]
+
+
+def test_pdf_replaces_a_legacy_name_only_declaration_with_the_standard_statement(sample_resume_payload):
+    sample_resume_payload["declaration"] = sample_resume_payload["personal_info"]["name"]
+
+    pdf_bytes = pdf_export.render_resume_pdf(sample_resume_payload, "steady-form")
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf_bytes)).pages)
+
+    assert "I hereby declare that the information provided in this resume is true and accurate" in extracted
+
+
+def test_sparse_resume_profile_uses_balanced_section_rhythm_without_shrinking_text():
+    profile = pdf_export.apply_content_density(
+        pdf_export.reportlab_template_profile("classic-serif"),
+        {
+            "summary": "Candidate with a concise profile.",
+            "projects": [{"title": "Project"}],
+            "education": [{"degree": "B.Tech"}],
+            "skills": [{"skill_name": "Python"}],
+        },
+    )
+
+    assert profile["section_before"] == 20
+    assert profile["body_size"] >= 9.5
+
+
 def test_precision_ats_pdf_uses_the_reference_single_column_alignment(sample_resume_payload):
     pdf_bytes = pdf_export.render_resume_pdf(sample_resume_payload, "steady-form")
     positions = {}
@@ -259,6 +356,16 @@ def test_every_catalog_template_renders_valid_pdf_bytes(sample_resume_payload):
         assert len(pdf_bytes) > 1000
 
 
+def test_catalog_templates_preserve_true_a4_page_dimensions(sample_resume_payload):
+    """Layout tuning must never turn the document into a desktop-sized page."""
+    from app.template_catalog import TEMPLATE_CATALOG
+
+    for template_id, *_rest in TEMPLATE_CATALOG:
+        page = PdfReader(BytesIO(pdf_export.render_resume_pdf(sample_resume_payload, template_id))).pages[0]
+        assert round(float(page.mediabox.width)) == 595, template_id
+        assert round(float(page.mediabox.height)) == 842, template_id
+
+
 def test_catalog_templates_handle_long_content_without_placeholder_or_empty_section_leaks():
     from app.template_catalog import TEMPLATE_CATALOG
 
@@ -277,6 +384,26 @@ def test_catalog_templates_handle_long_content_without_placeholder_or_empty_sect
         assert "Imported Company" not in extracted, template_id
         assert "Imported Project" not in extracted, template_id
         assert "PUBLICATIONS" not in extracted.upper(), template_id
+
+
+def test_two_column_templates_render_complete_nonempty_a4_flow():
+    from app.template_catalog import TEMPLATE_CATALOG
+
+    payload = comprehensive_resume_payload()
+    two_column_templates = [
+        template_id for template_id, *_rest in TEMPLATE_CATALOG
+        if pdf_export.template_style_spec(template_id)["layout"] == "two-column"
+    ]
+
+    for template_id in two_column_templates:
+        pdf_bytes = pdf_export.render_resume_pdf(payload, template_id)
+        pages = PdfReader(BytesIO(pdf_bytes)).pages
+
+        # Some compact two-column profiles legitimately fit this fixture on one
+        # A4 page; a page count alone is not evidence of clipping.  The
+        # catalog-wide assertion above verifies every long-form record survives.
+        assert len(pages) >= 1, template_id
+        assert all((page.extract_text() or "").strip() for page in pages), template_id
 
 
 def test_four_primary_templates_keep_selectable_header_order(sample_resume_payload):

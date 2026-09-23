@@ -43,6 +43,7 @@ class Resume(db.Model):
     summary = db.Column(Text)
     profile_photo = db.Column(db.String(500), nullable=True)
     declaration = db.Column(Text)
+    declaration_enabled = db.Column(db.Boolean, nullable=False, default=True)
     ats_score = db.Column(db.Integer)
     job_match_score = db.Column(db.Integer)
     download_count = db.Column(db.Integer, nullable=False, default=0)
@@ -163,12 +164,14 @@ class Education(db.Model):
         nullable=False,
         index=True,
     )
-    school = db.Column(db.String(255), nullable=False)
-    degree = db.Column(db.String(255))
-    field = db.Column(db.String(255))
+    school = db.Column(db.String(255), nullable=False, default="")
+    degree = db.Column(db.String(255), default="")
+    level = db.Column(db.String(30), default="")
+    field = db.Column(db.String(255), default="")
     start_date = db.Column(db.Date)
     end_date = db.Column(db.Date)
     cgpa = db.Column(db.String(20))
+    percentage = db.Column(db.String(20))
 
     resume = db.relationship("Resume", back_populates="education")
 
