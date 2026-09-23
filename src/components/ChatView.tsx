@@ -4,6 +4,7 @@ import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 
 interface ChatViewProps {
   chat: Chat;
@@ -386,7 +387,7 @@ export default function ChatView({
                             {option.description && <span>{option.description}</span>}
                           </a>
                         ) : (
-                          <button key={option.value} type="button" disabled={!optionsActive} onClick={() => onChooseOption(option.value, option.label)}>
+                          <button key={option.value} type="button" disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
                             <strong>{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
                           </button>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { downloadMockInterviewReport } from "../lib/mockInterviewApi";
+import { speakBrowserText } from "../lib/browserSpeech";
 import type { MockInterviewAnswerTiming, MockInterviewFlowState } from "../lib/mockInterviewFlow";
 
 const TIME_LIMIT_SECONDS = { beginner: 60, intermediate: 90, advanced: 120 } as const;
@@ -92,13 +93,15 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit }: Pr
       startAnswering();
     } else if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
       setVoiceStatus("Reading the question aloud");
-      const utterance = new SpeechSynthesisUtterance(state.question ?? "");
-      utterance.lang = "en-US";
-      utterance.rate = 1;
-      utterance.onend = startAnswering;
-      utterance.onerror = startAnswering;
-      window.speechSynthesis.cancel();
-      try { window.speechSynthesis.speak(utterance); } catch { startAnswering(); }
+      // The difficulty/Start action unlocks speech before this async panel is
+      // mounted. Wait for browser voices and fall back to listening if the
+      // browser still rejects TTS, so the interview cannot get stuck.
+      void speakBrowserText(state.question ?? "", {
+        onEnd: startAnswering,
+        onError: () => startAnswering(),
+      }).then((started) => {
+        if (!started) startAnswering();
+      });
     } else {
       startAnswering();
     }
