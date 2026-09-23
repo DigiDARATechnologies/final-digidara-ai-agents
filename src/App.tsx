@@ -1264,6 +1264,17 @@ export default function App() {
         },
       };
     }
+    if (typing) {
+      if (capstoneState.step === "awaiting_topic_request") {
+        typingLabel = "Searching the web for real project ideas and generating two options…";
+      } else if (capstoneState.step === "awaiting_topic_choice") {
+        typingLabel = "Writing your detailed project requirements…";
+      } else if (capstoneState.step === "awaiting_submission") {
+        typingLabel = "Grading your submission — running your code, verifying the output, and scoring quality…";
+      } else if (capstoneState.step === "awaiting_viva_answer") {
+        typingLabel = "Checking your answer…";
+      }
+    }
   } else if (isCodeForgeChat && codeforgeState) {
     connectorStatus = CODEFORGE_STEP_LABELS[codeforgeState.step] ?? codeforgeState.step;
     connectorPendingTask = codeforgeState.step === "awaiting_code" && codeforgeState.problemName
