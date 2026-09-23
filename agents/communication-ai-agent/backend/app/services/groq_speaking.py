@@ -678,7 +678,6 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
     previous_text = "\n".join(f"- {q}" for q in previous_questions if q) or "None yet."
 
     if mode == "topic":
-    if mode == "topic":
         system_prompt = (
             "You are CommuniCoach, a friendly, encouraging English-speaking practice partner. "
             "You are NOT a strict examiner — talk like a supportive coach who wants the learner to feel comfortable speaking, even if they make mistakes. "

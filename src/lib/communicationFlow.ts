@@ -140,7 +140,7 @@ function writingChatReply(reply: string, originalAnswer?: string, correctedAnswe
 const PRONUNCIATION_MODE_OPTIONS: ChatOption[] = [
   { label: "Word", value: "word", description: "Practice pronouncing a single word" },
   { label: "Sentence", value: "sentence", description: "Practice pronouncing a full sentence" },
-  { label: "Minimal pairs", value: "minimal_pairs", description: "Tell two similar-sounding words apart" },
+
 ];
 
 function baseState(): CommunicationFlowState {
@@ -438,7 +438,7 @@ export async function handleCommunicationText(
   }
 
   if (state.step === "awaiting_pronunciation_mode") {
-    const mode = ["word", "sentence", "minimal_pairs"].includes(command) ? (command as PronunciationMode) : undefined;
+    const mode = ["word", "sentence"].includes(command) ? (command as PronunciationMode) : undefined;
     if (!mode) return { state, messages: [{ text: "Pick a mode from the list.", options: PRONUNCIATION_MODE_OPTIONS }] };
     return beginPronunciationSession(state, mode);
   }
