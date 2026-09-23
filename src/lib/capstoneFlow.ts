@@ -150,8 +150,28 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
  * Course.name dedup key is capped at 255 chars (see eligibility_check_free),
  * and a shorter, cleaner string also stays a more meaningful dedup key than
  * a long one that gets truncated anyway. */
+/** A deferral ("your choice", "you decide", "surprise me", "idk") answers
+ * the clarifying question by declining to add any actual content — it is
+ * never itself a role/language/domain detail, so appending it literally
+ * (as "python — your choice") reads back to the student as if "your choice"
+ * were part of their request, and gives the topic-generator LLM nothing
+ * useful to combine. Detected up front so the original request is passed
+ * through alone, with a note that the student left this open, instead of
+ * being combined at all. */
+const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)\b|^you\s*(decide|choose|pick)\b|^(up to you|surprise me|whatever|anything('?s| is)? (fine|works|good)|no preference|i don'?t (know|care|mind)|idk|not sure|either (is fine|works)|doesn'?t matter)\b/i;
+
 function combineWithClarifyingAnswer(originalRequest: string, answer: string): string {
+  if (DEFERRAL_ANSWER.test(answer.trim())) {
+    return `${originalRequest} (the student was asked a clarifying follow-up about this and declined to add any more detail — use your own best judgment for whatever it was asking about)`;
+  }
   return `${originalRequest} — additional detail from a follow-up question: "${answer}" (combine both; only drop "${originalRequest}" if "${answer}" genuinely names a different role, language, or domain instead of the same one)`;
+}
+
+/** What the chat should show as "the request" once a clarifying answer is
+ * folded in — a deferral contributes no content of its own, so the original
+ * request is shown alone rather than as "python — your choice". */
+function displayLabelForClarifyingAnswer(originalRequest: string, answer: string): string {
+  return DEFERRAL_ANSWER.test(answer.trim()) ? originalRequest : `${originalRequest} — ${answer}`;
 }
 
 /** The actual eligibility+topic-generation call, shared by both the
@@ -209,7 +229,7 @@ export async function handleCapstoneText(
       // if it's still vague, so this can never turn into a back-and-forth.
       if (state.pendingTopicSeed) {
         const combined = combineWithClarifyingAnswer(state.pendingTopicSeed, trimmed);
-        return generateTopicsFor(state, combined, `${state.pendingTopicSeed} — ${trimmed}`);
+        return generateTopicsFor(state, combined, displayLabelForClarifyingAnswer(state.pendingTopicSeed, trimmed));
       }
 
       try {
