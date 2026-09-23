@@ -199,7 +199,7 @@ class MySqlRepository:
         course, technology, topic = self.get_topic(course_slug, technology_slug, topic_slug)
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
-                "SELECT p.id,p.name,p.slug,p.description,p.difficulty,p.max_score,p.language_key,p.display_order,"
+                "SELECT p.id,p.name,p.slug,p.description,p.difficulty,p.max_score,p.language_key,p.question_type,p.display_order,"
                 "COALESCE(spp.status,'Not Started') progress,COALESCE(spp.best_score,0) best_score,COALESCE(spp.attempts,0) attempts "
                 "FROM coding_problems p LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
                 "WHERE p.topic_id=%s AND p.is_active=TRUE ORDER BY p.display_order,p.id",
@@ -216,6 +216,12 @@ class MySqlRepository:
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute("SELECT * FROM coding_problems WHERE id=%s AND is_active=TRUE", (summary["id"],))
             row = cursor.fetchone()
+            if row["question_type"] == "mcq":
+                # Never the correct key/explanation here -- those are only
+                # revealed in the submit_mcq_answer response, same as an
+                # execution problem's hidden test cases aren't shown upfront.
+                problem = {**summary, "options": self._json_dict(row["mcq_options_json"])}
+                return course, technology, topic, problem
             cursor.execute(
                 "SELECT id,stdin_text,expected_output,display_order FROM coding_test_cases "
                 "WHERE problem_id=%s AND is_hidden=FALSE ORDER BY display_order",
@@ -230,6 +236,32 @@ class MySqlRepository:
                    "starter_code": row["starter_code"], "judge0_language_id": row["judge0_language_id"],
                    "public_tests": public_cases}
         return course, technology, topic, problem
+
+    def submit_mcq_answer(self, student_id, problem_id, selected_key):
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM coding_problems WHERE id=%s AND is_active=TRUE AND question_type='mcq'",
+                (problem_id,),
+            )
+            problem = cursor.fetchone()
+        if not problem:
+            raise ApiError("The coding problem is unavailable.", 404, "problem_not_found")
+        options = self._json_dict(problem["mcq_options_json"])
+        if selected_key not in options:
+            raise ApiError("selectedKey is invalid.", 400, "invalid_parameter")
+        correct = selected_key == problem["mcq_correct_key"]
+        outcome = {
+            "status": "Accepted" if correct else "Wrong Answer",
+            "score": problem["max_score"] if correct else 0,
+            "isCorrect": correct,
+            "correctKey": problem["mcq_correct_key"],
+            "explanation": problem["mcq_explanation"] or "",
+            "passedTests": 1 if correct else 0,
+            "totalTests": 1,
+            "tests": [],
+        }
+        submission_id = self.save_submission(student_id, problem, f"Selected: {selected_key}", "submit", outcome)
+        return {"submissionId": submission_id, "mode": "submit", **outcome}
 
     def problem_for_evaluation(self, student_id, problem_id):
         with connection() as conn, conn.cursor() as cursor:
@@ -389,6 +421,7 @@ class MySqlRepository:
     def _problem_summary(row):
         return {"id": row["id"], "name": row["name"], "slug": row["slug"], "description": row["description"],
                 "difficulty": row["difficulty"], "max_score": int(row["max_score"]), "language": row["language_key"],
+                "question_type": row.get("question_type", "code"),
                 "sequence": int(row["display_order"]), "progress": row.get("progress", "Not Started"),
                 "best_score": int(row.get("best_score", 0)), "attempts": int(row.get("attempts", 0))}
 
@@ -447,6 +480,12 @@ class MySqlRepository:
         if isinstance(value, list):
             return value
         return json.loads(value) if value else []
+
+    @staticmethod
+    def _json_dict(value):
+        if isinstance(value, dict):
+            return value
+        return json.loads(value) if value else {}
 
     @staticmethod
     def _destination(course, technology=None, topic=None):

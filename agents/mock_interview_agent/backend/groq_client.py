@@ -33,7 +33,6 @@ from ai.question_generation import (
     PRESET_ROLE_SKILLS,
     CUSTOM_FALLBACK_TOPIC_AREAS,
     infer_role_skills as _infer_role_skills,
-    generate_followup as _generate_followup,
     generate_question as _generate_question,
     build_interview_questions as _build_interview_questions,
 )
@@ -43,16 +42,13 @@ from ai.validators import (
     QUESTION_INTERROGATIVE_PATTERN,
     QUESTION_WORD_LIMITS,
     QUESTION_WORD_PATTERN,
-    SAFE_FOLLOWUP_QUESTIONS,
     SAFE_HR_QUESTION_TEMPLATES,
     SAFE_QUESTION_TEMPLATES,
     _question_validation_errors,
-    _safe_fallback_followup,
     _safe_fallback_question,
     _normalized_topic_area,
     _question_payload,
     _validated_question_payload_with_retries,
-    _validated_question_with_retries,
 )
 from services.role_interviews import resolve_role_subjects as _resolve_role_subjects
 
@@ -96,25 +92,6 @@ def build_interview_questions(
         already_asked_hashes=already_asked_hashes,
         role_skills=role_skills,
         initial_asked_context=initial_asked_context,
-    )
-
-
-def generate_followup(
-    question,
-    answer,
-    difficulty,
-    verdict,
-    verdict_reason,
-    round_type="technical",
-):
-    return _generate_followup(
-        question,
-        answer,
-        difficulty,
-        verdict,
-        verdict_reason,
-        round_type,
-        chat_fn=_chat,
     )
 
 

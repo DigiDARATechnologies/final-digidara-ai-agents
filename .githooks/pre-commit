@@ -1,0 +1,15 @@
+#!/bin/sh
+# Block common generated artifacts from entering the repository.
+set -eu
+
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -Ei \
+  '(^|/)(__pycache__/|\.pytest_cache/|\.venv/|venv/|node_modules/|dist/|build/|coverage/|htmlcov/|.*\.egg-info/|\.env$|\.env\.local$|.*\.log$|\.tmp_.*\.py$|test_output_|.*_test_report\.|.*_calibration_live\.(json|md)$|screenshots?/)' || true)
+
+if [ -n "$blocked" ]; then
+  echo "Commit blocked: generated or secret files are staged:"
+  echo "$blocked"
+  echo "Remove them from the index or add an explicit reviewed exception."
+  exit 1
+fi
+
+exit 0

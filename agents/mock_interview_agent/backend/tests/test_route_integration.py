@@ -259,8 +259,6 @@ class RouteIntegrationTests(unittest.TestCase):
             "verdict": "correct",
             "reason": "You explained lazy iteration accurately.",
             "ideal_answer": "A generator yields values lazily.",
-            "follow_up_needed": False,
-            "follow_up_question": None,
         }
         with (
             patch("routes.answers.db.query", side_effect=query_result),

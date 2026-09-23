@@ -204,8 +204,6 @@ class MySQLRouteIntegrationTests(unittest.TestCase):
             "verdict": "correct",
             "reason": "The core concept is accurate and clearly stated.",
             "ideal_answer": "A concise correct explanation.",
-            "follow_up_needed": False,
-            "follow_up_question": None,
         }
         final_evaluation = {
             "overall_score": 8.4,

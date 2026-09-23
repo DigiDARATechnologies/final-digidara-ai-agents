@@ -6,8 +6,23 @@ x-logging:
       max-size: 100M
 
 services:
+  # image below: the only intentional edit in this otherwise-untouched
+  # vendored file. This is agents/codeforge_agent/judge0-worker-image, built
+  # and pushed to GHCR by ci.yml's publish-ghcr-judge0 job (adds pandas/numpy
+  # to Judge0's Python 3.8.1 sandbox for the CodeForge Pandas/NumPy courses --
+  # see that Dockerfile for why). Pulled, never built here: building it
+  # in-place on `docker compose up -d --build` used to compile pandas/numpy
+  # from source on every deploy, which once took long enough to blow past the
+  # deploy SSH step's timeout. pull_policy: always makes Compose fetch the
+  # latest published image on every deploy even though the tag name doesn't
+  # change; --build (which deploy.sh always passes) has no effect on a
+  # service with no `build:` key, so this never rebuilds on the server.
+  # Compose treats a same-named service redefined at the including project's
+  # top level as a conflict, not a mergeable override, so this can't be done
+  # from the root docker-compose.yml.
   server:
-    image: judge0/judge0:latest
+    image: ghcr.io/digidaratechnologies/digidara-judge0-pandas-numpy:latest
+    pull_policy: always
     volumes:
       - ./judge0.conf:/judge0.conf:ro
     ports:
@@ -17,7 +32,8 @@ services:
     restart: always
 
   worker:
-    image: judge0/judge0:latest
+    image: ghcr.io/digidaratechnologies/digidara-judge0-pandas-numpy:latest
+    pull_policy: always
     command: ["./scripts/workers"]
     volumes:
       - ./judge0.conf:/judge0.conf:ro

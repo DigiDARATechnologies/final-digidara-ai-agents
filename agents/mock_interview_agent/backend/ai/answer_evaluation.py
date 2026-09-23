@@ -1,20 +1,65 @@
 """Per-answer evaluation, ideal answers, and interview scorecards."""
 
 import json
-from functools import partial
 
 from .chat_client import json_object as _json_object
 from .chat_client import score as _score
-from .validators import (
-    _safe_fallback_followup,
-    _validated_question_with_retries,
-)
 
 
 IDEAL_ANSWER_MAX_WORDS = {
     "beginner": 60,
     "intermediate": 90,
     "advanced": 120,
+}
+
+BEGINNER_TECHNICAL_RUBRIC = (
+    "BEGINNER TECHNICAL RUBRIC: Judge whether the answer directly explains the basic "
+    "concept in understandable language. Mark correct when the core idea is accurate, "
+    "even if the answer is short and omits advanced details or exact terminology. "
+    "Mark partial only for a missing important basic point or a minor conceptual mistake. "
+    "Mark wrong for an incorrect, unrelated, or empty answer. Do not require internals, "
+    "architecture, optimization, advanced REST constraints, or implementation details "
+    "unless the beginner question itself explicitly asks for an essential basic detail. "
+    "Keep feedback simple and educational; give an ideal answer of about 1-3 plain-language "
+    "sentences focused on the core concept, without unnecessary advanced terminology. "
+)
+
+TECHNICAL_LEVEL_SCORING = {
+    "beginner": (
+        "BEGINNER SCORING: A clear one- or two-sentence explanation of the single basic "
+        "concept is sufficient. Never require REST constraint lists, framework project internals, "
+        "magic methods, optimization, architecture, or implementation details that the question "
+        "did not ask for. Judge the actual question, including older questions that may be "
+        "overly advanced for their label. "
+    ),
+    "intermediate": (
+        "INTERMEDIATE SCORING: Expect accurate explanation of the named concept or pattern "
+        "and a sensible common application or troubleshooting approach when requested. "
+        "Do not require senior-level architecture, exhaustive constraint lists, or obscure edge cases. "
+    ),
+    "advanced": (
+        "ADVANCED SCORING: When the question asks for design judgment, expect reasoned trade-offs, "
+        "consequences, performance, security, reliability, or edge-case analysis as relevant. "
+        "Credit defensible alternatives; do not require one preferred architecture or unasked details. "
+    ),
+}
+
+HR_LEVEL_SCORING = {
+    "beginner": (
+        "BEGINNER HR SCORING: Credit a relevant, sincere, understandable answer to a simple "
+        "introduction, motivation, or everyday situation. Education or personal examples count. "
+        "Do not require formal work history, a STAR structure, or leadership-level judgment. "
+    ),
+    "intermediate": (
+        "INTERMEDIATE HR SCORING: When a behavioral question requests an example, look for a "
+        "relevant situation, the candidate's own action, and a result or learning. Accept an "
+        "informal narrative; do not require advanced leadership experience or perfect STAR wording. "
+    ),
+    "advanced": (
+        "ADVANCED HR SCORING: Evaluate judgment in ambiguous situations, ownership, conflict "
+        "resolution or leadership, and awareness of consequences when the question asks for them. "
+        "Credit plausible alternative decisions supported by clear reasoning. "
+    ),
 }
 
 
@@ -59,12 +104,18 @@ def _ideal_answer_guidance(difficulty, round_type="technical"):
             f"{level_guidance} Stay concise enough to say aloud."
         )
 
+    if difficulty == "beginner":
+        return (
+            "Write like a well-prepared candidate speaking naturally, not a dictionary definition. "
+            "Use one or two clear, complete sentences, or a third when needed. Directly explain "
+            "the core concept in plain language and, if useful, one simple example. "
+            "Do not add advanced terminology, special methods, framework or language internals, "
+            "architecture, or implementation details unless the beginner question explicitly "
+            "asks for them. Avoid code snippets and provide a complete explanatory answer rather "
+            "than a clipped phrase."
+        )
+
     level_guidance = {
-        "beginner": (
-            "Use one or two clear, complete sentences. Explain the core concept in plain "
-            "language while naturally using the essential technical terminology. Aim for "
-            "roughly 25 to 50 words when the question warrants it."
-        ),
         "intermediate": (
             "Use two or three connected sentences. Explain the concept and add a useful "
             "practical implication, comparison, or common usage detail. Aim for roughly "
@@ -103,8 +154,14 @@ def evaluate_answer(
     *,
     chat_fn,
 ):
-    """Evaluate an answer and select any follow-up in one model call."""
+    """Evaluate one answer without changing the planned question sequence."""
     ideal_answer_guidance = _ideal_answer_guidance(difficulty, round_type)
+    beginner_final_rule = (
+        "FINAL BEGINNER RULE: Keep the reason and ideal_answer focused on the basic concept. "
+        "Do not mention internal special methods, protocol mechanics, or advanced details as "
+        "improvements when a simple correct explanation is enough.\n\n"
+        if round_type == "technical" and difficulty == "beginner" else ""
+    )
     if round_type == "hr":
         system_prompt = (
             "You are an accurate, supportive evaluator judging one SPOKEN HR or behavioral answer "
@@ -141,26 +198,31 @@ def evaluate_answer(
             "For the reason field: write one encouraging, constructive, specific sentence of at most "
             "25 words. Acknowledge useful content first whenever present, then identify the most important "
             "missing element or improvement. Never criticize speech style or personality.\n\n"
-            "For the follow-up fields: set follow_up_needed to true only when the answer is genuinely "
-            "vague, off-topic, or incomplete and one short clarification could reveal material missing "
-            "substance. Do not request a follow-up for informal or rambling wording, missing business "
-            "terminology, imperfect STAR formatting, optional detail, or merely to repeat the same "
-            "request. When true, write one short supportive question targeting only the material gap; "
-            "otherwise use null.\n\n"
             f"For the ideal_answer field: {ideal_answer_guidance} Always provide it regardless of verdict.\n\n"
             "Respond ONLY with valid JSON in this exact shape:\n"
             "{\n"
             '  "verdict": "correct" | "partial" | "wrong",\n'
             '  "reason": "<encouraging, specific sentence, max 25 words>",\n'
-            '  "ideal_answer": "<natural HR interview-recommended answer>",\n'
-            '  "follow_up_needed": true | false,\n'
-            '  "follow_up_question": "<one short question or null>"\n'
+            '  "ideal_answer": "<natural HR interview-recommended answer>"\n'
             "}"
         )
     else:
+        terminology_reason = (
+            "mention the precise term in the reason only if it is basic vocabulary useful for "
+            "this difficulty; never add advanced mechanics. "
+            if difficulty == "beginner" else "mention the precise term in the reason. "
+        )
+        terminology_refinement = (
+            'keep the verdict "correct" and offer the precise term as a helpful refinement only '
+            "when it is a simple beginner-level term; otherwise just affirm the correct idea. "
+            if difficulty == "beginner" else
+            'keep the verdict "correct" and offer the precise term as a helpful refinement. '
+        )
         system_prompt = (
             "You are a friendly but accurate interview evaluator judging one SPOKEN answer "
-            f"at difficulty ({difficulty}). Evaluate the candidate's conceptual "
+            f"at difficulty ({difficulty}). "
+            f"{BEGINNER_TECHNICAL_RUBRIC if difficulty == 'beginner' else ''}"
+            "Evaluate the candidate's conceptual "
             "understanding and final corrected meaning, not speech fluency, polish, or ability "
             "to use exact textbook vocabulary. Ignore filler words, hesitation, "
             "repetition, rambling, false starts, and phrases such as 'um', 'sorry', or 'I mean'. "
@@ -168,7 +230,7 @@ def evaluate_answer(
             "an earlier statement they clearly withdrew. Accept casual language, approximate terminology, "
             "analogies, and non-technical wording when they communicate the correct concept. Do not lower "
             "a verdict merely because a precise term was omitted or replaced with an informal word; gently "
-            "mention the precise term in the reason. Judge only what the original question asks. Do not "
+            f"{terminology_reason}Judge only what the original question asks. Do not "
             "require an example, implementation detail, edge case, or extra depth unless explicitly "
             "requested or essential to the core concept. Calibrate completeness to the stated difficulty; "
             "a beginner answer needs no advanced nuance. Do not penalize a spoken conceptual answer for "
@@ -187,21 +249,15 @@ def evaluate_answer(
             "For the reason field: write one encouraging, constructive, specific sentence of at most "
             "25 words. Acknowledge what the candidate understood whenever anything is valid, then explain "
             "any conceptual gap without scolding. If the concept is correct but terminology is informal, "
-            'keep the verdict "correct" and offer the precise term as a helpful refinement. Avoid blunt '
+            f"{terminology_refinement}Avoid blunt "
             "wording such as 'Wrong because...' and never criticize speech style.\n\n"
             f"For the ideal_answer field: {ideal_answer_guidance} Always provide it regardless of verdict.\n\n"
-            "For the follow-up fields: set follow_up_needed to true only when the answer has a material "
-            "conceptual gap, error, unresolved contradiction, or is too vague to establish basic "
-            "understanding. Do not request optional depth, code, examples not requested, or a more precise "
-            "term when the underlying concept is already clear. When true, ask one short question targeting "
-            "only that gap; otherwise use null.\n\n"
+            f"{beginner_final_rule}"
             "Respond ONLY with valid JSON in this exact shape:\n"
             "{\n"
             '  "verdict": "correct" | "partial" | "wrong",\n'
             '  "reason": "<encouraging, specific sentence, max 25 words>",\n'
-            '  "ideal_answer": "<natural, difficulty-matched interview answer>",\n'
-            '  "follow_up_needed": true | false,\n'
-            '  "follow_up_question": "<one short question or null>"\n'
+            '  "ideal_answer": "<natural, difficulty-matched interview answer>"\n'
             "}"
         )
 
@@ -225,41 +281,7 @@ def evaluate_answer(
         result.get("ideal_answer", ""),
         max_words=IDEAL_ANSWER_MAX_WORDS.get(difficulty, 90),
     )
-    if round_type in {"hr", "technical"}:
-        round_label = "HR" if round_type == "hr" else "technical"
-        if not isinstance(result.get("follow_up_needed"), bool):
-            raise ValueError(
-                f"The AI returned an invalid {round_label} follow-up decision."
-            )
-        followup = result.get("follow_up_question")
-        if result["follow_up_needed"]:
-            if not isinstance(followup, str) or not followup.strip():
-                raise ValueError(
-                    f"The AI returned an invalid {round_label} follow-up question."
-                )
-            followup_retry_prompt = (
-                f"You are a supportive {round_label} interviewer. Regenerate exactly one concise "
-                "follow-up that addresses the material gap in the candidate's answer. Focus on one "
-                f"{'behavioral' if round_type == 'hr' else 'technical'} idea, use no more than two "
-                "question clauses, remain within the selected difficulty's word limit, and reply "
-                "with only the question text."
-            )
-            result["follow_up_question"] = partial(
-                _validated_question_with_retries,
-                chat_fn=chat_fn,
-            )(
-                [
-                    {"role": "system", "content": followup_retry_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                difficulty,
-                lambda: _safe_fallback_followup(round_type, difficulty),
-                f"{round_type}_inline_followup",
-                initial_candidate=followup,
-            )
-        else:
-            result["follow_up_question"] = None
-    return result
+    return {key: result[key] for key in ("verdict", "reason", "ideal_answer")}
 
 
 def generate_ideal_answer(question, difficulty, round_type="technical", *, chat_fn):
@@ -289,6 +311,7 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs, *, chat_fn):
         system_prompt = (
             "You are an expert HR and behavioral interview evaluator. Score the full spoken Q&A transcript "
             "at the stated difficulty. Judge the final "
+            f"{HR_LEVEL_SCORING.get(difficulty, '')}"
             "intended meaning and substance of each answer. Ignore fillers, hesitation, repetition, "
             "self-corrections, casual phrasing, and imperfect structure. Do not reward corporate "
             "buzzwords or penalize candidates for lacking them. Evaluate response relevance and "
@@ -319,6 +342,8 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs, *, chat_fn):
         system_prompt = (
             "You are an interview evaluator. Score the full Q&A transcript. This is a spoken "
             "Conversation Mode interview: "
+            f"{BEGINNER_TECHNICAL_RUBRIC if difficulty == 'beginner' else ''}"
+            f"{TECHNICAL_LEVEL_SCORING.get(difficulty, '')}"
             "technical questions are expected to be answered through concepts, explanations, "
             "comparisons, logical reasoning, problem-solving approach, debugging approach, "
             "real-world scenarios, and communication clarity, not by writing or dictating code. "
@@ -390,6 +415,8 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     """Evaluate all submitted answers in one request, preserving input order."""
     prompt = (
         f"Evaluate all Q&A pairs for a {round_type} interview at {difficulty} difficulty. "
+        f"{BEGINNER_TECHNICAL_RUBRIC if round_type == 'technical' and difficulty == 'beginner' else ''}"
+        f"{(TECHNICAL_LEVEL_SCORING if round_type == 'technical' else HR_LEVEL_SCORING).get(difficulty, '')}"
         "Return one result per pair in the same order. Use verdict correct, partial, or wrong; "
         "include question_id, a concise reason, and recommended ideal_answer. Return ONLY JSON in this shape: "
         '{"evaluations":[{"question_id":1,"verdict":"correct|partial|wrong","reason":"...","ideal_answer":"..."}]}\n'

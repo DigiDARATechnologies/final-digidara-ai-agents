@@ -5,7 +5,6 @@ from policies import (
     counts_toward_daily_limit,
     exit_transition,
     integrity_flagged,
-    should_generate_followup,
 )
 
 
@@ -25,41 +24,6 @@ class DailyQuotaPolicyTests(unittest.TestCase):
         self.assertFalse(counts_toward_daily_limit(
             enabled=False, is_followup=False, has_answer=True
         ))
-
-
-class FollowupPolicyTests(unittest.TestCase):
-    def test_correct_answer_never_gets_followup(self):
-        self.assertFalse(should_generate_followup(
-            verdict="correct",
-            timed_out=False,
-            is_followup=False,
-            processing_status="evaluated",
-        ))
-
-    def test_unresolved_partial_or_wrong_main_answer_is_eligible(self):
-        for verdict in ("partial", "wrong"):
-            with self.subTest(verdict=verdict):
-                self.assertTrue(should_generate_followup(
-                    verdict=verdict,
-                    timed_out=False,
-                    is_followup=False,
-                    processing_status="evaluated",
-                ))
-
-    def test_timeout_existing_followup_and_completed_decision_are_ineligible(self):
-        cases = (
-            {"timed_out": True, "is_followup": False, "status": "evaluated"},
-            {"timed_out": False, "is_followup": True, "status": "evaluated"},
-            {"timed_out": False, "is_followup": False, "status": "followup_not_needed"},
-        )
-        for case in cases:
-            with self.subTest(case=case):
-                self.assertFalse(should_generate_followup(
-                    verdict="partial",
-                    timed_out=case["timed_out"],
-                    is_followup=case["is_followup"],
-                    processing_status=case["status"],
-                ))
 
 
 class InterviewLifecyclePolicyTests(unittest.TestCase):

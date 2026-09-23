@@ -18,7 +18,7 @@ test('aptitude UI describes fixed difficulty and shows complete-test generation 
   expect(`${panel}\n${dashboard}`).not.toMatch(/adaptive difficulty|adaptive test/i);
   expect(panel).toContain('Easy + Medium + Hard');
   expect(app).toContain('Generating your complete aptitude test');
-  expect(app).toContain('(isCertificateChat || isAptitudeChat) && typing');
+  expect(app).toMatch(/composerDisabled=\{[^}]*\bisAptitudeChat\b[^}]*typing/);
   expect(panel).toContain('hintPending');
   expect(panel).toContain('Generating hint');
   expect(app).toContain('hintPending={typing');

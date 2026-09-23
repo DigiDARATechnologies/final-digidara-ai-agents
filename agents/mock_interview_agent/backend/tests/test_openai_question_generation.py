@@ -75,7 +75,6 @@ class OpenAIQuestionGenerationTests(unittest.TestCase):
         captured = Mock(return_value=json.dumps({
             "verdict": "correct", "reason": "Accurate.",
             "ideal_answer": "The same concept.",
-            "follow_up_needed": False, "follow_up_question": None,
         }))
         with patch.object(groq_client, "EVAL_MODEL", "gpt-5-mini"), patch.object(groq_client, "_chat", captured):
             result = groq_client.evaluate_answer("What is a list?", "An ordered collection.", "beginner")

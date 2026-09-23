@@ -40,6 +40,7 @@ from services.question_history import (
     record_served_questions,
 )
 from services.background_question_search import schedule_live_question_search
+from services.report_pdf import generate_interview_report_pdf
 from settings import (
     ALLOWED_QUESTION_COUNTS,
     DAILY_LIMIT_ENABLED,
@@ -485,7 +486,12 @@ def end_interview():
     )
     # Batch-evaluate all submitted answers once, then persist each result by
     # the database question id before building the final scorecard.
-    if interview_row["status"] == "in_progress" and any(row.get("answer") is not None and row.get("verdict") is None for row in rows):
+    if interview_row["status"] == "in_progress" and any(
+        not row.get("is_followup") and row.get("answer") is not None and row.get("verdict") is None
+        for row in rows
+    ):
+        # New interviews contain only main questions. Keep this filter for
+        # historical interviews that already have follow-up rows.
         pending_rows = [row for row in rows if not row.get("is_followup")]
         evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending_rows)
         if evaluation_error:
@@ -713,35 +719,9 @@ def interview_report_pdf(interview_id):
         (interview_id,), fetch=True,
     )
     scorecard, total_marks, max_marks = scoring.build_scorecard(rows)
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-    from reportlab.lib import colors
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=.55*inch, leftMargin=.55*inch, topMargin=.5*inch, bottomMargin=.5*inch)
-    styles = getSampleStyleSheet()
-    body = ParagraphStyle("ReportBody", parent=styles["BodyText"], fontSize=9, leading=12)
-    small = ParagraphStyle("ReportSmall", parent=body, fontSize=8, leading=10)
-    heading = ParagraphStyle("ReportHeading", parent=styles["Heading2"], textColor=colors.HexColor("#2736a8"), spaceBefore=10, spaceAfter=5)
-    esc = lambda value: str(value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
-    story = [Paragraph("Interview Report", styles["Title"]), Spacer(1, 8)]
-    metadata = [["Student", esc(interview.get("student_name"))], ["Role", esc(interview.get("role_name") or interview.get("subject"))], ["Round", esc(interview.get("round_type"))], ["Difficulty", esc(interview.get("difficulty"))], ["Date", esc(interview.get("ended_at") or interview.get("created_at"))]]
-    table = Table(metadata, colWidths=[1.2*inch, 5.8*inch])
-    table.setStyle(TableStyle([("BACKGROUND", (0,0), (0,-1), colors.HexColor("#eef1ff")), ("GRID", (0,0), (-1,-1), .25, colors.lightgrey), ("VALIGN", (0,0), (-1,-1), "TOP"), ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold")]))
-    story += [table, Spacer(1, 10), Paragraph(f"Overall Score: {esc(interview.get('overall_score'))}/10", heading)]
-    subs = [["Technical Accuracy", esc(interview.get("technical_accuracy"))], ["Communication Clarity", esc(interview.get("communication_clarity"))], ["Confidence", esc(interview.get("confidence"))]]
-    subtable = Table(subs, colWidths=[2.5*inch, 1*inch])
-    subtable.setStyle(TableStyle([("GRID", (0,0), (-1,-1), .25, colors.lightgrey), ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold")]))
-    story += [subtable, Paragraph("Strengths", heading), Paragraph(esc(interview.get("strengths")), body), Paragraph("Areas to Improve", heading), Paragraph(esc(interview.get("weaknesses")), body), Paragraph("Feedback", heading), Paragraph(esc(interview.get("feedback")), body), Paragraph("Question Scorecard", heading)]
-    for item in scorecard:
-        story += [Paragraph(f"Question {item['question_number']} — {esc(item.get('verdict') or 'Unrated')}", styles["Heading3"]), Paragraph(f"<b>Question:</b> {esc(item.get('question'))}", body), Paragraph(f"<b>Student answer:</b> {esc(item.get('answer'))}", body), Paragraph(f"<b>Recommended answer:</b> {esc(item.get('ideal_answer'))}", body), Spacer(1, 6)]
-    story.append(Paragraph(f"Scorecard total: {esc(total_marks)} / {esc(max_marks)}", body))
-    doc.build(story)
-    buffer.seek(0)
+    pdf = generate_interview_report_pdf(interview, scorecard, total_marks, max_marks)
     safe = re.sub(r"[^A-Za-z0-9_-]+", "_", f"{interview.get('student_name')}_{interview.get('role_name') or interview.get('subject')}").strip("_") or "interview"
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=f"Interview_Report_{safe}_{interview_id}.pdf")
+    return send_file(io.BytesIO(pdf), mimetype="application/pdf", as_attachment=True, download_name=f"Interview_Report_{safe}_{interview_id}.pdf")
 
 
 @interviews_bp.route("/exit_interview", methods=["POST"])

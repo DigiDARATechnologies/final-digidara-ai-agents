@@ -1,6 +1,6 @@
 # Voice-Based Mock Interview Module
 
-An AI-powered mock interview practice application for students. The module supports voice-first Technical and HR interview rounds, adaptive question generation, answer evaluation, follow-up questions, audio transcription and playback, performance reporting, interview history, profile management, and interview-integrity tracking.
+An AI-powered mock interview practice application for students. The module supports voice-first Technical and HR interview rounds, planned question generation, batch answer evaluation, audio transcription and playback, performance reporting, interview history, profile management, and interview-integrity tracking.
 
 The project is designed as a standalone module that can later be integrated into an LMS. It currently uses a hardcoded demo student and does not yet provide production authentication.
 
@@ -38,7 +38,7 @@ catalog, while Custom Topic remains available in every case.
 
 During the interview, the application reads each question aloud, records the student's answer, displays a live browser-generated transcript, and submits the recorded audio to OpenAI for a more accurate final transcription.
 
-Each answer is evaluated by AI and receives a `correct`, `partial`, or `wrong` verdict with a concise reason and a difficulty-matched interview-recommended answer. When an answer has a material gap, the interviewer may ask one validated follow-up question.
+Answers are saved as the interview progresses. At `/api/end_interview`, all planned answers are evaluated together and each receives a `correct`, `partial`, or `wrong` verdict, a concise reason, and a difficulty-matched recommended answer. No follow-up questions are generated.
 
 After all main questions are complete, the full transcript is evaluated to produce an interview report with scores, strengths, areas for improvement, detailed feedback, per-question results, audio playback, and interview-focus information.
 
@@ -108,8 +108,8 @@ main question, the backend combines:
   across difficulty levels
 
 Text is Unicode-normalized, whitespace-normalized, case-insensitively
-de-duplicated, and kept in recency order. Follow-ups are excluded from this
-history.
+de-duplicated, and kept in recency order. Historical follow-up rows are
+excluded from question rotation.
 
 Rotation differs appropriately by path:
 
@@ -121,22 +121,12 @@ Rotation differs appropriately by path:
   as motivation, teamwork, conflict, communication, leadership, failure,
   accountability, and career goals.
 
-### Validated follow-up questions
+### Planned question count
 
-The AI may ask one follow-up when an answer contains a genuine conceptual or behavioural gap.
-
-Follow-ups:
-
-- Stay at the selected difficulty
-- Focus on one material gap
-- Use the same complexity-validation, retry, and fallback pipeline as main questions
-- Do not ask for unnecessary polish or optional detail
-- Do not count toward the configured main-question total
-- Do not consume the daily question quota
-- Are not asked after the final configured main question
-- Are grouped with the original question in the final scorecard
-
-When a follow-up is answered, its verdict becomes the effective verdict for that main-question scorecard item.
+New interviews ask exactly the configured number of main questions. Submitting
+an answer advances to the next planned question without an immediate AI verdict.
+Older completed interviews with follow-up rows remain readable in history and
+reports; their existing follow-up verdict remains part of the historical scorecard.
 
 ### Voice interview experience
 
@@ -166,13 +156,11 @@ The browser transcript remains available as a fallback if Whisper is temporarily
 
 ### AI answer evaluation
 
-Each answer receives:
+At interview completion, each answer receives:
 
 - A verdict: `correct`, `partial`, or `wrong`
 - A short verdict reason
 - A difficulty-matched interview-recommended answer
-- A decision about whether a follow-up is materially necessary
-- A validated follow-up question when required
 
 The evaluator is designed for spoken interviews. It judges the candidate's intended meaning and is tolerant of fillers, repetition, rambling, false starts, self-corrections, informal wording, harmless terminology imprecision, and minor spoken-language disfluencies. It does not penalize a technical candidate for omitting code or exact syntax when the conceptual answer is sufficient.
 
@@ -190,7 +178,7 @@ The final report includes:
 - Detailed actionable feedback
 - Per-question verdicts and explanations
 - Interview-recommended answers
-- Follow-up question and answer details
+- Historical follow-up details when present in older interviews
 - Recorded-answer playback
 - Deterministic question marks
 - Interview-focus summary and integrity flag
@@ -227,7 +215,7 @@ The application contains a transactional daily quota system with a default allow
 Rules include:
 
 - Only first-time, non-empty main-question answers consume quota
-- Follow-up answers do not consume quota
+- Historical follow-up answers did not consume quota
 - Duplicate submissions cannot increment usage twice
 - A session can be reduced when fewer questions remain than the selected session length
 - The quota date uses a configurable timezone offset
@@ -252,7 +240,7 @@ Recommendations use stored performance data and consider the student's weakest t
 
 ### Interview history
 
-History provides server-side pagination, completed and exited interviews, and dedicated URL-based detail views. A detail view includes the full transcript, follow-ups, verdicts, recommended answers, time taken, timeout state, audio playback, focus-loss summary, and integrity status.
+History provides server-side pagination, completed and exited interviews, and dedicated URL-based detail views. A detail view includes the full transcript, verdicts, recommended answers, time taken, timeout state, audio playback, focus-loss summary, and integrity status. Older records may also include follow-up rows.
 
 ### Student profile
 
@@ -297,11 +285,10 @@ can be resolved safely.
 6. The frontend reads the question aloud and starts the answer timer.
 7. Browser speech recognition displays a live transcript while audio is recorded.
 8. The audio is uploaded and transcribed by Whisper with interview context.
-9. The answer is saved transactionally and evaluated.
-10. The student sees the verdict and reason.
-11. The backend returns a validated follow-up or generates the next main
-    question using combined current and historical context.
-12. After every main question is evaluated, the full transcript is scored.
+9. The answer is saved transactionally and the next planned question is served.
+10. After all planned answers are saved, one batch evaluation supplies each verdict and reason.
+11. The full transcript is scored.
+12. The student sees the per-question feedback in the final report.
 13. The final report is saved and displayed, and dashboard/history data is refreshed.
 
 ## Technology Stack
@@ -366,7 +353,7 @@ AI responsibilities are split under `backend/ai/`:
 
 - `chat_client.py` — OpenAI chat and transcription transport
 - `question_generation.py` — structured main-question generation, preset
-  catalogs, topic rotation, and follow-up prompts
+  catalogs and topic rotation
 - `answer_evaluation.py` — per-answer and full-interview evaluation
 - `validators.py` — structured output, topic, complexity, retry, and fallback validation
 
@@ -413,8 +400,8 @@ transcripts, reports    answers, usage, focus events
 
 ## AI and Evaluation Behaviour
 
-Question generation, follow-up selection, per-answer evaluation, recommended
-answers, and final scoring use strict prompt and output contracts. Main questions
+Question generation, batch answer evaluation, recommended answers, and final
+scoring use strict prompt and output contracts. Main questions
 must pass deterministic structured-output, selected/excluded-topic, and
 difficulty-complexity validation before reaching the student. JSON evaluation
 responses are parsed, type-checked, range-checked, and normalized before being
@@ -435,7 +422,7 @@ The fresh-install schema is defined in `backend/schema.sql`.
 
 - `students` — personal, academic, role, biography, and avatar data
 - `interviews` — configuration, lifecycle, final scores, feedback, and timestamps
-- `interview_details` — main/follow-up questions, structured `topic_area` for
+- `interview_details` — planned questions and historical follow-up rows, structured `topic_area` for
   new main questions, answers, verdicts, recommended answers, audio, and
   processing state
 - `interview_focus_events` — focus-loss episodes and away duration
@@ -718,7 +705,7 @@ python -m unittest discover -s tests
 The default suite covers validation, business policies, AI prompts, difficulty
 calibration, structured question output, deterministic topic enforcement,
 cross-session question/topic rotation for preset Technical, Custom Topic, and HR
-paths, follow-ups, dashboard aggregation, pagination, focus tracking, structured
+paths, historical follow-up compatibility, dashboard aggregation, pagination, focus tracking, structured
 logging, caching, locks, route integration, schema contracts, audio persistence,
 and cross-layer contracts.
 

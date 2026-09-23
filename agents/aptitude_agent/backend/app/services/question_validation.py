@@ -99,13 +99,22 @@ def _states_correct_answer(explanation, option_text, answer_key):
     if explicit_correct_option:return explicit_correct_option.group(1).upper()==answer_key
     # Treat A-D as an answer key only when it is the complete conclusion.
     # Values such as "A stack" and "C++" are option text, not bare keys.
+    normalized_option = _normalized_words(option_text)
     explicit_key = re.search(
         r"\b(?:answer|correct\s+(?:answer|option|choice))\s*(?:is|=|:)?\s*(?:option\s*)?([A-D])\s*[.!]?\s*$",
         conclusion,re.IGNORECASE,
     )
-    if explicit_key:return explicit_key.group(1).upper()==answer_key
+    if explicit_key:
+        concluded=explicit_key.group(1).upper()
+        # Seating/ordering puzzles often label entities A-D as the option
+        # *content* itself (e.g. correct_answer="B", options={"B": "A", ...}
+        # -- "the answer is entity A"). A bare trailing letter is then the
+        # concluded entity, not a selected option key, so it must be checked
+        # against the option's own single-letter text, not just answer_key.
+        if len(normalized_option)==1 and normalized_option in "abcd":
+            return concluded==normalized_option.upper() or concluded==answer_key
+        return concluded==answer_key
     normalized_explanation = _normalized_words(explanation)
-    normalized_option = _normalized_words(option_text)
     if normalized_option and re.search(rf"(?<!\w){re.escape(normalized_option)}(?!\w)", normalized_explanation):
         return True
     option_words=[word for word in normalized_option.split() if len(word)>=3 and word not in {"the","and","for","with","from","that","this","none"}]

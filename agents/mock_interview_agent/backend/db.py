@@ -228,10 +228,10 @@ def save_answer_with_optional_daily_usage(
     """
     Save a first-time, non-empty answer transactionally.
 
-    Main/root questions increment the student's daily usage. Follow-up
-    questions are saved normally but never read, lock, check, or update the
-    daily quota row. This also keeps retries safe: one main question row can
-    consume at most one quota unit.
+    Planned main questions increment the student's daily usage. The
+    is_followup flag remains for historical rows; those answers do not
+    consume quota. Retries are safe: one main question row can consume at
+    most one quota unit.
     """
     conn = get_conn()
     cursor = conn.cursor(dictionary=True)
