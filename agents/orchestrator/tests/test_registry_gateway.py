@@ -236,6 +236,20 @@ def test_batch_create_uses_longer_gateway_timeout(client, upstream, monkeypatch)
     assert upstream.timeouts[-1] == config.AGENT_CALL_TIMEOUT_SECONDS
 
 
+def test_mock_interview_generation_uses_longer_gateway_timeout(client, upstream, monkeypatch):
+    monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
+    service.register(AgentRegisterRequest(**dict(PAYLOAD, agent_name="mock_interview_agent")))
+    headers = {"authorization": "Bearer " + create_access_token("learner")}
+    for action in ("start_interview", "end_interview"):
+        response = client.post(
+            "/gateway/agents/mock_interview_agent/invoke",
+            json={"action": action, "payload": {}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert upstream.timeouts[-1] == config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
+
+
 def test_gateway_resolves_freshest_healthy_version(client, upstream, database):
     service.register(AgentRegisterRequest(**dict(PAYLOAD, version="v2", endpoint="http://localhost:9000/api/invoke")))
     with database() as session:

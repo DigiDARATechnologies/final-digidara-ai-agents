@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 import db
 import groq_client
 from http_context import log, set_log_context
-from policies import counts_toward_daily_limit, should_generate_followup
+from policies import counts_toward_daily_limit
 from runtime_state import submission_locks
 from services.interview_state import (
     daily_answered_count,
@@ -216,10 +216,11 @@ def _submit_answer(data):
     question_limit = int(interview_row["num_questions"])
     set_log_context(student_id=interview_row["student_id"])
 
+    # Ignore any follow-up row left in an older in-progress interview.
     next_existing, _ = db.query(
         """SELECT question_order, question, question_source, topic_area, is_followup
            FROM interview_details
-           WHERE interview_id = %s AND question_order > %s
+           WHERE interview_id = %s AND question_order > %s AND is_followup = FALSE
            ORDER BY question_order, id
            LIMIT 1""",
         (interview_id, question_order), fetchone=True,
@@ -492,8 +493,7 @@ def _submit_answer(data):
         daily_answered_count(interview_row["student_id"], usage_day)
     ))
 
-    # The configured limit always wins. In particular, do not return an existing
-    # follow-up or ask OpenAI to generate one after the final real question.
+    # The configured main-question limit always wins.
     if (
         real_question_count >= question_limit
         or verdict_payload["daily_limit_reached"]
@@ -519,101 +519,6 @@ def _submit_answer(data):
             "done": False,
             **verdict_payload,
         })
-
-    # Decide: follow-up, next question, or finish
-    if should_generate_followup(
-        verdict=verdict,
-        timed_out=timed_out,
-        is_followup=bool(current["is_followup"]),
-        processing_status=current.get("processing_status"),
-    ):
-        inline_decision_available = answer_evaluation is not None
-        if inline_decision_available:
-            followup = (
-                answer_evaluation.get("follow_up_question")
-                if answer_evaluation.get("follow_up_needed")
-                else None
-            )
-        else:
-            try:
-                # Recovery path when an evaluated answer was saved before the
-                # response containing its inline decision completed.
-                with track_ai_usage(
-                    student_id=interview_row["student_id"],
-                    interview_id=interview_id,
-                    question_id=current["id"],
-                    request_type="followup_generation",
-                ):
-                    followup = groq_client.generate_followup(
-                        current["question"],
-                        answer,
-                        interview_row["difficulty"],
-                        verdict,
-                        verdict_reason,
-                        interview_row["round_type"],
-                    )
-            except Exception as exc:
-                log(
-                    logging.ERROR,
-                    "followup_generation_failed",
-                    "Follow-up generation failed",
-                    question_order=question_order,
-                    exc_info=True,
-                )
-                db.query(
-                    """UPDATE interview_details
-                       SET processing_status = 'failed', processing_error = %s
-                       WHERE id = %s""",
-                    (str(exc)[:500], current["id"]),
-                )
-                return jsonify({
-                    "error": "The next question could not be prepared. Retry to continue.",
-                    "retryable": True,
-                    "interview_id": interview_id,
-                    "question_order": question_order,
-                }), 503
-        if followup:
-            latest_answered_count = daily_answered_count(
-                interview_row["student_id"], usage_day
-            )
-            latest_quota = quota_payload(latest_answered_count)
-            if latest_quota["daily_limit_reached"]:
-                return jsonify({
-                    "interview_id": interview_id,
-                    "done": True,
-                    "message": DAILY_LIMIT_MESSAGE,
-                    **verdict_payload,
-                    **latest_quota,
-                })
-            db.query(
-                """INSERT INTO interview_details
-                     (interview_id, question_order, question, subject_tag, is_followup)
-                   VALUES (%s, %s, %s, %s, TRUE)""",
-                (interview_id, question_order + 1, followup, current.get("subject_tag")),
-            )
-            db.query(
-                """UPDATE interview_details
-                   SET processing_status = 'next_ready', processing_error = NULL
-                   WHERE id = %s""",
-                (current["id"],),
-            )
-            return jsonify({
-                "interview_id": interview_id,
-                "question_order": question_order + 1,
-                "question": followup,
-                "is_followup": True,
-                "done": False,
-                **verdict_payload,
-                **latest_quota,
-            })
-        db.query(
-            """UPDATE interview_details
-               SET processing_status = 'followup_not_needed',
-                   processing_error = NULL
-               WHERE id = %s""",
-            (current["id"],),
-        )
-        current["processing_status"] = "followup_not_needed"
 
     return _issue_next_question(
         interview_id,

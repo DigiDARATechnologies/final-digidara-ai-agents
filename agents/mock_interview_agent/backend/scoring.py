@@ -9,9 +9,9 @@ VERDICT_MARKS = {
 
 def build_scorecard(rows):
     """
-    Group each real question with its follow-up and score it as one item.
+    Score planned questions, preserving historical follow-up rows in old reports.
 
-    When a follow-up is present, its verdict replaces the original verdict.
+    A historical follow-up verdict replaces its parent verdict when present.
     Returns (scorecard, total_marks, max_marks).
     """
     scorecard = []

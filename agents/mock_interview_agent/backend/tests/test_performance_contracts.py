@@ -122,11 +122,13 @@ class DashboardQueryTests(unittest.TestCase):
         )
 
 
-class CombinedGroqCallContractTests(unittest.TestCase):
-    def test_submit_path_uses_inline_decision_for_technical_and_hr(self):
+class BatchEvaluationContractTests(unittest.TestCase):
+    def test_submit_path_never_generates_a_followup(self):
         source = function_source(ANSWERS_SOURCE, "_submit_answer")
-        self.assertIn("inline_decision_available = answer_evaluation is not None", source)
-        self.assertNotIn("hr_decision_available", source)
+        self.assertIn("batch_answer_saved = True", source)
+        self.assertNotIn("generate_followup", source)
+        self.assertNotIn("should_generate_followup", source)
+        self.assertNotIn("is_followup: True", source)
 
 
 if __name__ == "__main__":
