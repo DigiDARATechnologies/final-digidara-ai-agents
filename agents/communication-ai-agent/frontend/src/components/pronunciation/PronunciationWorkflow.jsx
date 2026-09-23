@@ -2,7 +2,7 @@ import { Mic, Send, Square, Volume2, X } from "lucide-react";
 
 function getRepeatLabel(mode, item) {
   const itemMode = item?.practice_mode || item?.item_type || mode;
-  if (itemMode === "minimal_pairs") return "Repeat both words";
+  
   if (itemMode === "word") return "Repeat this word";
   if (itemMode === "daily" || itemMode === "daily_challenge") return "Repeat this challenge";
   return "Repeat this sentence";
@@ -36,21 +36,12 @@ export default function PronunciationWorkflow({
   onStopListening,
   onTranscriptChange,
   onCancel,
-  minimalPairStep = 0,
-  minimalPairResponses = [],
 }) {
   const handleSpeak = onSpeak || onStartListening;
   const handleReview = onReview || onStopListening;
   const canRecord = phase === "ready" || phase === "waiting_to_try" || phase === "transcript_ready";
   const canSubmit = phase === "transcript_ready" && transcript.trim();
-  const pair = item?.content?.pair || item?.metadata?.pair || [];
-  const wordA = item?.content?.word_a || item?.metadata?.word_a || pair[0];
-  const wordB = item?.content?.word_b || item?.metadata?.word_b || pair[1];
-  const pairWords = [wordA, wordB].filter(Boolean);
-  const isMinimalPairs = mode === "minimal_pairs" || item?.practice_mode === "minimal_pairs";
-  const targetText = isMinimalPairs
-    ? pairWords[minimalPairStep] || item?.text || "Your pronunciation item is loading."
-    : item?.text || item?.content?.practice_text || "Your pronunciation item is loading.";
+  const targetText = item?.text || item?.content?.practice_text || "Your pronunciation item is loading.";
 
   return (
     <div className="space-y-5">
@@ -61,32 +52,6 @@ export default function PronunciationWorkflow({
         <h2 className="mx-auto mt-3 max-w-3xl break-words text-2xl font-bold leading-snug tracking-normal text-slate-900 md:text-3xl lg:text-4xl">
           {targetText}
         </h2>
-        {isMinimalPairs && pairWords.length === 2 ? (
-          <div className="mt-6 grid gap-3 md:grid-cols-2">
-            {pairWords.map((word, index) => (
-              <div
-                key={word}
-                className={`rounded-2xl border p-4 ${
-                  index === minimalPairStep ? "border-brand-200 bg-brand-50" : "border-slate-200 bg-slate-50"
-                }`}
-              >
-                <p className="text-xs font-bold uppercase text-slate-500">
-                  {index === 0 ? "Word A" : "Word B"} {index < minimalPairResponses.length ? "- recorded" : ""}
-                </p>
-                <p className="mt-1 text-2xl font-bold text-slate-900">{word}</p>
-                <button
-                  type="button"
-                  onClick={() => onListen?.(word)}
-                  disabled={!onListen || phase === "loading_item" || phase === "submitting"}
-                  className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-200 bg-white px-4 py-2 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Volume2 className="h-4 w-4" />
-                  Play reference
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
           <button
             type="button"
             onClick={onListen}
@@ -96,7 +61,6 @@ export default function PronunciationWorkflow({
             <Volume2 className="h-4 w-4" />
             Play reference
           </button>
-        )}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -157,7 +121,7 @@ export default function PronunciationWorkflow({
               </button>
             )}
             <p className="text-xs font-semibold text-slate-500">
-              {phase === "listening" ? "Tap to stop" : canSubmit ? (isMinimalPairs && minimalPairStep === 0 ? "Save word A" : "Tap to score") : statusMessage(phase)}
+              {phase === "listening" ? "Tap to stop" : canSubmit ? "Tap to score" : statusMessage(phase)}
             </p>
           </div>
 
