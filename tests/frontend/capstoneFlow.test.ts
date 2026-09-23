@@ -106,6 +106,39 @@ describe('requirements doubts before the timer is confirmed', () => {
   });
 });
 
+describe('combining a clarifying-question answer with the original request', () => {
+  const topicRequestState: CapstoneFlowState = {
+    step: 'awaiting_topic_request',
+    name: 'Learner', email: 'learner@example.test', phone: '', difficulty: 'easy',
+    pendingTopicSeed: 'portfolio website',
+  };
+
+  test('a non-conflicting answer is sent to the backend as an addition, not a replacement', async () => {
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue({ thread_id: 'thread', eligible: true, eligibility_reason: '', topic_options: [] });
+    await handleCapstoneText(topicRequestState, 'python');
+    const [, , , description] = jest.mocked(api.checkEligibilityFree).mock.calls[0];
+    expect(description).toContain('portfolio website');
+    expect(description).toContain('python');
+    expect(description).not.toMatch(/if they conflict.*go with this one/i);
+  });
+
+  test('the displayed message shows both the original request and the follow-up answer, not just the answer', async () => {
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue({ thread_id: 'thread', eligible: true, eligibility_reason: '', topic_options: [] });
+    const result = await handleCapstoneText(topicRequestState, 'python');
+    expect(result.messages[0].text).toContain('portfolio website');
+    expect(result.messages[0].text).toContain('python');
+  });
+
+  test('a genuinely different language/role is still framed so the newer answer can win', async () => {
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue({ thread_id: 'thread', eligible: true, eligibility_reason: '', topic_options: [] });
+    await handleCapstoneText({ ...topicRequestState, pendingTopicSeed: 'python developer role' }, 'html developer');
+    const [, , , description] = jest.mocked(api.checkEligibilityFree).mock.calls[0];
+    expect(description).toContain('python developer role');
+    expect(description).toContain('html developer');
+    expect(description).toMatch(/different role, language, or domain/i);
+  });
+});
+
 describe('example report and zip downloads', () => {
   const exampleHrefs = ['/capstone-examples/capstone-example-report.docx', '/capstone-examples/capstone-example-project.zip'];
 
