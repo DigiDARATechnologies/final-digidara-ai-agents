@@ -18,8 +18,8 @@ from ..utils.score_utils import to_score10
 pronunciation_bp = Blueprint("pronunciation", __name__)
 
 ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
-ALLOWED_MODES = {"word", "sentence", "daily", "minimal_pairs"}
-PUBLIC_MODE_NAMES = {"word": "word", "sentence": "sentence", "daily": "daily_challenge", "minimal_pairs": "minimal_pairs"}
+ALLOWED_MODES = {"word", "sentence", "daily"}
+PUBLIC_MODE_NAMES = {"word": "word", "sentence": "sentence", "daily": "daily_challenge"}
 MAX_ATTEMPTS_PER_ITEM = 3
 DEFAULT_OPEN_ENDED_QUESTIONS = 0
 
@@ -112,8 +112,6 @@ def _normalize_mode(value):
         return "sentence"
     if mode in {"daily_challenge", "daily-pronunciation-challenge", "challenge"}:
         return "daily"
-    if mode in {"minimal_pairs", "minimal-pairs", "minimal_pair", "minimal-pair", "minimal_pair_practice", "minimal-pair-practice", "pairs"}:
-        return "minimal_pairs"
     return mode
 
 
