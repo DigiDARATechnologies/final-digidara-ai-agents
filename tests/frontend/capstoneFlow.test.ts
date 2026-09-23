@@ -137,6 +137,20 @@ describe('combining a clarifying-question answer with the original request', () 
     expect(description).toContain('html developer');
     expect(description).toMatch(/different role, language, or domain/i);
   });
+
+  test.each(['your choice', 'you decide', 'up to you', 'surprise me', 'idk', 'no preference'])(
+    'a deferral answer (%p) is never appended as if it were topic content',
+    async (deferral) => {
+      jest.mocked(api.checkEligibilityFree).mockResolvedValue({ thread_id: 'thread', eligible: true, eligibility_reason: '', topic_options: [] });
+      const result = await handleCapstoneText({ ...topicRequestState, pendingTopicSeed: 'python' }, deferral);
+      const [, , , description] = jest.mocked(api.checkEligibilityFree).mock.calls[0];
+      expect(description).not.toContain(deferral);
+      expect(description).toContain('python');
+      expect(description).toMatch(/own best judgment/i);
+      expect(result.messages[0].text).not.toContain(deferral);
+      expect(result.messages[0].text).toContain('python');
+    },
+  );
 });
 
 describe('example report and zip downloads', () => {
