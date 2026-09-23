@@ -152,6 +152,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -1073,7 +1074,11 @@ export default function App() {
         setTyping(false);
         return;
       }
-      handleJobFetchText(flowState, text)
+      const history = baseMessages.map((m) => ({
+        role: m.role === "agent" ? "assistant" : "user",
+        content: m.text,
+      }));
+      handleJobFetchText(flowState, text, history)
         .then(({ state, messages }) => {
           setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
@@ -1100,6 +1105,11 @@ export default function App() {
         return;
       }
       window.open(applyUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (value === "action:open_billing") {
+      setSettingsInitialTab("billing");
+      setSettingsOpen(true);
       return;
     }
     sendMessage(value, undefined, false, label);
@@ -1530,6 +1540,7 @@ export default function App() {
 
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsInitialTab}
         user={user}
         chats={chats}
         onOpenChat={(chatId) => {

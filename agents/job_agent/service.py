@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+from datetime import date, datetime, timedelta
 from urllib.parse import urlparse
 
 import mysql.connector
@@ -8,6 +9,7 @@ import mysql.connector
 from .categories import categorize_job
 from .db import get_db
 from .scraper import scrape_source
+from .skills import extract_skills_from_job
 from .tn_location import classify_job_location
 
 
@@ -33,7 +35,8 @@ def _clean_job(job):
     if apply_url.scheme not in {"http", "https"} or not apply_url.netloc:
         return None
     job["apply_url"] = apply_url.geturl()
-    job["skills"] = json.dumps(job.get("skills") or [])
+    extracted_skills = extract_skills_from_job(job)
+    job["skills"] = json.dumps(extracted_skills)
     job["content_hash"] = _content_hash(job)
     job["category"] = job.get("category") or categorize_job(
         job.get("title") or "", job.get("department") or "", job.get("description") or ""
@@ -183,13 +186,21 @@ def process_run(run_id):
             if not job:
                 rejected += 1
                 continue
+            expires_at = job.get("expires_at")
+            if not expires_at:
+                pub = job.get("published_at")
+                if pub and isinstance(pub, (datetime, date)):
+                    expires_at = pub + timedelta(days=30)
+                else:
+                    expires_at = datetime.utcnow() + timedelta(days=30)
+
             values = (
                 source["id"], job["external_id"], job["title"], job["company"], job.get("location"),
                 job.get("work_mode"), job.get("employment_type"), job.get("department"), job.get("category"),
                 job.get("location_district"), job.get("location_region"), job.get("location_type"),
                 job.get("experience_min"), job.get("experience_max"), job.get("salary_text"),
                 job.get("description"), job["skills"], job["apply_url"], job.get("source_url"),
-                job.get("published_at"), job.get("expires_at"), job["content_hash"],
+                job.get("published_at"), expires_at, job["content_hash"],
             )
             try:
                 cursor.execute(
@@ -199,7 +210,7 @@ def process_run(run_id):
                         location_type, experience_min, experience_max, salary_text,
                         description, skills, apply_url, source_url, published_at,
                         expires_at, content_hash, status
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending')""",
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'active')""",
                     values,
                 )
                 inserted += 1
@@ -209,13 +220,14 @@ def process_run(run_id):
                        employment_type=%s, department=%s, category=%s, location_district=%s,
                        location_region=%s, location_type=%s, salary_text=%s, description=%s, skills=%s,
                        apply_url=%s, source_url=%s, published_at=%s, expires_at=%s,
+                       status=IF(status='rejected', 'rejected', 'active'),
                        last_seen_at=NOW() WHERE content_hash=%s OR (source_id=%s AND external_id=%s)""",
                     (
                         job["title"], job["company"], job.get("location"), job.get("work_mode"),
                         job.get("employment_type"), job.get("department"), job.get("category"),
                         job.get("location_district"), job.get("location_region"), job.get("location_type"),
                         job.get("salary_text"), job.get("description"), job["skills"], job["apply_url"],
-                        job.get("source_url"), job.get("published_at"), job.get("expires_at"),
+                        job.get("source_url"), job.get("published_at"), expires_at,
                         job["content_hash"], source["id"], job["external_id"],
                     ),
                 )
@@ -229,13 +241,6 @@ def process_run(run_id):
         # via the insert default or the update branch) has disappeared from
         # the source, e.g. the posting was closed or pulled down. Expire it
         # rather than leaving a dead apply_url active in the feed forever.
-        #
-        # Gated on raw_count > 0: an empty/zero-result response could be a
-        # transient provider hiccup rather than a genuine "board is now
-        # empty," and mass-expiring an entire source on one bad fetch would
-        # be far worse than leaving stale jobs for one extra run — the same
-        # caution the empty_board/no_matching_jobs distinction below already
-        # applies to source status.
         expired = 0
         if raw_count > 0:
             cursor.execute(
@@ -244,6 +249,7 @@ def process_run(run_id):
                 (source["id"], run_started_at),
             )
             expired = cursor.rowcount
+
 
         cursor.execute(
             """UPDATE job_ingestion_runs SET status='completed', fetched_count=%s,
@@ -326,3 +332,53 @@ def process_run(run_id):
     finally:
         cursor.close()
         db.close()
+
+
+def prune_expired_jobs_in_session(cursor, max_age_days: int = 30) -> dict:
+    """Marks past-due jobs as expired and permanently removes jobs exceeding the 30-day retention window."""
+    # 1. Mark active jobs whose 30-day lifecycle has ended as expired
+    cursor.execute(
+        """UPDATE jobs 
+           SET status='expired' 
+           WHERE status='active' AND (
+               (expires_at IS NOT NULL AND expires_at < NOW())
+               OR (published_at IS NOT NULL AND published_at < DATE_SUB(NOW(), INTERVAL %s DAY))
+               OR (published_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL %s DAY))
+           )""",
+        (max_age_days, max_age_days),
+    )
+    expired_count = cursor.rowcount
+
+    # 2. Automatically delete/purge expired and rejected jobs that exceed 30 days retention
+    cursor.execute(
+        """DELETE FROM jobs 
+           WHERE status IN ('expired', 'rejected') AND (
+               (published_at IS NOT NULL AND published_at < DATE_SUB(NOW(), INTERVAL %s DAY))
+               OR (created_at < DATE_SUB(NOW(), INTERVAL %s DAY))
+           )""",
+        (max_age_days, max_age_days),
+    )
+    deleted_count = cursor.rowcount
+    if expired_count > 0 or deleted_count > 0:
+        logger.info(
+            "[Jobs][Retention] Pruned: %d marked expired, %d permanently removed (>%d days old)",
+            expired_count, deleted_count, max_age_days,
+        )
+    return {"expired_count": expired_count, "deleted_count": deleted_count}
+
+
+def prune_expired_jobs(max_age_days: int = 30) -> dict:
+    """Standalone worker/API method to execute 30-day job lifecycle cleanup."""
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        outcome = prune_expired_jobs_in_session(cursor, max_age_days=max_age_days)
+        db.commit()
+        return {"success": True, **outcome}
+    except Exception as exc:
+        logger.error("[Jobs][Retention] Error in prune_expired_jobs: %s", exc)
+        return {"success": False, "error": str(exc)}
+    finally:
+        cursor.close()
+        db.close()
+

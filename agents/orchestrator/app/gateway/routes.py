@@ -57,8 +57,8 @@ FREE_ACTIONS = {
     # Job Agent actions are database/scraper operations and do not invoke an
     # LLM. Keeping them free avoids applying the legacy per-call fallback to
     # deterministic reads, uploads, moderation and ingestion controls.
-    "get_profile", "update_profile", "upload_resume", "get_categories",
-    "get_feed", "get_saved_jobs", "get_hidden_jobs", "job_action",
+    "get_profile", "update_profile", "upload_resume", "download_resume", "get_categories",
+    "get_feed", "get_saved_jobs", "get_hidden_jobs", "job_action", "chat",
     "get_applications", "export_user_data", "delete_user_data",
     "admin_list_users",
     "admin_update_plan", "admin_list_sources", "admin_create_source",
@@ -138,6 +138,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # Derived from the verified platform JWT, never from the JSON payload.
         headers["x-digidara-user-id"] = user_id
         headers["x-digidara-is-admin"] = "true" if user and user.is_admin else "false"
+        headers["x-digidara-token-balance"] = str(user.token_balance) if user else "0"
 
     if isinstance(envelope, dict):
         if envelope.get("action") == "ensure_session":
@@ -179,6 +180,16 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # Real usage when the agent reports it; otherwise the flat fallback
         # rate, so billing still works for agents not yet upgraded.
         auth_service.settle_tokens(user_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL)
+    elif user_id:
+        # For actions in FREE_ACTIONS that dynamically report token usage when free quota is exceeded
+        header_value = upstream.headers.get("x-tokens-used")
+        if header_value is not None:
+            try:
+                parsed = int(header_value)
+                if parsed > 0:
+                    auth_service.settle_tokens(user_id, parsed)
+            except ValueError:
+                pass
 
     response_headers: dict[str, str] = {}
     if upstream_content_type := upstream.headers.get("content-type"):

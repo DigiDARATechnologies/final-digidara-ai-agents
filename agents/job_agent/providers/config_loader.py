@@ -231,3 +231,69 @@ def get_apify_actor(platform, config=None):
         if actor["platform"] == platform:
             return actor
     return None
+
+
+DEFAULT_ADZUNA_QUERIES = [
+    {"what": "Software Engineer", "where": "Chennai"},
+    {"what": "Junior Developer", "where": "Tamil Nadu"},
+    {"what": "Python Developer", "where": "Chennai"},
+    {"what": "React Developer", "where": "Coimbatore"},
+    {"what": "Web Developer", "where": "Madurai"},
+    {"what": "Software Engineer", "where": "Bengaluru"},
+    {"what": "Software Engineer", "where": "Hyderabad"},
+]
+
+DEFAULT_JSEARCH_QUERIES = [
+    {"query": "Software Engineer Fresher in Chennai"},
+    {"query": "Junior Developer in Tamil Nadu"},
+    {"query": "Python Developer Fresher in Coimbatore"},
+    {"query": "Software Engineer Fresher in Bengaluru"},
+    {"query": "Junior Software Engineer in Hyderabad"},
+]
+
+
+def get_adzuna_config(config=None):
+    """Return `{enabled, queries}` for Adzuna job search."""
+    config = load_providers_config() if config is None else config
+    adzuna = config.get("adzuna") or {}
+    if not isinstance(adzuna, dict):
+        return {"enabled": False, "queries": []}
+
+    raw_queries = adzuna.get("queries")
+    if isinstance(raw_queries, list) and raw_queries:
+        queries = [
+            {"what": str(q.get("what", "")).strip(), "where": str(q.get("where", "")).strip()}
+            for q in raw_queries if isinstance(q, dict) and (q.get("what") or q.get("where"))
+        ]
+    else:
+        queries = list(DEFAULT_ADZUNA_QUERIES)
+
+    return {
+        "enabled": bool(adzuna.get("enabled", True)),
+        "queries": queries,
+    }
+
+
+def get_jsearch_config(config=None):
+    """Return `{enabled, queries}` for RapidAPI JSearch."""
+    config = load_providers_config() if config is None else config
+    jsearch = config.get("jsearch") or {}
+    if not isinstance(jsearch, dict):
+        return {"enabled": False, "queries": []}
+
+    raw_queries = jsearch.get("queries")
+    if isinstance(raw_queries, list) and raw_queries:
+        queries = []
+        for q in raw_queries:
+            if isinstance(q, str) and q.strip():
+                queries.append({"query": q.strip()})
+            elif isinstance(q, dict) and q.get("query"):
+                queries.append({"query": str(q["query"]).strip()})
+    else:
+        queries = list(DEFAULT_JSEARCH_QUERIES)
+
+    return {
+        "enabled": bool(jsearch.get("enabled", True)),
+        "queries": queries,
+    }
+

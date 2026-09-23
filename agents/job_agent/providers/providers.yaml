@@ -402,8 +402,38 @@ apify:
         maxJobs: 5
         jobType:
           - full-time
-        experienceLevel:
-          - entry
-          - associate
-        datePosted: past-week
         remoteFilter: any
+
+# Adzuna India Job Search API — Official REST API for regional postings.
+# Credentials are read from ADZUNA_APP_ID and ADZUNA_APP_KEY in the environment.
+adzuna:
+  enabled: true
+  queries:
+    - what: "Fresher Software Engineer"
+      where: "Chennai"
+    - what: "Junior Developer"
+      where: "Tamil Nadu"
+    - what: "Graduate Trainee Developer"
+      where: "Chennai"
+    - what: "Junior Python Developer"
+      where: "Chennai"
+    - what: "Entry Level Developer"
+      where: "Coimbatore"
+    - what: "Fresher Web Developer"
+      where: "Madurai"
+    - what: "Junior Software Engineer"
+      where: "Bengaluru"
+    - what: "Junior Software Engineer"
+      where: "Hyderabad"
+
+# RapidAPI JSearch — Unified real-time search across LinkedIn, Indeed, Glassdoor.
+# Token is read from RAPIDAPI_KEY in the environment.
+jsearch:
+  enabled: true
+  queries:
+    - query: "Software Engineer Fresher in Chennai"
+    - query: "Junior Developer in Tamil Nadu"
+    - query: "Python Developer Fresher in Coimbatore"
+    - query: "Software Engineer Fresher in Bengaluru"
+    - query: "Junior Software Engineer in Hyderabad"
+

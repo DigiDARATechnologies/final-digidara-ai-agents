@@ -32,6 +32,16 @@ def _is_admin():
     return (request.headers.get("X-Digidara-Is-Admin") or "").strip().lower() == "true"
 
 
+def _token_balance():
+    raw = request.headers.get("X-Digidara-Token-Balance")
+    if raw is not None:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return None
+
+
 def user_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -40,6 +50,7 @@ def user_required(view):
             return jsonify({"error": "Authentication required"}), 401
         g.job_user_id = user_id
         g.job_is_admin = _is_admin()
+        g.job_token_balance = _token_balance()
         return view(*args, **kwargs)
 
     return wrapped

@@ -4,7 +4,13 @@ import logging
 from ..db import get_db
 from ..service import process_run, queue_source_run, queue_source_run_once
 from .apify import get_apify_status
-from .config_loader import get_apify_config, get_greenhouse_companies, load_providers_config
+from .config_loader import (
+    get_adzuna_config,
+    get_apify_config,
+    get_greenhouse_companies,
+    get_jsearch_config,
+    load_providers_config,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -414,3 +420,142 @@ def run_apify_collection(admin_id=None, platform=None):
         totals["fetched"], totals["inserted"], totals["updated"], totals["failed_actors"],
     )
     return {"ready": True, "reason": "", "totals": totals, "actors": actors_report}
+
+
+def _adzuna_source_name(what, where):
+    clean_what = what.strip().lower().replace(" ", "_")
+    clean_where = where.strip().lower().replace(" ", "_")
+    return f"adzuna:{clean_what}@{clean_where}"
+
+
+def sync_adzuna_sources(config=None):
+    """Reconcile `job_sources` rows with the Adzuna queries configured in providers.yaml."""
+    adzuna_config = get_adzuna_config(config)
+    queries = adzuna_config["queries"] if adzuna_config["enabled"] else []
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        active_names = []
+        for q in queries:
+            what = q.get("what", "")
+            where = q.get("where", "")
+            name = _adzuna_source_name(what, where)
+            active_names.append(name)
+            source_url = f"https://api.adzuna.com/v1/api/jobs/in/search?what={what}&where={where}"
+            parser_config = json.dumps({"what": what, "where": where, "page": 1, "results_per_page": 20})
+            cursor.execute(
+                """INSERT INTO job_sources (name, source_type, source_url, parser_config, is_active, scraping_authorized)
+                   VALUES (%s, 'adzuna', %s, %s, 1, 1)
+                   ON DUPLICATE KEY UPDATE
+                       source_url = VALUES(source_url),
+                       parser_config = VALUES(parser_config),
+                       is_active = 1,
+                       scraping_authorized = 1""",
+                (name, source_url, parser_config),
+            )
+
+        if active_names:
+            placeholders = ",".join(["%s"] * len(active_names))
+            cursor.execute(
+                f"""UPDATE job_sources SET is_active = 0
+                    WHERE source_type = 'adzuna' AND name NOT IN ({placeholders})""",
+                tuple(active_names),
+            )
+        else:
+            cursor.execute("UPDATE job_sources SET is_active = 0 WHERE source_type = 'adzuna'")
+
+        db.commit()
+        logger.info("[Jobs][Adzuna] Synced %d query source(s)", len(queries))
+        return len(queries)
+    finally:
+        cursor.close()
+        db.close()
+
+
+def _active_adzuna_sources():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM job_sources WHERE source_type = 'adzuna' AND is_active = 1 ORDER BY name")
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        db.close()
+
+
+def queue_adzuna_collection(admin_id=None):
+    from .adzuna import is_configured as is_adzuna_configured
+    if not is_adzuna_configured():
+        return {"ready": False, "reason": "ADZUNA_APP_ID or ADZUNA_APP_KEY is not configured"}
+    sync_adzuna_sources()
+    sources = _active_adzuna_sources()
+    return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
+
+
+def _jsearch_source_name(query):
+    clean_q = query.strip().lower().replace(" ", "_")
+    return f"jsearch:{clean_q}"
+
+
+def sync_jsearch_sources(config=None):
+    """Reconcile `job_sources` rows with the JSearch queries configured in providers.yaml."""
+    jsearch_config = get_jsearch_config(config)
+    queries = jsearch_config["queries"] if jsearch_config["enabled"] else []
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        active_names = []
+        for q in queries:
+            query_str = q.get("query", "")
+            name = _jsearch_source_name(query_str)
+            active_names.append(name)
+            source_url = f"https://jsearch.p.rapidapi.com/search?query={query_str}"
+            parser_config = json.dumps({"query": query_str, "page": 1, "num_pages": 1})
+            cursor.execute(
+                """INSERT INTO job_sources (name, source_type, source_url, parser_config, is_active, scraping_authorized)
+                   VALUES (%s, 'jsearch', %s, %s, 1, 1)
+                   ON DUPLICATE KEY UPDATE
+                       source_url = VALUES(source_url),
+                       parser_config = VALUES(parser_config),
+                       is_active = 1,
+                       scraping_authorized = 1""",
+                (name, source_url, parser_config),
+            )
+
+        if active_names:
+            placeholders = ",".join(["%s"] * len(active_names))
+            cursor.execute(
+                f"""UPDATE job_sources SET is_active = 0
+                    WHERE source_type = 'jsearch' AND name NOT IN ({placeholders})""",
+                tuple(active_names),
+            )
+        else:
+            cursor.execute("UPDATE job_sources SET is_active = 0 WHERE source_type = 'jsearch'")
+
+        db.commit()
+        logger.info("[Jobs][JSearch] Synced %d query source(s)", len(queries))
+        return len(queries)
+    finally:
+        cursor.close()
+        db.close()
+
+
+def _active_jsearch_sources():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM job_sources WHERE source_type = 'jsearch' AND is_active = 1 ORDER BY name")
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+        db.close()
+
+
+def queue_jsearch_collection(admin_id=None):
+    from .jsearch import is_configured as is_jsearch_configured
+    if not is_jsearch_configured():
+        return {"ready": False, "reason": "RAPIDAPI_KEY is not configured"}
+    sync_jsearch_sources()
+    sources = _active_jsearch_sources()
+    return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
+

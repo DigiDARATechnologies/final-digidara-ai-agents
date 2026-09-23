@@ -1,10 +1,9 @@
 import { useEffect, useState } from "react";
 import {
+  adminAdzunaRun,
   adminApifyActors,
   adminApifyRun,
-  adminGetAutomation,
-  adminGreenhouseCompanies,
-  adminGreenhouseRun,
+  adminJSearchRun,
   adminListCategories,
   adminListJobs,
   adminListRuns,
@@ -12,12 +11,11 @@ import {
   adminListUsers,
   adminRunSource,
   adminUpdateJobStatus,
-  adminUpdateAutomation,
   adminUpdatePlan,
   type ApifyActor,
   type IngestionRun,
-  type JobAutomationSettings,
 } from "../../lib/jobFetchApi";
+
 
 const PLATFORM_LABELS: Record<string, string> = {
   naukri: "Naukri", linkedin: "LinkedIn", indeed: "Indeed", glassdoor: "Glassdoor", foundit: "Foundit",
@@ -48,6 +46,13 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`admin-badge ${STATUS_BADGE_CLASS[status] || "badge-expired"}`}>{status.replace(/_/g, " ")}</span>;
 }
 
+function getJobSourceBadge(externalId: string = "") {
+  if (externalId.startsWith("adzuna:")) return { label: "Adzuna", color: "#0369a1", bg: "#e0f2fe" };
+  if (externalId.startsWith("jsearch:")) return { label: "JSearch (LinkedIn/Indeed)", color: "#047857", bg: "#d1fae5" };
+  if (externalId.startsWith("manual")) return { label: "Manual", color: "#4b5563", bg: "#f3f4f6" };
+  return { label: "Direct", color: "#6b7280", bg: "#f3f4f6" };
+}
+
 export default function JobsAdminPanel() {
   const [tab, setTab] = useState<Tab>("jobs");
   const [loading, setLoading] = useState(false);
@@ -57,17 +62,17 @@ export default function JobsAdminPanel() {
   const [jobs, setJobs] = useState<Array<Record<string, any>>>([]);
   const [jobStatusFilter, setJobStatusFilter] = useState("pending");
   const [jobCategoryFilter, setJobCategoryFilter] = useState("");
+  const [jobSourceFilter, setJobSourceFilter] = useState("");
   const [jobLocationFilter, setJobLocationFilter] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([]);
 
+
   const [sources, setSources] = useState<Array<Record<string, any>>>([]);
-  const [companies, setCompanies] = useState<Array<Record<string, any>>>([]);
   const [users, setUsers] = useState<Array<Record<string, any>>>([]);
   const [apifyActors, setApifyActors] = useState<ApifyActor[]>([]);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [runningPlatform, setRunningPlatform] = useState<string | null>(null);
-  const [automation, setAutomation] = useState<JobAutomationSettings | null>(null);
 
   function loadJobs(status = jobStatusFilter, category = jobCategoryFilter, location = jobLocationFilter) {
     setLoading(true);
@@ -85,12 +90,10 @@ export default function JobsAdminPanel() {
       nextTab === "jobs"
         ? adminListJobs({ status: jobStatusFilter || undefined }).then((r) => setJobs(r.jobs))
         : nextTab === "sources"
-          ? Promise.all([adminListSources(), adminGreenhouseCompanies(), adminApifyActors(), adminListRuns(), adminGetAutomation()]).then(([s, c, a, r, automationResult]) => {
+          ? Promise.all([adminListSources(), adminApifyActors(), adminListRuns()]).then(([s, a, r]) => {
               setSources(s.sources);
-              setCompanies(c.companies);
               setApifyActors(a.actors);
               setRuns(r.runs);
-              setAutomation(automationResult.automation);
             })
           : adminListUsers().then((r) => setUsers(r.users));
     request.catch((err) => setError((err as Error).message)).finally(() => setLoading(false));
@@ -112,11 +115,10 @@ export default function JobsAdminPanel() {
     if (tab !== "sources" || !runs.some((run) => run.status === "queued" || run.status === "running")) return;
     let active = true;
     const timer = window.setTimeout(() => {
-      Promise.all([adminListSources(), adminGreenhouseCompanies(), adminApifyActors(), adminListRuns()])
-        .then(([s, c, a, r]) => {
+      Promise.all([adminListSources(), adminApifyActors(), adminListRuns()])
+        .then(([s, a, r]) => {
           if (!active) return;
           setSources(s.sources);
-          setCompanies(c.companies);
           setApifyActors(a.actors);
           setRuns(r.runs);
         })
@@ -124,6 +126,7 @@ export default function JobsAdminPanel() {
     }, 3000);
     return () => { active = false; window.clearTimeout(timer); };
   }, [tab, runs]);
+
 
   async function moderate(jobId: number, status: "active" | "rejected") {
     try {
@@ -154,18 +157,33 @@ export default function JobsAdminPanel() {
     }
   }
 
-  async function syncAndRunGreenhouse() {
+
+  async function syncAndRunAdzuna() {
     try {
       setLoading(true);
       setError(null);
-      const result = await adminGreenhouseRun();
-      setNotice(`${result.queued_count} Greenhouse source(s) queued; ${result.already_queued_count} already queued or running.`);
+      const result = await adminAdzunaRun();
+      setNotice(`${result.queued_count} Adzuna regional query source(s) queued; ${result.already_queued_count} already active.`);
       load("sources");
     } catch (err) {
       setError((err as Error).message);
       setLoading(false);
     }
   }
+
+  async function syncAndRunJSearch() {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await adminJSearchRun();
+      setNotice(`${result.queued_count} JSearch RapidAPI source(s) queued; ${result.already_queued_count} already active.`);
+      load("sources");
+    } catch (err) {
+      setError((err as Error).message);
+      setLoading(false);
+    }
+  }
+
 
   /** Manual, per-platform — never automatic, per the admin's own request:
    * click "Run" for exactly the one platform you want fetched right now. */
@@ -183,18 +201,6 @@ export default function JobsAdminPanel() {
     }
   }
 
-  async function toggleAutomation() {
-    if (!automation) return;
-    try {
-      setError(null);
-      const result = await adminUpdateAutomation(!automation.enabled);
-      setAutomation(result.automation);
-      setNotice(result.automation.enabled ? "Daily Greenhouse automation enabled." : "Daily Greenhouse automation disabled. Manual runs remain available.");
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
   function applyLocationFilter() {
     setJobLocationFilter(locationInput);
     loadJobs(jobStatusFilter, jobCategoryFilter, locationInput);
@@ -203,6 +209,7 @@ export default function JobsAdminPanel() {
   function clearJobFilters() {
     setJobStatusFilter("pending");
     setJobCategoryFilter("");
+    setJobSourceFilter("");
     setJobLocationFilter("");
     setLocationInput("");
     loadJobs("pending", "", "");
@@ -211,6 +218,15 @@ export default function JobsAdminPanel() {
   const activeSourceIds = new Set(
     runs.filter((run) => run.status === "queued" || run.status === "running").map((run) => run.source_id),
   );
+
+  const filteredJobs = jobs.filter((job) => {
+    if (!jobSourceFilter) return true;
+    const extId = (job.external_id || "").toLowerCase();
+    if (jobSourceFilter === "adzuna") return extId.startsWith("adzuna:");
+    if (jobSourceFilter === "jsearch") return extId.startsWith("jsearch:");
+    if (jobSourceFilter === "manual") return extId.startsWith("manual");
+    return true;
+  });
 
   return (
     <div className="admin-panel">
@@ -234,6 +250,15 @@ export default function JobsAdminPanel() {
                 <option value="rejected">Rejected</option>
                 <option value="expired">Expired</option>
                 <option value="">All</option>
+              </select>
+            </div>
+            <div className="admin-filter-field">
+              <label>Source</label>
+              <select value={jobSourceFilter} onChange={(e) => setJobSourceFilter(e.target.value)}>
+                <option value="">All sources</option>
+                <option value="adzuna">Adzuna</option>
+                <option value="jsearch">RapidAPI (LinkedIn/Indeed)</option>
+                <option value="manual">Manual</option>
               </select>
             </div>
             <div className="admin-filter-field">
@@ -266,26 +291,46 @@ export default function JobsAdminPanel() {
           ) : (
             <div className="admin-table-card">
               <table className="admin-table">
-                <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Title</th><th>Company</th><th>Source</th><th>Location</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {jobs.map((job) => (
-                    <tr key={job.id}>
-                      <td className="admin-table-primary">{job.title}</td>
-                      <td>{job.company}</td>
-                      <td>{job.location || "—"}</td>
-                      <td>{job.category || "—"}</td>
-                      <td><StatusBadge status={job.status} /></td>
-                      <td>
-                        {job.status === "pending" && (
-                          <div className="admin-row-actions">
-                            <button className="btn btn-primary btn-sm" onClick={() => moderate(job.id, "active")}>Approve</button>
-                            <button className="btn btn-danger btn-sm" onClick={() => moderate(job.id, "rejected")}>Reject</button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {!jobs.length && <tr><td colSpan={6} className="admin-table-empty">No jobs match these filters.</td></tr>}
+                  {filteredJobs.map((job) => {
+                    const badge = getJobSourceBadge(job.external_id);
+                    return (
+                      <tr key={job.id}>
+                        <td className="admin-table-primary">{job.title}</td>
+                        <td>{job.company}</td>
+                        <td>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 8px",
+                              borderRadius: "4px",
+                              fontSize: "12px",
+                              fontWeight: 500,
+                              color: badge.color,
+                              backgroundColor: badge.bg,
+                              border: `1px solid ${badge.color}33`,
+                              whiteSpace: "nowrap"
+                            }}
+                          >
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td>{job.location || "—"}</td>
+                        <td>{job.category || "—"}</td>
+                        <td><StatusBadge status={job.status} /></td>
+                        <td>
+                          {job.status === "pending" && (
+                            <div className="admin-row-actions">
+                              <button className="btn btn-primary btn-sm" onClick={() => moderate(job.id, "active")}>Approve</button>
+                              <button className="btn btn-danger btn-sm" onClick={() => moderate(job.id, "rejected")}>Reject</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!filteredJobs.length && <tr><td colSpan={7} className="admin-table-empty">No jobs match these filters.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -297,29 +342,21 @@ export default function JobsAdminPanel() {
 
       {!loading && tab === "sources" && (
         <div className="admin-section">
-          <div className="admin-toolbar">
-            <button className="btn btn-primary btn-sm" onClick={syncAndRunGreenhouse} disabled={loading}>
-              {loading ? "Queueing…" : "Sync + queue Greenhouse"}
+          <div className="admin-toolbar" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button className="btn btn-primary btn-sm" onClick={syncAndRunAdzuna} disabled={loading}>
+              {loading ? "Queueing…" : "⚡ Sync + queue Adzuna (Tamil Nadu & Metros)"}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={syncAndRunJSearch} disabled={loading}>
+              {loading ? "Queueing…" : "🔍 Sync + queue JSearch (RapidAPI)"}
             </button>
           </div>
-          <div className="admin-automation-card">
-            <div>
-              <strong>Daily Greenhouse automation</strong>
-              <p>Queues configured Greenhouse sources every day at <b>{automation?.schedule_time || "—"}</b> ({automation?.timezone || "—"}). The worker then processes them in the background. Apify and manual runs are unchanged.</p>
-              {automation?.last_completed_at && <small>Last scheduler pass: {new Date(automation.last_completed_at).toLocaleString()} · {automation.last_queued_count} source(s) queued</small>}
-              {automation?.last_error && <small className="admin-error-text">Last scheduler error: {automation.last_error}</small>}
-            </div>
-            <label className="switch" title="Enable or disable daily Greenhouse automation">
-              <input type="checkbox" checked={automation?.enabled || false} disabled={!automation} onChange={toggleAutomation} />
-              <span className="slider" />
-            </label>
-          </div>
+
           <h4>Configured sources</h4>
           <div className="admin-table-card">
             <table className="admin-table">
               <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
               <tbody>
-                {sources.map((source) => (
+                {sources.filter((s) => s.source_type !== "greenhouse").map((source) => (
                   <tr key={source.id}>
                     <td className="admin-table-primary">{source.name}</td>
                     <td>{source.source_type}</td>
@@ -332,28 +369,11 @@ export default function JobsAdminPanel() {
                     </td>
                   </tr>
                 ))}
-                {!sources.length && <tr><td colSpan={5} className="admin-table-empty">No sources configured yet.</td></tr>}
+                {!sources.filter((s) => s.source_type !== "greenhouse").length && <tr><td colSpan={5} className="admin-table-empty">No active sources configured yet.</td></tr>}
               </tbody>
             </table>
           </div>
-          <h4>Greenhouse company registry</h4>
-          <div className="admin-table-card">
-            <table className="admin-table">
-              <thead><tr><th>Company</th><th>Status</th><th>Total jobs</th><th>Tamil Nadu</th><th>Last error</th></tr></thead>
-              <tbody>
-                {companies.map((company) => (
-                  <tr key={company.board_id}>
-                    <td className="admin-table-primary">{company.name}</td>
-                    <td><StatusBadge status={company.status} /></td>
-                    <td>{company.total_jobs}</td>
-                    <td>{company.tn_job_count}</td>
-                    <td>{company.last_error || "—"}</td>
-                  </tr>
-                ))}
-                {!companies.length && <tr><td colSpan={5} className="admin-table-empty">No Greenhouse companies configured.</td></tr>}
-              </tbody>
-            </table>
-          </div>
+
 
           <h4>Job boards (Apify — manual only, never scheduled)</h4>
           <div className="admin-table-card">

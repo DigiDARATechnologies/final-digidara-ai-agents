@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
@@ -74,6 +74,81 @@ interface ChatViewProps {
   /** Extra panel rendered above the message list ... used by the Aptitude
    * Trainer Agent to show its practice controls alongside the chat. */
   contextPanel?: ReactNode;
+}
+
+function renderFormattedChatText(text: string): ReactNode {
+  if (!text) return null;
+  const lines = text.split("\n");
+
+  return lines.map((line, lineIndex) => {
+    const isHeading3 = line.startsWith("### ");
+    const isHeading2 = line.startsWith("## ");
+    let lineContent = line;
+    if (isHeading3) lineContent = line.slice(4);
+    else if (isHeading2) lineContent = line.slice(3);
+
+    const regex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+[^<.,:;"')\]\s])|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
+    const parts: ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(lineContent)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(lineContent.slice(lastIndex, match.index));
+      }
+      if (match[1] && match[2]) {
+        parts.push(
+          <a
+            key={`link-${lineIndex}-${match.index}`}
+            href={match[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="chat-bubble-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {match[1]}
+          </a>
+        );
+      } else if (match[3]) {
+        parts.push(
+          <a
+            key={`url-${lineIndex}-${match.index}`}
+            href={match[3]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="chat-bubble-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {match[3]}
+          </a>
+        );
+      } else if (match[4]) {
+        parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[4]}</strong>);
+      } else if (match[5]) {
+        parts.push(<em key={`i-${lineIndex}-${match.index}`}>{match[5]}</em>);
+      } else if (match[6]) {
+        parts.push(<code key={`c-${lineIndex}-${match.index}`}>{match[6]}</code>);
+      }
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < lineContent.length) {
+      parts.push(lineContent.slice(lastIndex));
+    }
+
+    const node = isHeading3 || isHeading2 ? (
+      <strong key={`h-${lineIndex}`} className="chat-heading">{parts}</strong>
+    ) : (
+      <span key={`l-${lineIndex}`}>{parts}</span>
+    );
+
+    return (
+      <Fragment key={`frag-${lineIndex}`}>
+        {node}
+        {lineIndex < lines.length - 1 && <br />}
+      </Fragment>
+    );
+  });
 }
 
 export default function ChatView({
@@ -374,7 +449,7 @@ export default function ChatView({
                 ) : (
                   <>
                     {hasContextPanel && contextPanel}
-                    <div className="bubble">{m.text}</div>
+                    <div className="bubble">{renderFormattedChatText(m.text)}</div>
                     {!!visibleOptions?.length && (
                       <div className="chat-options">
                         {visibleOptions.map((option) => option.href ? (

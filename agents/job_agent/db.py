@@ -12,19 +12,20 @@ _SCHEMA_LOCK_NAME = "digidara_job_agent_schema_init"
 _SCHEMA_LOCK_TIMEOUT_SECONDS = 120
 
 
-MAX_POOL_SIZE = 4
+DEFAULT_POOL_SIZE = 4
+MAX_POOL_SIZE = max(DEFAULT_POOL_SIZE, int(os.getenv("MAX_DB_POOL_SIZE", "10")))
 
 
 def _pool_size():
     # mysql-connector opens every pooled connection eagerly, per gunicorn
-    # worker (4) plus the worker container, on a MySQL server shared with the
-    # other agents. Mock Interview hit "1040 Too many connections" at 10 x 4;
-    # cap here too so an older .env still saying DB_POOL_SIZE=10 is safe.
+    # worker plus the worker container. Allow tuning up to MAX_POOL_SIZE while
+    # defaulting to 4 to prevent connection exhaustion on shared dev instances.
     try:
-        requested = int(os.getenv("DB_POOL_SIZE", str(MAX_POOL_SIZE)))
+        requested = int(os.getenv("DB_POOL_SIZE", str(DEFAULT_POOL_SIZE)))
     except ValueError:
-        requested = MAX_POOL_SIZE
+        requested = DEFAULT_POOL_SIZE
     return max(1, min(requested, MAX_POOL_SIZE))
+
 
 
 def _pool_config():
@@ -180,9 +181,35 @@ def init_job_tables():
                 last_error TEXT NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )""",
+            """CREATE TABLE IF NOT EXISTS user_daily_job_usage (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL,
+                usage_date DATE NOT NULL,
+                jobs_viewed INT NOT NULL DEFAULT 0,
+                chat_turns INT NOT NULL DEFAULT 0,
+                tokens_spent INT NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_user_date (user_id, usage_date),
+                INDEX idx_user_usage_date (user_id, usage_date)
+            )""",
+            """CREATE TABLE IF NOT EXISTS job_token_settings (
+                id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+                free_daily_feed_limit INT NOT NULL DEFAULT 20,
+                free_daily_chat_turns INT NOT NULL DEFAULT 10,
+                tokens_per_extra_feed INT NOT NULL DEFAULT 2000,
+                tokens_per_chat_turn INT NOT NULL DEFAULT 500,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )""",
         ]
         for statement in statements:
             cursor.execute(statement)
+
+        # Seed default token settings if row 1 does not exist
+        cursor.execute(
+            """INSERT IGNORE INTO job_token_settings 
+               (id, free_daily_feed_limit, free_daily_chat_turns, tokens_per_extra_feed, tokens_per_chat_turn)
+               VALUES (1, 20, 10, 2000, 500)"""
+        )
 
         # Compatibility migration for a user_job_profiles table created
         # before full_name/resume_filename existed.
