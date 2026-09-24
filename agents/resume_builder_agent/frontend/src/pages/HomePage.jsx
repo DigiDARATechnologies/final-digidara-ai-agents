@@ -50,7 +50,7 @@ const sampleResume = {
     },
   ],
   declaration:
-    "I hereby declare that all the information provided above is true and correct to the best of my knowledge and belief.",
+    "I hereby declare that the information provided in this resume is true and accurate to the best of my knowledge and belief.",
 };
 
 const featureLedger = [

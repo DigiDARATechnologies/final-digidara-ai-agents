@@ -113,6 +113,46 @@ OCR_MIN_WORDS = 20
 OCR_MAX_PAGES = 10
 
 
+def extract_raw_pdf_text_streams(raw):
+    """Decompress FlateDecode/ASCII85Decode streams and extract plain text strings from raw PDF bytes."""
+    extracted_parts = []
+    stream_blocks = re.findall(b"stream[\r\n]+(.*?)[\r\n]*endstream", raw, flags=re.DOTALL)
+    for block in stream_blocks:
+        stream_bytes = block.strip()
+        if stream_bytes.endswith(b"~>"):
+            try:
+                import base64
+                stream_bytes = base64.a85decode(stream_bytes, adobe=True)
+            except Exception:
+                pass
+        try:
+            import zlib
+            stream_bytes = zlib.decompress(stream_bytes)
+        except Exception:
+            try:
+                import zlib
+                stream_bytes = zlib.decompress(stream_bytes, -zlib.MAX_WBITS)
+            except Exception:
+                pass
+        decoded = stream_bytes.decode("latin-1", errors="replace")
+        matches = re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)\s*Tj", decoded)
+        if not matches:
+            matches = re.findall(r"\[\s*(.*?)\s*\]\s*TJ", decoded)
+            if matches:
+                sub_matches = []
+                for m in matches:
+                    sub_matches.extend(re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", m))
+                matches = sub_matches
+        if not matches:
+            matches = re.findall(r"\(([^()\\]{2,})\)", decoded)
+        for m in matches:
+            clean = m.replace("\\n", "\n").replace("\\r", "").replace("\\(", "(").replace("\\)", ")").strip()
+            if clean and not clean.startswith("/") and not clean.startswith("<<") and not clean.startswith("%"):
+                extracted_parts.append(clean)
+    text = "\n".join(extracted_parts)
+    return sanitize_text(text)
+
+
 def ocr_pdf_pages(raw):
     """Best-effort OCR fallback for scanned/image-only PDFs.
 
@@ -123,24 +163,32 @@ def ocr_pdf_pages(raw):
     try:
         import pytesseract
         from pdf2image import convert_from_bytes
-    except ImportError:
-        return None
+        images = convert_from_bytes(raw, dpi=300, fmt="png")
+        if images:
+            page_texts = [pytesseract.image_to_string(image) or "" for image in images[:OCR_MAX_PAGES]]
+            ocr_res = sanitize_text("\n\n".join(page_texts))
+            if ocr_res and len(ocr_res.split()) >= OCR_MIN_WORDS:
+                return ocr_res
+    except Exception:
+        pass
 
     try:
-        images = convert_from_bytes(raw, dpi=300, fmt="png")
+        import fitz
+        doc = fitz.open(stream=raw, filetype="pdf")
+        fitz_text = sanitize_text("\n\n".join(page.get_text() for page in doc))
+        if fitz_text and len(fitz_text.split()) >= OCR_MIN_WORDS:
+            return fitz_text
     except Exception:
-        return None
+        pass
 
-    if not images:
-        return None
+    try:
+        fallback_text = extract_raw_pdf_text_streams(raw)
+        if fallback_text and len(fallback_text.split()) >= 5:
+            return fallback_text
+    except Exception:
+        pass
 
-    page_texts = []
-    for image in images[:OCR_MAX_PAGES]:
-        try:
-            page_texts.append(pytesseract.image_to_string(image) or "")
-        except Exception:
-            return None
-    return sanitize_text("\n\n".join(page_texts))
+    return None
 
 
 def extract_pdf(filename, raw):
@@ -360,6 +408,8 @@ def sanitize_text(value):
 
 def analyze_resume_text(text, filename="resume.txt", job_description="", target_role=""):
     parsed, unmapped = parse_resume_text(text)
+    if target_role and target_role.strip():
+        parsed["targetRole"] = target_role.strip()
     analysis = score_resume(parsed, unmapped, text, job_description, target_role)
     return {
         "originalFileName": filename,
@@ -509,8 +559,41 @@ def detect_location(lines, excluded):
     return ""
 
 
+def extract_professional_links(text):
+    text = str(text or "")
+    links = {}
+    m_li = re.search(r"(?:linkedin[:\s]*)(https?://[^\s]+|linkedin\.com/[^\s]+)", text, re.I)
+    if not m_li:
+        m_li = re.search(r"(https?://[^\s]*linkedin\.com/[^\s]+|linkedin\.com/in/[^\s]+)", text, re.I)
+    if m_li:
+        links["linkedin"] = m_li.group(1).rstrip(",;.")
+
+    m_gh = re.search(r"(?:github[:\s]*)(https?://[^\s]+|github\.com/[^\s]+)", text, re.I)
+    if not m_gh:
+        m_gh = re.search(r"(https?://[^\s]*github\.com/[^\s]+|github\.com/[^\s]+)", text, re.I)
+    if m_gh:
+        links["github"] = m_gh.group(1).rstrip(",;.")
+
+    m_pf = re.search(r"(?:portfolio[:\s]*)(https?://[^\s]+|[a-zA-Z0-9.-]+\.onrender\.com[^\s]*|[a-zA-Z0-9.-]+\.vercel\.app[^\s]*)", text, re.I)
+    if not m_pf:
+        m_pf = re.search(r"(?:website[:\s]*)(https?://[^\s]+|[a-zA-Z0-9.-]+\.onrender\.com[^\s]*)", text, re.I)
+    if m_pf:
+        links["portfolio"] = m_pf.group(1).rstrip(",;.")
+    return links
+
+
+def extract_education_score(text):
+    m = re.search(r'((?:(?:CGPA|GPA)[:\s]*[0-9.]+(?:/[0-9.]+)?)(?:\s*\|\s*Percentage[:\s]*[0-9.]+%?)?|Percentage[:\s]*[0-9.]+%?)', text, re.I)
+    if m:
+        val = m.group(1).strip()
+        if val.upper().startswith(('CGPA:', 'GPA:')):
+            return re.sub(r'^(?:CGPA|GPA)[:\s]*', '', val, flags=re.I).strip()
+        return val
+    return ''
+
+
 def parse_education(lines):
-    degree_pattern = r"\b(?:B\.?E|B\.?Tech|BSc|MSc|MCA|MBA|Bachelor|Master|Diploma)[^,;]*"
+    degree_pattern = r"\b(?:B\.?E|B\.?Tech|BSc|B\.?Sc|BCA|BBA|BA|B\.?A|MSc|M\.?Sc|MCA|MBA|M\.?Tech|Bachelor|Master|Diploma|Ph\.?D)[^,;]*"
     degree_indexes = [
         index for index, line in enumerate(lines)
         if re.search(degree_pattern, line, re.I)
@@ -533,13 +616,14 @@ def parse_education(lines):
                 (line for line in school_candidates if re.search(r"college|university|institute|school", line, re.I)),
                 school_candidates[0] if school_candidates else "",
             )
+            surrounding = " ".join(before + after)
             result.append({
                 "school": institution,
                 "degree": degree,
                 "field": "",
                 "start_date": date_candidates[0] if len(date_candidates) > 1 else "",
                 "end_date": date_candidates[-1] if date_candidates else "",
-                "cgpa": first_match(r"(?:CGPA|GPA)[:\s]*([0-9.]+)", " ".join(before + after), flags=re.I),
+                "cgpa": extract_education_score(surrounding) or first_match(r"(?:CGPA|GPA)[:\s]*([0-9.]+)", surrounding, flags=re.I),
             })
         return result
 
@@ -555,7 +639,7 @@ def parse_education(lines):
         if not clean:
             continue
         dates = DATE_PATTERN.findall(clean)
-        cgpa = first_match(r"(?:CGPA|GPA)[:\s]*([0-9.]+)", clean, flags=re.I)
+        cgpa = extract_education_score(clean) or first_match(r"(?:CGPA|GPA)[:\s]*([0-9.]+)", clean, flags=re.I)
         degree = first_match(
             degree_pattern,
             clean,
@@ -563,8 +647,6 @@ def parse_education(lines):
         )
         is_detail = bool(dates or cgpa or degree)
         if not is_detail:
-            # A degree is often printed above its institution. Keep both lines
-            # in one entry instead of splitting them into two partial records.
             if current and not current.get("school") and any(
                 current.get(field) for field in ("degree", "start_date", "end_date", "cgpa")
             ):
@@ -679,21 +761,29 @@ def parse_projects(lines):
 def parse_publications(lines):
     if not lines:
         return []
-    # PDF column extraction often separates a publication's date from its
-    # title/description. Keep it as one complete, candidate-provided record.
-    title = DATE_PATTERN.sub("", lines[0], count=1).strip(" -") or lines[0]
-    date = last_date(lines[0]) or last_date(" ".join(lines[1:2]))
-    description = " ".join(
-        line.strip() for line in lines[1:]
-        if line.strip() and not re.fullmatch(DATE_PATTERN, line.strip())
-    )
-    if description:
-        return [{"title": title, "description": description, "date": date}]
-    return [
-        {"title": entry[0], "description": "\n".join(entry[1:]), "date": last_date(" ".join(entry))}
-        for entry in split_entries(lines)
-        if entry
-    ]
+    entries = []
+    current = []
+    for i, line in enumerate(lines):
+        clean = line.strip()
+        if not clean:
+            continue
+        next_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if current and len(current) >= 2 and DATE_PATTERN.search(next_line) and not DATE_PATTERN.search(clean) and not is_bullet(clean):
+            entries.append(current)
+            current = [clean]
+        else:
+            current.append(clean)
+    if current:
+        entries.append(current)
+    result = []
+    for e in entries:
+        if not e:
+            continue
+        title = DATE_PATTERN.sub("", e[0], count=1).strip(" -") or e[0]
+        date = last_date(" ".join(e))
+        desc_lines = [l for l in e[1:] if not re.fullmatch(DATE_PATTERN, l.strip()) and l.strip() != date]
+        result.append({"title": title, "description": "\n".join(desc_lines).strip(), "date": date})
+    return result
 
 
 def infer_projects_from_publications(publications):
@@ -1011,6 +1101,69 @@ def normalize_match_term(value):
     return term
 
 
+TARGET_ROLE_TYPO_CORRECTIONS = {
+    "digital marketting": "Digital Marketing",
+    "digital marketing": "Digital Marketing",
+    "python developer": "Python Developer",
+    "data analyst": "Data Analyst",
+    "frontend developer": "Frontend Developer",
+    "front end developer": "Frontend Developer",
+    "backend developer": "Backend Developer",
+    "back end developer": "Backend Developer",
+    "full stack developer": "Full Stack Developer",
+    "fullstack developer": "Full Stack Developer",
+}
+
+
+def normalize_target_role(role):
+    if not role or not isinstance(role, str):
+        return ""
+    text = re.sub(r"\s+", " ", role.strip())
+    lowered = text.lower()
+    if text.isupper():
+        return text
+    if lowered in TARGET_ROLE_TYPO_CORRECTIONS:
+        return TARGET_ROLE_TYPO_CORRECTIONS[lowered]
+    return text
+
+
+def normalize_experience_bullets(bullets, max_items=20):
+    if not bullets:
+        return []
+    if isinstance(bullets, str):
+        bullets = [bullets]
+    if not isinstance(bullets, list):
+        return []
+
+    cleaned = []
+    seen = set()
+    for item in bullets:
+        if not item:
+            continue
+        if isinstance(item, dict):
+            item = item.get("bullet") or item.get("text") or item.get("description") or str(item)
+        text_val = re.sub(r"\s+", " ", str(item)).strip()
+        if not text_val:
+            continue
+        text_val = re.sub(r"^[•\-\*\d+\.\)]+\s*", "", text_val).strip()
+        if not text_val:
+            continue
+        lowered = text_val.lower()
+        if (
+            lowered in {"null", "undefined", "none", "[object object]"}
+            or "improve it later" in lowered
+            or "choose create a resume" in lowered
+            or "upload an existing resume" in lowered
+            or "[add" in lowered
+        ):
+            continue
+        if lowered not in seen:
+            seen.add(lowered)
+            cleaned.append(text_val)
+
+    return cleaned[:max_items]
+
+
 def map_import_to_resume_payload(parsed, filename, user_id):
     info = parsed.get("personalInfo") or {}
     links = [
@@ -1018,14 +1171,17 @@ def map_import_to_resume_payload(parsed, filename, user_id):
         f"GitHub: {info.get('github')}" if info.get("github") else "",
         f"Portfolio: {info.get('portfolio')}" if info.get("portfolio") else "",
     ]
-    title = parsed.get("targetRole") or filename.rsplit(".", 1)[0] or "Imported Resume"
+    raw_target_role = parsed.get("targetRole") or ""
+    target_role = normalize_target_role(raw_target_role)
+    title = target_role or filename.rsplit(".", 1)[0] or "Imported Resume"
     return {
         "user_id": user_id,
         "title": title,
-        "target_role": parsed.get("targetRole") or "",
+        "target_role": target_role,
         "template_choice": "steady-form",
         "summary": parsed.get("summary") or "",
         "declaration": parsed.get("declaration") or "",
+        "declaration_enabled": bool(parsed.get("declaration") and str(parsed.get("declaration")).strip()),
         "personal_info": {
             "name": info.get("fullName") or "",
             "email": info.get("email") or "",
@@ -1034,8 +1190,37 @@ def map_import_to_resume_payload(parsed, filename, user_id):
             "links": [link for link in links if link],
         },
         "education": [
-            {**item, "school": item.get("school") or ""}
+            {
+                **item,
+                "school": (
+                    item.get("school")
+                    or item.get("institution")
+                    or item.get("college")
+                    or item.get("university")
+                    or ""
+                ),
+                "institution": (
+                    item.get("institution")
+                    or item.get("school")
+                    or item.get("college")
+                    or item.get("university")
+                    or ""
+                ),
+                "level": (
+                    item.get("level")
+                    or (
+                        "PG"
+                        if re.search(r"\b(mca|mba|m\.?sc|m\.?tech|master|postgraduate|pg)\b", item.get("degree", ""), re.I)
+                        else (
+                            "UG"
+                            if re.search(r"\b(bca|b\.?sc|b\.?tech|b\.?e|bba|b\.?a|bachelor|undergraduate|ug)\b", item.get("degree", ""), re.I)
+                            else ""
+                        )
+                    )
+                ),
+            }
             for item in (parsed.get("education") or [])
+            if any(item.get(k) for k in ("school", "institution", "college", "university", "degree", "field", "start_date", "end_date", "cgpa", "percentage", "level"))
         ],
         "skills": parsed.get("skills") or [],
         "experience": [
@@ -1043,12 +1228,17 @@ def map_import_to_resume_payload(parsed, filename, user_id):
                 **item,
                 "company": item.get("company"),
                 "role": item.get("role"),
+                "ai_generated_bullets": normalize_experience_bullets(item.get("ai_generated_bullets"), max_items=20),
             }
             for item in merge_imported_experience_fragments(parsed.get("experience") or [])
             if item.get("company") and item.get("role")
         ],
         "projects": [
-            {**item, "title": item.get("title")}
+            {
+                **item,
+                "title": item.get("title"),
+                "ai_generated_bullets": normalize_experience_bullets(item.get("ai_generated_bullets"), max_items=20),
+            }
             for item in merge_imported_project_fragments(parsed.get("projects") or [])
             if item.get("title")
         ],
@@ -1100,7 +1290,7 @@ def merge_imported_experience_fragments(experience):
         item = dict(entry or {})
         company = str(item.get("company") or "").strip()
         role = str(item.get("role") or "").strip()
-        bullets = [str(value).strip() for value in (item.get("ai_generated_bullets") or []) if str(value).strip()]
+        bullets = normalize_experience_bullets(item.get("ai_generated_bullets"))
         raw_input = str(item.get("raw_input") or "").strip()
         is_fragment = (
             merged
@@ -1113,9 +1303,11 @@ def merge_imported_experience_fragments(experience):
                 previous["start_date"] = item["start_date"]
             if not previous.get("end_date") and item.get("end_date"):
                 previous["end_date"] = item["end_date"]
-            previous["ai_generated_bullets"] = [*(previous.get("ai_generated_bullets") or []), *bullets]
+            combined_bullets = [*(previous.get("ai_generated_bullets") or []), *bullets]
+            previous["ai_generated_bullets"] = normalize_experience_bullets(combined_bullets, max_items=20)
             previous["raw_input"] = "\n".join(value for value in [str(previous.get("raw_input") or "").strip(), raw_input] if value)
             continue
+        item["ai_generated_bullets"] = bullets
         merged.append(item)
     return merged
 

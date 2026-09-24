@@ -26,7 +26,7 @@ test('live interview shows the question, a 60-second timer, and typed-answer fal
   expect(screen.getByLabelText('Question 1 of 10')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Replay question' })).not.toBeInTheDocument();
   expect(screen.getByRole('timer')).toHaveTextContent('01:00');
-  fireEvent.change(screen.getByLabelText(/type your answer/i), { target: { value: 'A mutable sequence.' } });
+  fireEvent.change(screen.getByLabelText(/your answer/i), { target: { value: 'A mutable sequence.' } });
   act(() => { jest.advanceTimersByTime(5000); });
   expect(screen.getByRole('timer')).toHaveTextContent('00:55');
   fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));

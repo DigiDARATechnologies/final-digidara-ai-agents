@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentRegisterRequest(BaseModel):
@@ -70,3 +70,28 @@ class RouteRequest(BaseModel):
 class RouteResponse(BaseModel):
     agent_name: str | None = None
     reply: str | None = None
+
+
+class RoleProfileRequest(BaseModel):
+    """The minimal information needed to draft an AI role profile."""
+
+    target_role: str = Field(min_length=2, max_length=120)
+    context: str | None = Field(default=None, max_length=4000)
+
+
+class RoleDeclaration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    capabilities: list[str] = Field(min_length=1, max_length=10)
+    limitations: list[str] = Field(min_length=1, max_length=10)
+    required_inputs: list[str] = Field(min_length=1, max_length=10)
+    suggested_next_actions: list[str] = Field(min_length=1, max_length=10)
+
+
+class RoleProfileResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_role: str
+    summary: str = Field(min_length=1, max_length=1000)
+    skills: list[str] = Field(min_length=1, max_length=10)
+    declaration: RoleDeclaration

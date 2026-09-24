@@ -10,6 +10,7 @@ from app.services.ats_config import (
     SCORING_VERSION,
     SKILL_ALIASES,
     STOP_WORDS,
+    get_role_skills,
 )
 
 
@@ -185,6 +186,11 @@ def parse_job_description(text):
     if not required and not preferred:
         counts = Counter(all_skills)
         required = [skill for skill, _count in counts.most_common(max(1, min(8, len(counts))))]
+    role_title = detect_job_title(text)
+    if not required and not preferred and role_title:
+        role_skills = get_role_skills(role_title)
+        if role_skills:
+            required = list(role_skills)
     required = dedupe(required)
     preferred = [skill for skill in dedupe(preferred) if skill not in required]
     known_skills = {skill.lower() for skill in required + preferred}
@@ -524,7 +530,7 @@ def detect_min_years(text):
 
 
 def detect_job_title(text):
-    match = re.search(r"(?:job title|role|position)\s*[:\-]\s*([A-Za-z /+-]{3,80})", text or "", re.I)
+    match = re.search(r"(?:target\s+)?(?:job\s+)?(?:title|role|position)\s*[:\-]\s*([A-Za-z /+_\-]{3,80})", text or "", re.I)
     return match.group(1).strip() if match else ""
 
 

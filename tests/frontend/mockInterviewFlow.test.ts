@@ -79,7 +79,7 @@ test('answers advance with their timing and finish with the four scores and scor
   let result = await handleMockInterviewText(inInterview, user, 'my answer', { timeTakenSec: 25 });
   expect(mocked.submitMockInterviewAnswer).toHaveBeenCalledWith('token', 9, 1, 'my answer', 25, undefined);
   expect(result.state.questionOrder).toBe(2);
-  expect(result.messages[0].text).toContain('Good');
+  expect(result.messages[0].text).toBe('Answer saved. Detailed feedback will appear in your final report.');
 
   mocked.submitMockInterviewAnswer.mockResolvedValueOnce({ done: true, verdict: 'Fine' });
   mocked.endMockInterview.mockResolvedValue({ interview_id: 9, total_marks: 7, max_marks: 10, overall_score: 8, technical_accuracy: 7, communication_clarity: 9, confidence: 8, scorecard: [{ question_number: 1, verdict: 'correct', verdict_reason: 'Clear answer' }] });

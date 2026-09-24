@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { Logo } from "./Logo";
 
 interface NewChatLandingProps {
   onSend: (text: string) => void;
@@ -18,9 +19,8 @@ export default function NewChatLanding({ onSend, onAttachClick }: NewChatLanding
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const text = input.trim();
-    if (!text) return;
-    onSend(text);
+    if (!input.trim()) return;
+    onSend(input.trim());
     setInput("");
   }
 
@@ -51,7 +51,9 @@ export default function NewChatLanding({ onSend, onAttachClick }: NewChatLanding
   return (
     <section className="view view-chat new-chat-landing active">
       <div className="landing-center">
-        <span className="logo-mark landing-logo">⚡</span>
+        <div style={{ marginBottom: "18px" }}>
+          <Logo variant="icon" size="lg" />
+        </div>
         <h1>What's on the agenda today?</h1>
 
         <form className="landing-composer glow-border" onSubmit={handleSubmit}>

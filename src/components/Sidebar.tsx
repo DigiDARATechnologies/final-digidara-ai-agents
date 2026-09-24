@@ -2,8 +2,9 @@ import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
+import { Logo } from "./Logo";
 
-interface SidebarProps {
+export interface SidebarProps {
   user: User;
   collapsed: boolean;
   mobileOpen: boolean;
@@ -101,10 +102,7 @@ export default function Sidebar({
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
       <div className="sidebar-top">
         <div className="brand">
-          <span className="logo-mark small">⚡</span>
-          <span className="brand-text">
-            Digi<b>DARA</b>
-          </span>
+          <Logo variant={collapsed ? "icon" : "full"} size="sm" />
         </div>
         <button className="icon-btn" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
