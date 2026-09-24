@@ -268,6 +268,24 @@ The original `/api/*` REST endpoints remain available on all three agents
 for internal testing and API documentation, but the React application uses
 only the gateway contract.
 
+### 4.6 AI role-profile generation
+
+Authenticated clients can create a reusable AI role profile through the
+orchestrator (this is not routed to a specialist agent):
+
+```http
+POST /role-profiles/generate
+Authorization: Bearer <platform JWT>
+Content-Type: application/json
+
+{"target_role":"Frontend Developer","context":"React application for learners"}
+```
+
+The response is validated JSON with a concise `summary`, a `skills` list, and
+a `declaration` containing `capabilities`, `limitations`, `required_inputs`,
+and `suggested_next_actions`. The endpoint returns `502` if the configured
+LLM cannot return a valid profile, rather than exposing malformed model output.
+
 ## 5. Learner / candidate workflow in the chat UI
 
 ### 5.1 Capstone Project Agent

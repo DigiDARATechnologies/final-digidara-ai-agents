@@ -1,4 +1,32 @@
-const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
+function getOrchestratorBase(): string {
+  const globalProcess = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
+  if (globalProcess?.env?.VITE_GATEWAY_API_URL) {
+    return globalProcess.env.VITE_GATEWAY_API_URL.replace(/\/$/, "");
+  }
+  try {
+    const metaEnv = new Function("return typeof import.meta !== 'undefined' ? import.meta.env : undefined")();
+    if (metaEnv?.VITE_GATEWAY_API_URL) {
+      return String(metaEnv.VITE_GATEWAY_API_URL).replace(/\/$/, "");
+    }
+  } catch {
+    // In environments without import.meta support, fall back to default URL
+  }
+  return "http://127.0.0.1:8100";
+}
+
+const ORCHESTRATOR_BASE = getOrchestratorBase();
+
+export function normalizeAuthError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (!message) return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+    if (message === "Failed to fetch" || message.toLowerCase().includes("failed to fetch") || message.toLowerCase().includes("networkerror") || message.toLowerCase().includes("load failed")) {
+      return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+    }
+    return message;
+  }
+  return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+}
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -123,5 +151,7 @@ function postJson(path: string, body: Record<string, unknown>): Promise<Response
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  }).catch((error) => {
+    throw new Error(normalizeAuthError(error));
   });
 }

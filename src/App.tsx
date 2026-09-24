@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
 import { newChatId, nowStr, useChats } from "./hooks/useChats";
@@ -58,7 +59,7 @@ import { createInitialCertificateState, handleCertificateText, openCertificateCh
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
-import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
+import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
 
 type OpenMenu = "user" | "notif" | null;
@@ -81,6 +82,7 @@ function toUser(authUser: AuthUser): User {
   const name = authUser.name || "User";
   return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(), isAdmin: authUser.is_admin };
 }
+
 
 
 export default function App() {
@@ -238,7 +240,7 @@ export default function App() {
         showToast(`Welcome, ${newUser.name.split(" ")[0]}!`);
       })
       .catch((error) => {
-        showToast(`Google sign-in failed: ${(error as Error).message}`);
+        showToast(`Google sign-in failed: ${normalizeAuthError(error)}`);
       })
       .finally(() => setGoogleAuthPending(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,6 +436,11 @@ export default function App() {
 
   function handleDeleteChat(chatId: string) {
     persistChats(chats.filter((c) => c.id !== chatId));
+    setResumeBuilderStates((prev) => {
+      const next = { ...prev };
+      delete next[chatId];
+      return next;
+    });
     if (currentChatId === chatId) {
       startNewChatLanding();
     }
@@ -463,7 +470,7 @@ export default function App() {
       showToast(`${mode === "signup" ? "Account created" : "Welcome back"}, ${newUser.name.split(" ")[0]}!`);
       return null;
     } catch (error) {
-      return (error as Error).message;
+      return normalizeAuthError(error);
     }
   }
 
@@ -567,7 +574,7 @@ export default function App() {
    * agent's own dedicated multi-turn flow, without losing what was already
    * said — mirrors openAgentChat's per-kind setup but appends onto the
    * current chat instead of replacing it. */
-  async function handoffToAgent(chatId: string, agent: Agent) {
+  async function handoffToAgent(chatId: string, agent: Agent, initialText?: string) {
     if (!user) return;
     appendAgentMessages(chatId, [{ text: `Connecting you to the ${agent.name}…` }]);
     setChats((prev) => {
@@ -596,8 +603,19 @@ export default function App() {
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "resume-builder") {
       const { state, messages } = await openResumeBuilderChat(user);
-      setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
+      const initialCommand = initialText?.trim().toLowerCase() === "create a resume"
+        ? "new"
+        : initialText?.trim().toLowerCase() === "upload an existing resume"
+          ? "upload"
+          : undefined;
+      if (initialCommand) {
+        const result = await handleResumeBuilderText(state, user, initialCommand);
+        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: result.state }));
+        appendAgentMessages(chatId, result.messages);
+      } else {
+        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
+      }
     } else if (agent.kind === "certificate") {
       const { state, messages } = await openCertificateChat(user);
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
@@ -634,7 +652,7 @@ export default function App() {
       const result = await routeMessage(text, history);
       const matched = result.agent_name ? findAgentByBackendName(result.agent_name) : undefined;
       if (matched) {
-        await handoffToAgent(chatId, matched);
+        await handoffToAgent(chatId, matched, text);
         return;
       }
       appendAgentMessages(chatId, [{ text: result.reply || "I'm not sure how to help with that yet — could you rephrase it?" }]);
@@ -829,8 +847,8 @@ export default function App() {
     if (kind === "aptitude") return aptitudeStates[chatId];
     if (kind === "communication") return communicationStates[chatId];
     if (kind === "certificate") return certificateStates[chatId];
-    if (kind === "job-fetch") return jobFetchStates[chatId];
     if (kind === "mock-interview") return mockInterviewStates[chatId];
+    if (kind === "resume-builder") return resumeBuilderStates[chatId];
     return undefined;
   }
 
@@ -947,12 +965,22 @@ export default function App() {
     }
 
     if (agent?.kind === "resume-builder") {
-      const flowState = resumeBuilderStates[chatId] ?? createInitialResumeBuilderState();
-      handleResumeBuilderText(flowState, user, text).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-        appendAgentMessages(chatId, messages);
-        setTyping(false);
-      });
+      // Use the state captured immediately before this user message. Using
+      // the latest React state here allowed a rapid reply or edited message
+      // to be interpreted as the previous question's answer (for example a
+      // location becoming the target role), which then corrupted the draft.
+      const flowState = (resumeSnapshot as ResumeBuilderFlowState | undefined)
+        ?? resumeBuilderStates[chatId]
+        ?? createInitialResumeBuilderState();
+      handleResumeBuilderText(flowState, user, text)
+        .then(({ state, messages }) => {
+          setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
+          appendAgentMessages(chatId, messages);
+        })
+        .catch((error) => {
+          appendAgentMessages(chatId, [{ text: `Resume Builder request failed: ${(error as Error).message}` }]);
+        })
+        .finally(() => setTyping(false));
       return;
     }
 
@@ -1012,6 +1040,10 @@ export default function App() {
   }
 
   function handleChooseOption(value: string, label?: string) {
+    if (value === "open_resume_dashboard") {
+      setDashboardOpen(true);
+      return;
+    }
     if (value.startsWith("open:")) {
       const applyUrl = safeJobApplyUrl(value.slice(5));
       if (!applyUrl) {
@@ -1160,6 +1192,7 @@ export default function App() {
     setCodeforgeStates({});
     setAptitudeStates({});
     setCommunicationStates({});
+    setResumeBuilderStates({});
     startNewChatLanding();
     setSettingsOpen(false);
     showToast("Chat history cleared.");
@@ -1171,8 +1204,7 @@ export default function App() {
         <div className="login-overlay">
           <div className="login-card">
             <div className="login-logo">
-              <span className="logo-mark">⚡</span>
-              <span className="logo-text">Digi<b>DARA</b></span>
+              <Logo theme="light" size="md" />
             </div>
             <p className="login-sub">Signing you in with Google…</p>
           </div>
@@ -1396,7 +1428,7 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
                 onBack={handleChatBack}
                 onSend={sendMessage}

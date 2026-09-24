@@ -31,7 +31,7 @@ from flask import Blueprint, current_app, jsonify, request
 from app.security import rate_limit
 
 ai_bp = Blueprint("ai", __name__)
-MIN_RAW_INPUT_CHARS = 20
+MIN_RAW_INPUT_CHARS = 10
 MAX_RAW_INPUT_CHARS = 8000
 MAX_JOB_DESCRIPTION_CHARS = 30000
 MAX_RESUME_JSON_CHARS = 200000
@@ -392,7 +392,7 @@ Requirements:
 - Create at most 12 concise, deduplicated, ATS-relevant skills. Include only skills directly evidenced by the candidate context; never add a tool, certification, or domain knowledge solely because it is common for the role or listed in the job description. Exclude generic soft skills.
 - For every indexed experience entry, turn its source notes into 3-4 concise, achievement-focused resume bullets. Start each bullet with a strong action verb. Add realistic metrics only when clearly implied by the source notes.
 - For every indexed project entry, turn its source notes into 3-4 concise, ATS-friendly resume bullets. Start each bullet with a strong action verb.
-- Keep education and certification records factually unchanged; they are extracted from the uploaded resume and retained in the generated draft.
+- Keep education and certification records factually unchanged; they are extracted from the uploaded resume and retained in the generated draft. Education, school, college, certifications, achievements, projects, or experience are not mandatory to exist. If a section is missing, do not invent it. Never fabricate missing education, school, college, or credentials.
 - For each existing achievement, rewrite its description into one concise, evidence-backed achievement statement while preserving its index. Do not create achievements that are not evidenced in the candidate context.
 - Write a concise standard declaration using the candidate's provided name and location only. Do not include a fake signature, place, or date.
 - Do not invent employers, credentials, metrics, tools, dates, users, links, business outcomes, facts, or any other unverifiable claim.
@@ -480,17 +480,32 @@ def sanitize_bullets(values):
     return bullets[:6]
 
 
-def sanitize_skill_items(values):
+PLACEHOLDER_SKILL_PATTERNS = [
+    r"you can improve",
+    r"add your skills",
+    r"enter details",
+    r"^\[add",
+    r"lorem ipsum",
+]
+
+
+def sanitize_skill_items(values, exclude_skills=None):
     """Normalize model skill strings to the resume API's skill object shape."""
     seen = set()
+    excluded = {re.sub(r"[^a-z0-9]+", "", str(s).lower()) for s in (exclude_skills or []) if str(s).strip()}
     skills = []
     for value in values or []:
         text = value.get("skill_name") if isinstance(value, dict) else value
         text = str(text or "").strip()
-        # Treat punctuation variants such as "Problem-Solving" and
-        # "Problem Solving" as the same ATS skill.
+        if not text:
+            continue
+        lower_text = text.lower()
+        if any(re.search(pat, lower_text) for pat in PLACEHOLDER_SKILL_PATTERNS):
+            continue
+        if ":" in text:
+            text = text.split(":")[-1].strip()
         key = re.sub(r"[^a-z0-9]+", "", text.lower())
-        if not text or key in seen:
+        if not key or key in seen or key in excluded:
             continue
         seen.add(key)
         skills.append({"skill_name": text})
@@ -623,11 +638,8 @@ def generate_bullets():
     ]
     if missing:
         return error_response(f"Missing required field(s): {', '.join(missing)}", 400)
-    if len(raw_input) < MIN_RAW_INPUT_CHARS:
-        return error_response(
-            f"raw_input must be at least {MIN_RAW_INPUT_CHARS} characters",
-            400,
-        )
+    if not raw_input or len(raw_input) < MIN_RAW_INPUT_CHARS:
+        return error_response(f"raw_input must be at least {MIN_RAW_INPUT_CHARS} characters", 400)
     if len(raw_input) > MAX_RAW_INPUT_CHARS:
         return error_response(
             f"raw_input must not exceed {MAX_RAW_INPUT_CHARS} characters",
@@ -840,14 +852,10 @@ def analyze_job_description():
 @ai_bp.post("/ai/generate-declaration")
 @rate_limit(20)
 def generate_declaration():
-    payload = request.get_json(silent=True) or {}
-    name = (payload.get("name") or "the candidate").strip()
-    location = (payload.get("location") or "").strip()
-    place = f" in {location}" if location else ""
     return jsonify({
         "declaration": (
-            f"I, {name}, hereby declare that the information provided in this resume is true and correct "
-            f"to the best of my knowledge and belief{place}."
+            "I hereby declare that the information provided in this resume is true and accurate "
+            "to the best of my knowledge and belief."
         ),
         "provider": "local_fallback",
     }), 200
@@ -974,6 +982,7 @@ def optimize_resume():
 
     try:
         optimized = dict(resume)
+        optimized["target_role"] = resolved_role
         skipped = []
         generated = {
             "summary": False,
@@ -993,7 +1002,7 @@ def optimize_resume():
                 item,
                 ("raw_input", "ai_generated_bullets", "bullets", "description", "responsibilities", "achievements"),
             )
-            if len(source_text) >= MIN_RAW_INPUT_CHARS:
+            if len(source_text.strip()) > 0:
                 entry_context = dict(item)
                 for field in ("raw_input", "ai_generated_bullets", "bullets", "description", "responsibilities", "achievements"):
                     entry_context.pop(field, None)
@@ -1021,7 +1030,7 @@ def optimize_resume():
                 item,
                 ("raw_input", "description", "ai_generated_bullets", "bullets", "details", "highlights"),
             )
-            if len(source_text) >= MIN_RAW_INPUT_CHARS:
+            if len(source_text.strip()) > 0:
                 entry_context = dict(item)
                 for field in ("raw_input", "description", "ai_generated_bullets", "bullets", "details", "highlights"):
                     entry_context.pop(field, None)
@@ -1044,9 +1053,6 @@ def optimize_resume():
             build_optimize_resume_prompt(
                 resume, resolved_role, job_description, experience_requests, project_requests
             ),
-            # A full multi-entry resume needs room for summary, skills, and all
-            # bullets. One generous response is still far below the former
-            # repeated-context N+2 request pattern for normal resumes.
             max_tokens=3000,
         )
         summary = parsed.get("summary")
@@ -1054,8 +1060,13 @@ def optimize_resume():
             return error_response("AI response did not include a valid summary", 502)
         optimized["summary"] = ensure_target_role_in_summary(summary, resolved_role)
         generated["summary"] = True
-        generated_skills = sanitize_skill_items(parsed.get("skills"))
-        optimized["skills"] = generated_skills or sanitize_skill_items(resume.get("skills"))
+
+        role_info = parsed.get("role_analysis") if isinstance(parsed.get("role_analysis"), dict) else {}
+        rec_skills = role_info.get("recommended_skills_to_learn") or []
+        raw_ai_skills = parsed.get("skills") if isinstance(parsed.get("skills"), list) else []
+        raw_resume_skills = [s.get("skill_name") if isinstance(s, dict) else s for s in (resume.get("skills") or [])]
+        combined_skills = (raw_ai_skills if raw_ai_skills else []) + [s for s in raw_resume_skills if s not in raw_ai_skills]
+        optimized["skills"] = sanitize_skill_items(combined_skills, exclude_skills=rec_skills)
         generated["skills"] = len(optimized["skills"])
 
         for section, requested_entries, output_entries in (
@@ -1075,13 +1086,15 @@ def optimize_resume():
                     by_index[index] = cleaned_bullets
             for index, bullets in by_index.items():
                 output_entries[index]["ai_generated_bullets"] = by_index[index]
-            generated[section] = len(by_index)
-            for index in sorted(expected_indices - set(by_index)):
-                skipped.append({
-                    "section": section,
-                    "index": index,
-                    "reason": "AI did not return usable rewritten bullets; the original uploaded text was retained.",
-                })
+            # Ensure every output entry has ai_generated_bullets set
+            for item in output_entries:
+                if not item.get("ai_generated_bullets"):
+                    fallback_source = item.get("raw_input") or item.get("description") or item.get("title") or ""
+                    clean_lines = [clean_bullet_text(l) for l in str(fallback_source).split("\n") if clean_bullet_text(l)]
+                    if clean_lines:
+                        item["ai_generated_bullets"] = clean_lines[:6]
+
+            generated[section] = len([item for item in output_entries if item.get("ai_generated_bullets")])
 
         optimized["projects"] = projects
 
@@ -1122,15 +1135,30 @@ def optimize_resume():
 
         declaration = parsed.get("declaration")
         if isinstance(declaration, str) and declaration.strip():
-            optimized["declaration"] = declaration.strip()
-            generated["declaration"] = True
+            decl_clean = declaration.strip()
+            decl_lower = decl_clean.lower()
+            if decl_lower in {"none", "null", "n/a", "na", "undefined"} or decl_clean.startswith("["):
+                if resume.get("declaration_enabled", True):
+                    optimized["declaration"] = (
+                        "I hereby declare that the information provided in this resume is true and accurate to the best of my knowledge and belief."
+                    )
+                    generated["declaration"] = True
+            else:
+                optimized["declaration"] = decl_clean
+                generated["declaration"] = True
+
+        role_info = parsed.get("role_analysis") if isinstance(parsed.get("role_analysis"), dict) else {}
+        base_role_analysis = role_alignment(resume, resolved_role)
+        if isinstance(role_info, dict) and role_info:
+            base_role_analysis.update(role_info)
 
         return jsonify({
             "resume": optimized,
             "provider": "ai",
             "skipped": skipped,
             "generated": generated,
-            "role_alignment": role_alignment(resume, resolved_role),
+            "role_alignment": base_role_analysis,
+            "role_analysis": base_role_analysis,
         }), 200
     except GroqRateLimitError as exc:
         return error_response(str(exc), 429)
@@ -1151,3 +1179,48 @@ def optimize_resume():
         )
     except anthropic.APIError:
         return error_response("Anthropic API request failed", 502)
+
+
+@ai_bp.post("/ai/suggest-resume-edit")
+@rate_limit(20)
+def suggest_resume_edit():
+    payload = request.get_json(silent=True) or {}
+    edit_request = (payload.get("edit_request") or "").strip()
+    resume = payload.get("resume")
+    if not edit_request:
+        return error_response("edit_request is required", 400)
+    if not isinstance(resume, dict) or not resume:
+        return error_response("Missing required field(s): resume", 400)
+
+    try:
+        parsed = get_ai_json_response(
+            f"""Improve or edit the candidate resume according to the edit request without fabricating facts.
+Candidate request: {edit_request}
+Current resume JSON:
+{json.dumps(resume, ensure_ascii=True)}
+
+Requirements:
+- Return JSON containing proposed_resume, changes (array of string notes), and warnings (array of string notes).
+- Preserved candidate identity: keep original id, user_id, name, and email unchanged.
+- Shape: {{"proposed_resume": {{...}}, "changes": ["..."], "warnings": ["..."]}}""",
+            max_tokens=3500,
+        )
+        raw_proposed = parsed.get("proposed_resume") if isinstance(parsed.get("proposed_resume"), dict) else {}
+        proposed = dict(resume)
+        proposed.update(raw_proposed)
+        if isinstance(resume.get("id"), (int, str)):
+            proposed["id"] = resume["id"]
+        if resume.get("user_id"):
+            proposed["user_id"] = resume["user_id"]
+        changes = parsed.get("changes") if isinstance(parsed.get("changes"), list) else ["Updated resume based on your edit request."]
+        warnings = parsed.get("warnings") if isinstance(parsed.get("warnings"), list) else []
+        return jsonify({
+            "resume": proposed,
+            "proposed_resume": proposed,
+            "changes": changes,
+            "warnings": warnings,
+            "requires_confirmation": True,
+            "provider": "ai",
+        }), 200
+    except (RuntimeError, json.JSONDecodeError) as exc:
+        return error_response(str(exc), 500)

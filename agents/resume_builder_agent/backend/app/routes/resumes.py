@@ -30,6 +30,8 @@ from app.services.import_review import (
     ImportValidationError,
     analyze_resume_text,
     map_import_to_resume_payload,
+    normalize_experience_bullets,
+    normalize_target_role,
     score_resume,
     validate_import_file,
 )
@@ -151,9 +153,14 @@ def clean_list(value, field, max_items=MAX_SECTION_ITEMS):
     if value is None:
         return []
     if not isinstance(value, list):
-        raise ValueError(f"{field} must be a list")
+        if isinstance(value, str) and value.strip():
+            value = [value.strip()]
+        else:
+            return []
+    if "bullets" in field or "ai_generated_bullets" in field:
+        return normalize_experience_bullets(value, max_items=max_items)
     if len(value) > max_items:
-        raise ValueError(f"{field} must contain at most {max_items} items")
+        return value[:max_items]
     return value
 
 
@@ -243,6 +250,11 @@ def serialize_resume_summary(resume):
         "summary": resume.summary,
         "profile_photo": resume.profile_photo,
         "declaration": resume.declaration,
+        "declaration_enabled": (
+            resume.declaration_enabled
+            if getattr(resume, "declaration_enabled", None) is not None
+            else True
+        ),
         "ats_score": resume.ats_score,
         "job_match_score": resume.job_match_score,
         "download_count": resume.download_count or 0,
@@ -293,11 +305,14 @@ def serialize_education(item):
         "id": item.id,
         "resume_id": item.resume_id,
         "school": item.school,
+        "institution": item.school,
         "degree": item.degree,
+        "level": getattr(item, "level", "") or "",
         "field": item.field,
         "start_date": format_year(item.start_date),
         "end_date": format_year(item.end_date),
         "cgpa": item.cgpa,
+        "percentage": getattr(item, "percentage", "") or "",
     }
 
 
@@ -385,9 +400,9 @@ def extract_target_role(payload):
     for key in ("target_role", "targetRole", "target_job_title", "targetJobTitle", "role", "jobTitle"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return normalize_target_role(value)
         if value:
-            return value
+            return normalize_target_role(str(value))
     return None
 
 
@@ -457,7 +472,15 @@ def apply_resume_payload(resume, payload):
     if "profile_photo" in payload:
         resume.profile_photo = clean_text(payload.get("profile_photo"), "profile_photo", 500)
     if "declaration" in payload:
-        resume.declaration = clean_text(payload.get("declaration"), "declaration", 4000)
+        decl_raw = payload.get("declaration")
+        if isinstance(decl_raw, dict):
+            resume.declaration = clean_text(decl_raw.get("text"), "declaration", 4000)
+            if "enabled" in decl_raw:
+                resume.declaration_enabled = bool(decl_raw["enabled"])
+        else:
+            resume.declaration = clean_text(decl_raw, "declaration", 4000)
+    if "declaration_enabled" in payload:
+        resume.declaration_enabled = bool(payload.get("declaration_enabled"))
 
     if "personal_info" in payload:
         personal_info = payload["personal_info"] or {}
@@ -479,9 +502,11 @@ def apply_resume_payload(resume, payload):
         ]
     if "skills" in payload:
         resume.skills = [
-            build_skill(item)
-            for item in clean_list(payload["skills"], "skills")
-            if has_content(item)
+            skill
+            for raw_item in clean_list(payload["skills"], "skills")
+            if has_content(raw_item)
+            for item in expand_skill_payload(raw_item)
+            if (skill := build_skill(item)) is not None
         ]
     if "certifications" in payload:
         resume.certifications = [
@@ -563,18 +588,81 @@ def apply_personal_info_payload(resume, payload):
 
 
 def build_education(payload):
-    require_fields(payload, ["school"])
+    payload = payload or {}
+    institution = (
+        payload.get("school")
+        or payload.get("institution")
+        or payload.get("college")
+        or payload.get("university")
+        or ""
+    )
+    school = clean_text(institution, "education.school", 255, required=False) or ""
     return Education(
-        school=clean_text(payload["school"], "education.school", 255, required=True),
-        degree=clean_text(payload.get("degree"), "education.degree", 255),
-        field=clean_text(payload.get("field"), "education.field", 255),
+        school=school,
+        degree=clean_text(payload.get("degree"), "education.degree", 255, required=False) or "",
+        field=clean_text(payload.get("field"), "education.field", 255, required=False) or "",
+        level=clean_text(payload.get("level"), "education.level", 30, required=False) or "",
         start_date=parse_education_year(payload.get("start_date")),
         end_date=parse_education_year(payload.get("end_date")),
         cgpa=clean_decimal(payload.get("cgpa"), "education.cgpa", 20),
+        percentage=clean_text(payload.get("percentage"), "education.percentage", 20, required=False) or "",
     )
 
 
+def is_supported_experience_date(value):
+    if not value or not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text:
+        return False
+    if text.lower() in {"present", "current", "ongoing", "now"}:
+        return True
+    if len(text) == 4 and text.isdigit():
+        return True
+    if parse_month_year(text):
+        return True
+    try:
+        date.fromisoformat(text)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def first_payload_value(payload, *keys):
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def normalize_experience_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("experience items must be objects")
+    normalized = dict(payload)
+    alias_role = first_payload_value(payload, "job_title", "jobTitle", "position", "title")
+    canonical_role = first_payload_value(payload, "role")
+    role = alias_role if alias_role and (not canonical_role or is_supported_experience_date(canonical_role)) else canonical_role
+    if role:
+        normalized["role"] = role
+    company = first_payload_value(payload, "company", "employer", "organization")
+    if company:
+        normalized["company"] = company
+
+    for canonical_key, aliases in (
+        ("start_date", ("start_date", "startDate", "start", "from_date")),
+        ("end_date", ("end_date", "endDate", "end", "to_date")),
+    ):
+        value = first_payload_value(payload, *aliases)
+        alternatives = [first_payload_value(payload, key) for key in aliases[1:]]
+        if value and role and value.casefold() == role.casefold() and not is_supported_experience_date(value):
+            value = next((item for item in alternatives if item and is_supported_experience_date(item)), None)
+        normalized[canonical_key] = value
+    return normalized
+
+
 def build_experience(payload):
+    payload = normalize_experience_payload(payload)
     require_fields(payload, ["company", "role"])
     bullets = clean_list(payload.get("ai_generated_bullets"), "experience.ai_generated_bullets", 20)
     is_current = bool(payload.get("is_current", payload.get("isCurrent", False))) or str(payload.get("end_date") or "").strip().lower() in {"present", "current", "ongoing", "now"}
@@ -592,11 +680,42 @@ def build_experience(payload):
     )
 
 
+def is_resume_instruction_placeholder(text):
+    if not text or not isinstance(text, str):
+        return False
+    lowered = text.strip().lower()
+    return (
+        "improve it later" in lowered
+        or "choose create a resume" in lowered
+        or "upload an existing resume" in lowered
+        or "generate me resume" in lowered
+        or "generate me resue" in lowered
+    )
+
+
+def expand_skill_payload(raw_item):
+    if isinstance(raw_item, str):
+        raw_item = {"skill_name": raw_item}
+    if not isinstance(raw_item, dict):
+        return []
+    raw_name = raw_item.get("skill_name") or ""
+    if ":" in raw_name and ("," in raw_name or "Technical Skills" in raw_name or "Programming" in raw_name):
+        import re
+        tokens = [t.strip() for t in re.split(r"[,;]|\b[A-Za-z &]+:\s*", raw_name) if t.strip()]
+        filtered = [t for t in tokens if not any(cat in t.lower() for cat in ("skills", "programming", "libraries", "frameworks", "data & analytics", "tools"))]
+        if filtered:
+            return [{"skill_name": t} for t in filtered]
+    return [raw_item]
+
+
 def build_skill(payload):
     if isinstance(payload, str):
         payload = {"skill_name": payload}
     require_fields(payload, ["skill_name"])
-    return Skill(skill_name=clean_text(payload["skill_name"], "skills.skill_name", 150, required=True))
+    skill_name = clean_text(payload["skill_name"], "skills.skill_name", 150, required=True)
+    if is_resume_instruction_placeholder(skill_name):
+        return None
+    return Skill(skill_name=skill_name)
 
 
 def build_certification(payload):
@@ -608,12 +727,25 @@ def build_certification(payload):
     )
 
 
+def normalize_project_description(desc):
+    if not desc or not isinstance(desc, str):
+        return desc
+    import re
+    desc = desc.strip()
+    match = re.match(r"^(Technologies:\s*(?:[A-Za-z0-9+#./-]+\s*,\s*)*[A-Za-z0-9+#./-]+)\s+([A-Z].+)$", desc)
+    if not match:
+        match = re.match(r"^(Technologies:\s*[^.\n]+)\s+(.+)$", desc, re.DOTALL)
+    if match:
+        return f"{match.group(1).strip()}\n{match.group(2).strip()}"
+    return desc
+
+
 def build_project(payload):
     require_fields(payload, ["title"])
     bullets = clean_list(payload.get("ai_generated_bullets"), "projects.ai_generated_bullets", 20)
     return Project(
         title=clean_text(payload["title"], "projects.title", 255, required=True),
-        description=clean_text(payload.get("description"), "projects.description", 12000),
+        description=normalize_project_description(clean_text(payload.get("description"), "projects.description", 12000)),
         ai_generated_bullets=[
             clean_text(bullet, "projects.ai_generated_bullets", 1500, required=True)
             for bullet in bullets
@@ -877,7 +1009,12 @@ def duplicate_resume(resume_id):
         duplicate.experience = [
             build_experience(serialize_experience(item)) for item in source.experience
         ]
-        duplicate.skills = [build_skill(serialize_skill(item)) for item in source.skills]
+        duplicate.skills = [
+            skill
+            for item in source.skills
+            for normalized_item in expand_skill_payload(serialize_skill(item))
+            if (skill := build_skill(normalized_item)) is not None
+        ]
         duplicate.certifications = [
             build_certification(serialize_certification(item))
             for item in source.certifications
