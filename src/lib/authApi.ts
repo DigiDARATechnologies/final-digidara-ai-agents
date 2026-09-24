@@ -1,9 +1,16 @@
 function getOrchestratorBase(): string {
   const globalProcess = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
-  if (globalProcess?.env?.VITE_GATEWAY_API_URL) {
+  if (globalProcess?.env?.VITE_GATEWAY_API_URL !== undefined) {
     return globalProcess.env.VITE_GATEWAY_API_URL.replace(/\/$/, "");
   }
-  if (import.meta.env.VITE_GATEWAY_API_URL) {
+  // `!== undefined`, not a truthy check: production intentionally builds
+  // with VITE_GATEWAY_API_URL="" so the browser calls relative paths and
+  // nginx reverse-proxies them to the orchestrator (see README-docker.md).
+  // A truthy check would treat that deliberate empty string the same as
+  // "unset" and fall through to the localhost default below, defeating the
+  // relative-path setup -- gatewayClient.ts already gets this right, which
+  // is why chat/agent-invoke calls work in production but this didn't.
+  if (import.meta.env.VITE_GATEWAY_API_URL !== undefined) {
     return String(import.meta.env.VITE_GATEWAY_API_URL).replace(/\/$/, "");
   }
   return "http://127.0.0.1:8100";
