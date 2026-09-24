@@ -3,13 +3,8 @@ function getOrchestratorBase(): string {
   if (globalProcess?.env?.VITE_GATEWAY_API_URL) {
     return globalProcess.env.VITE_GATEWAY_API_URL.replace(/\/$/, "");
   }
-  try {
-    const metaEnv = new Function("return typeof import.meta !== 'undefined' ? import.meta.env : undefined")();
-    if (metaEnv?.VITE_GATEWAY_API_URL) {
-      return String(metaEnv.VITE_GATEWAY_API_URL).replace(/\/$/, "");
-    }
-  } catch {
-    // In environments without import.meta support, fall back to default URL
+  if (import.meta.env.VITE_GATEWAY_API_URL) {
+    return String(import.meta.env.VITE_GATEWAY_API_URL).replace(/\/$/, "");
   }
   return "http://127.0.0.1:8100";
 }
