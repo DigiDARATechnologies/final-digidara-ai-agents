@@ -78,13 +78,16 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit }: Pr
       deadlineRef.current = deadline;
       startedAtRef.current = deadline - timeLimit * 1000;
       setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-      setVoiceStatus(speech.supported ? "Listening for your answer" : "Type your answer below");
+      setVoiceStatus(speech.supported ? "Starting microphone…" : "Type your answer below");
       if (speech.supported && deadline > Date.now()) {
-        speech.start((text) => {
+        const startedListening = speech.start((text) => {
           if (!active || submittedRef.current || !text) return;
           spokenRef.current = text;
+          typedRef.current = text;
           setSpokenAnswer(text);
+          setTypedAnswer(text);
         });
+        setVoiceStatus(startedListening ? "Listening — speak your answer now" : "Type your answer below");
       }
     }
     beginAnswerRef.current = startAnswering;
@@ -188,18 +191,29 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit }: Pr
       <div className={`mock-interview-timer${secondsLeft !== null && secondsLeft <= 15 ? " warning" : ""}`} role="timer"><span>Time left</span><strong>{secondsLeft === null ? "—" : `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`}</strong></div>
     </div>
     <div className="mock-interview-question"><span className="mock-interview-question-number" aria-hidden="true">{currentQuestion}.</span><span>{state.question}</span></div>
-    <div className="mock-interview-voice"><span>{voiceStatus}{speech.listening ? " · Microphone on" : ""}</span>
+    <div className={`mock-interview-voice${speech.listening ? " listening" : ""}`}>
+      <span className="mock-interview-voice-status" aria-live="polite"><i aria-hidden="true" />{voiceStatus}{speech.listening ? " · Microphone on" : ""}</span>
       <div>
         {secondsLeft === null && <button type="button" className="btn btn-outline" onClick={() => { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); beginAnswerRef.current(); }}>Start answering now</button>}
         {speech.supported && <button type="button" className="btn btn-outline" disabled={busy || secondsLeft === null} onClick={() => {
-          if (speech.listening) { speech.stop(); setVoiceStatus("Microphone paused. You can restart it or type."); }
-          else speech.start((text) => { if (text) { spokenRef.current = text; setSpokenAnswer(text); } });
+          if (speech.listening) { speech.stop(); setVoiceStatus("Microphone paused — restart it or type below."); }
+          else {
+            setVoiceStatus("Starting microphone…");
+            const startedListening = speech.start((text) => {
+              if (text) {
+                spokenRef.current = text;
+                typedRef.current = text;
+                setSpokenAnswer(text);
+                setTypedAnswer(text);
+              }
+            });
+            setVoiceStatus(startedListening ? "Listening — speak your answer now" : "Type your answer below");
+          }
         }}>{speech.listening ? "Pause microphone" : "Start microphone"}</button>}
       </div>
     </div>
     {speech.error && <p className="mock-interview-error" role="alert">{speech.error} You can type your answer below.</p>}
-    {spokenAnswer && <p className="mock-interview-transcript"><b>Heard:</b> {spokenAnswer}</p>}
-    <label className="mock-interview-answer-label" htmlFor="mock-interview-answer">Type your answer or edit the spoken transcript</label>
+    <label className="mock-interview-answer-label" htmlFor="mock-interview-answer">Your answer (voice transcription appears here)</label>
     <textarea id="mock-interview-answer" value={typedAnswer} onChange={(event) => { typedRef.current = event.target.value; setTypedAnswer(event.target.value); }} placeholder="Your answer…" disabled={busy} rows={4} />
     <div className="mock-interview-actions"><button type="button" className="btn btn-primary" disabled={busy || !activeAnswer || secondsLeft === null} onClick={() => submitAnswer(activeAnswer)}>{busy ? "Saving…" : "Submit answer"}</button><button type="button" className="btn btn-outline" disabled={busy} onClick={() => { if (window.confirm("Exit this interview? Unanswered questions will not be scored.")) onExit(); }}>Exit interview</button></div>
   </section>;
