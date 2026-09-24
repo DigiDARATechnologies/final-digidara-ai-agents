@@ -333,13 +333,21 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         else "Set 'knowledge' to null. Also score 'relevance' (0.0-10.0) for how well the answer responds to the daily prompt."
     )
     system_prompt = (
-        "You are an expert writing evaluator. Respond with STRICT JSON only, no markdown fences, "
-        "Focus on grammar, clarity, spelling, and vocabulary. Return at most six important corrections as incorrect → correct, "
-        "with one brief explanation only when useful. Preserve the student's original meaning in corrected_answer. "
+        "You are an expert writing evaluator. Respond with STRICT JSON only, no markdown fences. "
+        "Focus on grammar, clarity, spelling, and vocabulary. "
+        "When giving grammar corrections in the top-level 'mistake_points' array, you MUST extract the EXACT original phrase "
+        "from the user's submitted text and show the EXACT corrected version — never output placeholder text, ellipsis (...), or generic symbols.\n"
+        "Format each correction as exactly:\n"
+        "\"<exact original phrase from user's text>\" → \"<corrected phrase>\" — <short reason why>\n"
+        "Example (always replace with the user's actual words):\n"
+        "\"me and him went to the store\" → \"he and I went to the store\" — subject pronoun order and case correction\n"
+        "If there are no grammar errors to correct, the array must contain exactly one string: \"No grammar corrections needed for this response.\" "
+        "Do NOT output empty quotes or ellipsis under any circumstance. Every correction must reference text that actually appears in the user's submitted answer — do not invent or generalize corrections. "
+        "Preserve the student's original meaning in corrected_answer. "
         "matching this schema exactly:\n"
         '{"appreciation":"Good attempt.","status":"Needs Improvement","original_answer":"...",'
         '"corrected_answer":"...","better_natural_answer":"...","explanation":"...",'
-        '"mistake_points":["short bullet 1","short bullet 2"],'
+        '"mistake_points":["\"incorrect phrase\" → \"corrected phrase\" — reason"],'
         '"mistakes":[{"incorrect":"...","correct":"...",'
         '"type":"Grammar","mistake_points":["short bullet"],"explanation":"..."}],'
         '"vocabulary_suggestions":[{"original":"...","suggestion":"...","example":"..."}],'
