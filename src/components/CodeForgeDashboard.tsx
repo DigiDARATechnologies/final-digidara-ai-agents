@@ -13,6 +13,7 @@ const STEP_LABELS: Record<CodeForgeStep, string> = {
   awaiting_topic: "Choose a topic",
   awaiting_problem: "Choose a problem",
   awaiting_code: "Solving a problem",
+  awaiting_mcq_answer: "Answering a question",
 };
 
 const STEP_PROGRESS: Record<CodeForgeStep, number> = {
@@ -21,6 +22,7 @@ const STEP_PROGRESS: Record<CodeForgeStep, number> = {
   awaiting_topic: 50,
   awaiting_problem: 70,
   awaiting_code: 90,
+  awaiting_mcq_answer: 90,
 };
 
 export default function CodeForgeDashboard({ user, state, onClose }: CodeForgeDashboardProps) {

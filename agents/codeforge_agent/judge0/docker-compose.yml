@@ -21,7 +21,7 @@ services:
   # top level as a conflict, not a mergeable override, so this can't be done
   # from the root docker-compose.yml.
   server:
-    image: ghcr.io/digidaratechnologies/digidara-judge0-pandas-numpy:latest
+    image: judge0/judge0:1.13.1
     pull_policy: always
     volumes:
       - ./judge0.conf:/judge0.conf:ro
@@ -32,7 +32,7 @@ services:
     restart: always
 
   worker:
-    image: ghcr.io/digidaratechnologies/digidara-judge0-pandas-numpy:latest
+    image: judge0/judge0:1.13.1
     pull_policy: always
     command: ["./scripts/workers"]
     volumes:

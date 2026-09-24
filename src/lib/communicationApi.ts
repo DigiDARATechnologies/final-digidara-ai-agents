@@ -185,7 +185,13 @@ export function startPronunciationAttempt(authToken: string, itemId: string) {
 
 export function submitPronunciation(
   authToken: string,
-  opts: { itemId: string; attemptId: string; sessionId: number; recognisedText: string },
+  opts: {
+    itemId: string;
+    attemptId: string;
+    sessionId: number;
+    recognisedText: string;
+    minimalPairResponses?: Array<{ recognised_text: string }>;
+  },
 ) {
   return invoke<Record<string, any>>("pronunciation_submit", {
     authToken,
@@ -193,6 +199,7 @@ export function submitPronunciation(
     attempt_id: opts.attemptId,
     session_id: opts.sessionId,
     recognised_text: opts.recognisedText,
+    minimal_pair_responses: opts.minimalPairResponses,
   });
 }
 

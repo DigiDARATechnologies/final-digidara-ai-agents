@@ -44,8 +44,7 @@ export default function Pronunciation() {
   const [result, setResult] = useState(null);
   const [sessionResults, setSessionResults] = useState([]);
   const [transitionMessage, setTransitionMessage] = useState("");
-  const [minimalPairStep, setMinimalPairStep] = useState(0);
-  const [minimalPairResponses, setMinimalPairResponses] = useState([]);
+
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
 
   // Hardware / System
@@ -88,8 +87,6 @@ export default function Pronunciation() {
     setTranscript("");
     setResult(null);
     setTransitionMessage("");
-    setMinimalPairStep(0);
-    setMinimalPairResponses([]);
     finalTranscriptRef.current = "";
     confidenceTotalRef.current = 0;
     confidenceCountRef.current = 0;
@@ -187,7 +184,7 @@ export default function Pronunciation() {
   };
 
   const startSession = async (requestedMode = mode) => {
-    const effectiveMode = ["word", "sentence", "daily", "minimal_pairs"].includes(requestedMode) ? requestedMode : mode;
+    const effectiveMode = ["word", "sentence", "daily"].includes(requestedMode) ? requestedMode : mode;
     setSysError("");
     setPhase("loading_item");
     resetPracticeState();
@@ -217,17 +214,7 @@ export default function Pronunciation() {
     }
   };
 
-  const minimalPairWords = () => {
-    const pair = item?.content?.pair || item?.metadata?.pair || [];
-    const wordA = item?.content?.word_a || item?.metadata?.word_a || pair[0];
-    const wordB = item?.content?.word_b || item?.metadata?.word_b || pair[1];
-    return [wordA, wordB].filter(Boolean);
-  };
-
   const currentReferenceText = () => {
-    if (mode === "minimal_pairs") {
-      return minimalPairWords()[minimalPairStep] || item?.text;
-    }
     return item?.text;
   };
 
@@ -324,22 +311,6 @@ export default function Pronunciation() {
       return;
     }
 
-    if (mode === "minimal_pairs" && minimalPairStep === 0) {
-      const avgConfidence = confidenceCountRef.current > 0 ? confidenceTotalRef.current / confidenceCountRef.current : 0;
-      const duration = recognitionStartTimeRef.current ? (Date.now() - recognitionStartTimeRef.current) / 1000 : 0;
-      const word = minimalPairWords()[0];
-      setMinimalPairResponses([{ word, recognised_text: transcript, recognition_confidence: avgConfidence, duration_seconds: duration }]);
-      setMinimalPairStep(1);
-      setTranscript("");
-      finalTranscriptRef.current = "";
-      confidenceTotalRef.current = 0;
-      confidenceCountRef.current = 0;
-      recognitionStartTimeRef.current = null;
-      setPhase("ready");
-      setSysError(`Now say "${minimalPairWords()[1]}".`);
-      return;
-    }
-
     setPhase("submitting");
     console.log("[pronunciation] phase set to submitting");
     setSysError("");
@@ -363,22 +334,11 @@ export default function Pronunciation() {
         session_id: sessionId,
         item_id: item.item_id,
         attempt_id: currentAttemptId,
-        recognised_text: mode === "minimal_pairs" ? "" : transcript,
+        recognised_text: transcript,
         recognition_confidence: avgConfidence,
         duration_seconds: duration,
         reference_locale: "en-US",
       };
-      if (mode === "minimal_pairs") {
-        payload.minimal_pair_responses = [
-          ...minimalPairResponses,
-          {
-            word: minimalPairWords()[1],
-            recognised_text: transcript,
-            recognition_confidence: avgConfidence,
-            duration_seconds: duration,
-          },
-        ];
-      }
 
       const res = await client.post("/pronunciation/submit", payload);
 
@@ -438,8 +398,6 @@ export default function Pronunciation() {
       recognitionStartTimeRef.current = null;
       setAttemptId(null);
       setAttemptNumber(1);
-      setMinimalPairStep(0);
-      setMinimalPairResponses([]);
       setItem(nextItem);
       setQuestionNumber((prev) => prev + 1);
       setNextItem(null);
@@ -762,8 +720,6 @@ export default function Pronunciation() {
           phase={phase}
           item={item}
           mode={mode}
-          minimalPairStep={minimalPairStep}
-          minimalPairResponses={minimalPairResponses}
           transcript={transcript}
           error={sysError}
           onListen={handleListen}

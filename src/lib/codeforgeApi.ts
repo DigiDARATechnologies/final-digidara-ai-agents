@@ -85,6 +85,7 @@ export interface ProblemSummary {
   description: string;
   difficulty: "Easy" | "Medium" | "Hard";
   language: string;
+  question_type: "code" | "mcq";
   max_score: number;
   progress: string;
   best_score: number;
@@ -114,13 +115,18 @@ export interface PublicTest {
 }
 
 export interface ProblemDetail extends ProblemSummary {
-  input_format: string;
-  output_format: string;
-  constraints: string;
-  examples: ProblemExample[];
-  starter_code: string;
-  judge0_language_id: number;
-  public_tests: PublicTest[];
+  // Present only when question_type is "code"; absent for "mcq" (see options below).
+  input_format?: string;
+  output_format?: string;
+  constraints?: string;
+  examples?: ProblemExample[];
+  starter_code?: string;
+  judge0_language_id?: number;
+  public_tests?: PublicTest[];
+  // Present only when question_type is "mcq" -- option key -> option text.
+  // Never includes the correct key or an explanation; those only come back
+  // from submitMcqAnswer, after the student has actually answered.
+  options?: Record<string, string>;
 }
 
 export function getProblem(
@@ -171,6 +177,20 @@ export function runProblem(sessionToken: string, problem_id: number, sourceCode:
 
 export function submitProblem(sessionToken: string, problem_id: number, sourceCode: string) {
   return invoke<EvaluationResult>("submit_problem", { sessionToken, problem_id, sourceCode });
+}
+
+export interface McqAnswerResult {
+  submissionId: number;
+  mode: "submit";
+  status: string;
+  score: number;
+  isCorrect: boolean;
+  correctKey: string;
+  explanation: string;
+}
+
+export function submitMcqAnswer(sessionToken: string, problem_id: number, selectedKey: string) {
+  return invoke<McqAnswerResult>("submit_mcq_answer", { sessionToken, problem_id, selectedKey });
 }
 
 export interface TutorGuidance {
