@@ -1,8 +1,7 @@
 import React from "react";
-import logoIcon from "../assets/logo-icon.svg";
-import logoFull from "../assets/logo-full.svg";
-import logoDark from "../assets/logo-dark.svg";
-import logoMono from "../assets/logo-monochrome.svg";
+import logoIcon from "../assets/logo-icon.png";
+import logoFull from "../assets/logo-full.png";
+import logoDark from "../assets/logo-dark.png";
 
 export interface LogoProps {
   variant?: "full" | "icon" | "wordmark";
@@ -17,15 +16,15 @@ export const Logo: React.FC<LogoProps> = ({
   theme = "light",
   size = "md",
   className = "",
-  alt = "DigiDARA AI Resume",
+  alt = "DigiDARA AI Agents",
 }) => {
+  // The icon crop has no separate dark-background treatment -- every current
+  // call site only ever uses variant="icon" against a light background.
   let src = logoFull;
   if (variant === "icon") {
     src = logoIcon;
   } else if (theme === "dark") {
     src = logoDark;
-  } else if (theme === "monochrome") {
-    src = logoMono;
   }
 
   let height = 36;
