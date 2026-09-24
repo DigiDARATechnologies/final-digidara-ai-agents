@@ -116,6 +116,31 @@ describe('requirements doubts before the timer is confirmed', () => {
   });
 });
 
+describe('off-topic small talk before any project exists', () => {
+  const topicRequestState: CapstoneFlowState = {
+    step: 'awaiting_topic_request',
+    name: 'Learner', email: 'learner@example.test', phone: '', difficulty: 'easy',
+  };
+
+  test.each(['hi', 'hello', 'hey there', 'who is the pm', 'how are you', 'thanks', 'good morning'])(
+    'a greeting/meta message (%p) gets a scoping explanation instead of being sent as a topic request',
+    async (message) => {
+      const result = await handleCapstoneText(topicRequestState, message);
+      expect(api.clarifyTopicRequest).not.toHaveBeenCalled();
+      expect(api.checkEligibilityFree).not.toHaveBeenCalled();
+      expect(result.messages[0].text).toContain('Capstone Project Agent');
+      expect(result.state.step).toBe('awaiting_topic_request');
+    },
+  );
+
+  test('a real request that happens to end in "?" is still treated as a topic request, not small talk', async () => {
+    jest.mocked(api.clarifyTopicRequest).mockResolvedValue({ ready: true, clarifying_question: null });
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue({ thread_id: 'thread', eligible: true, eligibility_reason: '', topic_options: [] });
+    await handleCapstoneText(topicRequestState, 'can I get a python project?');
+    expect(api.clarifyTopicRequest).toHaveBeenCalledWith('can I get a python project?');
+  });
+});
+
 describe('combining a clarifying-question answer with the original request', () => {
   const topicRequestState: CapstoneFlowState = {
     step: 'awaiting_topic_request',
