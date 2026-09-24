@@ -1,5 +1,5 @@
 import { useState } from "react";
-import logo from "./assets/logo-full.svg";
+import logo from "./assets/logo-full.png";
 import { Link, NavLink } from "./router.jsx";
 
 export default function App({ children }) {
@@ -13,7 +13,7 @@ export default function App({ children }) {
     <div className="app-shell">
       <header className="topbar">
         <Link className="brand" onClick={closeMenu} to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-          <img className="brand-logo" src={logo} alt="DigiDARA AI Resume" style={{ height: "32px", width: "auto" }} />
+          <img className="brand-logo" src={logo} alt="DigiDARA AI Agents" style={{ height: "32px", width: "auto" }} />
         </Link>
 
         <button
