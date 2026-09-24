@@ -85,10 +85,18 @@ describe('mid-resubmission dispute detection', () => {
     expect(result.messages[1].text).toContain('Attach both');
   });
 
-  test('a plain attach-related message still gets the standard reminder', async () => {
+  test('a plain attach-related message still gets the standard reminder if the Q&A agent has nothing else to add', async () => {
+    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
     const result = await handleCapstoneText(submissionState, 'ok');
-    expect(api.askProjectQuestion).not.toHaveBeenCalled();
     expect(result.messages[0].text).toBe('Attach both your .docx report and .zip source archive using the paperclip button.');
+  });
+
+  test('any text is routed through the Q&A agent, not just messages that look question-shaped', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'The report should cover Problem Statement, Approach, Code, and Conclusion.', tools_used: [] });
+    const result = await handleCapstoneText(submissionState, "i can't understand the requirements, explain more");
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', "i can't understand the requirements, explain more");
+    expect(result.messages[0].text).toContain('Problem Statement');
+    expect(result.messages[1].text).toContain('Attach both');
   });
 });
 
@@ -197,6 +205,7 @@ describe('choosing a project topic (A/B)', () => {
   });
 
   test('an unrelated message that merely contains the letter "a" is not silently treated as choosing option A', async () => {
+    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
     const result = await handleCapstoneText(topicChoiceState, 'i need to change the project topics');
     expect(api.chooseTopic).not.toHaveBeenCalled();
     expect(result.state.step).toBe('awaiting_topic_choice');
@@ -211,11 +220,13 @@ describe('choosing a project topic (A/B)', () => {
     expect(result.messages[1].text).toContain('Choose project A or B');
   });
 
-  test('an unrelated, non-question message just gets steered back to choosing, without calling the Q&A agent', async () => {
+  test('an unrelated, non-question message is still routed through the Q&A agent, not just pre-filtered by matching question-shaped text', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: "I can only help with your two current project options — pick A or B to continue.", tools_used: [] });
     const result = await handleCapstoneText(topicChoiceState, 'i need to change the project topics');
-    expect(api.askProjectQuestion).not.toHaveBeenCalled();
-    expect(result.messages[0].text).toBe('Choose project A or B.');
-    expect(result.messages[0].options).toHaveLength(2);
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'i need to change the project topics');
+    expect(api.chooseTopic).not.toHaveBeenCalled();
+    expect(result.messages[0].text).toContain('pick A or B');
+    expect(result.messages[1].text).toContain('Choose project A or B');
   });
 });
 

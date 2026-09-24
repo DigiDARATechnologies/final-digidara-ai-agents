@@ -281,12 +281,17 @@ export async function handleCapstoneText(
       const topic = choice ? state.topicOptions?.find((item) => item.id === choice) : undefined;
       if (!topic) {
         const options = state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary }));
-        // A genuine question about the two options gets a real answer; a
-        // message that's neither a valid selection nor recognizably a
-        // question (small talk, an unrelated request) just gets steered
-        // back to choosing -- the Q&A agent itself declines anything
-        // unrelated to this project, so this never turns into open chat.
-        if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+        // Plain text is never itself a valid action here (only "A"/"B" is),
+        // so any non-selection always gets a real answer from the Q&A agent
+        // rather than being pre-filtered by a brittle question-shaped-text
+        // heuristic -- that heuristic previously missed genuine requests
+        // like "I can't understand the requirements, explain more" (no "?",
+        // no matched opening phrase) and sent them the canned reminder
+        // instead of an answer. The Q&A agent itself already declines
+        // anything unrelated to this project and redirects, so this can
+        // never turn into open-ended chat -- mirrors the same
+        // always-try-Q&A-first pattern awaiting_timer_confirm already uses.
+        if (state.threadId && trimmed) {
           try {
             const qa = await askProjectQuestion(state.threadId, trimmed);
             return { state, messages: [{ text: qa.answer }, { text: "Choose project A or B to continue.", options }] };
@@ -402,10 +407,16 @@ export async function handleCapstoneText(
       }
     }
     case "awaiting_submission": {
-      // A student disputing a revision note ("already have the approach
-      // section") deserves an actual answer grounded in their submission,
-      // not the same canned reminder every other message gets here.
-      if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+      // Plain text is never itself a valid action here -- attaching files is
+      // the only real action, and always goes through mergeCapstoneFiles,
+      // not this text handler -- so any text always gets a real answer from
+      // the Q&A agent, the same way awaiting_timer_confirm already treats
+      // any non-confirm text. Previously this was pre-filtered by a
+      // question-shaped-text heuristic that missed genuine requests like "I
+      // can't understand the requirements, explain more" (no "?", no
+      // matched opening phrase) and silently sent the canned reminder
+      // instead of an actual answer.
+      if (state.threadId && trimmed) {
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
