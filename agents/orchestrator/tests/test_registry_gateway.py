@@ -203,7 +203,9 @@ def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
         data={
             "action": "analyze_upload",
             "payload": '{"user_id":"learner"}',
-            "file": (io.BytesIO(b"resume upload bytes"), "resume.txt", "text/plain"),
+        },
+        files={
+            "file": ("resume.txt", io.BytesIO(b"resume upload bytes"), "text/plain"),
         },
         headers={"authorization": "Bearer " + create_access_token("learner")},
     )
