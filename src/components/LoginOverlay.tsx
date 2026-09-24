@@ -122,7 +122,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   }
 
   function handleGoogleClick() {
-    if (mode === "signup" && !consent) {
+    if (!consent) {
       setError("Please accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
@@ -235,22 +235,20 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
                 </div>
               )}
 
-              {mode === "signup" && (
-                <label className="field consent-field">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                  />
-                  <span>
-                    I have read and agree to the DigiDARA{" "}
-                    <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
-                    {" "}and{" "}
-                    <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
-                    and consent to the collection and use of my personal data as described there.
-                  </span>
-                </label>
-              )}
+              <label className="field consent-field">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                />
+                <span>
+                  I have read and agree to the DigiDARA{" "}
+                  <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+                  {" "}and{" "}
+                  <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
+                  and consent to the collection and use of my personal data as described there.
+                </span>
+              </label>
 
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>
