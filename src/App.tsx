@@ -1386,7 +1386,12 @@ export default function App() {
 
           {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
 
-          {view === "chat" && newChatPending && <NewChatLanding onSend={startNewChatWithMessage} />}
+          {view === "chat" && newChatPending && (
+            <NewChatLanding
+              onSend={startNewChatWithMessage}
+              onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
+            />
+          )}
 
           {view === "chat" && !newChatPending && currentChat && (
             <div className="chat-workspace">
