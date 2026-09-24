@@ -47,6 +47,8 @@ export interface CommunicationFlowState {
   currentItemId?: string;
   currentItemText?: string;
   currentAttemptId?: string;
+  /** The first captured word while completing a minimal-pair item. */
+  minimalPairResponses?: string[];
   activeModule?: "writing" | "speaking" | "pronunciation";
   writingMode?: "write" | "chat";
   writingTopic?: string;
@@ -138,7 +140,7 @@ function writingChatReply(reply: string, originalAnswer?: string, correctedAnswe
 const PRONUNCIATION_MODE_OPTIONS: ChatOption[] = [
   { label: "Word", value: "word", description: "Practice pronouncing a single word" },
   { label: "Sentence", value: "sentence", description: "Practice pronouncing a full sentence" },
-  { label: "Minimal pairs", value: "minimal_pairs", description: "Tell two similar-sounding words apart" },
+
 ];
 
 function baseState(): CommunicationFlowState {
@@ -165,6 +167,20 @@ function formatScores(scores: Record<string, unknown> | null | undefined): strin
 function itemText(item: PronunciationItemPayload): string {
   if (item.content?.practice_lines?.length) return item.content.practice_lines.join("\n");
   return item.content?.practice_text || item.content?.title || item.text || "Practice item";
+}
+
+function minimalPairWords(itemTextValue?: string): string[] {
+  const parts = String(itemTextValue || "").split(/\s*\/\s*/);
+  if (parts.length !== 2) return [];
+  return parts.map((part) => {
+    const words = part.match(/[a-z]+(?:'[a-z]+)?/gi) || [];
+    return (words.at(-1) || "").toLowerCase();
+  }).filter(Boolean);
+}
+
+function minimalPairPrompt(words: string[], capturedCount: number): string {
+  const nextWord = words[capturedCount] || "the next word";
+  return `Captured word ${capturedCount} of 2. Click the microphone again and pronounce “${nextWord}”, then press Send to receive your score.`;
 }
 
 export async function openCommunicationChat(
@@ -258,11 +274,14 @@ async function beginPronunciationSession(
         currentItemId: item.item_id,
         currentItemText: itemText(item),
         currentAttemptId: data.attempt_id,
+        minimalPairResponses: undefined,
         lastScores: undefined,
         lastFeedback: undefined,
       },
       messages: [{
-        text: `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Pronounce this clearly: “${itemText(item)}”\n3. Check the captured text, then press Send for scoring.`,
+        text: mode === "minimal_pairs"
+          ? `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Say the first word in the pair: “${itemText(item)}”.\n3. Press Send, then record the second word when prompted. You will receive one score for both words.`
+          : `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Pronounce this clearly: “${itemText(item)}”\n3. Check the captured text, then press Send for scoring.`,
         options: [{ label: "End session", value: "end_session" }],
       }],
     };
@@ -419,7 +438,7 @@ export async function handleCommunicationText(
   }
 
   if (state.step === "awaiting_pronunciation_mode") {
-    const mode = ["word", "sentence", "minimal_pairs"].includes(command) ? (command as PronunciationMode) : undefined;
+    const mode = ["word", "sentence"].includes(command) ? (command as PronunciationMode) : undefined;
     if (!mode) return { state, messages: [{ text: "Pick a mode from the list.", options: PRONUNCIATION_MODE_OPTIONS }] };
     return beginPronunciationSession(state, mode);
   }
@@ -547,11 +566,30 @@ export async function handleCommunicationText(
       }
     }
     try {
+      const pairWords = minimalPairWords(state.currentItemText);
+      const previousPairResponses = state.pronunciationMode === "minimal_pairs"
+        ? state.minimalPairResponses || []
+        : [];
+      const pairResponses = state.pronunciationMode === "minimal_pairs"
+        ? [...previousPairResponses, trimmed]
+        : [];
+
+      // Minimal-pair scoring evaluates each word separately. Retain the
+      // first short utterance instead of sending it as an incomplete pair.
+      if (state.pronunciationMode === "minimal_pairs" && pairResponses.length < 2) {
+        return {
+          state: { ...state, minimalPairResponses: pairResponses },
+          messages: [{ text: minimalPairPrompt(pairWords, pairResponses.length), options: [{ label: "End session", value: "end_session" }] }],
+        };
+      }
       const result = await submitPronunciation(state.authToken!, {
         itemId: state.currentItemId!,
         attemptId: state.currentAttemptId!,
         sessionId: state.sessionId!,
         recognisedText: trimmed,
+        minimalPairResponses: pairResponses.length
+          ? pairResponses.map((recognised_text) => ({ recognised_text }))
+          : undefined,
       });
       const turnScores = result.last_turn_result?.scores || result.scores;
       const lines = [formatScores(turnScores)];
@@ -565,6 +603,7 @@ export async function handleCommunicationText(
             currentItemId: nextItem.item_id,
             currentItemText: itemText(nextItem),
             currentAttemptId: data.attempt_id,
+            minimalPairResponses: undefined,
             lastScores: turnScores,
           },
           messages: [{ text: lines.join("\n"), options: [{ label: "End session", value: "end_session" }] }],

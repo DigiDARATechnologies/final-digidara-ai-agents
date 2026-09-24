@@ -26,6 +26,7 @@ interface SpeechRecognitionLike {
   abort(): void;
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+type VoiceCaptureOptions = { autoStopOnSilence?: boolean };
 
 declare global {
   interface Window {
@@ -53,8 +54,11 @@ export default function useSpeechRecognition(locale = "en-US") {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const vadCleanupRef = useRef<(() => void) | null>(null);
 
   const stop = useCallback(() => {
+    vadCleanupRef.current?.();
+    vadCleanupRef.current = null;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -68,7 +72,7 @@ export default function useSpeechRecognition(locale = "en-US") {
    * (accumulated final text + the current interim guess) on every update,
    * and once more with `final: true` when recognition ends. */
   const start = useCallback(
-    (onResult: (text: string, final: boolean) => void) => {
+    (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
       if (!SpeechRecognitionAPI) {
         setError("Voice input isn't supported in this browser — try Chrome or Edge.");
@@ -86,6 +90,9 @@ export default function useSpeechRecognition(locale = "en-US") {
       recognition.continuous = true;
 
       let finalText = "";
+      // Short utterances can remain interim when recording ends. Keep the
+      // latest text so stopping does not clear a usable one-word result.
+      let latestText = "";
       recognition.onresult = (event) => {
         let interimText = "";
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -94,20 +101,92 @@ export default function useSpeechRecognition(locale = "en-US") {
           if (result.isFinal) finalText = `${finalText} ${text}`.trim();
           else interimText += text;
         }
-        onResult(`${finalText} ${interimText}`.trim(), false);
+        latestText = `${finalText} ${interimText}`.trim();
+        onResult(latestText, false);
       };
       recognition.onerror = (event) => {
         setError(ERROR_MESSAGES[event.error] || "Speech recognition stopped unexpectedly.");
       };
       recognition.onend = () => {
+        vadCleanupRef.current?.();
+        vadCleanupRef.current = null;
         setListening(false);
         recognitionRef.current = null;
-        onResult(finalText.trim(), true);
+        onResult((finalText.trim() || latestText).trim(), true);
       };
 
       recognitionRef.current = recognition;
       setListening(true);
       recognition.start();
+
+      if (options.autoStopOnSilence && navigator.mediaDevices?.getUserMedia && window.AudioContext) {
+        let disposed = false;
+        let stream: MediaStream | null = null;
+        let audioContext: AudioContext | null = null;
+        let animationFrame: number | undefined;
+
+        const cleanupVad = () => {
+          disposed = true;
+          if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+          stream?.getTracks().forEach((track) => track.stop());
+          if (audioContext && audioContext.state !== "closed") void audioContext.close();
+          if (vadCleanupRef.current === cleanupVad) vadCleanupRef.current = null;
+        };
+        vadCleanupRef.current = cleanupVad;
+
+        // Web Speech provides transcription, but it does not expose voice
+        // activity. Measure microphone energy separately so a short word can
+        // be captured and the recording ends naturally after silence.
+        void navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        }).then((mediaStream) => {
+          if (disposed) {
+            mediaStream.getTracks().forEach((track) => track.stop());
+            return;
+          }
+          stream = mediaStream;
+          audioContext = new AudioContext();
+          const source = audioContext.createMediaStreamSource(mediaStream);
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 1024;
+          source.connect(analyser);
+          const samples = new Uint8Array(analyser.fftSize);
+          let speechDetected = false;
+          let quietSince = 0;
+
+          const measure = () => {
+            if (disposed) return;
+            analyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (const sample of samples) {
+              const value = (sample - 128) / 128;
+              sum += value * value;
+            }
+            const rms = Math.sqrt(sum / samples.length);
+            const now = performance.now();
+            if (rms >= 0.015) {
+              speechDetected = true;
+              quietSince = 0;
+            } else if (speechDetected) {
+              if (!quietSince) quietSince = now;
+              if (now - quietSince >= 3000) {
+                cleanupVad();
+                try {
+                  recognitionRef.current?.stop();
+                } catch {
+                  // Recognition already finished.
+                }
+                return;
+              }
+            }
+            animationFrame = window.requestAnimationFrame(measure);
+          };
+          measure();
+        }).catch(() => {
+          // Keep browser ASR usable when audio analysis is unavailable; the
+          // learner can still stop recording manually.
+        });
+      }
       return true;
     },
     [locale],

@@ -148,6 +148,14 @@ def invoke():
         )
         return jsonify(outcome), 201
 
+    if action == "submit_mcq_answer":
+        problem_id = _int(payload.get("problem_id"), "problem_id")
+        selected_key = payload.get("selectedKey")
+        if not isinstance(selected_key, str) or not selected_key:
+            raise ApiError("selectedKey is required.", 400, "invalid_parameter")
+        outcome = repo().submit_mcq_answer(student["id"], problem_id, selected_key)
+        return jsonify(outcome), 201
+
     if action == "run_playground":
         source_code = payload.get("sourceCode")
         language_id = payload.get("languageId")

@@ -60,6 +60,8 @@ interface ChatViewProps {
   dailyChallengeStatus?: "pending" | "completed";
   onDailyChallenge?: () => void;
   immersiveSpeaking?: boolean;
+  /** Pronunciation uses microphone energy detection to stop after speech. */
+  autoStopVoiceOnSilence?: boolean;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -114,6 +116,7 @@ export default function ChatView({
   dailyChallengeStatus,
   onDailyChallenge,
   immersiveSpeaking,
+  autoStopVoiceOnSilence = false,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -148,7 +151,7 @@ export default function ChatView({
     speech.start((text) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
-    });
+    }, { autoStopOnSilence: autoStopVoiceOnSilence });
   }
 
   useEffect(() => {
@@ -560,6 +563,9 @@ export default function ChatView({
             </svg>
           </button>
         </form>
+      )}
+      {!codeMode && !multilineMode && autoStopVoiceOnSilence && speech.listening && (
+        <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
     </section>

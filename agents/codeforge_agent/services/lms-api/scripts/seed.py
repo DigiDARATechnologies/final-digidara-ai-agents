@@ -76,18 +76,21 @@ def seed():
             topic_ids = {(row[1], row[2]): row[0] for row in cursor.fetchall()}
             for problem in PROBLEMS:
                 topic_id = topic_ids[(problem["technology"], problem["topic"])]
+                question_type = problem.get("question_type", "code")
+                mcq_options = problem.get("mcq_options")
                 cursor.execute(
-                    "INSERT INTO coding_problems (topic_id,name,slug,description,input_format,output_format,constraints_text,examples_json,starter_code,language_key,judge0_language_id,difficulty,max_score,display_order) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,100,%s) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),input_format=VALUES(input_format),"
+                    "INSERT INTO coding_problems (topic_id,name,slug,description,input_format,output_format,constraints_text,examples_json,starter_code,language_key,judge0_language_id,question_type,mcq_options_json,mcq_correct_key,mcq_explanation,difficulty,max_score,display_order) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,100,%s) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),input_format=VALUES(input_format),"
                     "output_format=VALUES(output_format),constraints_text=VALUES(constraints_text),examples_json=VALUES(examples_json),starter_code=VALUES(starter_code),language_key=VALUES(language_key),"
-                    "judge0_language_id=VALUES(judge0_language_id),difficulty=VALUES(difficulty),max_score=VALUES(max_score),display_order=VALUES(display_order),is_active=TRUE",
-                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem["starter"], problem["language"], problem["language_id"], problem["difficulty"], problem["order"]),
+                    "judge0_language_id=VALUES(judge0_language_id),question_type=VALUES(question_type),mcq_options_json=VALUES(mcq_options_json),mcq_correct_key=VALUES(mcq_correct_key),"
+                    "mcq_explanation=VALUES(mcq_explanation),difficulty=VALUES(difficulty),max_score=VALUES(max_score),display_order=VALUES(display_order),is_active=TRUE",
+                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem.get("starter"), problem.get("language"), problem.get("language_id"), question_type, json.dumps(mcq_options) if mcq_options else None, problem.get("mcq_correct_key"), problem.get("mcq_explanation"), problem["difficulty"], problem["order"]),
                 )
                 problem_id = cursor.lastrowid
                 if not problem_id:
                     cursor.execute("SELECT id FROM coding_problems WHERE topic_id=%s AND slug=%s", (topic_id, problem["slug"]))
                     problem_id = cursor.fetchone()[0]
-                for order, (stdin_text, expected_output, hidden, weight) in enumerate(problem["tests"], start=1):
+                for order, (stdin_text, expected_output, hidden, weight) in enumerate(problem.get("tests", []), start=1):
                     cursor.execute(
                         "INSERT INTO coding_test_cases (problem_id,stdin_text,expected_output,is_hidden,score_weight,display_order) VALUES (%s,%s,%s,%s,%s,%s) "
                         "ON DUPLICATE KEY UPDATE stdin_text=VALUES(stdin_text),expected_output=VALUES(expected_output),is_hidden=VALUES(is_hidden),score_weight=VALUES(score_weight)",
