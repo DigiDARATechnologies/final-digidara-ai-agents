@@ -31,6 +31,20 @@ function looksLikeQuestionOrDispute(text: string): boolean {
   return /^(hey|hi|hello|wait|excuse me|sorry|actually|no[,]?\s|already|i (already )?(have|wrote|did|add(ed)?|includ(e|ed)|do have)|that'?s (wrong|not right|incorrect)|this is (already|not)|i don'?t (think|agree)|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
 }
 
+/** Every step from awaiting_topic_choice onward has a real thread_id (a
+ * project/assignment already exists), so a doubt there can be routed through
+ * askProjectQuestion for a real, grounded answer. At awaiting_topic_request
+ * there is nothing yet to ask about -- the thread only gets created by the
+ * first topic-generation call -- so there's no equivalent agent to consult.
+ * This narrowly catches plain small talk / meta questions ("hi", "who is
+ * the pm", "how are you") that are clearly not a topic request, so they get
+ * a short explanation of what this chat does instead of being fed into
+ * clarifyTopicRequest as if they were one. Deliberately narrow: a real
+ * request that happens to end in "?" (e.g. "can I get a python project?")
+ * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
+ * heuristic above. */
+const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
+
 export type CapstoneStep =
   | "awaiting_topic_request"
   | "awaiting_topic_choice"
@@ -221,6 +235,14 @@ export async function handleCapstoneText(
     case "awaiting_topic_request": {
       if (!trimmed) {
         return { state, messages: [{ text: "Tell me the language, role, or topic you'd like your project based on." }] };
+      }
+      if (OFF_TOPIC_SMALL_TALK.test(trimmed)) {
+        return {
+          state,
+          messages: [{
+            text: 'I\'m the Capstone Project Agent — I help you choose a project topic, write out its requirements, track your 7-day build, and grade the final submission (with a short viva). Tell me the language, role, or topic you\'d like your project based on (e.g. "python", "data analyst", "e-commerce website") and I\'ll generate two options.',
+          }],
+        };
       }
 
       // Answering a clarifying question we already asked — combine it with
