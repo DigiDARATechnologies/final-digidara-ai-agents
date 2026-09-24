@@ -30,6 +30,16 @@ const timerConfirmState: CapstoneFlowState = {
   threadId: 'thread',
 };
 
+const topicChoiceState: CapstoneFlowState = {
+  step: 'awaiting_topic_choice',
+  name: 'Learner', email: 'learner@example.test', phone: '', difficulty: 'easy',
+  threadId: 'thread',
+  topicOptions: [
+    { id: 'A', title: 'CLI Log Analyzer', summary: 'Filter and summarize log files.' },
+    { id: 'B', title: 'Weather Dashboard', summary: 'Fetch and display forecasts.' },
+  ],
+};
+
 afterEach(() => jest.clearAllMocks());
 
 describe('mid-viva question/dispute detection', () => {
@@ -151,6 +161,37 @@ describe('combining a clarifying-question answer with the original request', () 
       expect(result.messages[0].text).toContain('python');
     },
   );
+});
+
+describe('choosing a project topic (A/B)', () => {
+  test('an exact selection still works', async () => {
+    jest.mocked(api.chooseTopic).mockResolvedValue({ thread_id: 'thread', requirements: {} } as never);
+    const result = await handleCapstoneText(topicChoiceState, 'A');
+    expect(api.chooseTopic).toHaveBeenCalledWith('thread', 'A');
+    expect(result.state.step).toBe('awaiting_timer_confirm');
+  });
+
+  test('an unrelated message that merely contains the letter "a" is not silently treated as choosing option A', async () => {
+    const result = await handleCapstoneText(topicChoiceState, 'i need to change the project topics');
+    expect(api.chooseTopic).not.toHaveBeenCalled();
+    expect(result.state.step).toBe('awaiting_topic_choice');
+  });
+
+  test('a genuine question about the options is answered via the Q&A agent, then the choice is re-prompted', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'Both are scoped for 7 days; B needs a public weather API key.', tools_used: [] });
+    const result = await handleCapstoneText(topicChoiceState, 'does option B need an API key?');
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'does option B need an API key?');
+    expect(api.chooseTopic).not.toHaveBeenCalled();
+    expect(result.messages[0].text).toContain('API key');
+    expect(result.messages[1].text).toContain('Choose project A or B');
+  });
+
+  test('an unrelated, non-question message just gets steered back to choosing, without calling the Q&A agent', async () => {
+    const result = await handleCapstoneText(topicChoiceState, 'i need to change the project topics');
+    expect(api.askProjectQuestion).not.toHaveBeenCalled();
+    expect(result.messages[0].text).toBe('Choose project A or B.');
+    expect(result.messages[0].options).toHaveLength(2);
+  });
 });
 
 describe('example report and zip downloads', () => {
