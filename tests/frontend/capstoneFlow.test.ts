@@ -35,8 +35,8 @@ const topicChoiceState: CapstoneFlowState = {
   name: 'Learner', email: 'learner@example.test', phone: '', difficulty: 'easy',
   threadId: 'thread',
   topicOptions: [
-    { id: 'A', title: 'CLI Log Analyzer', summary: 'Filter and summarize log files.' },
-    { id: 'B', title: 'Weather Dashboard', summary: 'Fetch and display forecasts.' },
+    { id: 'A', title: 'CLI Log Analyzer', summary: 'Filter and summarize log files.', medium: 'local', skills_applied: ['python'] },
+    { id: 'B', title: 'Weather Dashboard', summary: 'Fetch and display forecasts.', medium: 'api', skills_applied: ['python', 'rest-api'] },
   ],
 };
 
