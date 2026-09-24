@@ -249,10 +249,30 @@ export async function handleCapstoneText(
     }
 
     case "awaiting_topic_choice": {
-      const choice = trimmed.toUpperCase().replace(/[^AB]/g, "");
-      const topic = state.topicOptions?.find((item) => item.id === choice);
+      // Only an actual selection ("A", "b", "option A", "A.") should count --
+      // stripping the text down to whichever of the letters A/B it happens to
+      // contain (the previous approach) silently mis-selected a project for
+      // any unrelated message that merely used the letter "a" somewhere, e.g.
+      // "I need to change the project topics" collapsing to "A".
+      const match = trimmed.match(/^(?:option\s*)?([ab])\.?$/i);
+      const choice = match ? match[1].toUpperCase() : null;
+      const topic = choice ? state.topicOptions?.find((item) => item.id === choice) : undefined;
       if (!topic) {
-        return { state, messages: [{ text: "Choose project A or B.", options: state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary })) }] };
+        const options = state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary }));
+        // A genuine question about the two options gets a real answer; a
+        // message that's neither a valid selection nor recognizably a
+        // question (small talk, an unrelated request) just gets steered
+        // back to choosing -- the Q&A agent itself declines anything
+        // unrelated to this project, so this never turns into open chat.
+        if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+          try {
+            const qa = await askProjectQuestion(state.threadId, trimmed);
+            return { state, messages: [{ text: qa.answer }, { text: "Choose project A or B to continue.", options }] };
+          } catch {
+            // Q&A itself failed -- fall through to the plain reminder below.
+          }
+        }
+        return { state, messages: [{ text: "Choose project A or B.", options }] };
       }
       try {
         const result = await chooseTopic(state.threadId!, topic.id);
