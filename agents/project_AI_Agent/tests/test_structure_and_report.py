@@ -101,28 +101,35 @@ def test_build_about_markdown_includes_required_paths_and_sections():
     assert "Task Tracker" in markdown
     assert "TaskTracker/src" in markdown
     assert "Problem Statement" in markdown and "Conclusion" in markdown
-    assert "Do not put code or screenshots in the report" in markdown
+    assert "Do not put code or screenshots in the .docx report" in markdown
 
 
-def test_about_markdown_never_asks_for_screenshots_even_from_an_older_guide():
-    """A guide is generated once and stored, so projects started before screenshots
-    were dropped still carry them. The student-facing brief must not ask for them."""
+def test_about_markdown_explains_every_required_screenshot_in_detail_and_says_they_go_in_the_zip():
     state = {
         "chosen_topic": {"title": "Budget Tracker"},
         "requirements": {"functional_requirements": ["Show a pie chart of expenses by category"]},
         "submission_guide": {
             "folder_structure": ["BudgetTracker/", "BudgetTracker/src/", "BudgetTracker/output_screenshots/"],
-            "required_paths": REQUIRED_PATHS,
+            "required_paths": [{"path": "BudgetTracker/src", "type": "dir", "description": "Source."},
+                               {"path": "BudgetTracker/output_screenshots", "type": "dir", "description": "Screenshots."}],
             "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
-            "required_screenshots": [{"description": "Pie chart", "linked_requirement": "Show a pie chart"}],
+            "required_screenshots": [{
+                "filename": "01-expense-pie-chart.png", "module": "Category summary page",
+                "description": "the pie chart with at least two categories visible and their percentages",
+                "how_to_capture": "Run python src/main.py, add three expenses in two categories, open Summary.",
+                "linked_requirement": "Show a pie chart of expenses by category",
+            }],
         },
     }
     markdown = build_about_markdown(state)
-    assert "Required Screenshots" not in markdown
-    assert "output_screenshots" not in markdown
-    assert "Output Screenshots" not in markdown
+    assert "## Required Screenshots" in markdown and "output_screenshots" in markdown
+    assert "`01-expense-pie-chart.png`" in markdown and "Category summary page" in markdown
+    assert "What must be visible: the pie chart with at least two categories visible" in markdown
+    assert "How to capture it: Run python src/main.py" in markdown
+    assert "They go in the zip, NOT in the .docx report" in markdown
+    # ...but as REPORT sections, "Code" and "Output Screenshots" are gone.
     assert "1. Problem Statement" in markdown and "2. Approach" in markdown and "3. Conclusion" in markdown
-    assert "Code" not in [line.split(". ", 1)[-1] for line in markdown.splitlines() if line[:1].isdigit()]
+    assert "Do not put code or screenshots in the .docx report" in markdown
 
 
 def test_review_markdown_lists_syntax_errors_with_the_offending_line():
@@ -278,7 +285,7 @@ def test_score_aggregator_node_is_deterministic_across_repeated_calls(monkeypatc
 
 from app.ingestion.syntax_check import check_syntax  # noqa: E402
 from app.ingestion.structure_check import (  # noqa: E402
-    drop_retired_paths, drop_retired_sections, drop_retired_tree_lines,
+    drop_retired_sections,
 )
 
 
@@ -374,10 +381,16 @@ def test_retired_sections_are_dropped_from_an_older_guide():
     assert drop_retired_sections(None) == []
 
 
-def test_retired_paths_and_tree_lines_drop_the_screenshots_folder():
-    paths = [{"path": "X/src", "type": "dir"}, {"path": "X/output_screenshots", "type": "dir"}]
-    assert drop_retired_paths(paths) == [{"path": "X/src", "type": "dir"}]
-    assert drop_retired_tree_lines(["X/", "X/src/", "X/output_screenshots/"]) == ["X/", "X/src/"]
+def test_the_screenshots_folder_is_never_dropped_from_the_required_paths():
+    from app.ingestion.screenshots import ensure_screenshot_folder
+    guide = {
+        "folder_structure": ["X/", "X/src/"],
+        "required_paths": [{"path": "X/src", "type": "dir", "description": "code"}],
+        "required_screenshots": [{"description": "the home page"}],
+    }
+    ensure_screenshot_folder(guide)
+    assert {item["path"] for item in guide["required_paths"]} == {"X/src", "X/output_screenshots"}
+    assert "X/output_screenshots/" in guide["folder_structure"]
 
 
 def test_a_report_without_code_or_screenshots_passes_an_older_guide(monkeypatch):
@@ -391,7 +404,7 @@ def test_a_report_without_code_or_screenshots_passes_an_older_guide(monkeypatch)
     assert score["missing_sections"] == []
 
 
-def test_a_zip_without_a_screenshots_folder_passes_an_older_guide(monkeypatch):
+def test_a_zip_without_a_screenshots_folder_reports_it_missing(monkeypatch):
     monkeypatch.setattr(nodes, "call_json", lambda **kwargs: {"structure_quality": "good", "clutter_flags": [], "notes": ""})
     state = {
         "submission_guide": {
@@ -401,22 +414,29 @@ def test_a_zip_without_a_screenshots_folder_passes_an_older_guide(monkeypatch):
         "zip_file_tree": ["X/src/main.py"],
     }
     score = nodes.zip_structure_validation_node(state)["zip_structure_score"]
-    assert score["is_complete"] is True and score["missing_items"] == []
+    assert score["is_complete"] is False
+    assert score["missing_items"] == ["X/output_screenshots"]
 
 
-def test_submission_guide_node_overrides_a_model_that_brings_screenshots_back(monkeypatch, database):
+def test_submission_guide_node_keeps_the_screenshots_but_fixes_the_report_sections(monkeypatch, database):
     monkeypatch.setattr(nodes, "call_json", lambda **kwargs: {
         "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
-        "required_screenshots": [{"description": "a chart"}],
-        "required_paths": [{"path": "X/src", "type": "dir"}, {"path": "X/output_screenshots", "type": "dir"}],
-        "folder_structure": ["X/", "X/src/", "X/output_screenshots/"],
+        "required_screenshots": [
+            {"description": "the login form with an error", "module": "Login form"},   # no file name: one is made
+            {"filename": "../../etc/passwd.png", "description": "the dashboard"},        # unsafe name: sanitised
+            {"description": ""},                                                          # nothing to show: dropped
+        ],
+        "required_paths": [{"path": "X/src", "type": "dir"}],                             # the folder is missing: added
+        "folder_structure": ["X/", "X/src/"],
     })
     state = {"assignment_id": "missing", "chosen_topic": {"title": "T"}, "requirements": {}}
     guide = nodes.submission_guide_node(state)["submission_guide"]
     assert guide["docx_required_sections"] == ["Problem Statement", "Approach", "Conclusion"]
-    assert guide["required_screenshots"] == []
-    assert guide["required_paths"] == [{"path": "X/src", "type": "dir"}]
-    assert guide["folder_structure"] == ["X/", "X/src/"]
+    names = [item["filename"] for item in guide["required_screenshots"]]
+    assert len(names) == 2 and names[0].startswith("01-") and names[0].endswith(".png")
+    assert "/" not in names[1] and ".." not in names[1] and names[1].endswith(".png")
+    assert {item["path"] for item in guide["required_paths"]} == {"X/src", "X/output_screenshots"}
+    assert "X/output_screenshots/" in guide["folder_structure"]
 
 
 # --- requirements verification: normalised by code, not trusted -----------------
@@ -524,7 +544,7 @@ def test_an_unmet_requirement_names_it_says_what_is_missing_and_what_to_do():
     assert "only partly implemented" in partial
 
 
-def test_revision_items_lists_every_problem_specifically_and_ignores_retired_paths():
+def test_revision_items_lists_every_problem_specifically():
     state = {
         "structure_score": {"missing_sections": ["Conclusion"], "weak_sections": ["Approach: only two sentences, no design decisions"]},
         "zip_structure_score": {"required_paths_detail": {"missing_items": [
@@ -533,11 +553,11 @@ def test_revision_items_lists_every_problem_specifically_and_ignores_retired_pat
         ]}},
     }
     items = revision.revision_items(state)
-    assert len(items) == 3                                       # section + weak section + the src folder only
+    assert len(items) == 4
     assert 'The "Conclusion" section is missing' in items[0]
     assert 'The "Approach" section needs more detail.** only two sentences, no design decisions' in items[1]
     assert 'no "src" folder' in items[2]
-    assert not any("screenshot" in item.lower() for item in items)
+    assert 'no "output_screenshots" folder' in items[3]
 
 
 def test_request_revision_node_gives_bulleted_specific_instructions(monkeypatch, database):

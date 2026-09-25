@@ -6,6 +6,7 @@ import {
   chooseTopic,
   clarifyTopicRequest,
   confirmTimer,
+  downloadFinalReport,
   getThreadStatus,
   submitVivaAnswer,
   uploadSubmission,
@@ -45,6 +46,17 @@ function looksLikeQuestionOrDispute(text: string): boolean {
  * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
  * heuristic above. */
 const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
+
+/** The chat option that downloads the final report PDF. */
+export const FINAL_REPORT_ACTION = "download_final_report";
+
+function finalReportOptions(): ChatOption[] {
+  return [{
+    label: "Download final report (PDF)",
+    value: FINAL_REPORT_ACTION,
+    description: "Your score, viva results and project details, with the DigiDARA Technologies logo on every page.",
+  }];
+}
 
 export type CapstoneStep =
   | "awaiting_topic_request"
@@ -142,6 +154,14 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
   const lines: string[] = [`Your 7-day timer has started. Deadline: ${new Date(deadlineAt).toLocaleString()}`];
   if (guide.docx_required_sections?.length) lines.push(`\nRequired report sections: ${guide.docx_required_sections.join(" -> ")}`);
   if (guide.folder_structure?.length) lines.push(`\nZip folder structure:\n${guide.folder_structure.map((line: string) => `  ${line}`).join("\n")}`);
+  if (guide.required_screenshots?.length) {
+    lines.push("\nOutput screenshots - save each as its own image file in the output_screenshots folder of your zip (not in the .docx report):");
+    guide.required_screenshots.forEach((item: { filename?: string; module?: string; description?: string }, index: number) => {
+      const module = item.module ? `${item.module}: ` : "";
+      lines.push(`${index + 1}. ${item.filename ?? "screenshot.png"} - ${module}${item.description ?? ""}`);
+    });
+    lines.push("Ask me about any screenshot and I will explain exactly what it must show and how to capture it.");
+  }
   if (guide.common_mistakes?.length) {
     lines.push("\nCommon mistakes to avoid:");
     guide.common_mistakes.forEach((item: string) => lines.push(`- ${item}`));
@@ -442,7 +462,10 @@ export async function handleCapstoneText(
             vivaScore: result.viva_score ?? null,
             vivaPassed: result.viva_passed ?? null,
           },
-          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - You passed!\n\n${result.feedback ?? ""}` }],
+          messages: [{
+            text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - You passed!\n\n${result.feedback ?? ""}\n\nYour project is complete: the code score and the viva are both passed. Your final report is ready to download.`,
+            options: finalReportOptions(),
+          }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
@@ -468,8 +491,25 @@ export async function handleCapstoneText(
       }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
     }
-    case "graded":
-      return { state, messages: [{ text: "This project has already been graded. Open the dashboard to review the result." }] };
+    case "graded": {
+      const canDownload = Boolean(state.passed && state.vivaSubmissionId);
+      if (trimmed === FINAL_REPORT_ACTION) {
+        if (!canDownload) return { state, messages: [{ text: "The final report is available once both your project score and the viva are passed." }] };
+        try {
+          await downloadFinalReport(state.vivaSubmissionId!);
+          return { state, messages: [{ text: "Your final report has been downloaded. You can download it again any time from here or the dashboard.", options: finalReportOptions() }] };
+        } catch (error) {
+          return { state, messages: [{ text: `I could not download the report: ${(error as Error).message}`, options: finalReportOptions() }] };
+        }
+      }
+      return {
+        state,
+        messages: [{
+          text: "This project has already been graded. Open the dashboard to review the result.",
+          options: canDownload ? finalReportOptions() : undefined,
+        }],
+      };
+    }
   }
 }
 

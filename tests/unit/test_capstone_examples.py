@@ -2,9 +2,9 @@
 
 They are built once by scripts/build_capstone_examples.py and committed, so
 these checks guard the committed bytes: the example zip's layout, and the
-example report PDF (three sections, no code, no screenshots, the logo on every
-page). Stdlib only, so it runs anywhere the unit suite does -- the PDF is
-written uncompressed and deterministically precisely so it can be inspected
+example report PDF (three sections, no code, no screenshots inside it, the logo on
+every page) and the example zip (its code AND its output_screenshots folder).
+Stdlib only, so it runs anywhere the unit suite does -- the PDF is written uncompressed and deterministically precisely so it can be inspected
 here without a PDF library.
 """
 import re
@@ -22,6 +22,7 @@ REQUIRED_PATHS = [
     f"{SLUG}/README.md", f"{SLUG}/requirements.txt", f"{SLUG}/src/main.py", f"{SLUG}/src/tracker.py",
     f"{SLUG}/src/storage.py", f"{SLUG}/tests/test_tracker.py",
 ]
+SCREENSHOTS = ["01-add-expense.png", "02-category-summary.png", "03-tests-passing.png"]
 
 
 def zip_names():
@@ -37,10 +38,13 @@ def test_zip_has_one_root_folder_with_the_expected_layout():
         assert required in names, f"missing {required}"
 
 
-def test_zip_has_no_screenshots_folder_or_images():
-    for name in zip_names():
-        assert "screenshot" not in name.lower(), f"{name}: screenshots are not part of a submission any more"
-        assert not name.lower().endswith((".png", ".jpg", ".jpeg", ".gif"))
+def test_zip_holds_the_output_screenshots_as_real_png_files():
+    names = zip_names()
+    with zipfile.ZipFile(ZIP) as archive:
+        for shot in SCREENSHOTS:
+            assert f"{SLUG}/output_screenshots/{shot}" in names, f"missing screenshot {shot}"
+            data = archive.read(f"{SLUG}/output_screenshots/{shot}")
+            assert data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) > 2_000
 
 
 def test_zip_contains_no_build_clutter_or_runtime_data():

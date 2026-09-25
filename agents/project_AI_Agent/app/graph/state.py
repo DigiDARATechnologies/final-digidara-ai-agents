@@ -43,6 +43,10 @@ class ProjectAgentState(TypedDict, total=False):
     zip_file_tree: list[str]
     zip_code_files: dict[str, str]
     zip_structure_score: dict[str, Any]  # ZipStructureValidationNode output
+    # The output screenshots found in the zip (see app/ingestion/screenshots.py):
+    # {files, valid_files, ocr_text}. Only valid_files count towards the guide's
+    # required_screenshots.
+    screenshot_evidence: dict[str, Any]
     # SyntaxCheckNode output -- real-parser results over the zip's Python/JSON/
     # TOML files: {checked_files, checked_languages, unchecked_extensions,
     # errors[{path, language, line, column, message, source_line}], error_count,

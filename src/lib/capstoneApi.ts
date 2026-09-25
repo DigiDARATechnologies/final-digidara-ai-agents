@@ -143,6 +143,24 @@ export function getThreadStatus(thread_id: string) {
   return invoke<ThreadStatus>("status", { thread_id });
 }
 
+/** Downloads the final project report (PDF). The backend only issues it once BOTH the
+ * code score and the viva are passed, and returns it base64-encoded through the JSON
+ * gateway -- the same shape the mock-interview agent's report uses. */
+export async function downloadFinalReport(submission_id: string): Promise<void> {
+  const report = await invoke<{ content_type: string; filename: string; data: string }>("download_final_report", { submission_id });
+  if (report.content_type !== "application/pdf" || !report.data) throw new Error("The final report is unavailable.");
+  const binary = atob(report.data);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = report.filename || "Capstone_Project_Report.pdf";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export async function uploadSubmission(thread_id: string, docxFile: File, zipFile: File) {
   const form = new FormData();
   form.append("action", "upload_submission");
