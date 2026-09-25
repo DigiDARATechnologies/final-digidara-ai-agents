@@ -49,6 +49,16 @@ def _clean_job(job):
     job["location_district"] = district
     job["location_region"] = region
     job["location_type"] = location_type
+
+    # Extract experience requirements from title and description if not provided
+    if job.get("experience_min") is None:
+        from .experience import extract_experience_from_text
+        e_min, e_max = extract_experience_from_text(job.get("title") or "", job.get("description") or "")
+        if e_min is not None:
+            job["experience_min"] = int(e_min) if isinstance(e_min, float) and e_min.is_integer() else e_min
+        if e_max is not None and job.get("experience_max") is None:
+            job["experience_max"] = int(e_max) if isinstance(e_max, float) and e_max.is_integer() else e_max
+
     return job
 
 

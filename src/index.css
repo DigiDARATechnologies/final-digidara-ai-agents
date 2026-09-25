@@ -812,9 +812,19 @@ body.glow-off .send-btn:hover{
   display:flex; flex-wrap:wrap; gap:6px; margin:0 10% 8px;
 }
 .attach-chip{
+  display:inline-flex; align-items:center; gap:6px;
   font-size:12px; font-weight:600; color:var(--text-dim);
   background:var(--bg-soft); border:1px solid var(--border-soft);
   padding:5px 10px; border-radius:999px;
+}
+.attach-chip-remove{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; border:none; background:transparent;
+  color:var(--text-dim); border-radius:50%; font-size:11px;
+  cursor:pointer; padding:0; line-height:1; transition:background .15s, color .15s;
+}
+.attach-chip-remove:hover{
+  background:var(--border-soft); color:var(--text);
 }
 
 .composer{

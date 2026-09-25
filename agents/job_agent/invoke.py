@@ -35,6 +35,7 @@ ACTION_ROUTE_MAP = {
     "get_hidden_jobs": ("GET", "/api/jobs/me/hidden"),
     "job_action": ("PUT", "/api/jobs/me/jobs/{job_id}/action"),
     "get_applications": ("GET", "/api/jobs/me/applications"),
+    "update_application_status": ("PUT", "/api/jobs/me/applications/{job_id}/status"),
     "export_user_data": ("GET", "/api/jobs/me/data"),
     "delete_user_data": ("DELETE", "/api/jobs/me/data"),
     "download_resume": ("GET", "/api/jobs/me/resume"),

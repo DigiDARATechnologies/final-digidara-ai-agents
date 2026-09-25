@@ -3,6 +3,7 @@ import {
   adminAdzunaRun,
   adminApifyActors,
   adminApifyRun,
+  adminGetAutomation,
   adminJSearchRun,
   adminListCategories,
   adminListJobs,
@@ -10,10 +11,12 @@ import {
   adminListSources,
   adminListUsers,
   adminRunSource,
+  adminUpdateAutomation,
   adminUpdateJobStatus,
   adminUpdatePlan,
   type ApifyActor,
   type IngestionRun,
+  type JobAutomationSettings,
 } from "../../lib/jobFetchApi";
 
 
@@ -73,6 +76,8 @@ export default function JobsAdminPanel() {
   const [apifyActors, setApifyActors] = useState<ApifyActor[]>([]);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [runningPlatform, setRunningPlatform] = useState<string | null>(null);
+  const [automation, setAutomation] = useState<JobAutomationSettings | null>(null);
+  const [automationLoading, setAutomationLoading] = useState(false);
 
   function loadJobs(status = jobStatusFilter, category = jobCategoryFilter, location = jobLocationFilter) {
     setLoading(true);
@@ -90,10 +95,11 @@ export default function JobsAdminPanel() {
       nextTab === "jobs"
         ? adminListJobs({ status: jobStatusFilter || undefined }).then((r) => setJobs(r.jobs))
         : nextTab === "sources"
-          ? Promise.all([adminListSources(), adminApifyActors(), adminListRuns()]).then(([s, a, r]) => {
+          ? Promise.all([adminListSources(), adminApifyActors(), adminListRuns(), adminGetAutomation()]).then(([s, a, r, auto]) => {
               setSources(s.sources);
               setApifyActors(a.actors);
               setRuns(r.runs);
+              setAutomation(auto.automation);
             })
           : adminListUsers().then((r) => setUsers(r.users));
     request.catch((err) => setError((err as Error).message)).finally(() => setLoading(false));
@@ -106,6 +112,7 @@ export default function JobsAdminPanel() {
 
   useEffect(() => {
     adminListCategories().then((r) => setCategories(r.categories)).catch(() => {});
+    adminGetAutomation().then((r) => setAutomation(r.automation)).catch(() => {});
   }, []);
 
   // Poll only while this tab has queued/running work. The HTTP request that
@@ -115,17 +122,36 @@ export default function JobsAdminPanel() {
     if (tab !== "sources" || !runs.some((run) => run.status === "queued" || run.status === "running")) return;
     let active = true;
     const timer = window.setTimeout(() => {
-      Promise.all([adminListSources(), adminApifyActors(), adminListRuns()])
-        .then(([s, a, r]) => {
+      Promise.all([adminListSources(), adminApifyActors(), adminListRuns(), adminGetAutomation()])
+        .then(([s, a, r, auto]) => {
           if (!active) return;
           setSources(s.sources);
           setApifyActors(a.actors);
           setRuns(r.runs);
+          setAutomation(auto.automation);
         })
         .catch((err) => active && setError((err as Error).message));
     }, 3000);
     return () => { active = false; window.clearTimeout(timer); };
   }, [tab, runs]);
+
+  async function handleToggleAutomation(nextEnabled: boolean) {
+    setAutomationLoading(true);
+    setError(null);
+    try {
+      const result = await adminUpdateAutomation(nextEnabled);
+      setAutomation(result.automation);
+      setNotice(
+        nextEnabled
+          ? "Daily automated job fetching is turned ON. The server will fetch fresh jobs every day at 9:00 AM IST."
+          : "Daily automated job fetching is turned OFF. Automated daily ingestion is paused."
+      );
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAutomationLoading(false);
+    }
+  }
 
 
   async function moderate(jobId: number, status: "active" | "rejected") {
@@ -232,7 +258,23 @@ export default function JobsAdminPanel() {
     <div className="admin-panel">
       <div className="admin-panel-tabs">
         <button className={`admin-tab${tab === "jobs" ? " active" : ""}`} onClick={() => setTab("jobs")}>Job moderation</button>
-        <button className={`admin-tab${tab === "sources" ? " active" : ""}`} onClick={() => setTab("sources")}>Sources</button>
+        <button className={`admin-tab${tab === "sources" ? " active" : ""}`} onClick={() => setTab("sources")}>
+          Sources &amp; Automation
+          {automation && (
+            <span
+              style={{
+                display: "inline-block",
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                marginLeft: "8px",
+                backgroundColor: automation.enabled ? "#16a34a" : "#9ca3af",
+                verticalAlign: "middle"
+              }}
+              title={automation.enabled ? "Daily Automation: ON (9:00 AM IST)" : "Daily Automation: OFF"}
+            />
+          )}
+        </button>
         <button className={`admin-tab${tab === "users" ? " active" : ""}`} onClick={() => setTab("users")}>Users &amp; plans</button>
       </div>
 
@@ -342,6 +384,110 @@ export default function JobsAdminPanel() {
 
       {!loading && tab === "sources" && (
         <div className="admin-section">
+          {/* Daily Automated Job Ingestion (9:00 AM IST) Card */}
+          <div
+            className="admin-card"
+            style={{
+              padding: "18px 22px",
+              marginBottom: "22px",
+              borderRadius: "12px",
+              border: "1px solid var(--border)",
+              background: "var(--card-bg, #ffffff)",
+              boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "18px",
+            }}
+          >
+            <div style={{ flex: "1 1 360px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "6px" }}>
+                <h4 style={{ margin: 0, fontSize: "16px", fontWeight: 700 }}>
+                  ⏰ Daily Automated Job Ingestion (9:00 AM IST)
+                </h4>
+                {automation?.enabled ? (
+                  <span className="admin-badge badge-active" style={{ fontSize: "11px" }}>
+                    ● Active (9:00 AM daily)
+                  </span>
+                ) : (
+                  <span className="admin-badge badge-expired" style={{ fontSize: "11px" }}>
+                    ○ Paused
+                  </span>
+                )}
+              </div>
+              <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
+                When enabled, the server automatically fetches fresh entry-level &amp; fresher jobs every day at{" "}
+                <strong>9:00 AM IST</strong> across Adzuna, JSearch (RapidAPI), and Greenhouse, and prunes listings older than 30 days.
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "18px",
+                  fontSize: "12px",
+                  color: "var(--text-dim, #666)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <strong>Schedule:</strong> {automation?.schedule_time || "09:00"} ({automation?.timezone || "Asia/Kolkata"})
+                </div>
+                <div>
+                  <strong>Last scheduled date:</strong>{" "}
+                  {automation?.last_scheduled_date ? String(automation.last_scheduled_date) : "None yet"}
+                </div>
+                <div>
+                  <strong>Last completed:</strong>{" "}
+                  {automation?.last_completed_at
+                    ? new Date(automation.last_completed_at).toLocaleString()
+                    : "Never"}
+                </div>
+                <div>
+                  <strong>Jobs queued in last run:</strong> {automation?.last_queued_count ?? 0}
+                </div>
+              </div>
+              {automation?.last_error && (
+                <div style={{ marginTop: "8px", fontSize: "12px", color: "#dc2626" }}>
+                  <strong>Last error:</strong> {automation.last_error}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                gap: "8px",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span
+                  style={{
+                    fontSize: "13.5px",
+                    fontWeight: 700,
+                    color: automation?.enabled ? "#16a34a" : "var(--text-dim, #666)",
+                  }}
+                >
+                  {automationLoading ? "Updating…" : automation?.enabled ? "Daily Automation ON" : "Daily Automation OFF"}
+                </span>
+                <label className="switch" style={{ margin: 0, cursor: automationLoading ? "not-allowed" : "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(automation?.enabled)}
+                    disabled={automationLoading || !automation}
+                    onChange={(e) => handleToggleAutomation(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </div>
+              <small style={{ fontSize: "11px", color: "var(--text-faint, #999)" }}>
+                {automation?.enabled ? "Runs day-by-day at 09:00 AM IST" : "Toggle ON to resume automated daily fetching"}
+              </small>
+            </div>
+          </div>
+
           <div className="admin-toolbar" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <button className="btn btn-primary btn-sm" onClick={syncAndRunAdzuna} disabled={loading}>
               {loading ? "Queueing…" : "⚡ Sync + queue Adzuna (Tamil Nadu & Metros)"}

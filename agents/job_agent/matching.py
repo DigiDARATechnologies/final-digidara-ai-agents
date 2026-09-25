@@ -60,56 +60,12 @@ def _matches_preference(text: str, preferences: list[str]) -> bool:
     return False
 
 
-def classify_job_seniority(job: Dict[str, Any]) -> str:
-    """
-    Classifies a job into:
-    - 'entry': Fresher, Intern, Junior, Trainee, Graduate (0-2 years)
-    - 'growth': Mid-level, next-step role (2-4 years)
-    - 'senior': Senior, Lead, AVP, Manager, 5+ years
-    """
-    title = str(job.get("title") or "").lower()
-    desc = str(job.get("description") or "").lower()[:400]
-    exp_min = job.get("experience_min")
-    exp_max = job.get("experience_max")
-
-    # Check explicit title keywords
-    is_entry_title = any(re.search(r"\b" + re.escape(k) + r"\b", title) for k in ENTRY_KEYWORDS)
-    is_senior_title = any(re.search(r"\b" + re.escape(k) + r"\b", title) for k in SENIOR_KEYWORDS)
-
-    # Check 5+ years regex in title (e.g. "5.1-7 years")
-    match_years = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|to|\+)\s*(?:\d+(?:\.\d+)?)?\s*years?", title)
-    if match_years:
-        try:
-            yrs = float(match_years.group(1))
-            if yrs >= 4.0:
-                return "senior"
-            if yrs <= 2.0:
-                return "entry"
-            return "growth"
-        except ValueError:
-            pass
-
-    if is_entry_title and not is_senior_title:
-        return "entry"
-    if is_senior_title:
-        return "senior"
-
-    # Inspect experience min/max if numeric
-    if exp_min is not None:
-        try:
-            e_min = float(exp_min)
-            if e_min >= 5.0:
-                return "senior"
-            if e_min <= 1.0:
-                return "entry"
-            if e_min <= 3.0:
-                return "growth"
-        except (ValueError, TypeError):
-            pass
-
-    # Default general tech postings with plain titles ("Software Engineer", "Web Developer")
-    # without senior keywords are suitable for entry/growth
-    return "entry"
+from .experience import (
+    classify_job_seniority,
+    extract_experience_from_text,
+    format_experience_badge,
+    is_fresher_eligible,
+)
 
 
 def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) -> Tuple[int, List[str]]:
@@ -160,16 +116,28 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
     seniority_modifier = 0
     if experience <= 1.0:
         if seniority == "entry":
-            seniority_modifier = 15  # Strong boost for fresher/intern/entry roles
+            seniority_modifier = 15   # Strong boost for genuine fresher/intern/entry roles
         elif seniority == "growth":
-            seniority_modifier = 5   # Moderate fit for ambitious next-step roles
+            seniority_modifier = 0    # Neutral baseline for growth roles
         elif seniority == "senior":
-            seniority_modifier = -40  # Heavy penalty for 5+ yr / Senior / AVP roles
+            seniority_modifier = -40  # Heavy penalty for senior / 4+ yr roles
     else:
         # User has experience
         minimum = job.get("experience_min")
-        if minimum is None or experience >= float(minimum):
-            seniority_modifier = 5
+        if minimum is not None:
+            try:
+                min_val = float(minimum)
+                if experience >= min_val:
+                    seniority_modifier = 10
+                elif experience < min_val:
+                    seniority_modifier = -30
+            except (ValueError, TypeError):
+                pass
+        else:
+            if seniority == "growth":
+                seniority_modifier = 10
+            elif seniority == "senior" and experience >= 4.0:
+                seniority_modifier = 10
 
     freshness_score = 5
 
@@ -223,27 +191,42 @@ def blend_job_matches(
     scored_jobs: List[Dict[str, Any]],
     limit: int = 5,
     entry_ratio: float = 0.7,
+    is_fresher_candidate: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Blends jobs ensuring:
-    - ~70% Entry / Fresher opportunities
-    - ~30% Growth / Next-step opportunities
-    - Excludes heavily penalized senior/AVP roles from top slots
+    - If is_fresher_candidate is True: 100% genuine entry/fresher jobs.
+      Zero senior or 4+ year jobs are ever leaked to freshers!
+    - Otherwise: ~70% Entry / 30% Growth / Experienced allocation.
     """
     if not scored_jobs:
         return []
 
     entry_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "entry" and j.get("match_score", 0) > 10]
     growth_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "growth" and j.get("match_score", 0) > 10]
-    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs]
+    senior_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "senior" and j.get("match_score", 0) > 10]
+    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs]
 
+    if is_fresher_candidate:
+        # Strictly select entry/fresher jobs first
+        selected = list(entry_jobs[:limit])
+        if len(selected) < limit:
+            # Backfill strictly from growth roles that have NO senior requirements
+            for cand in growth_jobs:
+                if cand not in selected and is_fresher_eligible(cand):
+                    selected.append(cand)
+                    if len(selected) >= limit:
+                        break
+        selected.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+        return selected[:limit]
+
+    # Standard blending for experienced candidates
     entry_target = math.ceil(limit * entry_ratio)  # e.g. 4 out of 5
     growth_target = limit - entry_target          # e.g. 1 out of 5
 
     selected_entry = entry_jobs[:entry_target]
     selected_growth = growth_jobs[:growth_target]
 
-    # If entry jobs are fewer than target, backfill from growth, then other
     blended = list(selected_entry) + list(selected_growth)
     if len(blended) < limit:
         remaining_slots = limit - len(blended)

@@ -6,8 +6,12 @@ Extracts technical skills, frameworks, tools, and competencies from:
 """
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any, Dict, List, Set
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+logger = logging.getLogger(__name__)
 
 
 # Comprehensive canonical tech skill taxonomy and common aliases
@@ -137,6 +141,14 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "artificial intelligence": "AI",
     "ai": "AI",
     "deep learning": "Deep Learning",
+    "generative ai": "Generative AI",
+    "gen ai": "Generative AI",
+    "ai agents": "AI Agents",
+    "agentic ai": "AI Agents",
+    "voice ai": "Voice AI",
+    "llm": "LLM",
+    "prompt engineering": "Prompt Engineering",
+    "langchain": "LangChain",
     "nlp": "NLP",
     "natural language processing": "NLP",
     "computer vision": "Computer Vision",
@@ -178,8 +190,8 @@ SHORT_AMBIGUOUS_TOKENS = {"r", "go", "c", "ai", "ml", "ts", "js"}
 def _build_skill_regex(token: str) -> re.Pattern:
     """Builds a safe word-boundary regular expression for a skill token."""
     escaped = re.escape(token)
-    # Handle symbols like C++, C#, .NET
-    if token in {"c++", "c#", ".net"}:
+    # Handle symbols like C++, C#, .NET, AI&DS
+    if token in {"c++", "c#", ".net"} or "&" in token or "/" in token:
         return re.compile(rf"(?<![a-zA-Z0-9]){escaped}(?![a-zA-Z0-9+])", re.IGNORECASE)
     return re.compile(rf"\b{escaped}\b", re.IGNORECASE)
 
@@ -287,3 +299,81 @@ def extract_skills_from_user_message(message: str) -> List[str]:
 
     # 2. General text extraction across the message
     return extract_skills_from_text(msg)
+
+
+def extract_text_from_resume_file(file_path: Path | str) -> str:
+    """Extracts raw text from an uploaded resume (.pdf, .docx, .txt)."""
+    p = Path(file_path)
+    if not p.is_file():
+        return ""
+
+    ext = p.suffix.lower()
+    text = ""
+    if ext == ".pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(str(p))
+            extracted_pages = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    extracted_pages.append(page_text)
+            text = "\n".join(extracted_pages)
+        except Exception as exc:
+            logger.warning("[Skills] Failed to extract text from PDF %s: %s", p.name, exc)
+    elif ext == ".docx":
+        try:
+            import zipfile
+            import xml.etree.ElementTree as ET
+            with zipfile.ZipFile(str(p)) as docx_zip:
+                xml_content = docx_zip.read("word/document.xml")
+                tree = ET.fromstring(xml_content)
+                paragraphs = []
+                for p_node in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+                    texts = [
+                        node.text
+                        for node in p_node.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t")
+                        if node.text
+                    ]
+                    if texts:
+                        paragraphs.append("".join(texts))
+                text = "\n".join(paragraphs)
+        except Exception as exc:
+            logger.warning("[Skills] Failed to extract text from DOCX %s: %s", p.name, exc)
+    elif ext in {".txt", ".md"}:
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            logger.warning("[Skills] Failed to read text file %s: %s", p.name, exc)
+
+    return text.strip()
+
+
+def parse_resume_for_profile(file_path: Path | str) -> Dict[str, Any]:
+    """Parses an uploaded resume file and extracts technical skills and years of experience."""
+    raw_text = extract_text_from_resume_file(file_path)
+    if not raw_text:
+        return {"skills": [], "experience_years": None, "text_length": 0}
+
+    extracted_skills = extract_skills_from_text(raw_text)
+
+    # Detect years of experience if mentioned
+    exp_years: Optional[float] = None
+    exp_match = re.search(
+        r"(\d+(?:\.\d+)?)\+?\s*years?(?:\s*of)?\s*(?:total\s*)?(?:work\s*|relevant\s*)?experience",
+        raw_text,
+        re.IGNORECASE,
+    )
+    if exp_match:
+        try:
+            exp_val = float(exp_match.group(1))
+            if 0.0 <= exp_val <= 40.0:
+                exp_years = exp_val
+        except (ValueError, TypeError):
+            pass
+
+    return {
+        "skills": extracted_skills,
+        "experience_years": exp_years,
+        "text_length": len(raw_text),
+    }

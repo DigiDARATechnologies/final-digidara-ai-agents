@@ -92,21 +92,12 @@ def normalize_job(raw_job):
             return None
 
     # Extract experience years from title/description if present
-    exp_min = None
-    exp_max = None
-    exp_range_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*years?", combined_text, re.IGNORECASE)
-    if exp_range_match:
-        try:
-            exp_min = int(float(exp_range_match.group(1)))
-            exp_max = int(float(exp_range_match.group(2)))
-        except (ValueError, TypeError):
-            pass
-    elif re.search(r"\b(\d+)\+?\s*years?\b", combined_text, re.IGNORECASE):
-        single_match = re.search(r"\b(\d+)\+?\s*years?\b", combined_text, re.IGNORECASE)
-        try:
-            exp_min = int(single_match.group(1))
-        except (ValueError, TypeError):
-            pass
+    from ..experience import extract_experience_from_text
+    exp_min, exp_max = extract_experience_from_text(title, description)
+    if exp_min is not None and isinstance(exp_min, float) and exp_min.is_integer():
+        exp_min = int(exp_min)
+    if exp_max is not None and isinstance(exp_max, float) and exp_max.is_integer():
+        exp_max = int(exp_max)
 
     return {
         "source": "adzuna",

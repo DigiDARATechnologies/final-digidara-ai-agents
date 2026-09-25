@@ -152,6 +152,7 @@ def init_job_tables():
                 experience_years DECIMAL(4,1) NOT NULL DEFAULT 0,
                 resume_url TEXT,
                 profile_completed TINYINT(1) NOT NULL DEFAULT 0,
+                onboarding_step VARCHAR(50) DEFAULT 'full_name',
                 plan_tier VARCHAR(20) NOT NULL DEFAULT 'free',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -220,6 +221,8 @@ def init_job_tables():
         # rather than one delimited string.
         _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN resume_filename VARCHAR(500) NULL")
         _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN resume_original_name VARCHAR(255) NULL")
+        _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN onboarding_step VARCHAR(50) DEFAULT 'full_name'")
+        _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN education VARCHAR(255) NULL")
 
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN department VARCHAR(150) NULL AFTER employment_type")
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN category VARCHAR(50) NULL AFTER department")

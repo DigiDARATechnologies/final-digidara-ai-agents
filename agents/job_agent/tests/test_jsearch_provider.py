@@ -70,6 +70,32 @@ class JSearchProviderTests(unittest.TestCase):
         self.assertEqual(jobs[0]["external_id"], "jsearch:xyz789")
         self.assertEqual(jobs[0]["company"], "Chennai AI Corp")
 
+    @patch("job_agent.providers.jsearch._token", return_value="test_token")
+    def test_fetch_and_normalize_success_v2_dict_payload(self, _token):
+        session = MagicMock()
+        response = MagicMock(status_code=200)
+        response.json.return_value = {
+            "status": "OK",
+            "data": {
+                "jobs": [
+                    {
+                        "job_id": "v2_999",
+                        "job_title": "Full Stack Engineer",
+                        "employer_name": "Coimbatore Tech",
+                        "job_city": "Coimbatore",
+                        "job_apply_link": "https://example.com/job/v2_999",
+                        "job_description": "Entry level full stack role",
+                    }
+                ]
+            }
+        }
+        session.get.return_value = response
+
+        jobs = fetch_and_normalize("Full Stack Coimbatore", session=session)
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["external_id"], "jsearch:v2_999")
+        self.assertEqual(jobs[0]["company"], "Coimbatore Tech")
+
     @patch.dict("os.environ", {}, clear=True)
     def test_fetch_raises_not_configured_when_missing_token(self):
         with self.assertRaises(JSearchNotConfigured):

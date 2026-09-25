@@ -25,6 +25,7 @@
           "get_hidden_jobs",
           "job_action",
           "get_applications",
+          "update_application_status",
           "export_user_data",
           "delete_user_data",
           "admin_list_users",

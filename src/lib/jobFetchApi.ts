@@ -174,7 +174,7 @@ export async function downloadJobFetchResume(): Promise<Blob> {
 }
 
 
-export function getJobFeed(filters: { q?: string; work_mode?: string; category?: string; saved?: boolean } = {}) {
+export function getJobFeed(filters: { q?: string; location?: string; work_mode?: string; category?: string; saved?: boolean } = {}) {
   return invoke<{ jobs: JobFeedItem[]; total: number; returned: number; plan_tier: string; limit: number }>(
     "get_feed",
     filters,
@@ -183,6 +183,16 @@ export function getJobFeed(filters: { q?: string; work_mode?: string; category?:
 
 export function jobFetchAction(jobId: number, action: "save" | "unsave" | "hide" | "unhide" | "apply") {
   return invoke<{ message: string; action: string }>("job_action", { job_id: jobId, action });
+}
+
+export function updateJobApplicationStatus(
+  jobId: number,
+  status: "applied" | "screening" | "interview" | "offer" | "rejected" | "withdrawn" | string,
+) {
+  return invoke<{ message: string; job_id: number; application_status: string }>("update_application_status", {
+    job_id: jobId,
+    status,
+  });
 }
 
 export function getJobFetchApplications() {

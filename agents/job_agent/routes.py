@@ -36,6 +36,7 @@ from .providers.sync import (
 )
 from .scraper import _validate_public_url, ScraperError
 from .service import _clean_job, queue_source_run_once
+from .skills import parse_resume_for_profile
 from .tn_location import ALL_TN_DISTRICTS
 from .chat_service import chat_with_job_agent
 from .trust import evaluate_job_trust
@@ -227,24 +228,69 @@ def my_resume_upload():
     user_dir = UPLOAD_DIR / g.job_user_id
     user_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}{extension}"
-    file.save(user_dir / stored_name)
+    saved_path = user_dir / stored_name
+    file.save(saved_path)
+
+    # Automatically extract text and parse technical skills from the uploaded resume
+    parsed_resume = parse_resume_for_profile(saved_path)
+    extracted_skills = parsed_resume.get("skills") or []
+    detected_exp = parsed_resume.get("experience_years")
 
     original_name = secure_filename(file.filename) or "resume"
     db = get_db()
-    cursor = db.cursor()
+    cursor = db.cursor(dictionary=True)
+    all_skills = []
     try:
         cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
-        # Read the outgoing filename in the same transaction as the
-        # overwrite, so a replaced resume is never left orphaned on disk —
-        # without this, every re-upload leaked the previous file, which also
-        # meant GDPR erasure (my_data's DELETE branch) could silently miss
-        # older files it never knew about.
-        cursor.execute("SELECT resume_filename FROM user_job_profiles WHERE user_id=%s", (g.job_user_id,))
-        previous = cursor.fetchone()
-        previous_resume_filename = previous[0] if previous else None
         cursor.execute(
-            "UPDATE user_job_profiles SET resume_filename=%s, resume_original_name=%s WHERE user_id=%s",
-            (f"{g.job_user_id}/{stored_name}", original_name, g.job_user_id),
+            """SELECT resume_filename, skills, experience_years, full_name, preferred_titles
+               FROM user_job_profiles WHERE user_id=%s""",
+            (g.job_user_id,),
+        )
+        previous = cursor.fetchone()
+        if isinstance(previous, dict):
+            previous_resume_filename = previous.get("resume_filename")
+            current_skills = parse_list(previous.get("skills"))
+            current_exp = float(previous.get("experience_years") or 0)
+            full_name = (previous.get("full_name") or "").strip()
+            pref_titles = parse_list(previous.get("preferred_titles"))
+        elif isinstance(previous, (tuple, list)) and len(previous) > 0:
+            previous_resume_filename = previous[0]
+            current_skills = parse_list(previous[1]) if len(previous) > 1 else []
+            current_exp = float(previous[2] or 0) if len(previous) > 2 else 0.0
+            full_name = (previous[3] or "").strip() if len(previous) > 3 else ""
+            pref_titles = parse_list(previous[4]) if len(previous) > 4 else []
+        else:
+            previous_resume_filename = None
+            current_skills = []
+            current_exp = 0.0
+            full_name = ""
+            pref_titles = []
+
+        # Merge newly extracted skills with existing profile skills (preserving uniqueness)
+        existing_skills_lower = {s.lower() for s in current_skills}
+        merged_skills = list(current_skills)
+        for s in extracted_skills:
+            if s.lower() not in existing_skills_lower:
+                merged_skills.append(s)
+                existing_skills_lower.add(s.lower())
+        all_skills = merged_skills[:50]
+
+        new_exp = current_exp if current_exp > 0 else (detected_exp or 0.0)
+        completed = bool(full_name and all_skills and pref_titles)
+
+        cursor.execute(
+            """UPDATE user_job_profiles
+               SET resume_filename=%s, resume_original_name=%s, skills=%s, experience_years=%s, profile_completed=%s
+               WHERE user_id=%s""",
+            (
+                f"{g.job_user_id}/{stored_name}",
+                original_name,
+                json.dumps(all_skills),
+                new_exp,
+                int(completed),
+                g.job_user_id,
+            ),
         )
         db.commit()
     finally:
@@ -252,7 +298,12 @@ def my_resume_upload():
         db.close()
     if previous_resume_filename:
         _delete_resume_file(previous_resume_filename)
-    return jsonify({"message": "Resume uploaded", "filename": original_name})
+    return jsonify({
+        "message": "Resume uploaded and analyzed successfully",
+        "filename": original_name,
+        "extracted_skills": extracted_skills,
+        "skills": all_skills,
+    })
 
 
 @job_bp.get("/api/jobs/me/resume")
@@ -355,6 +406,7 @@ def my_feed():
         plan_tier = profile.get("plan_tier") or "free"
 
         query = (request.args.get("q") or "").strip()
+        location = (request.args.get("location") or "").strip()
         mode = (request.args.get("work_mode") or "").strip().lower()
         category = (request.args.get("category") or "").strip()
         saved_only = (request.args.get("saved") or "").strip().lower() in {"1", "true", "yes"}
@@ -366,6 +418,10 @@ def my_feed():
             where.append("(j.title LIKE %s OR j.company LIKE %s OR j.description LIKE %s)")
             pattern = f"%{query}%"
             params.extend([pattern, pattern, pattern])
+        if location and location.lower() != "all":
+            where.append("(j.location LIKE %s OR j.location_district LIKE %s OR j.location_region LIKE %s)")
+            loc_pattern = f"%{location}%"
+            params.extend([loc_pattern, loc_pattern, loc_pattern])
         if mode in {"remote", "hybrid", "onsite"}:
             where.append("j.work_mode=%s")
             params.append(mode)
@@ -568,6 +624,44 @@ def my_applications():
             (g.job_user_id,),
         )
         return jsonify({"applications": [_serialize(row) for row in cursor.fetchall()]})
+    finally:
+        _close(cursor, db)
+
+
+@job_bp.put("/api/jobs/me/applications/<int:job_id>/status")
+@user_required
+def my_application_status(job_id):
+    """Updates the lifecycle status of a user's job application (applied, screening, interview, offer, rejected, withdrawn)."""
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "").strip().lower()
+    if status not in APPLICATION_STATUSES:
+        return jsonify({
+            "error": f"Invalid application status. Allowed: {', '.join(sorted(APPLICATION_STATUSES))}"
+        }), 400
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, status FROM jobs WHERE id=%s", (job_id,))
+        job = cursor.fetchone()
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+
+        cursor.execute(
+            """INSERT INTO user_job_actions (
+                user_id, job_id, is_saved, is_hidden, application_status, applied_at
+            ) VALUES (%s, %s, 0, 0, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                application_status = %s,
+                applied_at = IF(applied_at IS NULL, NOW(), applied_at)""",
+            (g.job_user_id, job_id, status, status),
+        )
+        db.commit()
+        return jsonify({
+            "message": f"Application status updated to '{status}'",
+            "job_id": job_id,
+            "application_status": status,
+        })
     finally:
         _close(cursor, db)
 

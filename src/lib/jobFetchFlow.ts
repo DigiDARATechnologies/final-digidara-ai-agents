@@ -163,28 +163,21 @@ export async function openJobFetchChat(user: User): Promise<{ state: JobFetchFlo
       planTier: profile.plan_tier,
     });
 
-    const firstName = (profile.full_name || user.name).split(" ")[0];
-    const hasProfileInfo = profile.skills.length > 0 || profile.preferred_locations.length > 0 || !!profile.resume_original_name;
+    const firstName = (profile.full_name || user.name || "there").split(" ")[0];
+    const isProfileComplete = profile.profile_completed === 1;
 
-    // IF USER HAS NOT GIVEN ANY INFORMATION YET:
-    if (!hasProfileInfo) {
-      const welcomeText = `👋 Hi ${firstName}! I'm your **Job Agent**.\n\nI specialize in **fresher opportunities, internships, and junior tech roles** (70% entry-level & 30% career growth) across Tamil Nadu and major tech hubs.\n\nTo find the best matches for you, tell me:\n• What are your **skills**? (e.g. React, Python, Java, SQL)\n• What **locations** do you prefer? (e.g. Chennai, Coimbatore, Bangalore, Remote)\n\nYou can also attach your resume anytime using 📎.`;
-
-      const quickOptions: ChatOption[] = [
-        { label: "🎓 Fresher software jobs", value: "Show me fresher developer jobs" },
-        { label: "💼 Tech internships", value: "Show me tech internships" },
-        { label: "📍 Entry-level in Chennai", value: "Show me entry level jobs in Chennai" },
-        { label: "📍 Coimbatore junior roles", value: "Show me junior developer jobs in Coimbatore" },
-      ];
+    // IF USER HAS NOT COMPLETED ONBOARDING YET:
+    if (!isProfileComplete) {
+      const welcomeText = `👋 Hi ${firstName}! I'm your **Job Agent**.\n\nHow can I assist you with your career search today?\n\nTo get started, please enter your **full name**.`;
 
       return {
         state: withFeed,
-        messages: [{ text: welcomeText, options: quickOptions }],
+        messages: [{ text: welcomeText, options: [] }],
       };
     }
 
     // IF USER ALREADY HAS PROFILE INFO:
-    const intro = `👋 Welcome back, ${firstName}! Here are your latest curated matches (70% entry-level & 30% growth roles) based on your profile:`;
+    const intro = `👋 Welcome back, ${firstName}! Here are your latest curated matches based on your profile:`;
     const initialMsg = feedMessage(withFeed.feed, withFeed.planTier, intro);
 
     const quickActions: ChatOption[] = [
@@ -363,20 +356,32 @@ export async function handleJobFetchText(
     // Clickable options for recommended jobs
     if (chatRes.matched_jobs && chatRes.matched_jobs.length > 0) {
       for (const j of chatRes.matched_jobs.slice(0, 3)) {
-        options.push({
-          label: `${j.title} @ ${j.company}`,
-          value: `detail:${j.id}`,
-          description: `Match ${j.match_score}%`,
-        });
+        if (j && j.title) {
+          options.push({
+            label: `${j.title} @ ${j.company || "Employer"}`,
+            value: `detail:${j.id}`,
+            description: `Match ${j.match_score ?? 80}%`,
+          });
+        }
       }
     }
 
     // Suggested conversational actions from AI
-    if (chatRes.suggested_actions && chatRes.suggested_actions.length > 0) {
+    if (Array.isArray(chatRes.suggested_actions)) {
       for (const act of chatRes.suggested_actions) {
-        options.push({ label: act.label, value: act.value });
+        if (!act) continue;
+        const label = typeof act === "string" ? act.trim() : (act.label || "").trim();
+        const value = typeof act === "string" ? act.trim() : (act.value || act.label || "").trim();
+        if (label && value && label.length > 1 && label !== ".") {
+          options.push({ label, value });
+        }
       }
     }
+
+    // Strictly filter out any empty or blank options
+    const validOptions = options.filter(
+      (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 1 && opt.label.trim() !== "."
+    );
 
     let replyText = chatRes.reply;
     if (chatRes.matched_jobs && chatRes.matched_jobs.length > 0 && !replyText.includes("1. **")) {
@@ -400,7 +405,7 @@ export async function handleJobFetchText(
 
     return {
       state: nextState,
-      messages: [{ text: replyText, options: options.length ? options : undefined }],
+      messages: [{ text: replyText, options: validOptions.length ? validOptions : undefined }],
     };
   } catch (error: any) {
     const errMsg = String(error?.message || "");

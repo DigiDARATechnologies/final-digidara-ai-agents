@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import requests
@@ -7,9 +8,17 @@ from ..scraper import ScraperError, _iso_datetime, _text
 
 logger = logging.getLogger(__name__)
 
-JSEARCH_API_BASE = "https://jsearch.p.rapidapi.com/search"
+JSEARCH_API_BASE = "https://jsearch.p.rapidapi.com/search-v2"
+JSEARCH_API_FALLBACK = "https://jsearch.p.rapidapi.com/search"
 JSEARCH_HOST = "jsearch.p.rapidapi.com"
 RAPIDAPI_KEY_ENV = "RAPIDAPI_KEY"
+
+
+def _make_external_id(source_job_id):
+    if len(source_job_id) <= 240:
+        return f"jsearch:{source_job_id}"
+    digest = hashlib.sha256(source_job_id.encode("utf-8")).hexdigest()
+    return f"jsearch:{source_job_id[:180]}_{digest[:32]}"
 
 
 class JSearchNotConfigured(ScraperError):
@@ -53,7 +62,9 @@ def normalize_job(raw_job):
 
     job_id = raw_job.get("job_id")
     title = _text(raw_job.get("job_title"))
-    apply_url = str(raw_job.get("job_apply_link") or "").strip()
+    apply_url = str(raw_job.get("job_apply_link") or raw_job.get("job_google_link") or "").strip()
+    if not apply_url and isinstance(raw_job.get("apply_options"), list) and raw_job["apply_options"]:
+        apply_url = str(raw_job["apply_options"][0].get("apply_link") or "").strip()
 
     if not job_id or not title or not apply_url:
         return None
@@ -80,7 +91,7 @@ def normalize_job(raw_job):
     return {
         "source": "jsearch",
         "source_job_id": source_job_id,
-        "external_id": f"jsearch:{source_job_id}",
+        "external_id": _make_external_id(source_job_id),
         "title": title,
         "company": company,
         "location": location,
@@ -113,10 +124,14 @@ def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=N
         "User-Agent": SCRAPER_USER_AGENT,
     }
 
+    timeout_seconds = max(SCRAPER_TIMEOUT_SECONDS * 2, 30)
     try:
-        response = session.get(JSEARCH_API_BASE, params=params, headers=headers, timeout=SCRAPER_TIMEOUT_SECONDS)
+        response = session.get(JSEARCH_API_BASE, params=params, headers=headers, timeout=timeout_seconds)
+        if response.status_code == 404:
+            # Try legacy endpoint only if search-v2 returned 404
+            response = session.get(JSEARCH_API_FALLBACK, params=params, headers=headers, timeout=timeout_seconds)
     except requests.Timeout as exc:
-        raise JSearchAPIError(f"Timed out contacting JSearch ({JSEARCH_API_BASE})") from exc
+        raise JSearchAPIError(f"Timed out contacting RapidAPI JSearch ({JSEARCH_API_BASE})") from exc
     except requests.RequestException as exc:
         raise JSearchAPIError(f"JSearch request failed: {exc}") from exc
 
@@ -124,6 +139,8 @@ def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=N
         raise JSearchAPIError("JSearch API Key is invalid or unauthenticated")
     if response.status_code == 404:
         raise JSearchAPIError("JSearch subscription inactive or endpoint not found on RapidAPI")
+    if response.status_code in (502, 503, 504):
+        raise JSearchAPIError(f"RapidAPI JSearch gateway temporarily unavailable (HTTP {response.status_code})")
     if response.status_code != 200:
         raise JSearchAPIError(f"JSearch returned HTTP {response.status_code}: {response.text[:200]}")
 
@@ -132,7 +149,14 @@ def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=N
     except ValueError as exc:
         raise JSearchAPIError("JSearch response is not valid JSON") from exc
 
-    raw_items = data.get("data") or []
+    raw_data = data.get("data")
+    if isinstance(raw_data, dict):
+        raw_items = raw_data.get("jobs") or []
+    elif isinstance(raw_data, list):
+        raw_items = raw_data
+    else:
+        raw_items = []
+
     jobs = []
     for item in raw_items:
         normalized = normalize_job(item)
