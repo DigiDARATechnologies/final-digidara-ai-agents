@@ -5,6 +5,7 @@ import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
+import { renderMessageText } from "../lib/messageText";
 
 interface ChatViewProps {
   chat: Chat;
@@ -79,30 +80,6 @@ interface ChatViewProps {
   /** Extra panel rendered above the message list ... used by the Aptitude
    * Trainer Agent to show its practice controls alongside the chat. */
   contextPanel?: ReactNode;
-}
-
-function renderInlineMessageText(text: string): ReactNode[] {
-  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
-    const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
-    if (markdownLink) return <a key={index} href={markdownLink[2]} target="_blank" rel="noreferrer">{markdownLink[1]}</a>;
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    return <span key={index}>{part}</span>;
-  });
-}
-
-function renderMessageText(text: string): ReactNode {
-  // Decode only display escapes; message text remains React text, never raw HTML.
-  const lines = text.replace(/\\n/g, "\n").replace(/\\([@[\]()])/g, "$1").replace(/\r\n?/g, "\n").split("\n");
-  return lines.map((line, index) => {
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
-    const heading = line.match(/^\s*#{1,3}\s+(.+)$/);
-    if (heading) return <div className="message-heading" key={index}>{renderInlineMessageText(heading[1])}</div>;
-    if (bullet) return <div className="message-list-item" key={index}>• {renderInlineMessageText(bullet[1])}</div>;
-    if (numbered) return <div className="message-list-item" key={index}>{numbered[1]}. {renderInlineMessageText(numbered[2])}</div>;
-    return <div key={index}>{line ? renderInlineMessageText(line) : "\u00a0"}</div>;
-  });
 }
 
 export default function ChatView({

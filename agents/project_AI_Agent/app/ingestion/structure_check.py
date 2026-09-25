@@ -33,6 +33,35 @@ def _normalize_heading(text: str) -> str:
     return normalized.strip().lower()
 
 
+# What a student's .docx report needs is exactly these sections. "Code" and
+# "Output Screenshots" used to be required too; they are not any more (the code
+# is analysed from the zip, and screenshots are not part of a submission). But a
+# submission guide is generated once per project and then stored, so guides
+# issued before this change still list them -- these helpers strip the retired
+# items at check time, so the older projects stop requiring them as well.
+REPORT_SECTIONS = ["Problem Statement", "Approach", "Conclusion"]
+_RETIRED_SECTIONS = {"code", "output screenshots", "screenshots", "output"}
+
+
+def _is_retired_path(path: str) -> bool:
+    return any("screenshot" in part for part in _normalize_parts(path))
+
+
+def drop_retired_sections(required_sections: list[str] | None) -> list[str]:
+    return [
+        str(section) for section in required_sections or []
+        if _normalize_heading(str(section)) not in _RETIRED_SECTIONS
+    ]
+
+
+def drop_retired_paths(required_paths: list[dict] | None) -> list[dict]:
+    return [item for item in required_paths or [] if not _is_retired_path(str(item.get("path", "")))]
+
+
+def drop_retired_tree_lines(folder_structure: list[str] | None) -> list[str]:
+    return [line for line in folder_structure or [] if "screenshot" not in str(line).lower()]
+
+
 def check_required_sections(required_sections: list[str] | None, doc_sections: dict[str, str] | None) -> dict:
     """required_sections: the submission guide's `docx_required_sections`
     (plain names, e.g. "Approach"). doc_sections: {heading_text: body_text}
