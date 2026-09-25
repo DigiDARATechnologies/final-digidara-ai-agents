@@ -23,12 +23,27 @@ LLM_MODEL=ollama/llama3.1                # local Ollama, no API key needed
 Set only the matching API key env var (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
 `GROQ_API_KEY`). No code change is needed to switch models.
 
-**Screenshots are handled via OCR, not vision models.** The `OutputVerificationNode`
-and `StructureValidationNode` never see raw images — `app/ocr/extractor.py`
-extracts embedded screenshots from the submitted `.docx` and runs them through
-Tesseract OCR, then hands the LLM the extracted text. This keeps the whole
-pipeline working on text-only models (Groq's fast models, local Ollama, etc.),
-not just vision-capable ones.
+**The submission is a `.docx` report plus a `.zip` of source code — no screenshots.**
+The report has exactly three sections (Problem Statement, Approach, Conclusion) and
+carries no code or images; the pipeline no longer OCRs anything from it. The code is
+what gets analysed, in three layers:
+
+1. `SyntaxCheckNode` (`app/ingestion/syntax_check.py`) parses every Python, JSON and
+   TOML file with a real parser. This is a fact, not an LLM opinion, so a syntax
+   error sends the submission straight back — with the file, line, offending source
+   line and message — before any scoring runs. JavaScript, Java, etc. are listed as
+   "not machine-checked" and read line by line by the reviewer instead (parsing them
+   reliably needs their own toolchain, and a wrong "syntax error" verdict must never
+   fail a student).
+2. `OutputVerificationNode` reads the **whole** codebase and gives a
+   met / partial / not-met verdict, with evidence, for every functional requirement.
+3. `CodeQualityScorerNode` reads the whole codebase against the same requirements
+   and scores structure, syntax, maintainability and completeness.
+
+The reviewers get all files in full while the zip fits `CODE_REVIEW_CHAR_BUDGET`
+(default 160,000 characters); past that the largest files are trimmed fairly and
+flagged as trimmed. `app/ocr/` remains only for the Q&A agent's optional
+screenshot attachments in a dispute.
 
 ## Setup
 
@@ -38,8 +53,8 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-**OCR requires the Tesseract binary** (not just the `pytesseract` pip package).
-Install it separately:
+**OCR (only for a Q&A screenshot attachment) requires the Tesseract binary** (not
+just the `pytesseract` pip package). Install it separately:
 - Windows: https://github.com/UB-Mannheim/tesseract/wiki
 - macOS: `brew install tesseract`
 - Linux: `apt install tesseract-ocr`

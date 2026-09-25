@@ -747,6 +747,8 @@ body.glow-off .send-btn:hover{
   white-space:pre-line;
 }
 .message-heading{font-weight:700;margin:2px 0 5px}
+.message-code{margin:8px 0;padding:11px 13px;border-radius:10px;background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;white-space:pre;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+.message-code code{font:inherit;color:inherit;background:none;padding:0}
 .message-list-item{padding-left:4px}
 .msg .bubble code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;padding:1px 4px;border-radius:4px;background:rgba(14,41,75,.08)}
 .msg.user .bubble code{background:rgba(255,255,255,.18)}

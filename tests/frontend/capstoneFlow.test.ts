@@ -294,7 +294,7 @@ describe('choosing a project topic (A/B)', () => {
 });
 
 describe('example report and zip downloads', () => {
-  const exampleHrefs = ['/capstone-examples/capstone-example-report.docx', '/capstone-examples/capstone-example-project.zip'];
+  const exampleHrefs = ['/capstone-examples/capstone-example-report.pdf', '/capstone-examples/capstone-example-project.zip'];
 
   test('the requirements message offers the examples next to the start button', async () => {
     jest.mocked(api.chooseTopic).mockResolvedValue({ thread_id: 'thread', requirements: {} } as never);

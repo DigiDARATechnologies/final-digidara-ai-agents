@@ -30,12 +30,8 @@ expense-tracker/
 │   └── storage.py          JSON file persistence
 ├── tests/
 │   └── test_tracker.py
-├── data/
-│   └── sample_expenses.json
-└── output_screenshots/     proof that it runs (also embedded in the report)
-    ├── 01-add-expense.png
-    ├── 02-category-summary.png
-    └── 03-tests-passing.png
+└── data/
+    └── sample_expenses.json
 ```
 
 ## Features

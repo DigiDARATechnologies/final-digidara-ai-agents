@@ -11,6 +11,7 @@ import {
   uploadSubmission,
   type CodeQualityScore,
   type ProjectDifficulty,
+  type SyntaxErrorDetail,
   type TopicOption,
 } from "./capstoneApi";
 
@@ -514,6 +515,31 @@ export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { s
   return { state: { ...state, docxFile, zipFile }, messages: [{ text }] };
 }
 
+/** One syntax error laid out the way a terminal prints it: the file and line,
+ * the offending source line, a caret under the column, then the message. The
+ * source line keeps its own indentation, so the caret lines up. */
+export function formatSyntaxError(error: SyntaxErrorDetail): string {
+  const lines = [`  File "${error.path}"${error.line ? `, line ${error.line}` : ""}`];
+  if (error.source_line) {
+    lines.push(`    ${error.source_line}`);
+    if (error.column && error.column > 0) lines.push(`    ${" ".repeat(error.column - 1)}^`);
+  }
+  lines.push(`${error.language === "Python" ? "SyntaxError" : `${error.language} syntax error`}: ${error.message}`);
+  return lines.join("\n");
+}
+
+/** The chat message for a submission that was stopped by syntax errors: a
+ * heading and each error as a fenced terminal block -- deliberately NOT the
+ * generic "Revision needed" wording, since the errors themselves are the whole
+ * point. Any other problems found (report sections, folder layout) follow. */
+export function formatSyntaxErrorMessage(errors: SyntaxErrorDetail[], otherNotes?: string | null): string {
+  const heading = errors.length === 1 ? "### Syntax error in your code" : `### ${errors.length} syntax errors in your code`;
+  const parts = [heading, ...errors.map((error) => "```\n" + formatSyntaxError(error) + "\n```")];
+  if (otherNotes?.trim()) parts.push(otherNotes.trim());
+  parts.push("Attach both files again once it is fixed.");
+  return parts.join("\n\n");
+}
+
 export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
   if (!state.docxFile || !state.zipFile || !state.threadId) return { state, messages: [] };
   try {
@@ -529,6 +555,10 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         scoreReasoning: result.score_reasoning ?? null,
         codeQualityScore: result.code_quality_score ?? null,
       };
+      // The code itself does not parse: show each error, not a summary of them.
+      if (result.syntax_errors?.length) {
+        return { state: nextState, messages: [{ text: formatSyntaxErrorMessage(result.syntax_errors, result.revision_notes) }] };
+      }
       // A packaging/structure rejection never reaches content scoring, so
       // final_score is absent there — a failed *content* grade carries one
       // and gets the fuller message with the score, since the student
