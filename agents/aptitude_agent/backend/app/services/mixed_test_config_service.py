@@ -8,7 +8,10 @@ from ..models.base import utcnow
 from .test_generation import CATEGORIES, DISTRIBUTION
 
 
-MIN_CATEGORY_QUESTIONS = 3
+# A category may be omitted from a Mixed Test by setting its count to zero.
+# The update validator still requires at least one question across all
+# categories so an empty assessment cannot be started.
+MIN_CATEGORY_QUESTIONS = 0
 MAX_CATEGORY_QUESTIONS = 10
 MAX_MIXED_TEST_QUESTIONS = 60
 
@@ -106,13 +109,15 @@ def validate_mixed_test_update(body):
         if category_id not in expected_ids or category_id in counts:
             raise ValueError("Category configuration contains an invalid or duplicate category")
         if isinstance(count, bool) or not isinstance(count, int):
-            raise ValueError("Every question count must be a whole number from 3 to 10")
+            raise ValueError("Every question count must be a whole number from 0 to 10")
         if count < MIN_CATEGORY_QUESTIONS or count > MAX_CATEGORY_QUESTIONS:
-            raise ValueError("Every question count must be between 3 and 10")
+            raise ValueError("Every question count must be between 0 and 10")
         counts[category_id] = count
     if set(counts) != expected_ids:
         raise ValueError("Provide exactly one count for each of the six categories")
     total = sum(counts.values())
+    if total == 0:
+        raise ValueError("Select at least one question across the categories")
     if total > MAX_MIXED_TEST_QUESTIONS:
         raise ValueError("A Mixed Test cannot exceed 60 questions")
     return counts

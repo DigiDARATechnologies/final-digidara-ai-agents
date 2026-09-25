@@ -1,6 +1,7 @@
 """Render the completed interview report with readable, aligned question reviews."""
 
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -8,9 +9,10 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     CondPageBreak, HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate,
-    Spacer, Table, TableStyle,
+    Spacer, Table, TableStyle, Image,
 )
 
 
@@ -19,6 +21,24 @@ INK = colors.HexColor("#24232E")
 MUTED = colors.HexColor("#626575")
 LINE = colors.HexColor("#DED9F2")
 SOFT = colors.HexColor("#F6F3FF")
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "digidara-logo.jpg"
+LOGO_WIDTH = 38*mm
+LOGO_HEIGHT = 21.375*mm
+
+
+def _logo():
+    return ""
+
+
+def _draw_logo(canvas, doc):
+    if LOGO_PATH.is_file():
+        canvas.drawImage(
+            ImageReader(str(LOGO_PATH)),
+            A4[0] - doc.rightMargin - LOGO_WIDTH,
+            A4[1] - 26*mm,
+            width=LOGO_WIDTH, height=LOGO_HEIGHT,
+            preserveAspectRatio=True, mask="auto",
+        )
 
 
 def _html(value):
@@ -26,6 +46,12 @@ def _html(value):
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = text.replace("\u2013", "-").replace("\u2014", "-")
     return escape(text.encode("cp1252", "replace").decode("cp1252")).replace("\n", "<br/>")
+
+
+def _display_choice(value):
+    """Render enum-like report values in readable title case."""
+    text = str(value if value is not None else "").strip()
+    return text.replace("_", " ").title()
 
 
 def _styles():
@@ -46,6 +72,7 @@ def _styles():
 
 def _footer(canvas, doc):
     canvas.saveState()
+    _draw_logo(canvas, doc)
     width, _ = A4
     canvas.setStrokeColor(LINE)
     canvas.setLineWidth(.5)
@@ -67,18 +94,26 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     output = BytesIO()
     doc = SimpleDocTemplate(
         output, pagesize=A4, leftMargin=17*mm, rightMargin=17*mm,
-        topMargin=17*mm, bottomMargin=20*mm,
+        topMargin=30*mm, bottomMargin=20*mm,
         title="Mock Interview Report", author="DigiDARA",
     )
     style = _styles()
-    story = [Paragraph("MOCK INTERVIEW", style["title"]), Paragraph("Interview Report", style["subtitle"])]
+    title_block = [Paragraph("Mock Interview", style["title"]), Paragraph("Interview Report", style["subtitle"])]
+    report_header = Table([[title_block, _logo()]], colWidths=[138*mm, 38*mm], hAlign="LEFT")
+    report_header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story = [report_header, Spacer(1, 4*mm)]
 
     metadata = [
-        ("STUDENT", interview.get("student_name")),
-        ("ROLE / TOPIC", interview.get("role_name") or interview.get("subject")),
-        ("ROUND", interview.get("round_type")),
-        ("DIFFICULTY", interview.get("difficulty")),
-        ("COMPLETED", interview.get("ended_at") or interview.get("created_at")),
+        ("Student", _display_choice(interview.get("student_name"))),
+        ("Role / Topic", interview.get("role_name") or interview.get("subject")),
+        ("Round", _display_choice(interview.get("round_type"))),
+        ("Difficulty", _display_choice(interview.get("difficulty"))),
+        ("Questions", str(max_marks)),
+        ("Completed", interview.get("ended_at") or interview.get("created_at")),
     ]
     detail_table = Table(
         [[Paragraph(label, style["label"]), Paragraph(_html(value) or "-", style["value"])] for label, value in metadata],
@@ -92,10 +127,10 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     ]))
     story.extend([detail_table, Paragraph("Score Summary", style["heading"])])
     scores = [
-        ("OVERALL SCORE", f"{interview.get('overall_score')}/10"),
-        ("KNOWLEDGE", f"{interview.get('technical_accuracy')}/10"),
-        ("COMMUNICATION", f"{interview.get('communication_clarity')}/10"),
-        ("CONFIDENCE", f"{interview.get('confidence')}/10"),
+        ("Overall score", f"{interview.get('overall_score')}/10"),
+        ("Knowledge", f"{interview.get('technical_accuracy')}/10"),
+        ("Communication", f"{interview.get('communication_clarity')}/10"),
+        ("Confidence", f"{interview.get('confidence')}/10"),
     ]
     score_table = Table(
         [[Paragraph(label, style["label"]), Paragraph(_html(value), style["value"])] for label, value in scores],
@@ -125,17 +160,20 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
             ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         question_intro = [header]
-        _field(question_intro, "QUESTION", item.get("question"), style)
+        _field(question_intro, "Question", item.get("question"), style)
         story.append(KeepTogether(question_intro))
-        _field(story, "YOUR ANSWER", item.get("answer"), style)
+        _field(story, "Your answer", item.get("answer"), style)
         if item.get("followup"):
-            _field(story, "FOLLOW-UP QUESTION", item["followup"].get("question"), style)
-            _field(story, "FOLLOW-UP ANSWER", item["followup"].get("answer"), style)
+            _field(story, "Follow-up question", item["followup"].get("question"), style)
+            _field(story, "Follow-up answer", item["followup"].get("answer"), style)
         if item.get("verdict_reason"):
-            _field(story, "FEEDBACK", item.get("verdict_reason"), style)
-        _field(story, "RECOMMENDED ANSWER", item.get("ideal_answer"), style)
+            _field(story, "Feedback", item.get("verdict_reason"), style)
+        _field(story, "Recommended answer", item.get("ideal_answer"), style)
         story.extend([Spacer(1, 5*mm), HRFlowable(width="100%", thickness=.5, color=LINE), Spacer(1, 3*mm)])
 
-    story.append(Paragraph(f"Scorecard total: {_html(total_marks)} / {_html(max_marks)}", style["body"]))
+    story.append(Paragraph(
+        f"Correct-Answer Score: {_html(total_marks)} / {_html(max_marks)} "
+        f"({len(scorecard)} questions)", style["body"]
+    ))
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return output.getvalue()

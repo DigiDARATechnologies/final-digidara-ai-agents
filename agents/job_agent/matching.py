@@ -153,6 +153,15 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
             category_match = "related"
     category_score = {"exact": 15, "related": 8, "none": 0}[category_match]
 
+    has_candidate_intent = bool(student_skills or title_preferences)
+    has_relevance = bool(declared_overlap or verified_overlap or title_score or category_match != "none")
+
+    # If the candidate has declared technical skills or preferred titles,
+    # but the job matches NONE of them (0 skills, 0 title match, unrelated category),
+    # it is not relevant to their career goals and should not be scored as a match.
+    if has_candidate_intent and not has_relevance:
+        return 0, ["Unrelated to your technical skills or role preferences"]
+
     base_score = (
         verified_score + skill_score + title_score + location_score
         + mode_score + freshness_score + category_score
@@ -197,7 +206,8 @@ def blend_job_matches(
     Blends jobs ensuring:
     - If is_fresher_candidate is True: 100% genuine entry/fresher jobs.
       Zero senior or 4+ year jobs are ever leaked to freshers!
-    - Otherwise: ~70% Entry / 30% Growth / Experienced allocation.
+    - Otherwise: allocates career-aligned growth / mid-level roles matching candidate experience.
+    - Highest matching score is ALWAYS presented first.
     """
     if not scored_jobs:
         return []
@@ -205,7 +215,7 @@ def blend_job_matches(
     entry_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "entry" and j.get("match_score", 0) > 10]
     growth_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "growth" and j.get("match_score", 0) > 10]
     senior_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "senior" and j.get("match_score", 0) > 10]
-    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs]
+    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs and j.get("match_score", 0) > 10]
 
     if is_fresher_candidate:
         # Strictly select entry/fresher jobs first
@@ -217,20 +227,19 @@ def blend_job_matches(
                     selected.append(cand)
                     if len(selected) >= limit:
                         break
-        selected.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+        selected.sort(key=lambda x: x.get("match_score", 0), reverse=True)
         return selected[:limit]
 
-    # Standard blending for experienced candidates
-    entry_target = math.ceil(limit * entry_ratio)  # e.g. 4 out of 5
-    growth_target = limit - entry_target          # e.g. 1 out of 5
+    # For experienced candidates: prioritize growth / career-matching roles first
+    growth_target = math.ceil(limit * (1.0 - min(entry_ratio, 0.3)))  # e.g. at least 70% growth/experienced
+    entry_target = limit - growth_target
 
-    selected_entry = entry_jobs[:entry_target]
     selected_growth = growth_jobs[:growth_target]
+    selected_entry = entry_jobs[:entry_target]
 
-    blended = list(selected_entry) + list(selected_growth)
+    blended = list(selected_growth) + list(selected_entry)
     if len(blended) < limit:
-        remaining_slots = limit - len(blended)
-        for pool in (growth_jobs[len(selected_growth):], entry_jobs[len(selected_entry):], other_jobs):
+        for pool in (growth_jobs[len(selected_growth):], entry_jobs[len(selected_entry):], senior_jobs, other_jobs):
             for candidate in pool:
                 if candidate not in blended:
                     blended.append(candidate)
@@ -239,6 +248,6 @@ def blend_job_matches(
             if len(blended) >= limit:
                 break
 
-    # Final sort preserving entry-first priority
-    blended.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+    # Final sort preserving match quality (highest match score first!)
+    blended.sort(key=lambda x: x.get("match_score", 0), reverse=True)
     return blended[:limit]

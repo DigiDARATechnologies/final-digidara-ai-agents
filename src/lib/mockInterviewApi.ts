@@ -10,7 +10,7 @@ export interface MockInterviewQuestion {
   question: string;
   total_questions?: number;
   round_type?: string;
-  interview_mode?: "course" | "custom_topic" | "role";
+  interview_mode?: "course" | "custom_topic" | "role" | "weak_topic_practice";
   role_name?: string | null;
   difficulty?: "beginner" | "intermediate" | "advanced";
   resumed_existing?: boolean;
@@ -41,6 +41,11 @@ export interface MockInterviewSummary {
   strengths?: string;
   weaknesses?: string;
   feedback?: string;
+  subject_breakdown?: {
+    weak_subjects?: string[];
+    strong_subjects?: string[];
+    subjects?: Array<{ subject?: string; status?: string; score?: number }>;
+  } | null;
   scorecard?: Array<{
     question_number?: number;
     question?: string;
@@ -71,9 +76,10 @@ export function startMockInterview(sessionToken: string, input: {
   round_type: "technical" | "hr";
   subject?: string;
   role_name?: string;
+  resolved_subjects?: string[];
   difficulty: string;
-  interview_mode: "course" | "custom_topic" | "role";
-  num_questions: 10;
+  interview_mode: "course" | "custom_topic" | "role" | "weak_topic_practice";
+  num_questions: 5 | 10 | 15;
 }) {
   return invoke<MockInterviewQuestion>("start_interview", { sessionToken, ...input });
 }

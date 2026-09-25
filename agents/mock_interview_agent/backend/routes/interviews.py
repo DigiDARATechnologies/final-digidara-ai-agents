@@ -36,6 +36,8 @@ from services.role_interviews import (
 )
 from services.question_history import (
     get_recent_asked_history,
+    get_recent_skill_coverage,
+    prioritize_skill_areas,
     question_hash,
     record_served_questions,
 )
@@ -181,10 +183,10 @@ def start_interview():
         resolved_subjects = None
 
     num_questions = bounded_int(
-        data.get("num_questions", 5), "num_questions", 1, 10
+        data.get("num_questions", 10), "num_questions", 1, 15
     )
     if num_questions not in ALLOWED_QUESTION_COUNTS:
-        raise ValidationError("num_questions must be either 5 or 10.")
+        raise ValidationError("num_questions must be one of 5, 10, or 15.")
 
     student, _ = db.query(
         "SELECT id FROM students WHERE id = %s", (student_id,), fetchone=True
@@ -267,6 +269,23 @@ def start_interview():
                     role=role_skill_scope,
                     skills=role_skills,
                 )
+            prioritized_skills = role_skills
+            if role_skills and round_type == "technical" and interview_mode in {"role", "weak_topic_practice"}:
+                recent_skill_coverage = get_recent_skill_coverage(
+                    student_id, role_name, round_type, difficulty
+                )
+                prioritized_skills = prioritize_skill_areas(
+                    role_skills, recent_skill_coverage
+                )
+                log(
+                    logging.INFO,
+                    "role_skill_coverage_prioritized",
+                    "Prioritized least-recently-covered role skills for this interview",
+                    role=role_name,
+                    requested_questions=num_questions,
+                    recent_skill_coverage=recent_skill_coverage,
+                    prioritized_skills=prioritized_skills,
+                )
             question_subject = subject_for_question(resolved_subjects, 0) if resolved_subjects else subject
             if interview_mode in {"role", "weak_topic_practice"}:
                 def generate_ai_question(asked, skill_area):
@@ -286,6 +305,7 @@ def start_interview():
                 question_plan = groq_client.build_interview_questions(
                     role_name, difficulty, round_type, num_questions, generate_ai_question,
                     already_asked_hashes, role_skills, question_context,
+                    skill_order=prioritized_skills,
                 )
                 timing["question_generation_seconds"] = round(
                     time.perf_counter() - question_generation_started_at, 4
@@ -293,7 +313,7 @@ def start_interview():
                 for index, planned_question in enumerate(question_plan):
                     planned_question.setdefault("topic_area", "frequently asked interview question")
                     planned_question.setdefault(
-                        "subject_tag", role_skills[index % len(role_skills)] if role_skills else subject_for_question(resolved_subjects, index)
+                        "subject_tag", prioritized_skills[index % len(prioritized_skills)] if prioritized_skills else subject_for_question(resolved_subjects, index)
                     )
                 generated_question = question_plan[0]
                 question_subject = generated_question.get("subject_tag") or question_subject

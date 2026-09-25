@@ -89,14 +89,14 @@ def build_transcription_prompt(round_type, subject=None, question=None):
         parts = [TRANSCRIPTION_PROMPTS["hr"]]
         if question_text:
             parts.append(f"The candidate is answering: {question_text}")
-        parts.append("Preserve the candidate's wording and intended meaning.")
+        parts.append("Transcribe every spoken word, including the first word; preserve the candidate's wording and intended meaning.")
         return " ".join(parts)
 
     topic = subject_text or "a technical topic"
     parts = [f"Technical interview about {topic}."]
     if question_text:
         parts.append(f"The candidate is answering: {question_text}")
-    parts.append("Use the correct spelling of technical terminology where applicable.")
+    parts.append("Transcribe every spoken word, including the first word. Use the correct spelling of technical terminology where applicable.")
     terms = TECHNICAL_TRANSCRIPTION_TERMS.get(subject_text.casefold())
     if terms:
         parts.append(f"Relevant terminology includes: {terms}.")
