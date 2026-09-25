@@ -137,13 +137,13 @@ def _normalize_generic_job(raw_item, source_name, *, extra_title=(), extra_compa
     _NORMALIZERS below to match what actually came back.
     """
     title = _first(raw_item, *extra_title, "title", "jobTitle", "job_title", "position")
-    company = _first(raw_item, *extra_company, "companyName", "company_name", "company", "employerName")
-    apply_url = _first(raw_item, *extra_url, "jdURL", "jdUrl", "jobUrl", "job_url", "url", "link", "applyUrl")
+    company = _first(raw_item, *extra_company, "companyName", "company_name", "company", "employerName", "employer")
+    apply_url = _first(raw_item, *extra_url, "jdURL", "jdUrl", "jobUrl", "job_url", "url", "link", "applyUrl", "publicUrl")
     if not title or not company or not apply_url:
         return None
 
     external_id = _first(raw_item, *extra_id, "jobId", "job_id", "id") or apply_url
-    location = _first(raw_item, *extra_location, "location", "jobLocation", "placeholders") or ""
+    location = _first(raw_item, *extra_location, "location", "jobLocation", "placeholders", "locationsRaw") or ""
     if isinstance(location, list):
         location = ", ".join(str(item) for item in location if item)
     description = _first(raw_item, *extra_description, "jobDescription", "description", "jd") or ""
@@ -154,7 +154,7 @@ def _normalize_generic_job(raw_item, source_name, *, extra_title=(), extra_compa
         skills = [str(item).strip() for item in skills_raw if str(item).strip()]
     else:
         skills = []
-    posted_at = _first(raw_item, *extra_posted, "postedDate", "createdDate", "postDate", "datePosted")
+    posted_at = _first(raw_item, *extra_posted, "postedDate", "createdDate", "postDate", "datePosted", "postedAt")
 
     return {
         "source": source_name,
@@ -165,7 +165,7 @@ def _normalize_generic_job(raw_item, source_name, *, extra_title=(), extra_compa
         "department": "",
         "employment_type": "",
         "work_mode": "",
-        "salary_text": str(_first(raw_item, *extra_salary, "salary", "salaryText") or ""),
+        "salary_text": str(_first(raw_item, *extra_salary, "salary", "salaryText", "salaryNote") or ""),
         "description": str(description),
         "skills": skills,
         "apply_url": str(apply_url).strip(),
@@ -175,25 +175,52 @@ def _normalize_generic_job(raw_item, source_name, *, extra_title=(), extra_compa
 
 
 def _normalize_naukri_job(raw_item):
-    """`crawloop/naukri-jobs-scraper` — see _normalize_generic_job()'s UNVERIFIED note."""
-    return _normalize_generic_job(raw_item, "naukri")
+    """`crawloop/naukri-jobs-scraper` verified output mapping."""
+    return _normalize_generic_job(
+        raw_item,
+        "naukri",
+        extra_company=("employer",),
+        extra_url=("url",),
+        extra_id=("jobId",),
+        extra_posted=("postedAt",),
+        extra_salary=("salaryNote",),
+    )
 
 
 def _normalize_foundit_job(raw_item):
-    """`crawloop/foundit-jobs-scraper` — same author as Naukri's actor, same UNVERIFIED note."""
-    return _normalize_generic_job(raw_item, "foundit")
+    """`crawloop/foundit-jobs-scraper` verified output mapping."""
+    return _normalize_generic_job(
+        raw_item,
+        "foundit",
+        extra_company=("employer",),
+        extra_url=("applyUrl", "url"),
+        extra_id=("jobId",),
+        extra_posted=("postedAt",),
+    )
 
 
 def _normalize_hirist_job(raw_item):
-    """`crawloop/hirist-jobs-scraper` — same author as Naukri's actor, same UNVERIFIED note."""
-    return _normalize_generic_job(raw_item, "hirist")
+    """`crawloop/hirist-jobs-scraper` verified output mapping."""
+    return _normalize_generic_job(
+        raw_item,
+        "hirist",
+        extra_company=("employer",),
+        extra_url=("url",),
+        extra_id=("jobId",),
+        extra_posted=("postedAt",),
+    )
 
 
 def _normalize_instahyre_job(raw_item):
-    """`parsebird/instahyre-jobs-scraper` — different actor author than the
-    crawloop-based platforms above, so its field names may diverge more;
-    same UNVERIFIED note applies."""
-    return _normalize_generic_job(raw_item, "instahyre", extra_company=("employer",), extra_url=("profile_url",))
+    """`parsebird/instahyre-jobs-scraper` verified output mapping."""
+    return _normalize_generic_job(
+        raw_item,
+        "instahyre",
+        extra_company=("companyName", "employer"),
+        extra_url=("publicUrl", "profile_url"),
+        extra_location=("locationsRaw", "locations"),
+        extra_id=("jobId",),
+    )
 
 
 def _normalize_internshala_job(raw_item):
@@ -206,12 +233,12 @@ def _normalize_internshala_job(raw_item):
 
 
 def _normalize_indeed_job(raw_item):
-    """`solidscrape/indeed-jobs-scraper` — same UNVERIFIED note applies."""
+    """`solidscrape/indeed-jobs-scraper` verified output mapping."""
     return _normalize_generic_job(raw_item, "indeed", extra_url=("job_link", "viewJobLink"))
 
 
 def _normalize_glassdoor_job(raw_item):
-    """`simpleapi/glassdoor-jobs-scraper` — same UNVERIFIED note applies."""
+    """`simpleapi/glassdoor-jobs-scraper` — paid store rental actor."""
     return _normalize_generic_job(raw_item, "glassdoor", extra_company=("employer",))
 
 

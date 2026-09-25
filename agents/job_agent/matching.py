@@ -1,5 +1,7 @@
 import json
+import math
 import re
+from typing import Any, Dict, List, Tuple
 
 from .categories import OTHER_CATEGORY, categorize_course_name, categorize_job, category_labels, related_category_ids
 
@@ -8,6 +10,16 @@ STOP_WORDS = {
     "and", "the", "for", "with", "from", "course", "final", "exam",
     "developer", "engineer", "specialist", "associate", "junior", "senior",
 }
+
+ENTRY_KEYWORDS = [
+    "fresher", "intern", "internship", "trainee", "graduate", "entry level", "entry-level",
+    "junior", "jr.", "jr ", "associate", "campus", "new grad", "early career", "apprentice",
+]
+
+SENIOR_KEYWORDS = [
+    "senior", "sr.", "sr ", "lead", "principal", "staff", "manager", "director", "head of",
+    "vp", "vice president", "avp", "chief", "architect", "expert", "specialist iii", "iii", "iv",
+]
 
 
 def parse_list(value):
@@ -32,8 +44,38 @@ def _tokens(values):
     }
 
 
-def score_job(job, profile, course_name):
-    job_skills = _tokens(parse_list(job.get("skills")))
+def _matches_preference(text: str, preferences: list[str]) -> bool:
+    """Check if any preference matches within text using word-boundary matching to
+    prevent false-positive substring matches (e.g. 'it' inside 'security' or 'in' inside 'chennai')."""
+    if not text or not preferences:
+        return False
+    text_lower = text.lower()
+    for pref in preferences:
+        pref = pref.strip().lower()
+        if not pref:
+            continue
+        escaped_pref = re.escape(pref)
+        if re.search(r"(?:\b|_)" + escaped_pref + r"(?:\b|_)", text_lower):
+            return True
+    return False
+
+
+from .experience import (
+    classify_job_seniority,
+    extract_experience_from_text,
+    format_experience_badge,
+    is_fresher_eligible,
+)
+
+
+def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) -> Tuple[int, List[str]]:
+    raw_job_skills = parse_list(job.get("skills"))
+    if not raw_job_skills:
+        from .skills import extract_skills_from_job
+        raw_job_skills = extract_skills_from_job(job)
+        job["skills"] = raw_job_skills
+
+    job_skills = _tokens(raw_job_skills)
     student_skills = _tokens(parse_list(profile.get("skills")))
     course_skills = _tokens([course_name or ""])
     title_preferences = [item.lower() for item in parse_list(profile.get("preferred_titles"))]
@@ -43,26 +85,60 @@ def score_job(job, profile, course_name):
     declared_overlap = job_skills & student_skills
     required_count = max(1, len(job_skills))
 
-    verified_score = min(40, round(40 * len(verified_overlap) / required_count))
-    skill_score = min(25, round(25 * len(declared_overlap) / required_count))
+    # Rebalanced scoring: candidate's declared skills carry primary weight (35 pts)
+    # over title keyword tokens (25 pts), summing cleanly to 100 max.
+    if job_skills:
+        skill_score = min(35, round(35 * len(declared_overlap) / required_count))
+        verified_score = min(25, round(25 * len(verified_overlap) / required_count))
+    else:
+        verified_score = 0
+        skill_score = 15 if declared_overlap or student_skills else 0
 
     title = (job.get("title") or "").lower()
-    title_score = 10 if any(pref in title for pref in title_preferences) else 0
+    title_score = 10 if _matches_preference(title, title_preferences) else 0
 
     location = (job.get("location") or "").lower()
     location_score = 0
     if not location_preferences:
         location_score = 5
-    elif any(pref in location for pref in location_preferences):
+    elif _matches_preference(location, location_preferences):
         location_score = 10
 
     preferred_mode = (profile.get("preferred_work_mode") or "").lower()
     job_mode = (job.get("work_mode") or "").lower()
-    mode_score = 10 if preferred_mode and preferred_mode == job_mode else (5 if not preferred_mode else 0)
+    mode_score = 5 if preferred_mode and preferred_mode == job_mode else (3 if not preferred_mode else 0)
 
     experience = float(profile.get("experience_years") or 0)
-    minimum = job.get("experience_min")
-    experience_score = 10 if minimum is None or experience >= float(minimum) else 0
+    seniority = classify_job_seniority(job)
+    job["seniority_tier"] = seniority
+
+    # Experience & Seniority alignment for college students/freshers (experience <= 1 year)
+    seniority_modifier = 0
+    if experience <= 1.0:
+        if seniority == "entry":
+            seniority_modifier = 15   # Strong boost for genuine fresher/intern/entry roles
+        elif seniority == "growth":
+            seniority_modifier = 0    # Neutral baseline for growth roles
+        elif seniority == "senior":
+            seniority_modifier = -40  # Heavy penalty for senior / 4+ yr roles
+    else:
+        # User has experience
+        minimum = job.get("experience_min")
+        if minimum is not None:
+            try:
+                min_val = float(minimum)
+                if experience >= min_val:
+                    seniority_modifier = 10
+                elif experience < min_val:
+                    seniority_modifier = -30
+            except (ValueError, TypeError):
+                pass
+        else:
+            if seniority == "growth":
+                seniority_modifier = 10
+            elif seniority == "senior" and experience >= 4.0:
+                seniority_modifier = 10
+
     freshness_score = 5
 
     job_category = job.get("category") or categorize_job(
@@ -77,12 +153,18 @@ def score_job(job, profile, course_name):
             category_match = "related"
     category_score = {"exact": 15, "related": 8, "none": 0}[category_match]
 
-    score = min(
-        100,
+    base_score = (
         verified_score + skill_score + title_score + location_score
-        + mode_score + experience_score + freshness_score + category_score,
+        + mode_score + freshness_score + category_score
     )
+    score = max(5, min(100, base_score + seniority_modifier))
+
     reasons = []
+    if seniority == "entry" and experience <= 1.0:
+        reasons.append("🎓 Ideal for College Freshers / Entry-Level")
+    elif seniority == "growth":
+        reasons.append("🚀 Next-Step Career Growth Role")
+
     if category_match == "exact":
         label = category_labels().get(job_category, job_category)
         reasons.append(f"Matches your preferred role category: {label}")
@@ -97,9 +179,66 @@ def score_job(job, profile, course_name):
         reasons.append("Matches your preferred role")
     if location_score == 10:
         reasons.append("Matches your preferred location")
-    if mode_score == 10:
+    if mode_score == 5:
         reasons.append("Matches your work-mode preference")
     if not reasons:
         reasons.append("Active opportunity that matches your profile")
 
     return score, reasons
+
+
+def blend_job_matches(
+    scored_jobs: List[Dict[str, Any]],
+    limit: int = 5,
+    entry_ratio: float = 0.7,
+    is_fresher_candidate: bool = False,
+) -> List[Dict[str, Any]]:
+    """
+    Blends jobs ensuring:
+    - If is_fresher_candidate is True: 100% genuine entry/fresher jobs.
+      Zero senior or 4+ year jobs are ever leaked to freshers!
+    - Otherwise: ~70% Entry / 30% Growth / Experienced allocation.
+    """
+    if not scored_jobs:
+        return []
+
+    entry_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "entry" and j.get("match_score", 0) > 10]
+    growth_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "growth" and j.get("match_score", 0) > 10]
+    senior_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "senior" and j.get("match_score", 0) > 10]
+    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs]
+
+    if is_fresher_candidate:
+        # Strictly select entry/fresher jobs first
+        selected = list(entry_jobs[:limit])
+        if len(selected) < limit:
+            # Backfill strictly from growth roles that have NO senior requirements
+            for cand in growth_jobs:
+                if cand not in selected and is_fresher_eligible(cand):
+                    selected.append(cand)
+                    if len(selected) >= limit:
+                        break
+        selected.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+        return selected[:limit]
+
+    # Standard blending for experienced candidates
+    entry_target = math.ceil(limit * entry_ratio)  # e.g. 4 out of 5
+    growth_target = limit - entry_target          # e.g. 1 out of 5
+
+    selected_entry = entry_jobs[:entry_target]
+    selected_growth = growth_jobs[:growth_target]
+
+    blended = list(selected_entry) + list(selected_growth)
+    if len(blended) < limit:
+        remaining_slots = limit - len(blended)
+        for pool in (growth_jobs[len(selected_growth):], entry_jobs[len(selected_entry):], other_jobs):
+            for candidate in pool:
+                if candidate not in blended:
+                    blended.append(candidate)
+                    if len(blended) >= limit:
+                        break
+            if len(blended) >= limit:
+                break
+
+    # Final sort preserving entry-first priority
+    blended.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+    return blended[:limit]

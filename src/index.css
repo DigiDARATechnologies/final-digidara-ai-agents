@@ -754,6 +754,32 @@ body.glow-off .send-btn:hover{
 .msg.user .bubble code{background:rgba(255,255,255,.18)}
 .msg.user .bubble{ background:var(--accent-grad); color:#fff; border:none; border-bottom-right-radius:4px; }
 .msg.agent .bubble{ border-bottom-left-radius:4px; }
+.msg .bubble a,
+.msg .bubble .chat-bubble-link {
+  color: #0284c7;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+  word-break: break-word;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.msg .bubble a:hover,
+.msg .bubble .chat-bubble-link:hover {
+  color: #0369a1;
+  opacity: 0.85;
+}
+.msg.user .bubble a,
+.msg.user .bubble .chat-bubble-link {
+  color: #e0f2fe;
+  text-decoration: underline;
+}
+.msg .bubble .chat-heading {
+  display: block;
+  font-size: 1.05em;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: inherit;
+}
 .chat-options{display:flex;flex-direction:column;gap:8px;margin-top:9px;min-width:min(420px,70vw);}
 .chat-options button{text-align:left;border:1px solid #dbf3fc;background:#fff;color:var(--text);padding:10px 12px;border-radius:11px;transition:.15s;}
 .chat-options a.chat-option-link{display:block;text-align:left;text-decoration:none;border:1px solid #dbf3fc;background:#fff;color:var(--text);padding:10px 12px;border-radius:11px;transition:.15s;}
@@ -803,9 +829,19 @@ body.glow-off .send-btn:hover{
   display:flex; flex-wrap:wrap; gap:6px; margin:0 10% 8px;
 }
 .attach-chip{
+  display:inline-flex; align-items:center; gap:6px;
   font-size:12px; font-weight:600; color:var(--text-dim);
   background:var(--bg-soft); border:1px solid var(--border-soft);
   padding:5px 10px; border-radius:999px;
+}
+.attach-chip-remove{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; border:none; background:transparent;
+  color:var(--text-dim); border-radius:50%; font-size:11px;
+  cursor:pointer; padding:0; line-height:1; transition:background .15s, color .15s;
+}
+.attach-chip-remove:hover{
+  background:var(--border-soft); color:var(--text);
 }
 
 .composer{

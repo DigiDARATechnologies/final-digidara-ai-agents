@@ -35,10 +35,14 @@ ACTION_ROUTE_MAP = {
     "get_hidden_jobs": ("GET", "/api/jobs/me/hidden"),
     "job_action": ("PUT", "/api/jobs/me/jobs/{job_id}/action"),
     "get_applications": ("GET", "/api/jobs/me/applications"),
+    "update_application_status": ("PUT", "/api/jobs/me/applications/{job_id}/status"),
     "export_user_data": ("GET", "/api/jobs/me/data"),
     "delete_user_data": ("DELETE", "/api/jobs/me/data"),
+    "download_resume": ("GET", "/api/jobs/me/resume"),
+    "chat": ("POST", "/api/jobs/me/chat"),
 
     "admin_list_users": ("GET", "/api/jobs/admin/users"),
+
     "admin_update_plan": ("PUT", "/api/jobs/admin/users/{user_id}/plan"),
     "admin_list_sources": ("GET", "/api/jobs/admin/sources"),
     "admin_get_automation": ("GET", "/api/jobs/admin/automation"),
@@ -61,8 +65,16 @@ ACTION_ROUTE_MAP = {
     "admin_apify_status": ("GET", "/api/jobs/admin/providers/apify/status"),
     "admin_apify_actors": ("GET", "/api/jobs/admin/providers/apify/actors"),
     "admin_apify_run": ("POST", "/api/jobs/admin/providers/apify/run"),
+    "admin_adzuna_status": ("GET", "/api/jobs/admin/providers/adzuna/status"),
+    "admin_adzuna_run": ("POST", "/api/jobs/admin/providers/adzuna/run"),
+    "admin_jsearch_status": ("GET", "/api/jobs/admin/providers/jsearch/status"),
+    "admin_jsearch_run": ("POST", "/api/jobs/admin/providers/jsearch/run"),
     "admin_tn_coverage": ("GET", "/api/jobs/admin/tn-coverage"),
+    "admin_get_token_settings": ("GET", "/api/jobs/admin/token-settings"),
+    "admin_update_token_settings": ("PUT", "/api/jobs/admin/token-settings"),
+    "admin_prune_jobs": ("POST", "/api/jobs/admin/jobs/prune"),
 }
+
 
 # Path/query parameter names ACTION_ROUTE_MAP templates pull out of the
 # payload rather than passing through as the JSON body.
@@ -77,11 +89,19 @@ def _identity_headers() -> dict[str, str]:
         headers["X-Digidara-User-Id"] = user_id
     if is_admin := request.headers.get("X-Digidara-Is-Admin"):
         headers["X-Digidara-Is-Admin"] = is_admin
+    if token_bal := request.headers.get("X-Digidara-Token-Balance"):
+        headers["X-Digidara-Token-Balance"] = token_bal
     return headers
 
 
 def _passthrough(response) -> Response:
-    return Response(response.get_data(), status=response.status_code, headers={"Content-Type": "application/json"})
+    headers = {}
+    for name in ("Content-Type", "Content-Disposition", "Retry-After", "X-Tokens-Used"):
+        if value := response.headers.get(name):
+            headers[name] = value
+    if "Content-Type" not in headers:
+        headers["Content-Type"] = "application/json"
+    return Response(response.get_data(), status=response.status_code, headers=headers)
 
 
 @invoke_bp.post("/api/invoke")

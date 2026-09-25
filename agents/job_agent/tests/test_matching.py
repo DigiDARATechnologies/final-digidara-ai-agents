@@ -28,6 +28,25 @@ class MatchingTests(unittest.TestCase):
         self.assertTrue(any("Skills from your preferred roles" in reason for reason in reasons))
         self.assertIn("Matches your preferred role", reasons)
 
+    def test_substring_false_positives_are_prevented(self):
+        # 'it' should NOT match 'security' and 'in' should NOT match 'Chennai'
+        job = {
+            "title": "Senior Security Engineer",
+            "location": "Chennai, Tamil Nadu",
+            "work_mode": "onsite",
+            "skills": ["Cryptography"],
+        }
+        profile = {
+            "skills": [],
+            "preferred_titles": ["IT"],
+            "preferred_locations": ["IN"],
+            "preferred_work_mode": "remote",
+        }
+        _score, reasons = score_job(job, profile, "")
+        self.assertNotIn("Matches your preferred role", reasons)
+        self.assertNotIn("Matches your preferred location", reasons)
+
+
 
 class CategoryScoringTests(unittest.TestCase):
     """A Python course is foundational for Data Analyst/Data Scientist/AI-ML
