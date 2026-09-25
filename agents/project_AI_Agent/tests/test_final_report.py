@@ -19,7 +19,8 @@ def sample_data(**overrides):
         "submitted_at": datetime(2026, 9, 25, 7, 12, tzinfo=timezone.utc), "deadline_at": datetime(2026, 10, 2, tzinfo=timezone.utc),
         "generated_at": datetime(2026, 9, 25, 9, 0, tzinfo=timezone.utc),
         "final_score": 86.5, "pass_mark": 70, "passed": True,
-        "viva_score": 8, "viva_total": 10, "viva_pass_mark": 6, "viva_passed": True,
+        "viva_score": 8, "viva_total": 10, "viva_pass_mark": 5, "viva_passed": True, "viva_pass_percent": 50,
+        "viva_rating": "Good", "viva_attempts": [{"attempt": 1, "rating": "Bad", "passed": False}, {"attempt": 2, "rating": "Good", "passed": True}],
         "code_quality": {"structure_score": 21, "syntax_score": 23, "maintainability_score": 20, "completeness_score": 22,
                          "total_code_score": 86, "strengths": ["Clean modules"], "weaknesses": ["No tests"]},
         "requirements_check": [{"requirement": "Validate email", "status": "met", "evidence": "validate.js: isValidEmail()"}],
@@ -40,7 +41,14 @@ def pages_and_logo_draws(pdf):
 def test_the_report_is_a_pdf_with_the_result_the_student_and_the_project():
     pdf = build_final_report_pdf(sample_data())
     assert pdf.startswith(b"%PDF-")
-    for text in (b"Prem Kumar", b"Static Login Page", b"PASSED", b"86.5 / 100", b"8 / 10", b"Capstone Project Completion Report"):
+    for text in (b"Prem Kumar", b"Static Login Page", b"PASSED", b"86.5 / 100", b"GOOD", b"Capstone Project Completion Report"):
+        assert text in pdf, text
+
+
+def test_the_viva_is_shown_as_a_rating_per_attempt_and_never_as_a_mark():
+    pdf = build_final_report_pdf(sample_data())
+    assert b"8 / 10" not in pdf and b"8 of 10" not in pdf
+    for text in (b"Attempt", b"Not passed", b"Passed", b"at least 50% correct", b"Bad", b"Good"):
         assert text in pdf, text
 
 
@@ -116,6 +124,7 @@ def seed(database, *, status=SubmissionStatus.graded, passed=True, viva_passed=T
             viva_answers_json=[{"question_id": 0, "answer": "Because.", "correct": True, "note": "good"},
                                {"question_id": 1, "answer": "Not sure", "correct": False, "note": "vague"}],
             viva_score=8, viva_passed=viva_passed,
+            viva_attempts_json=[{"attempt": 1, "correct": 8, "total": 10, "rating": "Good", "passed": True, "questions": [], "answers": []}],
         ))
         session.commit()
 
@@ -125,10 +134,11 @@ def test_report_data_is_assembled_from_the_stored_rows(database):
     with database() as session:
         submission = session.get(Submission, "sub1")
         assignment = session.get(ProjectAssignment, "assignment")
-        data = assemble_report_data(assignment, session.get(Student, "student"), submission, 70, 6)
+        data = assemble_report_data(assignment, session.get(Student, "student"), submission, 70, 5)
     assert data["student_name"] == "Learner" and data["project_title"] == "Static Login Page"
     assert data["final_score"] == 88 and data["passed"] and data["viva_passed"] and data["viva_score"] == 8
     assert data["requirements_check"][0]["status"] == "met" and data["report_sections"] == ["Problem Statement", "Approach", "Conclusion"]
+    assert data["viva_rating"] == "Good" and data["viva_attempts"] == [{"attempt": 1, "rating": "Good", "passed": True}]
     assert [item["correct"] for item in data["viva"]] == [True, False]
     assert data["viva"][1]["answer"] == "Not sure"
     assert SECRET_RUBRIC not in repr(data)                    # the private rubric never reaches the report

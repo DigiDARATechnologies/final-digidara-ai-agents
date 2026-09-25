@@ -239,7 +239,7 @@ def build_review_markdown(state: dict[str, Any]) -> str:
     elif passed:
         lines += [
             "## Next Step",
-            "Your code review passed. Complete the viva (oral defense) to finish certification.",
+            "Your code review passed. Complete the viva (oral defense) to get your certificate: you have up to 3 attempts, each with new questions, and need at least 50% correct.",
             "",
         ]
 

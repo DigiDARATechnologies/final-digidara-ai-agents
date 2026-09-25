@@ -89,6 +89,12 @@ class SubmissionResultResponse(BaseModel):
     viva_progress: str | None = None
     viva_score: float | None = None
     viva_passed: bool | None = None
+    # The viva is reported as Good / Average / Bad, never as a mark. Up to
+    # `viva_attempts_total` attempts, each with a fresh set of questions.
+    viva_rating: str | None = None
+    viva_attempt: int | None = None
+    viva_attempts_left: int | None = None
+    viva_attempts_total: int | None = None
 
 
 class StatusResponse(BaseModel):

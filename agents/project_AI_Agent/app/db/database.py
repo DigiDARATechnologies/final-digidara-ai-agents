@@ -45,6 +45,10 @@ def init_db() -> None:
             connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_score FLOAT NULL"))
         if "viva_passed" not in submission_columns:
             connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_passed BOOLEAN NULL"))
+        if "viva_attempts_json" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN viva_attempts_json JSON NULL"))
+        if "certificate_json" not in submission_columns:
+            connection.execute(text("ALTER TABLE submissions ADD COLUMN certificate_json JSON NULL"))
         if "review_markdown" not in submission_columns:
             connection.execute(text("ALTER TABLE submissions ADD COLUMN review_markdown TEXT NULL"))
 

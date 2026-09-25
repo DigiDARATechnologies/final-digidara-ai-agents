@@ -906,6 +906,10 @@ body.glow-off .send-btn:hover{
 .progress-track span{display:block;height:100%;background:var(--accent-grad);border-radius:inherit;transition:width .3s ease;}
 .dashboard-status-card p,.dashboard-alert p,.dashboard-result p,.dashboard-section p{font-size:12px;color:var(--text-dim);line-height:1.5;margin:11px 0 0;white-space:pre-line;}
 .dashboard-section h3{font-size:13px;margin:0 0 10px;}
+.certificate-preview{display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);margin:0 0 12px;}
+.certificate-section .field{margin:12px 0 0;}
+.certificate-actions{display:flex;gap:10px;margin-top:12px;}
+.certificate-actions .btn{flex:1;}
 .dashboard-section dl{margin:0;display:flex;flex-direction:column;gap:9px;}
 .dashboard-section dl div{display:flex;justify-content:space-between;gap:14px;font-size:12px;}
 .dashboard-section dt{color:var(--text-dim);}
