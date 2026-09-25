@@ -227,6 +227,10 @@ def build_slots(category=None,seed=None,category_counts=None,technical_language=
     if category_counts is not None and not any(configured_counts):
         raise ValueError("Select at least one question across the categories")
     for category,count in zip(CATEGORIES,configured_counts):
+        if count == 0:
+            # A zero-count category is intentionally omitted from this Mixed
+            # Test; do not ask the topic selector to build an empty schedule.
+            continue
         supplied=(topics_by_category or {}).get(category)
         if supplied is not None:
             selected=list(supplied[:count])
