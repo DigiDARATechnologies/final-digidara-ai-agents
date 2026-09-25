@@ -11,21 +11,28 @@ frontend, so nothing is generated at request time):
 
 The report has only the three sections a student's .docx needs -- Problem
 Statement, Approach and Conclusion. It deliberately has no code and no
-screenshots: the code lives in the zip, where it is analysed in full, and the
-report is only for the student's own explanation.
+screenshots: the code AND the output screenshots both live in the zip (the
+screenshots in its output_screenshots folder), and the report is only for the
+student's own explanation.
 
 The zip is built from the real, runnable project in
-agents/project_AI_Agent/examples/expense-tracker. The outputs are committed and
-built deterministically (fixed zip timestamps, reportlab's invariant mode), so
+agents/project_AI_Agent/examples/expense-tracker: the program and its tests are
+actually executed here and their genuine output is rendered into the screenshots,
+so the example is internally consistent. The outputs are committed and built
+deterministically (fixed zip timestamps, reportlab's invariant mode), so
 re-running this script only changes them when the example itself changes:
 
     pip install reportlab
     python scripts/build_capstone_examples.py
 """
 import shutil
+import subprocess
+import sys
 import tempfile
 import zipfile
 from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 from reportlab import rl_config
 from reportlab.lib import colors
@@ -66,6 +73,64 @@ PAGE_W, PAGE_H = A4
 MARGIN_X = 20 * mm
 HEADER_H = 40 * mm  # room for the logo plus a rule under it
 LOGO_W = 62 * mm
+
+
+FONT_CANDIDATES = ["C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf",
+                   "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"]
+
+
+def run(command, cwd):
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    return (result.stdout + result.stderr).rstrip("\n")
+
+
+def load_font(size):
+    for candidate in FONT_CANDIDATES:
+        if Path(candidate).exists():
+            return ImageFont.truetype(candidate, size)
+    raise SystemExit("No monospace font found; install DejaVu Sans Mono or run on Windows.")
+
+
+def render_terminal(path, title, lines):
+    """Draw a light terminal window (dark text on white: reliable for OCR)."""
+    font, small = load_font(22), load_font(17)
+    line_height, pad, bar = 32, 28, 44
+    width = max(int(font.getlength(line)) for line in lines) + pad * 2
+    width = max(width, 760)
+    height = bar + pad * 2 + line_height * len(lines)
+    image = Image.new("RGB", (width, height), "#ffffff")
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([0, 0, width, bar], fill="#e4e7ec")
+    for index, color in enumerate(("#ff5f56", "#ffbd2e", "#27c93f")):
+        draw.ellipse([16 + index * 26, 14, 30 + index * 26, 28], fill=color)
+    draw.text((width // 2 - int(small.getlength(title)) // 2, 12), title, fill="#344054", font=small)
+    for index, line in enumerate(lines):
+        color = "#0b6b2a" if line.startswith("$ ") else "#101828"
+        draw.text((pad, bar + pad + index * line_height), line, fill=color, font=font)
+    draw.rectangle([0, 0, width - 1, height - 1], outline="#cbd2dc")
+    image.save(path, optimize=True)
+
+
+def capture(work):
+    """Run the real program and its tests; return {screenshot: (title, lines)}."""
+    python = sys.executable
+    add_cmds = [
+        ["add", "--amount", "250", "--category", "Food", "--note", "Lunch"],
+        ["add", "--amount", "1499", "--category", "Bills", "--note", "Internet"],
+        ["add", "--amount", "-5", "--category", "Food"],
+    ]
+    first = []
+    for args in add_cmds:
+        first += ["$ python src/main.py " + " ".join(f'"{a}"' if " " in a else a for a in args)]
+        first += run([python, "src/main.py", *args], work).splitlines()
+    summary = ["$ python src/main.py summary"] + run([python, "src/main.py", "summary"], work).splitlines()
+    tests = run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider"], work).splitlines()
+    tests = [line for line in tests if line.strip()]
+    return {
+        "01-add-expense.png": ("Terminal - adding expenses", first),
+        "02-category-summary.png": ("Terminal - category summary", summary),
+        "03-tests-passing.png": ("Terminal - running the tests", ["$ python -m pytest -q"] + tests),
+    }
 
 
 def build_zip(work, zip_path):
@@ -140,8 +205,9 @@ def build_pdf(pdf_path):
         [[Paragraph(
             "<b>EXAMPLE REPORT.</b> This shows the sections and the level of detail the Capstone agent expects. "
             "Your own .docx report needs exactly three sections: <b>Problem Statement</b>, <b>Approach</b> and "
-            "<b>Conclusion</b>. Do not paste your code or screenshots into it - your code goes in the .zip, where "
-            "it is analysed in full. Write about your own project; do not copy this one.", s["note"])]],
+            "<b>Conclusion</b>. Do not paste your code or screenshots into it - your code and your output screenshots "
+            "both go in the .zip (the screenshots in its <b>output_screenshots</b> folder). Write about your own "
+            "project; do not copy this one.", s["note"])]],
         colWidths=[PAGE_W - 2 * MARGIN_X],
     )
     note.setStyle(TableStyle([
@@ -224,6 +290,10 @@ def main():
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp) / SLUG
         shutil.copytree(PROJECT, work, ignore=shutil.ignore_patterns(*SKIP_PARTS, "expenses.json"))
+        shots = capture(work)
+        (work / "output_screenshots").mkdir()
+        for filename, (title, lines) in shots.items():
+            render_terminal(work / "output_screenshots" / filename, title, lines)
         names = build_zip(work, OUT_DIR / ZIP_NAME)
     build_pdf(OUT_DIR / PDF_NAME)
     print(f"Wrote {OUT_DIR / PDF_NAME} ({(OUT_DIR / PDF_NAME).stat().st_size:,} bytes)")

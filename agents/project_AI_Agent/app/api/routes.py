@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
@@ -57,6 +57,7 @@ from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
 from app.llm.client import LLMError, call_json, call_text
+from app.reports.final_report import assemble_report_data, build_final_report_pdf, report_filename
 from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
@@ -688,6 +689,45 @@ def get_review_markdown(submission_id: str) -> PlainTextResponse:
     return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
 
 
+def _final_report(submission_id: str) -> tuple[bytes, str]:
+    """The final project report PDF and its file name -- only once BOTH the code
+    score and the viva have been passed. Built from what grading stored, so it can
+    be regenerated at any time and always matches the recorded result."""
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        score = submission.score_json or {}
+        if not (submission.status == SubmissionStatus.graded and score.get("passed") is True and submission.viva_passed is True):
+            raise HTTPException(409, "The final report is available once both the project score and the viva are passed.")
+        assignment = session.get(ProjectAssignment, submission.assignment_id)
+        if assignment is None:
+            raise HTTPException(404, "Assignment not found.")
+        student = session.get(Student, assignment.student_id)
+        data = assemble_report_data(assignment, student, submission, config.PASS_THRESHOLD, VIVA_PASS_THRESHOLD)
+    finally:
+        session.close()
+    return build_final_report_pdf(data), report_filename(data["project_title"])
+
+
+@router.get("/submission/{submission_id}/final-report.pdf")
+def get_final_report(submission_id: str) -> Response:
+    """Downloadable final project report (PDF) -- see app/reports/final_report.py."""
+    pdf, filename = _final_report(submission_id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def final_report_action(payload: dict) -> dict:
+    """The same report through the gateway's JSON-only `invoke` contract: the PDF
+    comes back base64-encoded, exactly as the mock-interview agent's report does."""
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    pdf, filename = _final_report(submission_id)
+    return {"content_type": "application/pdf", "filename": filename, "data": base64.b64encode(pdf).decode("ascii")}
+
+
 @router.post("/submission/{submission_id}/structure-screenshot", response_model=StructureScreenshotResponse)
 async def structure_screenshot(submission_id: str, image: UploadFile = File(...)) -> StructureScreenshotResponse:
     """Phase 3: a student confused by a "missing folder" verdict attaches a
@@ -850,6 +890,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
     elif action == "ask_project_question":
         result = await run_in_threadpool(qa_ask_action, payload)
+    elif action == "download_final_report":
+        result = await run_in_threadpool(final_report_action, payload)
     elif action in {"export_user_data", "delete_user_data"}:
         result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
     else:

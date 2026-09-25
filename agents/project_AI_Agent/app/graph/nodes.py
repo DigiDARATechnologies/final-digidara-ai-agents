@@ -27,10 +27,9 @@ from app.ingestion.structure_check import (
     REPORT_SECTIONS,
     check_required_paths,
     check_required_sections,
-    drop_retired_paths,
     drop_retired_sections,
-    drop_retired_tree_lines,
 )
+from app.ingestion.screenshots import ensure_screenshot_folder, normalise_required_screenshots, screenshot_status
 from app.ingestion.syntax_check import check_syntax
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
@@ -186,12 +185,13 @@ def submission_guide_node(state: ProjectAgentState) -> dict:
         user="Write the submission guide now.",
     )
     # What the report needs is decided here, not by the model: exactly three
-    # sections, no code and no screenshots (the code is analysed from the zip).
-    # A model that wandered back to the old five-section layout is overridden.
+    # sections, no code and no screenshots inside the .docx. A model that wandered
+    # back to the old five-section layout is overridden.
     result["docx_required_sections"] = list(REPORT_SECTIONS)
-    result["required_screenshots"] = []
-    result["required_paths"] = drop_retired_paths(result.get("required_paths"))
-    result["folder_structure"] = drop_retired_tree_lines(result.get("folder_structure"))
+    # The screenshots belong in the ZIP's output_screenshots folder. Each one gets a
+    # concrete file name, and the folder is guaranteed to be a required path.
+    result["required_screenshots"] = normalise_required_screenshots(result.get("required_screenshots"))
+    ensure_screenshot_folder(result)
     about_markdown = build_about_markdown({**state, "submission_guide": result})
 
     session = get_session()
@@ -228,6 +228,7 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
     return {
         "zip_file_tree": parsed["zip_file_tree"],
         "zip_code_files": parsed["zip_code_files"],
+        "screenshot_evidence": parsed["screenshot_evidence"],
     }
 
 
@@ -272,7 +273,7 @@ def structure_validation_node(state: ProjectAgentState) -> dict:
 @log_node
 def zip_structure_validation_node(state: ProjectAgentState) -> dict:
     guide = state.get("submission_guide") or {}
-    deterministic = check_required_paths(drop_retired_paths(guide.get("required_paths")), state.get("zip_file_tree"))
+    deterministic = check_required_paths(guide.get("required_paths"), state.get("zip_file_tree"))
 
     result = call_json(
         system=prompts.zip_structure_validation_prompt(state, deterministic),
@@ -306,6 +307,11 @@ def structure_gate_passed(state: ProjectAgentState) -> bool:
     # A file that does not even parse is not gradable code either: it goes back
     # for another upload instead of being scored.
     if (state.get("syntax_report") or {}).get("has_errors"):
+        return False
+    # The screenshots the project needs must actually be in the zip (a count of
+    # real, readable images -- see app/ingestion/screenshots.py). A missing
+    # screenshots folder is the extreme case of this, and is explained on its own.
+    if not screenshot_status(state.get("submission_guide") or {}, state.get("screenshot_evidence"))["complete"]:
         return False
     return bool(state.get("structure_score", {}).get("is_complete"))
 
@@ -391,6 +397,25 @@ def request_revision_node(state: ProjectAgentState) -> dict:
 _REQUIREMENT_STATUSES = {"met", "partial", "not_met"}
 
 
+_SCREENSHOT_STATUSES = {"present", "unclear", "missing"}
+
+
+def _normalise_screenshots_check(items) -> list[dict]:
+    """Same idea as the requirements check: a closed set of statuses, and anything
+    unrecognised is "unclear" -- never silently "present"."""
+    checks = []
+    for item in items or []:
+        if not isinstance(item, dict) or not str(item.get("screenshot", "")).strip():
+            continue
+        status = str(item.get("status", "")).strip().lower()
+        checks.append({
+            "screenshot": str(item["screenshot"]).strip(),
+            "status": status if status in _SCREENSHOT_STATUSES else "unclear",
+            "evidence": str(item.get("evidence", "")).strip(),
+        })
+    return checks
+
+
 def _normalise_requirements_check(items) -> list[dict]:
     """Coerce the model's per-requirement verdicts into a clean, closed set of
     statuses. An unrecognised status is treated as "partial" -- never silently as
@@ -419,6 +444,7 @@ def output_verification_node(state: ProjectAgentState) -> dict:
     )
     checks = _normalise_requirements_check(result.get("requirements_check"))
     result["requirements_check"] = checks
+    result["screenshots_check"] = _normalise_screenshots_check(result.get("screenshots_check"))
     # Kept in the shape the report and the score aggregator already read.
     result["requirements_demonstrated"] = [
         f"{item['requirement']}: {item['status'].replace('_', ' ')}" for item in checks
@@ -512,6 +538,11 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
                 "code_quality_score": state.get("code_quality_score"),
                 "structure_score": state.get("structure_score"),
                 "zip_structure_score": state.get("zip_structure_score"),
+                # Kept for the final project report (app/reports/final_report.py).
+                "syntax_report": {key: (state.get("syntax_report") or {}).get(key)
+                                  for key in ("checked_files", "checked_languages", "error_count")},
+                "screenshot_evidence": {"valid_files": (state.get("screenshot_evidence") or {}).get("valid_files") or []},
+                "submitted_files": list(state.get("zip_file_tree") or [])[:300],
             }
             submission.feedback_text = feedback_text
             submission.review_markdown = review_markdown

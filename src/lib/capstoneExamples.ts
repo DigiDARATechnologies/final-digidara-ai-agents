@@ -16,7 +16,7 @@ export const CAPSTONE_EXAMPLE_FILES = [
     href: "/capstone-examples/capstone-example-project.zip",
     download: "capstone-example-project.zip",
     label: "Download example project (.zip)",
-    description: "The matching source folder: src/, tests/, README and requirements.",
+    description: "The matching project: src/, tests/, README, requirements and output_screenshots/ (the screenshots go in the zip, not the report).",
   },
 ] as const;
 

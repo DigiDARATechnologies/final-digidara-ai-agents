@@ -34,17 +34,15 @@ def _normalize_heading(text: str) -> str:
 
 
 # What a student's .docx report needs is exactly these sections. "Code" and
-# "Output Screenshots" used to be required too; they are not any more (the code
-# is analysed from the zip, and screenshots are not part of a submission). But a
-# submission guide is generated once per project and then stored, so guides
-# issued before this change still list them -- these helpers strip the retired
-# items at check time, so the older projects stop requiring them as well.
+# "Output Screenshots" used to be required REPORT sections too; they are not any
+# more -- the code is analysed from the zip, and the output screenshots are image
+# files in the zip's output_screenshots folder, not pictures pasted into the
+# report. A submission guide is generated once per project and then stored, so
+# guides issued earlier still list those two as report sections; this strips
+# them at check time so older projects stop requiring them in the .docx as well.
+# (The zip's output_screenshots FOLDER is still required -- see screenshots.py.)
 REPORT_SECTIONS = ["Problem Statement", "Approach", "Conclusion"]
 _RETIRED_SECTIONS = {"code", "output screenshots", "screenshots", "output"}
-
-
-def _is_retired_path(path: str) -> bool:
-    return any("screenshot" in part for part in _normalize_parts(path))
 
 
 def drop_retired_sections(required_sections: list[str] | None) -> list[str]:
@@ -52,14 +50,6 @@ def drop_retired_sections(required_sections: list[str] | None) -> list[str]:
         str(section) for section in required_sections or []
         if _normalize_heading(str(section)) not in _RETIRED_SECTIONS
     ]
-
-
-def drop_retired_paths(required_paths: list[dict] | None) -> list[dict]:
-    return [item for item in required_paths or [] if not _is_retired_path(str(item.get("path", "")))]
-
-
-def drop_retired_tree_lines(folder_structure: list[str] | None) -> list[str]:
-    return [line for line in folder_structure or [] if "screenshot" not in str(line).lower()]
 
 
 def check_required_sections(required_sections: list[str] | None, doc_sections: dict[str, str] | None) -> dict:

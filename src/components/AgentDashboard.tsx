@@ -1,6 +1,36 @@
+import { useState } from "react";
+import { downloadFinalReport } from "../lib/capstoneApi";
 import { CAPSTONE_EXAMPLE_FILES } from "../lib/capstoneExamples";
 import type { CapstoneFlowState, CapstoneStep } from "../lib/capstoneFlow";
 import type { User } from "../types";
+
+/** Shown only once BOTH the code score and the viva are passed -- the backend
+ * refuses to issue the report before that, so this never offers a dead button. */
+function FinalReportButton({ submissionId }: { submissionId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function download() {
+    setBusy(true);
+    setError("");
+    try {
+      await downloadFinalReport(submissionId);
+    } catch (caught) {
+      setError((caught as Error).message || "The final report is unavailable.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dashboard-section">
+      <h3>Final report</h3>
+      <p className="muted">Your score, viva results and project details, as a PDF.</p>
+      <button type="button" className="btn btn-primary" disabled={busy} onClick={download}>
+        {busy ? "Preparing report..." : "Download final report (PDF)"}
+      </button>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
 
 interface AgentDashboardProps {
   user: User;
@@ -79,6 +109,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
           {state.feedback && <p>{state.feedback}</p>}
         </div>
       )}
+      {state.step === "graded" && state.passed && state.vivaSubmissionId && <FinalReportButton submissionId={state.vivaSubmissionId} />}
       {state.scoreReasoning && (
         <div className="dashboard-section">
           <h3>How the score was decided</h3>

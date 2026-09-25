@@ -7,7 +7,8 @@ import json
 from typing import Any
 
 from app import config
-from app.ingestion.structure_check import drop_retired_sections, drop_retired_tree_lines
+from app.ingestion.screenshots import screenshot_status
+from app.ingestion.structure_check import drop_retired_sections
 
 
 def _effective_medium(state: dict[str, Any]) -> str:
@@ -283,34 +284,60 @@ must cover:
    Dashboard" -> "BudgetTrackerDashboard/"). NEVER invent or reuse an unrelated
    placeholder project name (e.g. a generic "WeatherApp"-style example) - the
    student is building "{topic_title}", and a folder structure naming something
-   else would be actively confusing, not illustrative. Include at minimum a source
-   folder (e.g. <slug>/src). A README and a tests folder are good practice and
-   worth showing in the tree, but the source folder is the only required entry.
+   else would be actively confusing, not illustrative. Include a source folder
+   (<slug>/src) AND an output screenshots folder (<slug>/output_screenshots). A
+   README and a tests folder are good practice and worth showing in the tree, but
+   the source folder and the output_screenshots folder are the required entries.
    The .docx report is uploaded as a SEPARATE file alongside the zip, not inside it -
    do not include report.docx, or any .docx file, anywhere in folder_structure.
-   Screenshots are NOT part of a submission: do not include a screenshots or
-   output folder anywhere.
 2. The .docx report has exactly three sections, in this order: "Problem Statement",
-   "Approach", "Conclusion". The report must NOT contain code or screenshots - the
-   code is analysed from the zip, and the report is only for the student's own
-   explanation.
-3. A short worked example for ONE of those sections (e.g., what a good "Approach"
-   section looks like) so the format is unambiguous.
-4. Common mistakes to avoid (e.g., no explanation of the approach, code pasted into
-   the report instead of the zip, placeholder/filler sections, a zip holding only
-   documents and no source files, code that does not run because of syntax errors).
+   "Approach", "Conclusion". The report must NOT contain code or screenshots -
+   the code and the screenshots both go in the zip, and the report is only for the
+   student's own written explanation.
+3. A short worked example for ONE of those three sections (e.g., what a good
+   "Approach" section looks like) so the format is unambiguous.
+4. Common mistakes to avoid (e.g., pasting screenshots or code into the .docx
+   instead of the zip, screenshots that are not saved as image files in
+   output_screenshots, no explanation of the approach, placeholder/filler sections,
+   a zip holding only documents and no source files, code with syntax errors).
 5. The SAME folder structure as `required_paths`: a flat list, one entry per required
    folder or file, each with its path relative to the project root, its type, and a
    one-sentence plain-language description of what belongs there and why it's checked
    (this is what a deterministic checker and the student-facing review report both use
-   - it must include at minimum one "dir" entry for source code, matching the folder
-   tree above exactly).
+   - it must include at minimum one "dir" entry for source code and one "dir" entry
+   for output_screenshots, matching the folder tree above exactly).
+6. Exactly which screenshots must be saved as image files in the output_screenshots
+   folder: one entry per functional requirement above that has a visible proof point
+   (between 2 and 8 in total; fewer for a small project). Every entry needs:
+   - "filename": a numbered, lowercase, hyphenated .png name the student should use
+     verbatim, e.g. "01-add-expense-form.png".
+   - "module": the exact part of THIS project the screenshot shows, named the way the
+     project names it (e.g. "Login form", "Expense list page", "Category summary").
+   - "description": exactly what must be visible in the image - the specific screen,
+     elements and example values (e.g. "the registration form with two invalid fields
+     highlighted in red and their error messages visible"). "A screenshot of the app"
+     is not acceptable.
+   - "how_to_capture": the concrete steps to produce it (the command to run, what to
+     type or click first), so a first-time student can reproduce it.
+   - "linked_requirement": the functional requirement text this screenshot proves.
+   Skip a requirement only if it genuinely has nothing to show on screen (e.g. "data
+   persists locally"); in that case describe in that item's description how the
+   student CAN demonstrate it (e.g. "run it, add an entry, close and reopen, and show
+   the entry is still there") rather than omitting it silently.
 
 OUTPUT FORMAT (strict JSON):
 {{
   "folder_structure": ["<tree line 1>", "<tree line 2>", "..."],
   "required_paths": [
-    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}}
+    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}},
+    {{"path": "<slug>/output_screenshots", "type": "dir", "description": "<why this exists / what goes here>"}}
+  ],
+  "required_screenshots": [
+    {{"filename": "01-<short-name>.png",
+      "module": "<the part of the project this shows>",
+      "description": "<exactly what must be visible>",
+      "how_to_capture": "<step-by-step>",
+      "linked_requirement": "<the functional requirement text this proves>"}}
   ],
   "docx_required_sections": ["Problem Statement", "Approach", "Conclusion"],
   "worked_example_section": "<name of section>",
@@ -367,7 +394,7 @@ def zip_structure_validation_prompt(state: dict[str, Any], deterministic: dict[s
     return f"""You are the Code Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
-- Required folder structure (from the submission guide given to the student): {drop_retired_tree_lines(guide.get('folder_structure'))}
+- Required folder structure (from the submission guide given to the student): {guide.get('folder_structure')}
 - Actual file tree extracted from the submitted zip: {json.dumps(state['zip_file_tree'], ensure_ascii=False)}
 - Course medium: {_effective_medium(state)}
 
@@ -512,6 +539,25 @@ def _requirements_block(state: dict[str, Any]) -> str:
     )
 
 
+def _screenshots_block(state: dict[str, Any]) -> str:
+    """The output screenshots the project needs, and what the zip's
+    output_screenshots folder actually holds (file names + OCR'd text)."""
+    status = screenshot_status(state.get("submission_guide") or {}, state.get("screenshot_evidence"))
+    evidence = state.get("screenshot_evidence") or {}
+    if not status["required"]:
+        return "- Output screenshots: none are required for this project."
+    required = "\n".join(
+        f"  {index}. {item['filename']} [{item['module']}]: {item['description']}"
+        for index, item in enumerate(status["required"], start=1)
+    )
+    return (
+        f"- Output screenshots this project requires (image files in the zip's output_screenshots folder):\n{required}\n"
+        f"- Screenshot images found in the zip ({len(status['found_files'])}): {status['found_files'] or 'none'}\n"
+        f"- Text read out of those images by OCR (imperfect - garbled characters are normal):\n"
+        f"{evidence.get('ocr_text', 'none')}"
+    )
+
+
 def output_verification_prompt(state: dict[str, Any]) -> str:
     code_files = state.get("zip_code_files") or {}
     return f"""You are the Requirements Verifier for a DigiDARA capstone project submission.
@@ -520,6 +566,7 @@ CONTEXT:
 {_requirements_block(state)}
 {_execution_context_block(state)}
 {_syntax_context_block(state)}
+{_screenshots_block(state)}
 - The student's complete source code from the submitted zip ({len(code_files)} files). Read ALL of it:
 
 {_code_files_block(code_files, config.CODE_REVIEW_CHAR_BUDGET)}
@@ -537,6 +584,12 @@ real logic, a requirement that is only mentioned in a comment, and a requirement
 is implemented but wired up wrongly so it can never run. A real traceback in the
 execution evidence is strong, concrete evidence of a problem.
 
+Also judge the output screenshots: for EACH required screenshot decide from the file
+names and the OCR text whether an image that shows it is present ("present"), whether
+you can't tell ("unclear"), or whether nothing matches it ("missing"). OCR is
+imperfect and you cannot see the pictures, so never call a screenshot "missing" just
+because its text was garbled; only when no file name or OCR text corresponds to it.
+
 Status meanings: "met" = implemented and reachable; "partial" = some of it is there
 but a stated part is missing or broken; "not_met" = no implementation.
 Do not assume success in the absence of evidence - if you cannot find it in the code,
@@ -550,6 +603,10 @@ OUTPUT FORMAT (strict JSON):
       "evidence": "<the file and function/section that implements it, or exactly what is missing>"}}
   ],
   "constraints_check": ["<constraint>: <respected|violated|unclear> - <why>"],
+  "screenshots_check": [
+    {{"screenshot": "<the required screenshot's file name>", "status": "<present|unclear|missing>",
+      "evidence": "<the file / OCR text that shows it, or why nothing matches>"}}
+  ],
   "output_correct": <true|false - true only if every functional requirement is met>,
   "confidence": "<low|medium|high>",
   "issues_found": ["<issue 1>", "..."],

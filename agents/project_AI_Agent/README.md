@@ -23,11 +23,17 @@ LLM_MODEL=ollama/llama3.1                # local Ollama, no API key needed
 Set only the matching API key env var (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` /
 `GROQ_API_KEY`). No code change is needed to switch models.
 
-**The submission is a `.docx` report plus a `.zip` of source code — no screenshots.**
-The report has exactly three sections (Problem Statement, Approach, Conclusion) and
-carries no code or images; the pipeline no longer OCRs anything from it. The code is
-what gets analysed, in three layers:
+**The submission is a `.docx` report plus a `.zip`.** The report has exactly three
+sections (Problem Statement, Approach, Conclusion) and carries no code and no
+images -- nothing is OCR'd out of it. The zip holds the source code AND an
+`output_screenshots` folder: the project's output screenshots are image files in
+the zip, one per item the submission guide lists (each with an exact file name, the
+module it shows, what must be visible and how to capture it). The pipeline then:
 
+0. Counts the screenshots (`app/ingestion/screenshots.py`): only real, readable
+   images inside a `*screenshot*` folder count. Fewer than the guide requires sends
+   the submission back with the exact list. The images are OCR'd (Tesseract) and the
+   text is evidence for the requirements review; the model never sees raw images.
 1. `SyntaxCheckNode` (`app/ingestion/syntax_check.py`) parses every Python, JSON and
    TOML file with a real parser. This is a fact, not an LLM opinion, so a syntax
    error sends the submission straight back — with the file, line, offending source
@@ -36,14 +42,22 @@ what gets analysed, in three layers:
    reliably needs their own toolchain, and a wrong "syntax error" verdict must never
    fail a student).
 2. `OutputVerificationNode` reads the **whole** codebase and gives a
-   met / partial / not-met verdict, with evidence, for every functional requirement.
+   met / partial / not-met verdict, with evidence, for every functional requirement,
+   plus a present / unclear / missing verdict for each required screenshot.
 3. `CodeQualityScorerNode` reads the whole codebase against the same requirements
    and scores structure, syntax, maintainability and completeness.
 
 The reviewers get all files in full while the zip fits `CODE_REVIEW_CHAR_BUDGET`
 (default 160,000 characters); past that the largest files are trimmed fairly and
-flagged as trimmed. `app/ocr/` remains only for the Q&A agent's optional
-screenshot attachments in a dispute.
+flagged as trimmed.
+
+**Final report.** Once BOTH the code score and the viva are passed, the student can
+download a PDF (`GET /api/submission/{id}/final-report.pdf`, or the gateway action
+`download_final_report`, which returns it base64-encoded) with the score, the
+per-requirement results, the code-quality breakdown, the viva questions and results,
+and the reviewer feedback, with the DigiDARA Technologies logo on every page
+(`app/reports/final_report.py`). It is rebuilt from the stored grading data, and
+refused with 409 before both are passed.
 
 ## Setup
 

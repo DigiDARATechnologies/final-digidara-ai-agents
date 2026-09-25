@@ -4,6 +4,7 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   chooseTopic: jest.fn(),
   clarifyTopicRequest: jest.fn(),
   confirmTimer: jest.fn(),
+  downloadFinalReport: jest.fn(),
   getThreadStatus: jest.fn(),
   submitVivaAnswer: jest.fn(),
   uploadSubmission: jest.fn(),
@@ -293,6 +294,57 @@ describe('choosing a project topic (A/B)', () => {
   });
 });
 
+describe('the final report after the score and the viva both pass', () => {
+  const lastVivaAnswer: CapstoneFlowState = { ...vivaState, vivaProgress: '10 of 10', vivaSubmissionId: 'sub-42' };
+  const passedState: CapstoneFlowState = { ...lastVivaAnswer, step: 'graded', passed: true, finalScore: 88 };
+
+  test('passing the viva offers the final report download, and says the project is complete', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'graded', final_score: 88, passed: true, feedback: 'Great.', viva_score: 8, viva_passed: true,
+    } as never);
+    const result = await handleCapstoneText(lastVivaAnswer, 'final answer');
+    expect(result.state.step).toBe('graded');
+    expect(result.messages[0].text).toContain('the code score and the viva are both passed');
+    expect(result.messages[0].options).toEqual([expect.objectContaining({ label: 'Download final report (PDF)', value: 'download_final_report' })]);
+  });
+
+  test('a failed grade never offers the report', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'needs_revision', final_score: 40, passed: false, feedback: 'Not yet.', viva_score: 3, viva_passed: false,
+    } as never);
+    const result = await handleCapstoneText(lastVivaAnswer, 'final answer');
+    expect(result.messages[0].options).toBeUndefined();
+  });
+
+  test('choosing the option downloads the report for THAT submission and confirms it', async () => {
+    jest.mocked(api.downloadFinalReport).mockResolvedValue(undefined);
+    const result = await handleCapstoneText(passedState, 'download_final_report');
+    expect(api.downloadFinalReport).toHaveBeenCalledWith('sub-42');
+    expect(result.messages[0].text).toContain('final report has been downloaded');
+    expect(result.messages[0].options?.[0].value).toBe('download_final_report');   // can be downloaded again
+    expect(result.state.step).toBe('graded');
+  });
+
+  test('a download failure is explained and the option stays available to retry', async () => {
+    jest.mocked(api.downloadFinalReport).mockRejectedValue(new Error('offline'));
+    const result = await handleCapstoneText(passedState, 'download_final_report');
+    expect(result.messages[0].text).toContain('could not download the report: offline');
+    expect(result.messages[0].options?.[0].value).toBe('download_final_report');
+  });
+
+  test('without a passed result and a submission there is nothing to download, and the backend is not called', async () => {
+    const noSubmission = await handleCapstoneText({ ...passedState, vivaSubmissionId: null }, 'download_final_report');
+    expect(noSubmission.messages[0].text).toContain('once both your project score and the viva are passed');
+    expect(api.downloadFinalReport).not.toHaveBeenCalled();
+  });
+
+  test('any other message once passed still gets the "already graded" reply, with the report option alongside', async () => {
+    const result = await handleCapstoneText(passedState, 'thanks');
+    expect(result.messages[0].text).toContain('already been graded');
+    expect(result.messages[0].options?.[0].value).toBe('download_final_report');
+  });
+});
+
 describe('example report and zip downloads', () => {
   const exampleHrefs = ['/capstone-examples/capstone-example-report.pdf', '/capstone-examples/capstone-example-project.zip'];
 
@@ -313,5 +365,28 @@ describe('example report and zip downloads', () => {
     expect(result.state.step).toBe('awaiting_submission');
     expect(result.messages[0].options?.map((option) => option.href)).toEqual(exampleHrefs);
     expect(result.messages[0].text).toContain('example report');
+  });
+
+  test('the submission guide lists every required screenshot by file name and module, and says they go in the zip', async () => {
+    jest.mocked(api.confirmTimer).mockResolvedValue({
+      thread_id: 'thread', deadline_at: '2026-09-25T00:00:00Z',
+      submission_guide: {
+        docx_required_sections: ['Problem Statement', 'Approach', 'Conclusion'],
+        required_screenshots: [
+          { filename: '01-login-form.png', module: 'Login form', description: 'the form with an invalid email error visible' },
+          { filename: '02-dashboard.png', module: 'Dashboard', description: 'the dashboard with three items listed' },
+        ],
+      },
+    });
+    const text = (await handleCapstoneText(timerConfirmState, 'confirm')).messages[0].text;
+    expect(text).toContain('output_screenshots folder of your zip (not in the .docx report)');
+    expect(text).toContain('1. 01-login-form.png - Login form: the form with an invalid email error visible');
+    expect(text).toContain('2. 02-dashboard.png - Dashboard: the dashboard with three items listed');
+    expect(text).toContain('Ask me about any screenshot');
+  });
+
+  test('a guide with no screenshots adds no screenshots section', async () => {
+    jest.mocked(api.confirmTimer).mockResolvedValue({ thread_id: 'thread', deadline_at: '2026-09-25T00:00:00Z', submission_guide: {} });
+    expect((await handleCapstoneText(timerConfirmState, 'confirm')).messages[0].text).not.toContain('Output screenshots');
   });
 });
