@@ -28,6 +28,8 @@ from .groq_speaking import (
     strip_completion_command,
     summarize_speaking_session,
     transcribe_speaking_audio,
+    process_speaking_turn_conversation_engine,
+    analyze_speaking_intent,
 )
 from .groq_writing import (
     detect_tone,
