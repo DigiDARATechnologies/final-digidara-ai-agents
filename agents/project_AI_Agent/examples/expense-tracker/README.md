@@ -32,7 +32,7 @@ expense-tracker/
 │   └── test_tracker.py
 ├── data/
 │   └── sample_expenses.json
-└── output_screenshots/     proof that it runs (also embedded in the report)
+└── output_screenshots/     proof that it runs - image files, kept in the zip (not in the .docx report)
     ├── 01-add-expense.png
     ├── 02-category-summary.png
     └── 03-tests-passing.png

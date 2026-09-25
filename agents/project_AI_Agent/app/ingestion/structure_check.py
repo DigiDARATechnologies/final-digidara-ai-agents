@@ -33,6 +33,25 @@ def _normalize_heading(text: str) -> str:
     return normalized.strip().lower()
 
 
+# What a student's .docx report needs is exactly these sections. "Code" and
+# "Output Screenshots" used to be required REPORT sections too; they are not any
+# more -- the code is analysed from the zip, and the output screenshots are image
+# files in the zip's output_screenshots folder, not pictures pasted into the
+# report. A submission guide is generated once per project and then stored, so
+# guides issued earlier still list those two as report sections; this strips
+# them at check time so older projects stop requiring them in the .docx as well.
+# (The zip's output_screenshots FOLDER is still required -- see screenshots.py.)
+REPORT_SECTIONS = ["Problem Statement", "Approach", "Conclusion"]
+_RETIRED_SECTIONS = {"code", "output screenshots", "screenshots", "output"}
+
+
+def drop_retired_sections(required_sections: list[str] | None) -> list[str]:
+    return [
+        str(section) for section in required_sections or []
+        if _normalize_heading(str(section)) not in _RETIRED_SECTIONS
+    ]
+
+
 def check_required_sections(required_sections: list[str] | None, doc_sections: dict[str, str] | None) -> dict:
     """required_sections: the submission guide's `docx_required_sections`
     (plain names, e.g. "Approach"). doc_sections: {heading_text: body_text}

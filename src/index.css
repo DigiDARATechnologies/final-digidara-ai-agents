@@ -875,10 +875,39 @@ body.glow-off .send-btn:hover{
   white-space:pre-line;
 }
 .message-heading{font-weight:700;margin:2px 0 5px}
+.message-code{margin:8px 0;padding:11px 13px;border-radius:10px;background:#0f172a;border:1px solid #1e293b;color:#e2e8f0;font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;white-space:pre;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}
+.message-code code{font:inherit;color:inherit;background:none;padding:0}
 .message-list-item{padding-left:4px}
 .msg .bubble code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;padding:1px 4px;border-radius:4px;background:var(--ov-2)}
 .msg.user .bubble code{background:rgba(255,255,255,.18)}
 .msg.user .bubble{ background:var(--accent-grad); color:#fff; border:none; border-radius:18px; border-bottom-right-radius:5px; padding:11px 16px; box-shadow:0 4px 14px rgba(40,81,216,.22); }
+.msg.agent .bubble{ border-bottom-left-radius:4px; }
+.msg .bubble a,
+.msg .bubble .chat-bubble-link {
+  color: #0284c7;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+  word-break: break-word;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.msg .bubble a:hover,
+.msg .bubble .chat-bubble-link:hover {
+  color: #0369a1;
+  opacity: 0.85;
+}
+.msg.user .bubble a,
+.msg.user .bubble .chat-bubble-link {
+  color: #e0f2fe;
+  text-decoration: underline;
+}
+.msg .bubble .chat-heading {
+  display: block;
+  font-size: 1.05em;
+  font-weight: 700;
+  margin-bottom: 4px;
+  color: inherit;
+}
 .chat-options{display:flex;flex-direction:column;gap:8px;margin-top:9px;min-width:min(420px,70vw);}
 .chat-options button{text-align:left;border:1px solid var(--canvas-border);background:var(--canvas-bg-soft);color:var(--canvas-text);padding:10px 12px;border-radius:11px;transition:.15s;}
 .chat-options a.chat-option-link{display:block;text-align:left;text-decoration:none;border:1px solid var(--canvas-border);background:var(--canvas-bg-soft);color:var(--canvas-text);padding:10px 12px;border-radius:11px;transition:.15s;}
@@ -928,9 +957,19 @@ body.glow-off .send-btn:hover{
   display:flex; flex-wrap:wrap; gap:6px; margin:0 var(--chat-col-pad) 8px;
 }
 .attach-chip{
+  display:inline-flex; align-items:center; gap:6px;
   font-size:12px; font-weight:600; color:var(--canvas-text-dim);
   background:var(--canvas-bg-soft); border:1px solid var(--canvas-border);
   padding:5px 10px; border-radius:999px;
+}
+.attach-chip-remove{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:16px; height:16px; border:none; background:transparent;
+  color:var(--text-dim); border-radius:50%; font-size:11px;
+  cursor:pointer; padding:0; line-height:1; transition:background .15s, color .15s;
+}
+.attach-chip-remove:hover{
+  background:var(--border-soft); color:var(--text);
 }
 
 .composer{
@@ -1050,6 +1089,12 @@ body.glow-off .send-btn:hover{
 .progress-track span{display:block;height:100%;background:var(--accent-grad);border-radius:inherit;transition:width .3s ease;}
 .dashboard-status-card p,.dashboard-alert p,.dashboard-result p,.dashboard-section p{font-size:12px;color:var(--canvas-text-dim);line-height:1.5;margin:11px 0 0;white-space:pre-line;}
 .dashboard-section h3{font-size:13px;margin:0 0 10px;color:var(--canvas-text);}
+.dashboard-status-card p,.dashboard-alert p,.dashboard-result p,.dashboard-section p{font-size:12px;color:var(--text-dim);line-height:1.5;margin:11px 0 0;white-space:pre-line;}
+.dashboard-section h3{font-size:13px;margin:0 0 10px;}
+.certificate-preview{display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-sm);margin:0 0 12px;}
+.certificate-section .field{margin:12px 0 0;}
+.certificate-actions{display:flex;gap:10px;margin-top:12px;}
+.certificate-actions .btn{flex:1;}
 .dashboard-section dl{margin:0;display:flex;flex-direction:column;gap:9px;}
 .dashboard-section dl div{display:flex;justify-content:space-between;gap:14px;font-size:12px;}
 .dashboard-section dt{color:var(--canvas-text-dim);}
@@ -1279,6 +1324,7 @@ body.glow-off .send-btn:hover{
 @media(max-width:700px){.mock-interview-panel,.mock-interview-question-section{width:100%}.mock-interview-panel{padding:15px}.mock-interview-scores{grid-template-columns:repeat(2,minmax(0,1fr))}.mock-interview-feedback-grid{grid-template-columns:1fr}.mock-interview-header h3{font-size:16px}.mock-interview-timer{min-width:90px}.mock-interview-timer strong{font-size:19px}}
 
 .mock-interview-feedback-grid>div.mock-interview-strengths{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35)}.mock-interview-feedback-grid>div.mock-interview-weaknesses{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35)}.mock-interview-strengths strong{color:var(--ok)}.mock-interview-weaknesses strong{color:var(--err)}
+.mock-interview-report-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
 
 .mock-interview-round{margin:5px 0 0!important}.mock-interview-progress{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:64px;padding-top:3px;color:var(--cy);font-size:11px;font-weight:800}.mock-interview-progress-track{width:64px;height:4px;overflow:hidden;border-radius:99px;background:var(--line-1)}.mock-interview-progress-track i{display:block;height:100%;border-radius:inherit;background:var(--cy);transition:width .2s ease}.mock-interview-question{display:flex;align-items:flex-start;gap:8px;margin:12px 0 10px;padding:14px 15px;line-height:1.5}.mock-interview-question-number{flex:0 0 auto;color:var(--cy);font-size:17px;font-weight:800;line-height:1.45}.mock-interview-voice{gap:7px}.mock-interview-answer-label{margin-top:12px}.mock-interview-panel textarea{margin-bottom:10px}.mock-interview-actions{margin-top:8px;padding-top:2px}
 

@@ -304,9 +304,11 @@ LLM cannot return a valid profile, rather than exposing malformed model output.
 10. The agent expands the topic into detailed requirements.
 11. The learner confirms the seven-day timer.
 12. The dashboard monitors course, topic, deadline, files, and status.
-13. The learner uploads a `.docx` report and `.zip` source archive in chat.
-14. The agent validates structure, screenshots/OCR, output, and code quality.
-15. The same chat returns revision instructions or a final score and feedback.
+13. The learner uploads a `.docx` report (Problem Statement, Approach, Conclusion — no code, no screenshots) and a `.zip` holding the source code and an `output_screenshots` folder of image files.
+14. The agent parses every Python/JSON/TOML file for syntax errors, then has the LLM read all of the code and check it against each functional requirement.
+15. The same chat returns the exact syntax errors (file, line, offending code), or a score and feedback. A failed grade never blocks another upload — the learner can resubmit until they pass.
+16. After the project passes, a viva follows: 10 questions on the learner's own project, at least 50% correct to pass. There are up to three attempts, each with a fresh set of questions (never one already asked), and the result is shown as Good / Average / Bad — never as a mark.
+17. Once the score and the viva are both passed, the learner can download a final report PDF (score, requirements, viva results and feedback, with the DigiDARA Technologies logo on every page) and get a project certificate: a preview on the DigiDARA certificate template, the name as the only editable field, then OK, then a downloadable PDF that names the learner's own project.
 
 ### 5.2 CodeForge (LeetCode / DSA) Agent
 

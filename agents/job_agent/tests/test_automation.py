@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 import os
 import tempfile
 import time
@@ -13,8 +13,14 @@ from job_agent.app import create_app
 class AutomationScheduleTests(unittest.TestCase):
     @patch("job_agent.automation._record_outcome")
     @patch("job_agent.automation.queue_greenhouse_collection")
+    @patch("job_agent.automation.queue_jsearch_collection")
+    @patch("job_agent.automation.queue_adzuna_collection")
+    @patch("job_agent.automation.prune_expired_jobs")
     @patch("job_agent.automation._claim_today", return_value=True)
-    def test_due_schedule_queues_greenhouse_once(self, claim, queue, record):
+    def test_due_schedule_queues_greenhouse_once(self, claim, mock_prune, mock_adzuna, mock_jsearch, queue, record):
+        mock_prune.return_value = {"success": True, "expired_count": 0, "deleted_count": 0}
+        mock_adzuna.return_value = {"ready": False}
+        mock_jsearch.return_value = {"ready": False}
         queue.return_value = {"ready": True, "source_count": 2, "queued_count": 2, "already_queued_count": 0}
         result = automation.queue_due_automation(datetime(2026, 9, 9, 9, 0, tzinfo=ZoneInfo("Asia/Kolkata")))
         self.assertTrue(result["due"])

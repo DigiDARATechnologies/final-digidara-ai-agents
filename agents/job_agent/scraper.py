@@ -299,6 +299,23 @@ def scrape_source(source):
             raise ScraperError("Apify parser_config.run_input must be an object")
         return apify_fetch_and_normalize(actor_id, platform=platform, run_input=run_input)
 
+    if source_type == "adzuna":
+        from .providers.adzuna import fetch_and_normalize as adzuna_fetch_and_normalize
+
+        what = config.get("what") or ""
+        where = config.get("where") or ""
+        page = int(config.get("page", 1))
+        results_per_page = int(config.get("results_per_page", 20))
+        return adzuna_fetch_and_normalize(what=what, where=where, page=page, results_per_page=results_per_page)
+
+    if source_type == "jsearch":
+        from .providers.jsearch import fetch_and_normalize as jsearch_fetch_and_normalize
+
+        query = config.get("query") or ""
+        page = int(config.get("page", 1))
+        num_pages = int(config.get("num_pages", 1))
+        return jsearch_fetch_and_normalize(query=query, page=page, num_pages=num_pages)
+
     session = requests.Session()
     session.headers.update({"User-Agent": SCRAPER_USER_AGENT, "Accept": "text/html, application/rss+xml, application/xml"})
     content_bytes, encoding = _fetch(session, source["source_url"])

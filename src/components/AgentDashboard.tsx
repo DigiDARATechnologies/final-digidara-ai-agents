@@ -1,6 +1,121 @@
+import { useState } from "react";
+import { confirmCertificate, downloadCertificate, downloadFinalReport, previewCertificate, type CertificatePreview } from "../lib/capstoneApi";
 import { CAPSTONE_EXAMPLE_FILES } from "../lib/capstoneExamples";
 import type { CapstoneFlowState, CapstoneStep } from "../lib/capstoneFlow";
 import type { User } from "../types";
+
+/** Shown only once BOTH the code score and the viva are passed -- the backend
+ * refuses to issue the report before that, so this never offers a dead button. */
+function FinalReportButton({ submissionId }: { submissionId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function download() {
+    setBusy(true);
+    setError("");
+    try {
+      await downloadFinalReport(submissionId);
+    } catch (caught) {
+      setError((caught as Error).message || "The final report is unavailable.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="dashboard-section">
+      <h3>Final report</h3>
+      <p className="muted">Your score, viva results and project details, as a PDF.</p>
+      <button type="button" className="btn btn-primary" disabled={busy} onClick={download}>
+        {busy ? "Preparing report..." : "Download final report (PDF)"}
+      </button>
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
+
+/** The certificate: preview it, correct the name if needed (the only editable thing),
+ * click OK to issue it, then download the PDF. Shown only once BOTH the code score and
+ * the viva are passed -- the backend refuses earlier. What the student approves is what
+ * they get: OK is offered only for the name they have actually previewed. */
+function CertificateSection({ submissionId }: { submissionId: string }) {
+  const [preview, setPreview] = useState<CertificatePreview | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState<"" | "preview" | "confirm" | "download">("");
+  const [error, setError] = useState("");
+
+  async function run<T>(kind: "preview" | "confirm" | "download", work: () => Promise<T>): Promise<T | undefined> {
+    setBusy(kind);
+    setError("");
+    try {
+      return await work();
+    } catch (caught) {
+      setError((caught as Error).message || "The certificate is unavailable.");
+      return undefined;
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function load(requestedName?: string) {
+    const shown = await run("preview", () => previewCertificate(submissionId, requestedName));
+    if (shown) {
+      setPreview(shown);
+      setName(shown.name);
+    }
+  }
+
+  async function confirm() {
+    const done = await run("confirm", () => confirmCertificate(submissionId, name.trim()));
+    if (done) await load();   // show the issued certificate, name locked
+  }
+
+  const confirmed = !!preview?.confirmed;
+  const previewedName = preview?.name ?? "";
+  const nameChanged = name.trim() !== previewedName;
+
+  return (
+    <div className="dashboard-section certificate-section">
+      <h3>Your certificate</h3>
+      {!preview && (
+        <>
+          <p className="muted">You passed the project and the viva. Preview your certificate, check your name, then click OK to issue it.</p>
+          <button type="button" className="btn btn-primary" disabled={busy !== ""} onClick={() => load()}>
+            {busy === "preview" ? "Preparing preview..." : "Preview my certificate"}
+          </button>
+        </>
+      )}
+      {preview && (
+        <>
+          <img className="certificate-preview" alt={`Certificate for ${preview.name}: ${preview.project_title}`} src={`data:${preview.content_type};base64,${preview.preview}`} />
+          {confirmed ? (
+            <>
+              <p className="muted">Your certificate is issued (ID {preview.certificate_id}). The name can no longer be changed.</p>
+              <button type="button" className="btn btn-primary" disabled={busy !== ""} onClick={() => run("download", () => downloadCertificate(submissionId))}>
+                {busy === "download" ? "Preparing PDF..." : "Download certificate (PDF)"}
+              </button>
+            </>
+          ) : (
+            <>
+              <label className="field">
+                Name on the certificate
+                <input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} aria-label="Name on the certificate" />
+              </label>
+              <p className="muted">Only the name can be edited. Update the preview to see a change, then click OK to issue the certificate.</p>
+              <div className="certificate-actions">
+                <button type="button" className="btn" disabled={busy !== "" || !name.trim() || !nameChanged} onClick={() => load(name.trim())}>
+                  {busy === "preview" ? "Updating..." : "Update preview"}
+                </button>
+                <button type="button" className="btn btn-primary" disabled={busy !== "" || !name.trim() || nameChanged} onClick={confirm}>
+                  {busy === "confirm" ? "Issuing..." : "OK"}
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+  );
+}
 
 interface AgentDashboardProps {
   user: User;
@@ -79,6 +194,8 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
           {state.feedback && <p>{state.feedback}</p>}
         </div>
       )}
+      {state.step === "graded" && state.passed && state.vivaSubmissionId && <CertificateSection submissionId={state.vivaSubmissionId} />}
+      {state.step === "graded" && state.passed && state.vivaSubmissionId && <FinalReportButton submissionId={state.vivaSubmissionId} />}
       {state.scoreReasoning && (
         <div className="dashboard-section">
           <h3>How the score was decided</h3>

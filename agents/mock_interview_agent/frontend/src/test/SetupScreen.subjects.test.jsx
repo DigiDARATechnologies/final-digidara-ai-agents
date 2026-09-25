@@ -51,6 +51,24 @@ describe("technical interview entry points", () => {
     ));
   });
 
+  it("allows selecting five or fifteen questions and sends the selected count", async () => {
+    const user = userEvent.setup();
+    render(<SetupScreen studentId={1} onStarted={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /^55 Questions/i }));
+    await user.click(screen.getByRole("button", { name: "Start Interview" }));
+    await waitFor(() => expect(apiMocks.startInterview).toHaveBeenCalledWith(
+      expect.objectContaining({ num_questions: 5 })
+    ));
+
+    apiMocks.startInterview.mockClear();
+    await user.click(screen.getByRole("button", { name: /15 Questions/i }));
+    await user.click(screen.getByRole("button", { name: "Start Interview" }));
+    await waitFor(() => expect(apiMocks.startInterview).toHaveBeenCalledWith(
+      expect.objectContaining({ num_questions: 15 })
+    ));
+  });
+
   it("keeps the HR interview flow unchanged", async () => {
     const user = userEvent.setup();
     render(<SetupScreen studentId={1} onStarted={vi.fn()} />);

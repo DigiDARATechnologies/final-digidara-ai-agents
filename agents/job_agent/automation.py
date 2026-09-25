@@ -9,7 +9,8 @@ from zoneinfo import ZoneInfo
 
 from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE
 from .db import get_db
-from .providers.sync import queue_greenhouse_collection
+from .providers.sync import queue_adzuna_collection, queue_greenhouse_collection, queue_jsearch_collection
+from .service import prune_expired_jobs
 
 
 def get_automation_settings():
@@ -90,10 +91,12 @@ def _record_outcome(queued_count=0, error=None):
 
 
 def queue_due_automation(now=None):
-    """Queue today's automatic Greenhouse pass when its local time is due.
+    """Queue today's automatic job collection and 30-day retention pruning pass.
 
-    A worker restarted after the configured time safely catches up once. The
-    persisted date claim prevents duplicate runs that day.
+    Runs daily at configured local time:
+    1. Prunes and purges jobs older than 30 days.
+    2. Queues daily fresher job collection across Adzuna & RapidAPI JSearch.
+    3. Queues Greenhouse verified corporate boards.
     """
     timezone = ZoneInfo(JOBS_AUTOMATION_TIMEZONE)
     local_now = now.astimezone(timezone) if now else datetime.now(timezone)
@@ -103,9 +106,34 @@ def queue_due_automation(now=None):
     if not _claim_today(local_now.date()):
         return {"due": False, "reason": "disabled_or_already_run"}
     try:
-        result = queue_greenhouse_collection(admin_id=None)
-        _record_outcome(queued_count=result["queued_count"])
-        return {"due": True, **result}
+        # 1. 30-Day Automated Retention Pruning
+        prune_outcome = prune_expired_jobs(max_age_days=30)
+
+        # 2. Daily Automated Ingestion from Adzuna & JSearch
+        total_queued = 0
+        adzuna_res = queue_adzuna_collection(admin_id=None)
+        if adzuna_res.get("ready"):
+            total_queued += adzuna_res.get("queued_count", 0)
+
+        jsearch_res = queue_jsearch_collection(admin_id=None)
+        if jsearch_res.get("ready"):
+            total_queued += jsearch_res.get("queued_count", 0)
+
+        # 3. Greenhouse collection if active
+        try:
+            gh_res = queue_greenhouse_collection(admin_id=None)
+            total_queued += gh_res.get("queued_count", 0)
+        except Exception:
+            pass
+
+        _record_outcome(queued_count=total_queued)
+        return {
+            "due": True,
+            "queued_count": total_queued,
+            "pruned": prune_outcome,
+            "adzuna": adzuna_res,
+            "jsearch": jsearch_res,
+        }
     except Exception as exc:
         _record_outcome(error=str(exc))
         raise

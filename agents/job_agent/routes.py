@@ -6,7 +6,8 @@ import uuid
 from datetime import date, datetime
 
 import mysql.connector
-from flask import Blueprint, g, jsonify, request
+from urllib.parse import urlparse
+from flask import Blueprint, g, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from .auth import admin_required, user_required
@@ -15,23 +16,42 @@ from .categories import OTHER_CATEGORY, OTHER_LABEL, load_categories, related_ca
 from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
 from .db import get_db
 from .matching import parse_list, score_job
+from .providers.adzuna import is_configured as is_adzuna_configured
 from .providers.apify import get_apify_status
-from .providers.config_loader import get_apify_config, get_greenhouse_companies, get_pending_validation_companies
+from .providers.config_loader import (
+    get_adzuna_config,
+    get_apify_config,
+    get_greenhouse_companies,
+    get_jsearch_config,
+    get_pending_validation_companies,
+)
+from .providers.jsearch import is_configured as is_jsearch_configured
 from .providers.sync import (
+    queue_adzuna_collection,
     queue_apify_collection,
     queue_greenhouse_collection,
+    queue_jsearch_collection,
     revalidate_greenhouse_source,
     sync_greenhouse_sources,
 )
 from .scraper import _validate_public_url, ScraperError
 from .service import _clean_job, queue_source_run_once
+from .skills import parse_resume_for_profile
 from .tn_location import ALL_TN_DISTRICTS
+from .chat_service import chat_with_job_agent
+from .trust import evaluate_job_trust
+from .usage import (
+    check_and_record_chat_usage,
+    check_and_record_feed_usage,
+    get_token_settings,
+    update_token_settings,
+)
 
 
 logger = logging.getLogger(__name__)
 
 job_bp = Blueprint("job_agent", __name__)
-SOURCE_TYPES = {"json_ld", "html_cards", "rss", "greenhouse", "apify"}
+SOURCE_TYPES = {"json_ld", "html_cards", "rss", "greenhouse", "apify", "adzuna", "jsearch"}
 JOB_STATUSES = {"pending", "active", "rejected", "expired"}
 APPLICATION_STATUSES = {"applied", "screening", "interview", "offer", "rejected", "withdrawn"}
 
@@ -100,6 +120,26 @@ def _bounded_int(raw_value, default, minimum=0, maximum=None):
     return value
 
 
+def _validate_resume_magic_bytes(stream, extension: str) -> bool:
+    """Verify that the uploaded stream's initial bytes match the declared extension."""
+    pos = stream.tell()
+    try:
+        header = stream.read(32)
+    finally:
+        stream.seek(pos)
+
+    if not header:
+        return False
+    if extension == ".pdf":
+        return header.startswith(b"%PDF")
+    if extension == ".docx":
+        return header.startswith(b"PK\x03\x04")
+    if extension == ".doc":
+        return header.startswith(b"\xd0\xcf\x11\xe0")
+    return False
+
+
+
 # ---------------------------------------------------------------------------
 # User-facing routes — reached only via the gateway (POST /api/invoke) by a
 # logged-in DigiDARA user; g.job_user_id is the platform's own user id,
@@ -135,6 +175,10 @@ def my_profile():
         except (TypeError, ValueError):
             return jsonify({"error": "Experience must be a number"}), 400
         resume_url = str(data.get("resume_url") or "").strip()[:2000]
+        if resume_url:
+            parsed_resume_url = urlparse(resume_url)
+            if parsed_resume_url.scheme not in {"http", "https"} or not parsed_resume_url.netloc:
+                return jsonify({"error": "Invalid resume URL. Only http and https URLs are allowed."}), 400
         completed = bool(full_name and skills and titles)
         cursor.execute(
             """INSERT INTO user_job_profiles (
@@ -160,8 +204,7 @@ def my_profile():
 @job_bp.post("/api/jobs/me/resume")
 @user_required
 def my_resume_upload():
-    """Stores an uploaded resume file as-is — never parsed. See config.py's
-    ALLOWED_RESUME_EXTENSIONS/RESUME_MAX_BYTES for the validated constraints."""
+    """Stores an uploaded resume file after validating extension, size, and magic bytes."""
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"error": "A resume file is required"}), 400
@@ -169,6 +212,9 @@ def my_resume_upload():
     extension = os.path.splitext(file.filename)[1].lower()
     if extension not in ALLOWED_RESUME_EXTENSIONS:
         return jsonify({"error": f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_RESUME_EXTENSIONS))}"}), 400
+
+    if not _validate_resume_magic_bytes(file.stream, extension):
+        return jsonify({"error": "File content does not match the declared file extension"}), 400
 
     # Read-and-check rather than trusting Content-Length, which a client can
     # misreport; werkzeug already buffers the upload to a temp file, so this
@@ -182,24 +228,70 @@ def my_resume_upload():
     user_dir = UPLOAD_DIR / g.job_user_id
     user_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}{extension}"
-    file.save(user_dir / stored_name)
+    saved_path = user_dir / stored_name
+    file.save(saved_path)
+
+    # Automatically extract text and parse technical skills from the uploaded resume
+    parsed_resume = parse_resume_for_profile(saved_path)
+    extracted_skills = parsed_resume.get("skills") or []
+    detected_exp = parsed_resume.get("experience_years")
 
     original_name = secure_filename(file.filename) or "resume"
     db = get_db()
-    cursor = db.cursor()
+    cursor = db.cursor(dictionary=True)
+    all_skills = []
     try:
         cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
-        # Read the outgoing filename in the same transaction as the
-        # overwrite, so a replaced resume is never left orphaned on disk —
-        # without this, every re-upload leaked the previous file, which also
-        # meant GDPR erasure (my_data's DELETE branch) could silently miss
-        # older files it never knew about.
-        cursor.execute("SELECT resume_filename FROM user_job_profiles WHERE user_id=%s", (g.job_user_id,))
-        previous = cursor.fetchone()
-        previous_resume_filename = previous[0] if previous else None
         cursor.execute(
-            "UPDATE user_job_profiles SET resume_filename=%s, resume_original_name=%s WHERE user_id=%s",
-            (f"{g.job_user_id}/{stored_name}", original_name, g.job_user_id),
+            """SELECT resume_filename, skills, experience_years, full_name, preferred_titles
+               FROM user_job_profiles WHERE user_id=%s""",
+            (g.job_user_id,),
+        )
+        previous = cursor.fetchone()
+        if isinstance(previous, dict):
+            previous_resume_filename = previous.get("resume_filename")
+            current_skills = parse_list(previous.get("skills"))
+            current_exp = float(previous.get("experience_years") or 0)
+            full_name = (previous.get("full_name") or "").strip()
+            pref_titles = parse_list(previous.get("preferred_titles"))
+        elif isinstance(previous, (tuple, list)) and len(previous) > 0:
+            previous_resume_filename = previous[0]
+            current_skills = parse_list(previous[1]) if len(previous) > 1 else []
+            current_exp = float(previous[2] or 0) if len(previous) > 2 else 0.0
+            full_name = (previous[3] or "").strip() if len(previous) > 3 else ""
+            pref_titles = parse_list(previous[4]) if len(previous) > 4 else []
+        else:
+            previous_resume_filename = None
+            current_skills = []
+            current_exp = 0.0
+            full_name = ""
+            pref_titles = []
+
+        # Merge newly extracted skills with existing profile skills (preserving uniqueness)
+        existing_skills_lower = {s.lower() for s in current_skills}
+        merged_skills = list(current_skills)
+        for s in extracted_skills:
+            if s.lower() not in existing_skills_lower:
+                merged_skills.append(s)
+                existing_skills_lower.add(s.lower())
+        all_skills = merged_skills[:50]
+
+        new_exp = current_exp if current_exp > 0 else (detected_exp or 0.0)
+        completed = bool(full_name and all_skills and pref_titles)
+
+        cursor.execute(
+            """UPDATE user_job_profiles
+               SET resume_filename=%s, resume_original_name=%s, skills=%s, experience_years=%s,
+                   profile_completed=%s, onboarding_step='completed'
+               WHERE user_id=%s""",
+            (
+                f"{g.job_user_id}/{stored_name}",
+                original_name,
+                json.dumps(all_skills),
+                new_exp,
+                int(completed),
+                g.job_user_id,
+            ),
         )
         db.commit()
     finally:
@@ -207,7 +299,94 @@ def my_resume_upload():
         db.close()
     if previous_resume_filename:
         _delete_resume_file(previous_resume_filename)
-    return jsonify({"message": "Resume uploaded", "filename": original_name})
+    return jsonify({
+        "message": "Resume uploaded and analyzed successfully",
+        "filename": original_name,
+        "extracted_skills": extracted_skills,
+        "skills": all_skills,
+    })
+
+
+@job_bp.get("/api/jobs/me/resume")
+@user_required
+def my_resume_download():
+    """Download the authenticated user's uploaded resume file."""
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        profile = _get_profile(cursor, g.job_user_id)
+        if not profile or not profile.get("resume_filename"):
+            return jsonify({"error": "No resume on file"}), 404
+        resume_filename = profile["resume_filename"]
+        original_name = profile.get("resume_original_name") or "resume"
+    finally:
+        _close(cursor, db)
+
+    upload_root = UPLOAD_DIR.resolve()
+    resume_path = (UPLOAD_DIR / resume_filename).resolve()
+    if upload_root != resume_path.parent and upload_root not in resume_path.parents:
+        return jsonify({"error": "Invalid resume path"}), 400
+    if not resume_path.is_file():
+        return jsonify({"error": "Resume file not found on disk"}), 404
+
+    extension = resume_path.suffix.lower()
+    mimetypes = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".doc": "application/msword",
+    }
+    mimetype = mimetypes.get(extension, "application/octet-stream")
+
+    return send_file(
+        resume_path,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=original_name,
+    )
+
+
+@job_bp.post("/api/jobs/me/chat")
+@user_required
+def my_chat():
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    history = data.get("history") or []
+    selected_job_id = data.get("selected_job_id")
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        user_balance = getattr(g, "job_token_balance", None)
+        usage_res = check_and_record_chat_usage(cursor, g.job_user_id, user_token_balance=user_balance)
+        if usage_res.get("insufficient_tokens"):
+            return jsonify({
+                "error": "insufficient_tokens",
+                "message": f"Daily free chat quota of {usage_res['free_daily_turns']} messages reached. Please top up tokens to continue chatting.",
+                "required_tokens": usage_res["required_tokens"],
+                "current_balance": usage_res.get("current_balance", 0),
+                "free_daily_turns": usage_res["free_daily_turns"],
+                "prompt_topup": True,
+            }), 402
+        db.commit()
+    finally:
+        _close(cursor, db)
+
+    res = chat_with_job_agent(
+        g.job_user_id,
+        message,
+        history,
+        selected_job_id=selected_job_id,
+    )
+    res["daily_usage"] = {
+        "free_turns_remaining": usage_res["free_turns_remaining"],
+        "total_turns_today": usage_res["total_turns_today"],
+        "tokens_charged": usage_res["tokens_charged"],
+    }
+    resp = jsonify(res)
+    resp.headers["X-Tokens-Used"] = str(usage_res["tokens_charged"])
+    return resp
 
 
 @job_bp.get("/api/jobs/me/categories")
@@ -228,6 +407,7 @@ def my_feed():
         plan_tier = profile.get("plan_tier") or "free"
 
         query = (request.args.get("q") or "").strip()
+        location = (request.args.get("location") or "").strip()
         mode = (request.args.get("work_mode") or "").strip().lower()
         category = (request.args.get("category") or "").strip()
         saved_only = (request.args.get("saved") or "").strip().lower() in {"1", "true", "yes"}
@@ -239,6 +419,10 @@ def my_feed():
             where.append("(j.title LIKE %s OR j.company LIKE %s OR j.description LIKE %s)")
             pattern = f"%{query}%"
             params.extend([pattern, pattern, pattern])
+        if location and location.lower() != "all":
+            where.append("(j.location LIKE %s OR j.location_district LIKE %s OR j.location_region LIKE %s)")
+            loc_pattern = f"%{location}%"
+            params.extend([loc_pattern, loc_pattern, loc_pattern])
         if mode in {"remote", "hybrid", "onsite"}:
             where.append("j.work_mode=%s")
             params.append(mode)
@@ -264,27 +448,88 @@ def my_feed():
         # certification portal's course name) — the user's own preferred
         # titles stand in for it, so category-relatedness scoring still has
         # a real signal to work from instead of always degrading to zero.
-        preferred_titles_text = " ".join(parse_list(profile.get("preferred_titles")))
+        preferred_titles_list = parse_list(profile.get("preferred_titles"))
+        skills_list = parse_list(profile.get("skills"))
+        preferred_titles_text = " ".join(preferred_titles_list) if preferred_titles_list else " ".join(skills_list[:3])
         jobs = cursor.fetchall()
         for job in jobs:
             job["skills"] = parse_list(job.get("skills"))
             score, reasons = score_job(job, profile, preferred_titles_text)
             job["match_score"] = score
             job["match_reasons"] = reasons
-        jobs.sort(key=lambda item: (item["match_score"], item.get("published_at") or item.get("created_at")), reverse=True)
+            job.update(evaluate_job_trust(job))
 
-        # Free-tier feed cap - a real SaaS lever, enforced here rather than
-        # hidden behind a separate paywall check, so the response always
-        # tells the client its own limit and plan.
-        limit = FREE_TIER_DAILY_FEED_LIMIT if plan_tier == "free" else 200
+        cand_exp = float(profile.get("experience_years") or 0.0)
+        is_fresher = cand_exp <= 1.0
+
+        def _feed_sort_key(item):
+            dt = item.get("published_at") or item.get("created_at")
+            if isinstance(dt, (datetime, date)):
+                dt_key = dt.isoformat()
+            else:
+                dt_key = str(dt or "")
+            if is_fresher:
+                is_entry = 1 if item.get("seniority_tier") == "entry" else 0
+                return (item["match_score"], is_entry, dt_key)
+            return (item["match_score"], dt_key)
+
+        jobs.sort(key=_feed_sort_key, reverse=True)
+
+
+        # Dynamic SaaS Feed Quota & Token Gating
+        user_balance = getattr(g, "job_token_balance", None)
+        requested_count = 20
+
+        if plan_tier != "free":
+            # Paid plan tier bypasses daily feed limits
+            limit = 200
+            capped = jobs[:limit]
+            resp = jsonify({
+                "jobs": [_serialize(job) for job in capped],
+                "total": len(jobs),
+                "returned": len(capped),
+                "plan_tier": plan_tier,
+                "limit": limit,
+            })
+            resp.headers["X-Tokens-Used"] = "0"
+            return resp
+
+        usage_res = check_and_record_feed_usage(
+            cursor,
+            g.job_user_id,
+            requested_count=requested_count,
+            user_token_balance=user_balance,
+        )
+
+        if usage_res.get("insufficient_tokens"):
+            return jsonify({
+                "error": "insufficient_tokens",
+                "message": f"You have reached your daily free limit of {usage_res['free_daily_limit']} jobs. Please top up your tokens to unlock more opportunities.",
+                "required_tokens": usage_res["required_tokens"],
+                "current_balance": usage_res.get("current_balance", 0),
+                "free_daily_limit": usage_res["free_daily_limit"],
+                "prompt_topup": True,
+            }), 402
+
+        db.commit()
+
+        limit = usage_res["jobs_served"] if usage_res["jobs_served"] > 0 else requested_count
         capped = jobs[:limit]
-        return jsonify({
+        resp = jsonify({
             "jobs": [_serialize(job) for job in capped],
             "total": len(jobs),
             "returned": len(capped),
             "plan_tier": plan_tier,
             "limit": limit,
+            "daily_usage": {
+                "free_quota_remaining": usage_res["free_quota_remaining"],
+                "total_viewed_today": usage_res["total_viewed_today"],
+                "free_daily_limit": usage_res["free_daily_limit"],
+                "tokens_charged": usage_res["tokens_charged"],
+            },
         })
+        resp.headers["X-Tokens-Used"] = str(usage_res["tokens_charged"])
+        return resp
     finally:
         _close(cursor, db)
 
@@ -391,6 +636,44 @@ def my_applications():
         _close(cursor, db)
 
 
+@job_bp.put("/api/jobs/me/applications/<int:job_id>/status")
+@user_required
+def my_application_status(job_id):
+    """Updates the lifecycle status of a user's job application (applied, screening, interview, offer, rejected, withdrawn)."""
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "").strip().lower()
+    if status not in APPLICATION_STATUSES:
+        return jsonify({
+            "error": f"Invalid application status. Allowed: {', '.join(sorted(APPLICATION_STATUSES))}"
+        }), 400
+
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, status FROM jobs WHERE id=%s", (job_id,))
+        job = cursor.fetchone()
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+
+        cursor.execute(
+            """INSERT INTO user_job_actions (
+                user_id, job_id, is_saved, is_hidden, application_status, applied_at
+            ) VALUES (%s, %s, 0, 0, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                application_status = %s,
+                applied_at = IF(applied_at IS NULL, NOW(), applied_at)""",
+            (g.job_user_id, job_id, status, status),
+        )
+        db.commit()
+        return jsonify({
+            "message": f"Application status updated to '{status}'",
+            "job_id": job_id,
+            "application_status": status,
+        })
+    finally:
+        _close(cursor, db)
+
+
 @job_bp.route("/api/jobs/me/data", methods=["GET", "DELETE"])
 @user_required
 def my_data():
@@ -475,6 +758,36 @@ def admin_update_plan(user_id):
         return jsonify({"message": "Plan updated", "plan_tier": plan_tier})
     finally:
         _close(cursor, db)
+
+
+@job_bp.route("/api/jobs/admin/token-settings", methods=["GET", "PUT"])
+@admin_required
+def admin_token_settings():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        if request.method == "GET":
+            settings = get_token_settings(cursor)
+            return jsonify({"token_settings": settings})
+
+        data = request.get_json(silent=True) or {}
+        new_feed = _bounded_int(data.get("free_daily_feed_limit"), default=None, minimum=1, maximum=1000) if "free_daily_feed_limit" in data else None
+        new_chat = _bounded_int(data.get("free_daily_chat_turns"), default=None, minimum=1, maximum=1000) if "free_daily_chat_turns" in data else None
+        new_extra_feed = _bounded_int(data.get("tokens_per_extra_feed"), default=None, minimum=0, maximum=100000) if "tokens_per_extra_feed" in data else None
+        new_extra_chat = _bounded_int(data.get("tokens_per_chat_turn"), default=None, minimum=0, maximum=50000) if "tokens_per_chat_turn" in data else None
+
+        updated = update_token_settings(
+            cursor,
+            free_daily_feed_limit=new_feed,
+            free_daily_chat_turns=new_chat,
+            tokens_per_extra_feed=new_extra_feed,
+            tokens_per_chat_turn=new_extra_chat,
+        )
+        db.commit()
+        return jsonify({"message": "Token settings updated successfully", "token_settings": updated})
+    finally:
+        _close(cursor, db)
+
 
 
 @job_bp.route("/api/jobs/admin/sources", methods=["GET", "POST"])
@@ -721,6 +1034,19 @@ def admin_jobs_bulk_status():
         _close(cursor, db)
 
 
+@job_bp.post("/api/jobs/admin/jobs/prune")
+@admin_required
+def admin_prune_jobs():
+    data = request.get_json(silent=True) or {}
+    max_age_days = _bounded_int(data.get("max_age_days"), default=30, minimum=1, maximum=365)
+    from .service import prune_expired_jobs
+    outcome = prune_expired_jobs(max_age_days=max_age_days)
+    return jsonify({
+        "message": f"Successfully pruned expired jobs and records older than {max_age_days} days",
+        **outcome,
+    })
+
+
 @job_bp.get("/api/jobs/admin/categories")
 @admin_required
 def admin_categories():
@@ -934,3 +1260,50 @@ def admin_apify_run():
     if not status.get("ready"):
         return jsonify(status), 409
     return jsonify({"message": "Apify collection queued", **status}), 202
+
+
+@job_bp.get("/api/jobs/admin/providers/adzuna/status")
+@admin_required
+def admin_adzuna_status():
+    config = get_adzuna_config()
+    configured = is_adzuna_configured()
+    return jsonify({
+        "ready": configured and config["enabled"],
+        "enabled": config["enabled"],
+        "configured": configured,
+        "queries_count": len(config["queries"]),
+        "reason": "" if configured else "ADZUNA_APP_ID or ADZUNA_APP_KEY is not set",
+    })
+
+
+@job_bp.post("/api/jobs/admin/providers/adzuna/run")
+@admin_required
+def admin_adzuna_run():
+    status = queue_adzuna_collection(admin_id=g.job_user_id)
+    if not status.get("ready"):
+        return jsonify(status), 409
+    return jsonify({"message": "Adzuna collection queued", **status}), 202
+
+
+@job_bp.get("/api/jobs/admin/providers/jsearch/status")
+@admin_required
+def admin_jsearch_status():
+    config = get_jsearch_config()
+    configured = is_jsearch_configured()
+    return jsonify({
+        "ready": configured and config["enabled"],
+        "enabled": config["enabled"],
+        "configured": configured,
+        "queries_count": len(config["queries"]),
+        "reason": "" if configured else "RAPIDAPI_KEY is not set",
+    })
+
+
+@job_bp.post("/api/jobs/admin/providers/jsearch/run")
+@admin_required
+def admin_jsearch_run():
+    status = queue_jsearch_collection(admin_id=g.job_user_id)
+    if not status.get("ready"):
+        return jsonify(status), 409
+    return jsonify({"message": "JSearch collection queued", **status}), 202
+

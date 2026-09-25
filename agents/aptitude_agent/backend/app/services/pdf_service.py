@@ -1,6 +1,7 @@
 """Generate learner-facing assessment PDFs without persisting files."""
 
 from io import BytesIO
+from pathlib import Path
 import re
 from xml.sax.saxutils import escape
 
@@ -9,9 +10,10 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     HRFlowable, KeepTogether, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table,
-    TableStyle,
+    TableStyle, Image,
 )
 
 from .test_label import test_label
@@ -28,6 +30,24 @@ LINE=colors.HexColor("#DED9F2")
 SOFT=colors.HexColor("#F6F3FF")
 GREEN=colors.HexColor("#167A50")
 ROSE=colors.HexColor("#A43B49")
+LOGO_PATH=Path(__file__).resolve().parents[2]/"assets"/"digidara-logo.jpg"
+LOGO_WIDTH=38*mm
+LOGO_HEIGHT=21.375*mm
+
+
+def _logo():
+    return ""
+
+
+def _draw_logo(canvas,doc):
+    if LOGO_PATH.is_file():
+        canvas.drawImage(
+            ImageReader(str(LOGO_PATH)),
+            A4[0]-doc.rightMargin-LOGO_WIDTH,
+            A4[1]-26*mm,
+            width=LOGO_WIDTH,height=LOGO_HEIGHT,
+            preserveAspectRatio=True,mask="auto",
+        )
 
 
 def _plain(value):
@@ -151,6 +171,7 @@ def _styles():
 
 def _page_footer(canvas,doc):
     canvas.saveState()
+    _draw_logo(canvas,doc)
     width,_height=A4
     canvas.setStrokeColor(LINE);canvas.setLineWidth(.5)
     canvas.line(doc.leftMargin,13*mm,width-doc.rightMargin,13*mm)
@@ -165,15 +186,22 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
     output=BytesIO()
     document=SimpleDocTemplate(
         output,pagesize=A4,rightMargin=17*mm,leftMargin=17*mm,
-        topMargin=17*mm,bottomMargin=20*mm,
+        topMargin=30*mm,bottomMargin=20*mm,
         title=f"Aptitude Test - {test_label(test)} results",author="Aptitude Test",
     )
     style=_styles();story=[]
-    story.extend([
+    title_block=[
         Paragraph("APTITUDE TEST",style["title"]),
         Paragraph("Assessment Results",style["subtitle"]),
         Paragraph(_html(test_label(test)),style["subtitle"]),
-    ])
+    ]
+    report_header=Table([[title_block,_logo()]],colWidths=[138*mm,38*mm],hAlign="LEFT")
+    report_header.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0),
+    ]))
+    story.extend([report_header,Spacer(1,4*mm)])
     test_type="Category Practice" if test.test_mode=="category_practice" else "Mixed Test"
     details=[
         [Paragraph("STUDENT",style["label"]),Paragraph("TEST TYPE",style["label"]),Paragraph("COMPLETED",style["label"])],

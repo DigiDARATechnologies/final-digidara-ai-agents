@@ -32,9 +32,11 @@ const DIFFICULTY_ACCENTS = {
   Advanced: "#f97360",
 };
 const QUESTION_ACCENTS = {
+  5: "#4f46e5",
   10: "#0f9f96",
+  15: "#f59e0b",
 };
-const QUESTION_COUNTS = [10];
+const QUESTION_COUNTS = [5, 10, 15];
 const ROLE_PRESETS = [
   "Python Fullstack Developer",
   "Data Analyst",
@@ -88,7 +90,7 @@ export default function SetupScreen({ studentId, onStarted }) {
   const [customTopic, setCustomTopic] = useState("");
   const [roleName, setRoleName] = useState(ROLE_PRESETS[0]);
   const [difficulty, setDifficulty] = useState("Beginner");
-  const [numQuestions] = useState(10);
+  const [numQuestions, setNumQuestions] = useState(10);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [dailyUsage, setDailyUsage] = useState(null);
@@ -288,21 +290,21 @@ export default function SetupScreen({ studentId, onStarted }) {
             </div>
           </SectionCard>
 
-          <SectionCard className="setup-section questions-section" title="Number of Questions" subtitle="Each interview contains 10 questions.">
+          <SectionCard className="setup-section questions-section" title="Number of Questions" subtitle="Choose 5, 10, or 15 questions for this interview.">
             <div className="option-card-grid">
               {QUESTION_COUNTS.map((count) => (
                 <button
                   key={count}
                   type="button"
-                  className="option-card option-card-active"
+                  className={`option-card ${numQuestions === count ? "option-card-active" : ""}`}
                   style={{ "--option-accent": QUESTION_ACCENTS[count] }}
-                  aria-pressed="true"
-                  disabled
+                  aria-pressed={numQuestions === count}
+                  onClick={() => setNumQuestions(count)}
                 >
                   <span className="option-icon">{count}</span>
                   <strong>{count} Questions</strong>
-                  <span>A complete interview practice session.</span>
-                  <SelectionIndicator />
+                  <span>{count === 5 ? "Focused practice session." : count === 10 ? "A complete interview practice session." : "Extended interview practice session."}</span>
+                  {numQuestions === count && <SelectionIndicator />}
                 </button>
               ))}
             </div>

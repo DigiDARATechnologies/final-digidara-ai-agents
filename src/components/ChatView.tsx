@@ -5,6 +5,7 @@ import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
+import { renderMessageText } from "../lib/messageText";
 
 interface ChatViewProps {
   chat: Chat;
@@ -19,7 +20,7 @@ interface ChatViewProps {
   /** A live interview supplies its own voice and typed-answer controls. */
   hideComposer?: boolean;
   onBack: () => void;
-  onSend: (text: string) => void;
+  onSend: (text: string, editIndex?: number, internal?: boolean, displayText?: string) => void;
   /** `value` is the internal action; `label` is what the learner sees. */
   onChooseOption: (value: string, label?: string) => void;
   /** Replaces the user message at `index` with `newText` and discards
@@ -33,6 +34,7 @@ interface ChatViewProps {
   attachAccept?: string;
   pendingFiles: File[];
   onAttachFiles: (files: FileList) => void;
+  onRemovePendingFile?: (index: number) => void;
   onAttachDisabled: () => void;
   /** When set, the composer becomes a multi-line code editor with Run/Submit
    * buttons instead of the normal single-line input + send button. */
@@ -81,30 +83,6 @@ interface ChatViewProps {
   contextPanel?: ReactNode;
 }
 
-function renderInlineMessageText(text: string): ReactNode[] {
-  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
-    const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
-    if (markdownLink) return <a key={index} href={markdownLink[2]} target="_blank" rel="noreferrer">{markdownLink[1]}</a>;
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    return <span key={index}>{part}</span>;
-  });
-}
-
-function renderMessageText(text: string): ReactNode {
-  // Decode only display escapes; message text remains React text, never raw HTML.
-  const lines = text.replace(/\\n/g, "\n").replace(/\\([@[\]()])/g, "$1").replace(/\r\n?/g, "\n").split("\n");
-  return lines.map((line, index) => {
-    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
-    const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
-    const heading = line.match(/^\s*#{1,3}\s+(.+)$/);
-    if (heading) return <div className="message-heading" key={index}>{renderInlineMessageText(heading[1])}</div>;
-    if (bullet) return <div className="message-list-item" key={index}>• {renderInlineMessageText(bullet[1])}</div>;
-    if (numbered) return <div className="message-list-item" key={index}>{numbered[1]}. {renderInlineMessageText(numbered[2])}</div>;
-    return <div key={index}>{line ? renderInlineMessageText(line) : "\u00a0"}</div>;
-  });
-}
-
 export default function ChatView({
   chat,
   agent,
@@ -121,6 +99,7 @@ export default function ChatView({
   attachAccept = ".docx,.zip",
   pendingFiles,
   onAttachFiles,
+  onRemovePendingFile,
   onAttachDisabled,
   codeMode = false,
   codeSeed = "",
@@ -221,8 +200,8 @@ export default function ChatView({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text) {
-      setInputError(multilineMode ? "Please write your paragraph before submitting. ??" : "Please enter a message before sending.");
+    if (!text && pendingFiles.length === 0) {
+      setInputError(multilineMode ? "Please write your paragraph before submitting. ✍️" : "Please enter a message before sending.");
       return;
     }
     setInputError("");
@@ -364,9 +343,12 @@ export default function ChatView({
         {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening automatically ... sends after 3 seconds of silence" : "Starting conversation..."}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
-          const visibleOptions = agent.kind === "communication"
+          const rawOptions = agent.kind === "communication"
             ? m.options?.filter((option) => !["daily_challenge", "dashboard", "history"].includes(option.value))
             : m.options;
+          const visibleOptions = rawOptions?.filter(
+            (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 1 && opt.label.trim() !== "."
+          );
           const optionsActive = m.role === "agent" && !!visibleOptions?.length && i === chat.messages.length - 1 && !typing;
           const isEditing = editingIndex === i;
           const hasContextPanel = m.role === "agent" && i === chat.messages.length - 1 && !!contextPanel;
@@ -476,9 +458,20 @@ export default function ChatView({
 
       {pendingFiles.length > 0 && (
         <div className="attach-chips">
-          {pendingFiles.map((f) => (
-            <span className="attach-chip" key={f.name}>
-              ... {f.name}
+          {pendingFiles.map((f, i) => (
+            <span className="attach-chip" key={`${f.name}-${i}`}>
+              📎 {f.name}
+              {onRemovePendingFile && (
+                <button
+                  type="button"
+                  className="attach-chip-remove"
+                  onClick={() => onRemovePendingFile(i)}
+                  title="Remove attachment"
+                  aria-label={`Remove ${f.name}`}
+                >
+                  ✕
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -534,7 +527,7 @@ export default function ChatView({
                 variant="text"
               />
             )}
-            <button type="submit" className="btn btn-primary" disabled={composerDisabled}>{multilineSubmitLabel}</button>
+            <button type="submit" className="btn btn-primary" disabled={composerDisabled || (!input.trim() && pendingFiles.length === 0)}>{multilineSubmitLabel}</button>
           </div>
         </form>
       ) : (
@@ -575,7 +568,7 @@ export default function ChatView({
               </svg>
             </button>
           )}
-          <button type="submit" disabled={composerDisabled} className="icon-btn send-btn" aria-label="Send">
+          <button type="submit" disabled={composerDisabled || (!input.trim() && pendingFiles.length === 0)} className="icon-btn send-btn" aria-label="Send">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path
                 d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
