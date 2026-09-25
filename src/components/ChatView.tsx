@@ -268,7 +268,7 @@ export default function ChatView({
 
     if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
       const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[...]/g, " "));
-      utterance.rate = 0.96;
+      utterance.rate = 0.85;
       utterance.pitch = 1;
       utterance.onstart = () => setAgentSpeaking(true);
       utterance.onend = beginListening;

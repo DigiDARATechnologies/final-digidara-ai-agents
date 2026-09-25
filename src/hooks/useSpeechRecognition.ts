@@ -169,7 +169,7 @@ export default function useSpeechRecognition(locale = "en-US") {
               quietSince = 0;
             } else if (speechDetected) {
               if (!quietSince) quietSince = now;
-              if (now - quietSince >= 3000) {
+              if (now - quietSince >= 7000) {
                 cleanupVad();
                 try {
                   recognitionRef.current?.stop();
