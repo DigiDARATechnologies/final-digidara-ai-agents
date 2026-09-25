@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import io
 import json
 import time
 import uuid
@@ -194,6 +195,25 @@ def test_billing_and_binary_response_forwarding(client, upstream, database, repo
     assert upstream.calls[0][0] == PAYLOAD["endpoint"]
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000 - cost
+
+
+def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
+    response = client.post(
+        "/gateway/agents/test-agent/invoke",
+        data={
+            "action": "analyze_upload",
+            "payload": '{"user_id":"learner"}',
+        },
+        files={
+            "file": ("resume.txt", io.BytesIO(b"resume upload bytes"), "text/plain"),
+        },
+        headers={"authorization": "Bearer " + create_access_token("learner")},
+    )
+
+    assert response.status_code == 200
+    forwarded = upstream.calls[-1][1]
+    assert forwarded["headers"]["content-type"].startswith("multipart/form-data")
+    assert b"resume upload bytes" in forwarded["content"]
 
 @pytest.mark.parametrize("condition,status", [("unhealthy", 503), ("host", 403), ("balance", 402), ("deleted", 401)])
 def test_gateway_blocks_unavailable_or_unauthorized_calls(client, upstream, database, condition, status):

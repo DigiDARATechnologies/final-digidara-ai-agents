@@ -5735,31 +5735,6 @@ label {
   position: absolute;
 }
 
-/* Print-template header normalization: name first, role second, centered. */
-.resume-page .resume-header {
-  align-items: center !important;
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-  gap: 3mm !important;
-  text-align: center !important;
-}
-
-.resume-page .resume-identity {
-  align-items: center !important;
-  text-align: center !important;
-}
-
-.resume-page .resume-role {
-  letter-spacing: 0 !important;
-  text-transform: none !important;
-}
-
-.resume-page .resume-contact {
-  align-items: center !important;
-  text-align: center !important;
-}
-
 /* Import analysis alignment */
 .import-score-card {
   overflow: hidden;

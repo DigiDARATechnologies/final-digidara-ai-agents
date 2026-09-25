@@ -5,6 +5,7 @@ import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
+import { renderMessageText } from "../lib/messageText";
 
 interface ChatViewProps {
   chat: Chat;
@@ -381,7 +382,7 @@ export default function ChatView({
                 ) : (
                   <>
                     {hasContextPanel && contextPanel}
-                    <div className="bubble">{m.text}</div>
+                    <div className="bubble">{renderMessageText(m.text)}</div>
                     {!!visibleOptions?.length && (
                       <div className="chat-options">
                         {visibleOptions.map((option) => option.href ? (

@@ -6,6 +6,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app import config
+from app.ingestion.structure_check import drop_retired_sections, drop_retired_tree_lines
+
 
 def _effective_medium(state: dict[str, Any]) -> str:
     """The medium that should actually govern review from this point on.
@@ -253,7 +256,7 @@ OUTPUT FORMAT (strict JSON):
   "objective": "<1 paragraph, what problem this solves and why it matters>",
   "functional_requirements": ["<req 1>", "<req 2>", "..."],
   "technical_constraints": ["<e.g., must run offline / must use only public API X>"],
-  "expected_deliverables": ["source code", "output screenshots", "written report (.docx)"],
+  "expected_deliverables": ["source code (.zip)", "written report (.docx) with Problem Statement, Approach and Conclusion"],
   "evaluation_criteria_summary": ["Output correctness", "Code structure", "Syntax quality", "Maintainability"],
   "estimated_effort_hours": <int>
 }}
@@ -276,54 +279,46 @@ Produce a submission guide the student will read right after the timer starts. I
 must cover:
 1. Exact folder structure to prepare before packaging INTO THE ZIP ONLY. The root
    folder name MUST be derived from the actual chosen topic above ("{topic_title}")
-   — a short PascalCase or kebab-case slug of it (e.g. "Personal Budget Tracker
+   - a short PascalCase or kebab-case slug of it (e.g. "Personal Budget Tracker
    Dashboard" -> "BudgetTrackerDashboard/"). NEVER invent or reuse an unrelated
-   placeholder project name (e.g. a generic "WeatherApp"-style example) — the
+   placeholder project name (e.g. a generic "WeatherApp"-style example) - the
    student is building "{topic_title}", and a folder structure naming something
    else would be actively confusing, not illustrative. Include at minimum a source
-   folder and an output/screenshots folder under that root (e.g. <slug>/src,
-   <slug>/output_screenshots).
-   The .docx report is uploaded as a SEPARATE file alongside the zip, not inside it —
+   folder (e.g. <slug>/src). A README and a tests folder are good practice and
+   worth showing in the tree, but the source folder is the only required entry.
+   The .docx report is uploaded as a SEPARATE file alongside the zip, not inside it -
    do not include report.docx, or any .docx file, anywhere in folder_structure.
-2. Exact section headings required inside the .docx report, in order.
-3. A short worked example for ONE section (e.g., what a good "Output Screenshots" section looks like) so the format is unambiguous.
-4. Common mistakes to avoid (e.g., missing screenshots, code pasted as image instead of text, no explanation of approach).
+   Screenshots are NOT part of a submission: do not include a screenshots or
+   output folder anywhere.
+2. The .docx report has exactly three sections, in this order: "Problem Statement",
+   "Approach", "Conclusion". The report must NOT contain code or screenshots - the
+   code is analysed from the zip, and the report is only for the student's own
+   explanation.
+3. A short worked example for ONE of those sections (e.g., what a good "Approach"
+   section looks like) so the format is unambiguous.
+4. Common mistakes to avoid (e.g., no explanation of the approach, code pasted into
+   the report instead of the zip, placeholder/filler sections, a zip holding only
+   documents and no source files, code that does not run because of syntax errors).
 5. The SAME folder structure as `required_paths`: a flat list, one entry per required
    folder or file, each with its path relative to the project root, its type, and a
    one-sentence plain-language description of what belongs there and why it's checked
    (this is what a deterministic checker and the student-facing review report both use
-   — it must include at minimum one "dir" entry for source code and one "dir" entry
-   for output/screenshots, matching the folder tree above exactly).
-6. Exactly which screenshots must go in that output/screenshots folder AND be embedded
-   in the .docx report: one entry per functional requirement above that has a visible
-   UI proof point (e.g. "pie chart of expenses by category" -> one screenshot showing
-   that pie chart actually rendered with real data; "edit/delete an entry" -> a
-   before/after pair). Skip a requirement only if it genuinely has nothing to show on
-   screen (e.g. "data persists locally" has no single screenshot that proves it on its
-   own — note in that item's description how the student CAN demonstrate it, e.g.
-   "reload the page and show the data is still there", rather than omitting it
-   silently). Be as specific as the requirement itself — "a screenshot of the app" is
-   not acceptable, "a screenshot showing the pie chart of expenses by category with at
-   least two categories visible" is.
+   - it must include at minimum one "dir" entry for source code, matching the folder
+   tree above exactly).
 
 OUTPUT FORMAT (strict JSON):
 {{
   "folder_structure": ["<tree line 1>", "<tree line 2>", "..."],
   "required_paths": [
-    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}},
-    {{"path": "<slug>/output_screenshots", "type": "dir", "description": "<why this exists / what goes here>"}}
+    {{"path": "<slug>/src", "type": "dir", "description": "<why this exists / what goes here>"}}
   ],
-  "required_screenshots": [
-    {{"description": "<exactly what this screenshot must show, specific to the requirement below>",
-      "linked_requirement": "<the functional requirement text this proves>"}}
-  ],
-  "docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
+  "docx_required_sections": ["Problem Statement", "Approach", "Conclusion"],
   "worked_example_section": "<name of section>",
-  "worked_example_text": "<the example content, 3-6 sentences or a short snippet>",
+  "worked_example_text": "<the example content, 3-6 sentences>",
   "common_mistakes": ["<mistake 1>", "<mistake 2>", "..."]
 }}
 
-Tone: instructional, concise, no ambiguity — a first-time submitter should not need
+Tone: instructional, concise, no ambiguity - a first-time submitter should not need
 to ask a follow-up question after reading this."""
 
 
@@ -333,50 +328,36 @@ def structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, 
     return f"""You are the Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
-- Required sections: {guide.get('docx_required_sections')}
-- Required screenshots (exactly what each one must show, from the submission guide):
-  {json.dumps(guide.get('required_screenshots', []), ensure_ascii=False)}
+- Required sections: {drop_retired_sections(guide.get('docx_required_sections'))}
 - Parsed document sections and content: {json.dumps(state['doc_sections'], ensure_ascii=False)}
-- Screenshot evidence found in the document (extracted via OCR): {state.get('screenshot_ocr_text', 'none')}
-- Screenshots present in document: {state.get('screenshots_present', False)}
 
 DETERMINISTIC CHECK RESULT (already computed by code from the actual heading text, not
-your judgment — never contradict it, and never tell the student a required section is
+your judgment - never contradict it, and never tell the student a required section is
 missing if this result says it was found, even if its heading is auto-numbered like
 "2. Approach" or worded slightly differently than the requirement name):
 - Sections found: {json.dumps(deterministic.get('matched_sections', []), ensure_ascii=False)}
 - Sections NOT found: {json.dumps(deterministic.get('missing_sections', []), ensure_ascii=False)}
 
 TASK:
-Whether each required section EXISTS is already decided above — do not re-derive it and
+Whether each required section EXISTS is already decided above - do not re-derive it and
 do not add a section to missing_sections that the deterministic result already found.
 Your job is the judgment code can't make: for each section that WAS found, is its
 content actually substantive (real explanation/detail) or just a placeholder/filler (1-2
 throwaway sentences, a heading with nothing under it, "TBD", etc.)? List those as
-weak_sections. Also judge whether output screenshots are actually present as images (not
-described in words only) — use the "Screenshots present" flag and OCR text as your
-evidence, since you cannot see the images directly.
+weak_sections.
 
-Then, for EACH item in "Required screenshots" above, decide whether the OCR text gives
-enough evidence that a screenshot matching that specific description exists (e.g. OCR
-text containing category labels and percentages is evidence of a pie chart; OCR text
-naming two comparable totals is evidence of a bar/comparison chart). OCR text is
-imperfect (garbled characters, missed layout) — don't demand a perfect textual match,
-but a required screenshot with literally no supporting OCR text or surrounding
-paragraph context should be listed as missing. Never guess visual details (colors,
-exact chart type) you have no textual evidence for.
+The report is a written explanation only. It is NOT expected to contain code or
+screenshots, so never mark a section weak or the report incomplete for lacking either.
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "is_complete": <true|false — based ONLY on weak_sections/screenshot content-quality judgment below, not section presence>,
+  "is_complete": <true|false - based ONLY on weak_sections content-quality judgment, not section presence>,
   "weak_sections": ["<section name: reason>", "..."],
-  "screenshots_present": <true|false>,
-  "missing_screenshots": ["<description of the required screenshot that has no evidence>", "..."],
-  "notes": "<short explanation for the student if incomplete — if a section is in weak_sections, say specifically what's missing from it, not just that it's 'weak'>"
+  "notes": "<short explanation for the student if incomplete - if a section is in weak_sections, say specifically what's missing from it, not just that it's 'weak'>"
 }}
 
 Be strict but fair: a section with only 1-2 filler sentences counts as "weak", not complete.
-If is_complete is false, the submission is routed back to the student for revision —
+If is_complete is false, the submission is routed back to the student for revision -
 your notes field is what they will read, so be specific about what to add."""
 
 
@@ -386,7 +367,7 @@ def zip_structure_validation_prompt(state: dict[str, Any], deterministic: dict[s
     return f"""You are the Code Submission Structure Validator for a DigiDARA capstone project.
 
 CONTEXT:
-- Required folder structure (from the submission guide given to the student): {guide.get('folder_structure')}
+- Required folder structure (from the submission guide given to the student): {drop_retired_tree_lines(guide.get('folder_structure'))}
 - Actual file tree extracted from the submitted zip: {json.dumps(state['zip_file_tree'], ensure_ascii=False)}
 - Course medium: {_effective_medium(state)}
 
@@ -414,9 +395,8 @@ OUTPUT FORMAT (strict JSON):
 {{
   "clutter_flags": ["<file/folder that shouldn't be there>", "..."],
   "structure_quality": "<poor|acceptable|good>",
-  "notes": "<short explanation for the student, in plain language — if the deterministic
-    result found missing items, explain what each one is for and where to add it; always
-    end with any additional organization/clutter observations>"
+  "notes": "<short explanation for the student, in plain language, about organization and
+    clutter ONLY - do not list or explain missing required items, that is written separately>"
 }}
 
 Be strict but fair — a slightly different-but-sensible folder name is fine; a flat dump of
@@ -463,45 +443,118 @@ def _execution_context_block(state: dict[str, Any]) -> str:
   exception/traceback in stderr, however, is strong, concrete evidence of a real bug."""
 
 
+def _code_files_block(code_files: dict[str, str], char_budget: int) -> str:
+    """Every source file in the zip, in full, in path order.
+
+    The reviewer is meant to read ALL of the student's code, so nothing is cut
+    while the total fits `char_budget`. Only past that does it start trimming,
+    and then fairly: small files are always kept whole and the leftover budget
+    is shared across the big ones, so one huge file can't crowd everything else
+    out. Any file that is trimmed says so explicitly, so the model never
+    mistakes a cut for an incomplete program.
+    """
+    sizes = {path: len(content) for path, content in code_files.items()}
+    allowance: dict[str, int] = {}
+    remaining = char_budget
+    for index, path in enumerate(sorted(sizes, key=lambda item: sizes[item])):
+        share = remaining // (len(sizes) - index)
+        allowance[path] = min(sizes[path], share)
+        remaining -= allowance[path]
+
+    blocks = []
+    for path in sorted(code_files):
+        content = code_files[path]
+        if len(content) <= allowance[path]:
+            blocks.append(f"--- {path} ---\n{content}")
+        else:
+            blocks.append(
+                f"--- {path} (TRUNCATED: showing the first {allowance[path]} of {len(content)} "
+                f"chars - do not judge anything only visible past this cut, and do not treat "
+                f"the cut itself as an incompleteness issue) ---\n{content[:allowance[path]]}"
+            )
+    return "\n\n".join(blocks)
+
+
+def _syntax_context_block(state: dict[str, Any]) -> str:
+    """What the deterministic parser already established about syntax, so the
+    reviewer neither re-litigates it nor pretends to have parsed what nothing did."""
+    report = state.get("syntax_report") or {}
+    checked = report.get("checked_files") or []
+    lines = []
+    if checked:
+        languages = ", ".join(report.get("checked_languages") or [])
+        lines.append(
+            f"- Deterministic syntax check (run by a real parser, ground truth, not an opinion): "
+            f"{len(checked)} {languages} file(s) parsed with no syntax errors."
+        )
+    else:
+        lines.append("- Deterministic syntax check: no Python/JSON/TOML files were present to parse.")
+    unchecked = report.get("unchecked_extensions") or []
+    if unchecked:
+        lines.append(
+            f"- NOT machine-checked ({', '.join(unchecked)} files): nothing has parsed these, so read every "
+            f"such file line by line yourself for syntax errors - unbalanced brackets or quotes, missing "
+            f"semicolons or colons, bad indentation, misspelled keywords - rather than assuming they are fine."
+        )
+    return "\n".join(lines)
+
+
+def _requirements_block(state: dict[str, Any]) -> str:
+    requirements = state.get("requirements") or {}
+    numbered = "\n".join(
+        f"  {index}. {item}" for index, item in enumerate(requirements.get("functional_requirements") or [], start=1)
+    )
+    constraints = "\n".join(f"  - {item}" for item in requirements.get("technical_constraints") or [])
+    return (
+        f"- Project objective: {requirements.get('objective', '(not available)')}\n"
+        f"- Functional requirements the code must implement:\n{numbered or '  (none listed)'}\n"
+        f"- Technical constraints:\n{constraints or '  (none listed)'}"
+    )
+
+
 def output_verification_prompt(state: dict[str, Any]) -> str:
-    requirements = state["requirements"]
-    return f"""You are the Output Verifier for a DigiDARA capstone project submission.
+    code_files = state.get("zip_code_files") or {}
+    return f"""You are the Requirements Verifier for a DigiDARA capstone project submission.
 
 CONTEXT:
-- Project requirements: {requirements.get('functional_requirements')}
-- Expected behavior/output described in the brief: {requirements.get('objective')}
+{_requirements_block(state)}
 {_execution_context_block(state)}
-- Screenshot evidence extracted from the student's report via OCR (this is the text
-  found inside each embedded screenshot image, in order): {state.get('screenshot_ocr_text', 'none')}
+{_syntax_context_block(state)}
+- The student's complete source code from the submitted zip ({len(code_files)} files). Read ALL of it:
+
+{_code_files_block(code_files, config.CODE_REVIEW_CHAR_BUDGET)}
 
 TASK:
-Determine whether the execution evidence (when available) and the OCR'd screenshot
-text/surrounding report content actually demonstrate that the functional requirements
-were met. Look for:
-1. Does the output shown correspond to what the requirements asked for?
-2. Are there signs of an error state, incomplete run, or mismatched output being
-   passed off as success (error messages, stack traces, tracebacks in the OCR text
-   or in the sandboxed execution's stderr)?
-3. Is there enough evidence (multiple screenshots / clear before-after, or a clean
-   sandboxed run) to be confident, or is it a single ambiguous screenshot with no
-   execution evidence to corroborate it?
-4. If both execution evidence and screenshots are available, do they agree? A real
-   stderr traceback that contradicts a "success" screenshot is a serious issue worth
-   flagging explicitly, not something to average away.
+Decide, for EACH functional requirement above, whether this code actually implements
+it. Base every verdict on code you can point to - a file and a function, class or
+section - and on the sandboxed execution evidence when it is available. Never base it
+on the student's own claims, comments, or file names alone. Also check each technical
+constraint the same way.
+
+Look hard for programs that only look finished: functions that are stubbed out
+(`pass`, `TODO`, `raise NotImplementedError`), hard-coded fake output standing in for
+real logic, a requirement that is only mentioned in a comment, and a requirement that
+is implemented but wired up wrongly so it can never run. A real traceback in the
+execution evidence is strong, concrete evidence of a problem.
+
+Status meanings: "met" = implemented and reachable; "partial" = some of it is there
+but a stated part is missing or broken; "not_met" = no implementation.
+Do not assume success in the absence of evidence - if you cannot find it in the code,
+it is not met.
 
 OUTPUT FORMAT (strict JSON):
 {{
-  "requirements_demonstrated": ["<req>: <met|not met|unclear>", "..."],
-  "output_correct": <true|false>,
+  "requirements_check": [
+    {{"requirement": "<the requirement text, copied from the list above>",
+      "status": "<met|partial|not_met>",
+      "evidence": "<the file and function/section that implements it, or exactly what is missing>"}}
+  ],
+  "constraints_check": ["<constraint>: <respected|violated|unclear> - <why>"],
+  "output_correct": <true|false - true only if every functional requirement is met>,
   "confidence": "<low|medium|high>",
   "issues_found": ["<issue 1>", "..."],
-  "notes": "<short explanation, factual, no speculation beyond the evidence shown>"
-}}
-
-Do not assume success in the absence of evidence. If evidence is ambiguous, say so
-explicitly rather than defaulting to a pass. OCR text may contain minor recognition
-errors (garbled characters, misread symbols) — do not penalize the submission for
-those; only flag genuine functional problems."""
+  "notes": "<short explanation, factual, no speculation beyond what the code shows>"
+}}"""
 
 
 def code_quality_scorer_prompt(state: dict[str, Any]) -> str:
@@ -509,16 +562,16 @@ def code_quality_scorer_prompt(state: dict[str, Any]) -> str:
     zip_score = state.get("zip_structure_score", {})
     difficulty = state.get("difficulty", "easy")
     difficulty_bar = {
-        "easy": "This was requested at EASY difficulty — a focused, single-feature "
+        "easy": "This was requested at EASY difficulty - a focused, single-feature "
         "build using well-known patterns. Do not penalize simplicity itself; a clean, "
         "minimal solution that correctly does the one thing it set out to do deserves "
         "high marks. Only mark down for genuine sloppiness (no structure at all, "
         "broken syntax, unreadable naming), not for lacking advanced techniques.",
-        "medium": "This was requested at MEDIUM difficulty — two or three integrated "
+        "medium": "This was requested at MEDIUM difficulty - two or three integrated "
         "features or a moderately less common technique. Expect organized code that "
         "handles more than the bare minimum; hold it to a somewhat higher bar than "
         "an easy submission on structure and completeness.",
-        "hard": "This was requested at HARD difficulty — an ambitious, multi-component "
+        "hard": "This was requested at HARD difficulty - an ambitious, multi-component "
         "build or an advanced technique for the course's medium. Hold this to the "
         "highest bar: expect deliberate structure, robust handling of edge cases, and "
         "genuine command of the more advanced technique. A submission that plays it "
@@ -526,34 +579,21 @@ def code_quality_scorer_prompt(state: dict[str, Any]) -> str:
         "marks on COMPLETENESS_VS_BRIEF.",
     }[difficulty]
 
-    file_char_limit = 4000
-
-    def _file_block(path: str, content: str) -> str:
-        if len(content) <= file_char_limit:
-            return f"--- {path} ---\n{content}"
-        # Flag truncation explicitly — a silent cut previously let the model
-        # score files as if it had read the whole thing, sometimes penalizing
-        # "incompleteness" that was really just this cut, or missing real
-        # issues that lived past it.
-        return (
-            f"--- {path} (TRUNCATED: showing the first {file_char_limit} of {len(content)} "
-            f"chars — do not judge anything only visible past this cut, and do not treat "
-            f"the cut itself as an incompleteness issue) ---\n{content[:file_char_limit]}"
-        )
-
-    files_block = "\n\n".join(_file_block(path, content) for path, content in code_files.items())
+    files_block = _code_files_block(code_files, config.CODE_REVIEW_CHAR_BUDGET)
     return f"""You are the Code Quality Reviewer for a DigiDARA capstone project.
 
 CONTEXT:
 - Course medium: {_effective_medium(state)}
-- Requested difficulty: {difficulty} — {difficulty_bar}
+- Requested difficulty: {difficulty} - {difficulty_bar}
 - Zip folder/packaging notes from a separate structure reviewer: {zip_score.get('notes', '') or 'none'}
-  (quality: {zip_score.get('structure_quality', 'not assessed')}) — this is informational input for
+  (quality: {zip_score.get('structure_quality', 'not assessed')}) - this is informational input for
   the STRUCTURE axis below, not a pass/fail gate elsewhere in the pipeline. A student who organized
   files sensibly but didn't match a suggested folder name exactly should not be penalized here; genuine
   disorganization (a flat dump of files, no separation of concerns, clutter) should be.
+{_requirements_block(state)}
 {_execution_context_block(state)}
-- Code files extracted from the submitted zip ({len(code_files)} files):
+{_syntax_context_block(state)}
+- The student's complete source code from the submitted zip ({len(code_files)} files). Read ALL of it:
 
 {files_block}
 
@@ -563,18 +603,21 @@ above. Score each 0-25 (total /100):
 
 1. STRUCTURE (0-25): logical organization, separation of concerns, appropriate use
    of functions/classes/modules, no unnecessary monolithic blocks. Factor in the zip
-   packaging notes above — real disorganization affects this score directly.
-2. SYNTAX (0-25): correctness, absence of obvious errors, consistent style,
-   idiomatic use of the language/framework taught in the course. If sandboxed
-   execution evidence above shows a real traceback (not just "no network"/"no
-   stdin" noise), that is concrete evidence for this axis, not just your own
-   read of the source — weigh it accordingly rather than scoring syntax purely
-   on how the code looks.
+   packaging notes above - real disorganization affects this score directly.
+2. SYNTAX (0-25): correctness, absence of errors, consistent style, idiomatic use of
+   the language/framework taught in the course. The syntax check above is ground
+   truth for the files it covers; for every file it does NOT cover, the score depends
+   on YOU reading that file to the end and finding no errors. If sandboxed execution
+   evidence shows a real traceback (not just "no network"/"no stdin" noise), that is
+   concrete evidence for this axis too - weigh it rather than scoring syntax purely
+   on how the code looks. List every real syntax error you find in
+   specific_line_feedback, naming the file and line.
 3. MAINTAINABILITY (0-25): naming clarity, comments where non-obvious, no
    hard-coded magic values without explanation, reasonable error handling.
-4. COMPLETENESS_VS_BRIEF (0-25): does the code actually implement what the
-   functional requirements asked for, not more, not less — including matching the
-   scope implied by the requested difficulty level.
+4. COMPLETENESS_VS_BRIEF (0-25): does the code actually implement EVERY functional
+   requirement listed above, not more, not less - including matching the scope implied
+   by the requested difficulty level. Go through the requirements one by one; each
+   requirement with no real implementation costs marks here.
 
 OUTPUT FORMAT (strict JSON):
 {{
@@ -585,10 +628,10 @@ OUTPUT FORMAT (strict JSON):
   "total_code_score": <sum, 0-100>,
   "strengths": ["<point 1>", "..."],
   "weaknesses": ["<point 1>", "..."],
-  "specific_line_feedback": ["<file:line-ish reference — issue>", "..."]
+  "specific_line_feedback": ["<file:line-ish reference - issue>", "..."]
 }}
 
-Be a fair but genuinely critical reviewer — this score matters for certification.
+Be a fair but genuinely critical reviewer - this score matters for certification.
 Do not inflate scores to be encouraging; put encouragement in the "strengths" list
 instead and let the score reflect the actual code."""
 
@@ -599,6 +642,11 @@ def feedback_generator_prompt(state: dict[str, Any], pass_threshold: int, passed
     output_verification = state.get("output_verification", {})
     code_quality = state.get("code_quality_score", {})
     verdict_word = "PASSED" if passed else "DID NOT PASS"
+    unmet = [
+        f"{item.get('requirement')} ({item.get('status')}: {item.get('evidence')})"
+        for item in output_verification.get("requirements_check") or []
+        if item.get("status") != "met"
+    ]
     return f"""You are the Feedback Writer delivering final capstone results to a DigiDARA student.
 
 CONTEXT:
@@ -609,17 +657,19 @@ CONTEXT:
 - Verdict (already decided — state this plainly, do not re-derive or hedge on it): the student {verdict_word}.
 - Docx structure validation notes: {structure.get('notes', '')}
 - Zip structure validation notes: {zip_structure.get('notes', '')}
-- Output verification notes: {output_verification.get('notes', '')}
+- Requirements NOT fully met by the code: {unmet or 'none - every requirement is implemented'}
+- Requirements review notes: {output_verification.get('notes', '')}
 - Code review — strengths: {code_quality.get('strengths', [])}
 - Code review — weaknesses: {code_quality.get('weaknesses', [])}
 
 TASK:
 Write a short (150-250 words), direct, encouraging-but-honest feedback message
-for the student. Structure it as:
+for the student. A separate, exact list of missing requirements/files is appended
+after your message, so do not try to enumerate those yourself. Structure it as:
 1. One-line overall verdict — use the exact verdict given above (pass or needs revision) together with the score. Never state the opposite verdict or hedge on it.
 2. 2-3 concrete things done well.
 3. 2-3 concrete things to improve, phrased actionably (not vague).
-4. If the verdict is "DID NOT PASS", one clear sentence on what to fix to pass on resubmission.
+4. If the verdict is "DID NOT PASS", one clear sentence on what to fix to pass on resubmission - name the specific requirement(s) and the file(s) to change, never a vague "improve the code".
 
 Write in second person ("you"), plain English, no corporate filler, no excessive
 praise language. This is read by a real learner right after a stressful deadline —

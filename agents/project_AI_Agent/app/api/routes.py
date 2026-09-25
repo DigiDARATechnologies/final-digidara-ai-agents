@@ -460,6 +460,7 @@ async def submission_upload(
             status="needs_revision",
             submission_id=submission_id,
             revision_notes=result.get("revision_notes"),
+            syntax_errors=(result.get("syntax_report") or {}).get("errors") or None,
             # Present when this was a failed *content* grade being sent back
             # for another attempt (not just a packaging/structure issue) —
             # absent for a plain structure-gate rejection.

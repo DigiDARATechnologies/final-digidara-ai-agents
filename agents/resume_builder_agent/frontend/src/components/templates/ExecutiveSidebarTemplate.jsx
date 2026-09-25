@@ -50,6 +50,7 @@ function TemplateSection({ resume, section }) {
     );
   }
   if (section === "declaration") {
+    if (resume.declaration_enabled === false) return null;
     const text = resume.declaration ?? "";
     if (!text.trim()) return null;
     return (

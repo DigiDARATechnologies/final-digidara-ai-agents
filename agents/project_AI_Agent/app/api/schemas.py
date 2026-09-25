@@ -68,6 +68,11 @@ class SubmissionResultResponse(BaseModel):
     status: str
     submission_id: str | None = None
     revision_notes: str | None = None
+    # Real syntax errors found in the submitted code (see
+    # app/ingestion/syntax_check.py), one dict each: path, language, line,
+    # column, message, source_line. Present only when the submission was sent
+    # back because of them.
+    syntax_errors: list[dict] | None = None
     final_score: float | None = None
     passed: bool | None = None
     feedback: str | None = None

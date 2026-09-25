@@ -11,6 +11,7 @@ import {
   uploadSubmission,
   type CodeQualityScore,
   type ProjectDifficulty,
+  type SyntaxErrorDetail,
   type TopicOption,
 } from "./capstoneApi";
 
@@ -30,6 +31,20 @@ function looksLikeQuestionOrDispute(text: string): boolean {
   if (/\?\s*$/.test(trimmed)) return true;
   return /^(hey|hi|hello|wait|excuse me|sorry|actually|no[,]?\s|already|i (already )?(have|wrote|did|add(ed)?|includ(e|ed)|do have)|that'?s (wrong|not right|incorrect)|this is (already|not)|i don'?t (think|agree)|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
 }
+
+/** Every step from awaiting_topic_choice onward has a real thread_id (a
+ * project/assignment already exists), so a doubt there can be routed through
+ * askProjectQuestion for a real, grounded answer. At awaiting_topic_request
+ * there is nothing yet to ask about -- the thread only gets created by the
+ * first topic-generation call -- so there's no equivalent agent to consult.
+ * This narrowly catches plain small talk / meta questions ("hi", "who is
+ * the pm", "how are you") that are clearly not a topic request, so they get
+ * a short explanation of what this chat does instead of being fed into
+ * clarifyTopicRequest as if they were one. Deliberately narrow: a real
+ * request that happens to end in "?" (e.g. "can I get a python project?")
+ * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
+ * heuristic above. */
+const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
 
 export type CapstoneStep =
   | "awaiting_topic_request"
@@ -139,14 +154,39 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
  * as "both of these apply" even when the student's answer is actually a
  * correction (e.g. "python developer role" then, asked for more detail,
  * "html developer" — they meant "switch to HTML", not "combine Python and
- * HTML"). Telling the model a conflicting answer wins lets the free-text
- * interpretation already done in topic_generator_prompt resolve that
- * correctly instead of building a literal mashup of both. Kept short —
- * the backend's Course.name dedup key is capped at 255 chars (see
- * eligibility_check_free), and a shorter, cleaner string also stays a more
- * meaningful dedup key than a long one that gets truncated anyway. */
+ * HTML"). Earlier wording told the model the newer answer wins whenever the
+ * two "conflict" — but that framing was too eager: given a non-conflicting
+ * pair like "portfolio website" then "python", the model still dropped
+ * "portfolio website" entirely and generated generic Python topics instead
+ * of a Python-based portfolio site. Spelling out that most answers are
+ * *additions*, and only a genuinely different role/language/domain is a
+ * replacement, keeps the free-text interpretation in topic_generator_prompt
+ * from over-applying the override case. Kept short — the backend's
+ * Course.name dedup key is capped at 255 chars (see eligibility_check_free),
+ * and a shorter, cleaner string also stays a more meaningful dedup key than
+ * a long one that gets truncated anyway. */
+/** A deferral ("your choice", "you decide", "surprise me", "idk") answers
+ * the clarifying question by declining to add any actual content — it is
+ * never itself a role/language/domain detail, so appending it literally
+ * (as "python — your choice") reads back to the student as if "your choice"
+ * were part of their request, and gives the topic-generator LLM nothing
+ * useful to combine. Detected up front so the original request is passed
+ * through alone, with a note that the student left this open, instead of
+ * being combined at all. */
+const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)\b|^you\s*(decide|choose|pick)\b|^(up to you|surprise me|whatever|anything('?s| is)? (fine|works|good)|no preference|i don'?t (know|care|mind)|idk|not sure|either (is fine|works)|doesn'?t matter)\b/i;
+
 function combineWithClarifyingAnswer(originalRequest: string, answer: string): string {
-  return `${answer} (a correction/follow-up to "${originalRequest}" — if they conflict, e.g. a different role or language, go with this one)`;
+  if (DEFERRAL_ANSWER.test(answer.trim())) {
+    return `${originalRequest} (the student was asked a clarifying follow-up about this and declined to add any more detail — use your own best judgment for whatever it was asking about)`;
+  }
+  return `${originalRequest} — additional detail from a follow-up question: "${answer}" (combine both; only drop "${originalRequest}" if "${answer}" genuinely names a different role, language, or domain instead of the same one)`;
+}
+
+/** What the chat should show as "the request" once a clarifying answer is
+ * folded in — a deferral contributes no content of its own, so the original
+ * request is shown alone rather than as "python — your choice". */
+function displayLabelForClarifyingAnswer(originalRequest: string, answer: string): string {
+  return DEFERRAL_ANSWER.test(answer.trim()) ? originalRequest : `${originalRequest} — ${answer}`;
 }
 
 /** The actual eligibility+topic-generation call, shared by both the
@@ -186,16 +226,35 @@ async function generateTopicsFor(
   }
 }
 
+/** A chat saved before failed grades were made retryable can be sitting in
+ * the terminal "graded" step with `passed === false`. That is never a real
+ * end state (only a pass is), so reopen it for another upload. */
+function reopenIfFailed(state: CapstoneFlowState): CapstoneFlowState {
+  if (state.step === "graded" && state.passed === false) {
+    return { ...state, step: "awaiting_submission", docxFile: undefined, zipFile: undefined };
+  }
+  return state;
+}
+
 export async function handleCapstoneText(
   state: CapstoneFlowState,
   text: string,
 ): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
   const trimmed = text.trim();
+  state = reopenIfFailed(state);
 
   switch (state.step) {
     case "awaiting_topic_request": {
       if (!trimmed) {
         return { state, messages: [{ text: "Tell me the language, role, or topic you'd like your project based on." }] };
+      }
+      if (OFF_TOPIC_SMALL_TALK.test(trimmed)) {
+        return {
+          state,
+          messages: [{
+            text: 'I\'m the Capstone Project Agent — I help you choose a project topic, write out its requirements, track your 7-day build, and grade the final submission (with a short viva). Tell me the language, role, or topic you\'d like your project based on (e.g. "python", "data analyst", "e-commerce website") and I\'ll generate two options.',
+          }],
+        };
       }
 
       // Answering a clarifying question we already asked — combine it with
@@ -204,7 +263,7 @@ export async function handleCapstoneText(
       // if it's still vague, so this can never turn into a back-and-forth.
       if (state.pendingTopicSeed) {
         const combined = combineWithClarifyingAnswer(state.pendingTopicSeed, trimmed);
-        return generateTopicsFor(state, combined, trimmed);
+        return generateTopicsFor(state, combined, displayLabelForClarifyingAnswer(state.pendingTopicSeed, trimmed));
       }
 
       try {
@@ -224,10 +283,35 @@ export async function handleCapstoneText(
     }
 
     case "awaiting_topic_choice": {
-      const choice = trimmed.toUpperCase().replace(/[^AB]/g, "");
-      const topic = state.topicOptions?.find((item) => item.id === choice);
+      // Only an actual selection ("A", "b", "option A", "A.") should count --
+      // stripping the text down to whichever of the letters A/B it happens to
+      // contain (the previous approach) silently mis-selected a project for
+      // any unrelated message that merely used the letter "a" somewhere, e.g.
+      // "I need to change the project topics" collapsing to "A".
+      const match = trimmed.match(/^(?:option\s*)?([ab])\.?$/i);
+      const choice = match ? match[1].toUpperCase() : null;
+      const topic = choice ? state.topicOptions?.find((item) => item.id === choice) : undefined;
       if (!topic) {
-        return { state, messages: [{ text: "Choose project A or B.", options: state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary })) }] };
+        const options = state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary }));
+        // Plain text is never itself a valid action here (only "A"/"B" is),
+        // so any non-selection always gets a real answer from the Q&A agent
+        // rather than being pre-filtered by a brittle question-shaped-text
+        // heuristic -- that heuristic previously missed genuine requests
+        // like "I can't understand the requirements, explain more" (no "?",
+        // no matched opening phrase) and sent them the canned reminder
+        // instead of an answer. The Q&A agent itself already declines
+        // anything unrelated to this project and redirects, so this can
+        // never turn into open-ended chat -- mirrors the same
+        // always-try-Q&A-first pattern awaiting_timer_confirm already uses.
+        if (state.threadId && trimmed) {
+          try {
+            const qa = await askProjectQuestion(state.threadId, trimmed);
+            return { state, messages: [{ text: qa.answer }, { text: "Choose project A or B to continue.", options }] };
+          } catch {
+            // Q&A itself failed -- fall through to the plain reminder below.
+          }
+        }
+        return { state, messages: [{ text: "Choose project A or B.", options }] };
       }
       try {
         const result = await chooseTopic(state.threadId!, topic.id);
@@ -316,6 +400,36 @@ export async function handleCapstoneText(
             messages: [{ text: `Question ${result.viva_progress}:\n\n${result.viva_question.question}` }],
           };
         }
+        // A failed grade (low code score or too few viva answers) is not a
+        // dead end: the backend leaves the assignment at `needs_revision`, not
+        // `graded`, and accepts unlimited resubmissions until one passes.
+        // Moving to the terminal "graded" step here used to lock the student
+        // out of uploading again, so a fail goes back to awaiting_submission.
+        if (result.status === "needs_revision" || result.passed === false) {
+          return {
+            state: {
+              ...state,
+              step: "awaiting_submission",
+              docxFile: undefined,
+              zipFile: undefined,
+              vivaSubmissionId: null,
+              vivaQuestionId: null,
+              vivaQuestionText: null,
+              vivaProgress: null,
+              finalScore: result.final_score,
+              passed: false,
+              feedback: result.feedback,
+              revisionNotes: result.feedback ?? null,
+              scoreReasoning: result.score_reasoning ?? null,
+              codeQualityScore: result.code_quality_score ?? null,
+              vivaScore: result.viva_score ?? null,
+              vivaPassed: result.viva_passed ?? null,
+            },
+            messages: [{
+              text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both your .docx report and .zip source archive again — there is no limit on resubmitting until you pass.`,
+            }],
+          };
+        }
         return {
           state: {
             ...state,
@@ -328,17 +442,23 @@ export async function handleCapstoneText(
             vivaScore: result.viva_score ?? null,
             vivaPassed: result.viva_passed ?? null,
           },
-          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - ${result.passed ? "You passed!" : "Not passed"}\n\n${result.feedback ?? ""}` }],
+          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - You passed!\n\n${result.feedback ?? ""}` }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
       }
     }
     case "awaiting_submission": {
-      // A student disputing a revision note ("already have the approach
-      // section") deserves an actual answer grounded in their submission,
-      // not the same canned reminder every other message gets here.
-      if (state.threadId && trimmed && looksLikeQuestionOrDispute(trimmed)) {
+      // Plain text is never itself a valid action here -- attaching files is
+      // the only real action, and always goes through mergeCapstoneFiles,
+      // not this text handler -- so any text always gets a real answer from
+      // the Q&A agent, the same way awaiting_timer_confirm already treats
+      // any non-confirm text. Previously this was pre-filtered by a
+      // question-shaped-text heuristic that missed genuine requests like "I
+      // can't understand the requirements, explain more" (no "?", no
+      // matched opening phrase) and silently sent the canned reminder
+      // instead of an actual answer.
+      if (state.threadId && trimmed) {
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
@@ -381,6 +501,7 @@ export async function regenerateTopicsForDifficulty(
 }
 
 export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { state: CapstoneFlowState; messages: CapstoneFlowMessage[] } {
+  state = reopenIfFailed(state);
   if (state.step !== "awaiting_submission") return { state, messages: [{ text: "File upload becomes available after your project timer starts." }] };
   let docxFile = state.docxFile;
   let zipFile = state.zipFile;
@@ -392,6 +513,31 @@ export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { s
   const missing = [!docxFile && ".docx report", !zipFile && ".zip source archive"].filter(Boolean);
   const text = missing.length ? `File received. Still needed: ${missing.join(" and ")}.` : "Both files received. I am validating and grading them now.";
   return { state: { ...state, docxFile, zipFile }, messages: [{ text }] };
+}
+
+/** One syntax error laid out the way a terminal prints it: the file and line,
+ * the offending source line, a caret under the column, then the message. The
+ * source line keeps its own indentation, so the caret lines up. */
+export function formatSyntaxError(error: SyntaxErrorDetail): string {
+  const lines = [`  File "${error.path}"${error.line ? `, line ${error.line}` : ""}`];
+  if (error.source_line) {
+    lines.push(`    ${error.source_line}`);
+    if (error.column && error.column > 0) lines.push(`    ${" ".repeat(error.column - 1)}^`);
+  }
+  lines.push(`${error.language === "Python" ? "SyntaxError" : `${error.language} syntax error`}: ${error.message}`);
+  return lines.join("\n");
+}
+
+/** The chat message for a submission that was stopped by syntax errors: a
+ * heading and each error as a fenced terminal block -- deliberately NOT the
+ * generic "Revision needed" wording, since the errors themselves are the whole
+ * point. Any other problems found (report sections, folder layout) follow. */
+export function formatSyntaxErrorMessage(errors: SyntaxErrorDetail[], otherNotes?: string | null): string {
+  const heading = errors.length === 1 ? "### Syntax error in your code" : `### ${errors.length} syntax errors in your code`;
+  const parts = [heading, ...errors.map((error) => "```\n" + formatSyntaxError(error) + "\n```")];
+  if (otherNotes?.trim()) parts.push(otherNotes.trim());
+  parts.push("Attach both files again once it is fixed.");
+  return parts.join("\n\n");
 }
 
 export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
@@ -409,6 +555,10 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         scoreReasoning: result.score_reasoning ?? null,
         codeQualityScore: result.code_quality_score ?? null,
       };
+      // The code itself does not parse: show each error, not a summary of them.
+      if (result.syntax_errors?.length) {
+        return { state: nextState, messages: [{ text: formatSyntaxErrorMessage(result.syntax_errors, result.revision_notes) }] };
+      }
       // A packaging/structure rejection never reaches content scoring, so
       // final_score is absent there — a failed *content* grade carries one
       // and gets the fuller message with the score, since the student
@@ -438,6 +588,25 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         },
         messages: [{
           text: `Your project passed content grading. Before your score is revealed, a short viva (${result.viva_progress}): \n\n${result.viva_question.question}`,
+        }],
+      };
+    }
+
+    if (result.passed === false) {
+      return {
+        state: {
+          ...state,
+          docxFile: undefined,
+          zipFile: undefined,
+          finalScore: result.final_score,
+          passed: false,
+          feedback: result.feedback,
+          revisionNotes: result.feedback ?? null,
+          scoreReasoning: result.score_reasoning ?? null,
+          codeQualityScore: result.code_quality_score ?? null,
+        },
+        messages: [{
+          text: `Score: ${result.final_score ?? "-"}/100 - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both files again — there is no limit on resubmitting until you pass.`,
         }],
       };
     }

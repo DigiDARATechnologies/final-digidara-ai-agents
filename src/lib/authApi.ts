@@ -1,4 +1,34 @@
-const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
+function getOrchestratorBase(): string {
+  const globalProcess = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
+  if (globalProcess?.env?.VITE_GATEWAY_API_URL !== undefined) {
+    return globalProcess.env.VITE_GATEWAY_API_URL.replace(/\/$/, "");
+  }
+  // `!== undefined`, not a truthy check: production intentionally builds
+  // with VITE_GATEWAY_API_URL="" so the browser calls relative paths and
+  // nginx reverse-proxies them to the orchestrator (see README-docker.md).
+  // A truthy check would treat that deliberate empty string the same as
+  // "unset" and fall through to the localhost default below, defeating the
+  // relative-path setup -- gatewayClient.ts already gets this right, which
+  // is why chat/agent-invoke calls work in production but this didn't.
+  if (import.meta.env.VITE_GATEWAY_API_URL !== undefined) {
+    return String(import.meta.env.VITE_GATEWAY_API_URL).replace(/\/$/, "");
+  }
+  return "http://127.0.0.1:8100";
+}
+
+const ORCHESTRATOR_BASE = getOrchestratorBase();
+
+export function normalizeAuthError(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (!message) return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+    if (message === "Failed to fetch" || message.toLowerCase().includes("failed to fetch") || message.toLowerCase().includes("networkerror") || message.toLowerCase().includes("load failed")) {
+      return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+    }
+    return message;
+  }
+  return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+}
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -123,5 +153,7 @@ function postJson(path: string, body: Record<string, unknown>): Promise<Response
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  }).catch((error) => {
+    throw new Error(normalizeAuthError(error));
   });
 }

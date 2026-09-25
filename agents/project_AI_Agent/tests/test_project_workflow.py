@@ -209,7 +209,11 @@ def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database
     assert compiled_graph.get_state(thread).next == ("timer_init",)
     final = compiled_graph.invoke(None, thread)
     assert final["deadline_at"]
-    assert final["submission_guide"] == {"sections": ["Introduction"]}
+    guide = final["submission_guide"]
+    assert guide["sections"] == ["Introduction"]  # what the model wrote is kept...
+    # ...but what the report needs is decided by code: three sections, no screenshots.
+    assert guide["docx_required_sections"] == ["Problem Statement", "Approach", "Conclusion"]
+    assert guide["required_screenshots"] == []
     assert compiled_graph.get_state(thread).next == ()
     assert provider.call_count == 3
 
@@ -231,3 +235,101 @@ def test_real_submission_graph_stops_before_ai_on_invalid_files(state, tmp_path,
 @pytest.mark.parametrize("complete,zip_complete,expected", [(True, False, True), (False, True, False)])
 def test_structure_gate_uses_report_completeness(complete, zip_complete, expected):
     assert nodes.structure_gate_passed({"structure_score": {"is_complete": complete}, "zip_structure_score": {"is_complete": zip_complete}}) is expected
+
+
+# --- syntax errors: sent back before any scoring, with structured details -----
+
+def _report_docx(path):
+    from docx import Document
+    document = Document()
+    for heading in ("Problem Statement", "Approach", "Conclusion"):
+        document.add_heading(heading, level=1)
+        document.add_paragraph(f"A substantive explanation for the {heading} section of this project report.")
+    document.save(path)
+
+
+def _zip_with(path, files):
+    import zipfile
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+
+def test_real_submission_graph_sends_syntax_errors_back_before_any_scoring(state, database, tmp_path, monkeypatch):
+    from app.graph.graph import submission_graph
+    report, archive = tmp_path / "report.docx", tmp_path / "source.zip"
+    _report_docx(report)
+    _zip_with(archive, {
+        "Tracker/src/main.py": "def total(items):\n    return sum(items\n",
+        "Tracker/src/util.py": "def fine():\n    return 1\n",
+    })
+    systems = []
+
+    def provider(**kwargs):
+        systems.append(kwargs["system"])
+        return {"is_complete": True, "weak_sections": [], "structure_quality": "good", "clutter_flags": [], "notes": ""}
+
+    monkeypatch.setattr(nodes, "call_json", provider)
+    monkeypatch.setattr(nodes, "call_text", Mock(side_effect=AssertionError("must not write final feedback")))
+    guide = {"docx_required_sections": ["Problem Statement", "Approach", "Code", "Output Screenshots", "Conclusion"],
+             "required_paths": [{"path": "Tracker/src", "type": "dir"}]}
+    result = submission_graph.invoke({**state, "submission_id": "s1", "submission_guide": guide,
+                                      "docx_path": str(report), "zip_path": str(archive)})
+
+    assert result["status"] == "needs_revision"
+    assert result["syntax_report"]["error_count"] == 1
+    error = result["syntax_report"]["errors"][0]
+    assert error["path"] == "Tracker/src/main.py" and error["language"] == "Python"
+    assert error["line"] and error["source_line"] and error["message"]
+    assert result["revision_notes"] == ""                      # nothing else was wrong
+    assert "final_score" not in result and "code_quality_score" not in result
+    # Only the two structure reviewers ran; no scoring model and no sandbox run.
+    assert not any("Code Quality Reviewer" in system or "Requirements Verifier" in system for system in systems)
+    assert "execution_result" not in result
+
+
+def test_real_submission_graph_scores_a_clean_submission(state, database, tmp_path, monkeypatch):
+    from app.graph.graph import submission_graph
+    report, archive = tmp_path / "report.docx", tmp_path / "source.zip"
+    _report_docx(report)
+    _zip_with(archive, {"Tracker/src/main.py": "def total(items):\n    return sum(items)\n"})
+
+    def provider(**kwargs):
+        system = kwargs["system"]
+        if "Code Quality Reviewer" in system:
+            return {"structure_score": 20, "syntax_score": 25, "maintainability_score": 20, "completeness_score": 20, "total_code_score": 85}
+        if "Requirements Verifier" in system:
+            return {"output_correct": True, "requirements_check": [{"requirement": "Add up items", "status": "met", "evidence": "main.total"}]}
+        if "Final Score Decision" in system:
+            return {"final_score": 85, "reasoning": "solid"}
+        return {"is_complete": True, "weak_sections": [], "structure_quality": "good", "clutter_flags": [], "notes": ""}
+
+    monkeypatch.setattr(nodes, "call_json", provider)
+    monkeypatch.setattr(nodes, "call_text", lambda **kwargs: "Well done.")
+    monkeypatch.setattr(nodes, "run_python_submission", Mock(side_effect=nodes.Judge0Unavailable("offline")))
+    result = submission_graph.invoke({**state, "submission_id": "s2", "docx_path": str(report), "zip_path": str(archive),
+                                      "requirements": {"functional_requirements": ["Add up items"]},
+                                      "submission_guide": {"docx_required_sections": ["Problem Statement", "Approach", "Conclusion"]}})
+    assert result["syntax_report"]["has_errors"] is False
+    assert result["output_verification"]["requirements_check"][0]["status"] == "met"
+    assert result["final_score"] == 85 and result["passed"] is True
+
+
+def test_upload_response_carries_the_structured_syntax_errors(client, workflow, monkeypatch):
+    errors = [{"path": "P/src/main.py", "language": "Python", "line": 2, "column": 12,
+               "message": "'(' was never closed", "source_line": "    return sum(items"}]
+    monkeypatch.setattr(routes, "_run_submission", lambda value: {
+        "status": "needs_revision", "revision_notes": "", "syntax_report": {"errors": errors, "has_errors": True}})
+    response = upload(client)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "needs_revision"
+    assert body["syntax_errors"] == errors
+    assert not body["revision_notes"]
+
+
+def test_upload_response_has_no_syntax_errors_field_content_when_the_code_parses(client, workflow, monkeypatch):
+    monkeypatch.setattr(routes, "_run_submission", lambda value: {
+        "status": "needs_revision", "revision_notes": "Report: add more detail.", "syntax_report": {"errors": [], "has_errors": False}})
+    body = upload(client).json()
+    assert body["syntax_errors"] is None and body["revision_notes"] == "Report: add more detail."

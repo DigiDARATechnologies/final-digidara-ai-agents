@@ -1,11 +1,10 @@
 """DocxIngestNode (deterministic, non-LLM) — parses the submitted .docx into
-section headings + body text + screenshot OCR text."""
+section headings + body text. Embedded images are ignored: the report no longer
+carries screenshots, so nothing is OCR'd (which also removes a slow step)."""
 from __future__ import annotations
 
 from docx import Document
 from docx.opc.exceptions import PackageNotFoundError
-
-from app.ocr.extractor import extract_images_from_docx, summarize_for_llm
 
 
 class DocxIngestError(Exception):
@@ -44,12 +43,4 @@ def ingest_docx(docx_path: str) -> dict:
     if not sections.get("Preamble"):
         sections.pop("Preamble", None)
 
-    images = extract_images_from_docx(docx_path)
-    screenshot_text = summarize_for_llm(images)
-
-    return {
-        "sections": sections,
-        "screenshots_present": len(images) > 0,
-        "screenshot_count": len(images),
-        "screenshot_ocr_text": screenshot_text,
-    }
+    return {"sections": sections}
