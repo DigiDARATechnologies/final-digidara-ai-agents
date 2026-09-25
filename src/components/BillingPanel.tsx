@@ -54,6 +54,7 @@ export default function BillingPanel({ open, user, onToast }: Props) {
         handler: async (response: CheckoutResponse) => {
           try {
             await verifyBillingPayment(response);
+            window.dispatchEvent(new Event("digidara:billing-updated"));
             await refresh();
             const added = tokensAdded(order);
             onToast(added ? `Payment verified. ${tokens(added)} tokens added.` : "Payment verified.");

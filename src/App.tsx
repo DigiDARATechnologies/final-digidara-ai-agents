@@ -28,6 +28,8 @@ import {
   type CommunicationFlowState,
 } from "./lib/communicationFlow";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
+import HelpPage from "./components/HelpPage";
+import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import StoreView from "./components/StoreView";
@@ -35,7 +37,9 @@ import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
 import CodeForgePlayground from "./components/CodeForgePlayground";
-import ProfilePage from "./components/ProfilePage";
+import ProfileView from "./components/ProfileView";
+import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
+import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
 import Toast from "./components/Toast";
 import SaveIndicator from "./components/SaveIndicator";
 import AgentDashboard from "./components/AgentDashboard";
@@ -85,7 +89,32 @@ function toUser(authUser: AuthUser): User {
 
 
 
+type Theme = "dark" | "light";
+
 export default function App() {
+  const [themePref, setThemePref] = useState<ThemePref>(() => {
+    try {
+      const saved = localStorage.getItem("digidara_theme");
+      return saved === "light" || saved === "dark" || saved === "system" ? saved : "dark";
+    } catch { return "dark"; }
+  });
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  const theme: Theme = themePref === "system" ? (systemDark ? "dark" : "light") : themePref;
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("digidara_theme", themePref); } catch { /* storage unavailable: theme just won't persist */ }
+  }, [theme, themePref]);
+  const [appearance, setAppearance] = useState(loadAppearance);
+  useEffect(() => {
+    applyAppearance(appearance);
+    saveAppearance(appearance);
+  }, [appearance]);
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
@@ -116,8 +145,10 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  const [planName, setPlanName] = useState("Free");
+  const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -524,6 +555,43 @@ export default function App() {
     } catch (error) {
       return (error as Error).message || "Could not delete your account. Please try again.";
     }
+  }
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = () => {
+      fetchBillingSummary()
+        .then((summary) => { if (!cancelled) setPlanName(summary.plan_name || "Free"); })
+        .catch(() => { /* keep the last known plan label if billing is unreachable */ });
+    };
+    load();
+    window.addEventListener("digidara:billing-updated", load);
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("digidara:billing-updated", load);
+      window.removeEventListener("focus", load);
+    };
+  }, [user, settingsOpen]);
+
+  useEffect(() => {
+    setProfilePrefs(user ? loadProfilePrefs(user.id) : {});
+  }, [user?.id]);
+
+  const displayUser: User | null = user
+    ? {
+        ...user,
+        name: profilePrefs.displayName || user.name,
+        initial: ((profilePrefs.displayName || user.name).trim()[0] || user.initial || "?").toUpperCase(),
+        avatarUrl: profilePrefs.avatar,
+      }
+    : null;
+
+  function handleSaveProfile(next: ProfilePrefs) {
+    if (!user) return;
+    setProfilePrefs(next);
+    showToast(saveProfilePrefs(user.id, next) ? "Profile updated." : "Profile updated for this session, but it could not be saved on this device.");
   }
 
   function switchView(next: View) {
@@ -1161,6 +1229,7 @@ export default function App() {
 
   function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") {
     if (action === "settings") {
+      setSettingsTab("general");
       setSettingsOpen(true);
       return;
     }
@@ -1179,10 +1248,11 @@ export default function App() {
     showToast("This section is coming soon.");
   }
 
-  function handleUserMenuAction(action: "profile" | "settings" | "logout") {
+  function handleUserMenuAction(action: "profile" | "settings" | "upgrade" | "logout") {
     if (action === "logout") handleLogout();
-    if (action === "settings") setSettingsOpen(true);
-    if (action === "profile") setProfileOpen(true);
+    if (action === "settings") { setSettingsTab("general"); setSettingsOpen(true); }
+    if (action === "upgrade") { setSettingsTab("billing"); setSettingsOpen(true); }
+    if (action === "profile") switchView("profile");
     setOpenMenu(null);
   }
 
@@ -1217,7 +1287,8 @@ export default function App() {
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "DigiDARA Agents";
+  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
+  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1363,7 +1434,9 @@ export default function App() {
     <>
       <div className="app" id="app">
         <Sidebar
-          user={user}
+          theme={theme}
+          planName={planName}
+          user={displayUser ?? user}
           collapsed={sidebarCollapsed}
           mobileOpen={mobileOpen}
           homeActive={isHome}
@@ -1376,6 +1449,7 @@ export default function App() {
           onGoHome={startNewChatLanding}
           onOpenChat={openChatById}
           onNavAction={handleNavAction}
+          onOpenHelpPage={(page) => { setOpenMenu(null); switchView(page); }}
           onToggleChatMenu={(chatId, e) => {
             e.stopPropagation();
             setOpenChatMenuId((id) => (id === chatId ? null : chatId));
@@ -1393,12 +1467,14 @@ export default function App() {
         <main className="main">
           <Topbar
             title={topbarTitle}
-            user={user}
+            user={displayUser ?? user}
             notifOpen={openMenu === "notif"}
             dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isResumeBuilderChat || isJobFetchChat) && !!currentChat}
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
+            theme={theme}
+            onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
@@ -1413,6 +1489,29 @@ export default function App() {
               onTabChange={setActiveTab}
               onSearchChange={setSearchTerm}
               onOpenAgent={openAgentDetails}
+            />
+          )}
+
+          {view === "profile" && (
+            <ProfileView
+              user={displayUser ?? user}
+              prefs={profilePrefs}
+              onSaveProfile={handleSaveProfile}
+              chats={chats}
+              planName={planName}
+              onBack={startNewChatLanding}
+              onUpgrade={() => { setSettingsTab("billing"); setSettingsOpen(true); }}
+            />
+          )}
+
+          {(view === "help-center" || view === "release-notes" || view === "contact" || view === "bug-report") && (
+            <HelpPage
+              page={view}
+              user={user}
+              theme={theme}
+              onBack={startNewChatLanding}
+              onNavigate={(page) => switchView(page)}
+              onToast={showToast}
             />
           )}
 
@@ -1507,6 +1606,12 @@ export default function App() {
       </div>
 
       <SettingsModal
+        themePref={themePref}
+        onThemeChange={setThemePref}
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
+        onLogout={handleLogout}
+        initialTab={settingsTab}
         open={settingsOpen}
         user={user}
         chats={chats}
@@ -1523,7 +1628,6 @@ export default function App() {
         onDeleteAccount={handleDeleteAccount}
       />
 
-      <ProfilePage open={profileOpen} user={user} onClose={() => setProfileOpen(false)} />
 
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
 
