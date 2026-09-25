@@ -1,6 +1,6 @@
 import unittest
 
-from job_agent.matching import parse_list, score_job
+from job_agent.matching import blend_job_matches, parse_list, score_job
 
 
 class MatchingTests(unittest.TestCase):
@@ -45,6 +45,51 @@ class MatchingTests(unittest.TestCase):
         _score, reasons = score_job(job, profile, "")
         self.assertNotIn("Matches your preferred role", reasons)
         self.assertNotIn("Matches your preferred location", reasons)
+
+    def test_unrelated_domain_jobs_scored_zero_for_technical_candidates(self):
+        # An HR or Admin job must score 0 for an AI / Python candidate with zero skill or title overlap
+        hr_job = {
+            "id": 1,
+            "title": "HR Intern – Recruitment & HR Operations",
+            "location": "Tamil Nadu / Flexible",
+            "work_mode": "Flexible",
+            "skills": ["Recruitment", "Advanced Excel", "MIS", "HR Operations"],
+            "category": "other",
+            "experience_min": 0,
+        }
+        tech_profile = {
+            "skills": ["Machine Learning", "Python", "FastAPI"],
+            "preferred_titles": ["AI Engineer"],
+            "preferred_locations": ["Chennai"],
+            "preferred_work_mode": "",
+            "experience_years": 1.6,
+        }
+        score, reasons = score_job(hr_job, tech_profile, "AI Engineer")
+        self.assertEqual(score, 0)
+        self.assertIn("Unrelated to your technical skills or role preferences", reasons)
+
+    def test_blend_job_matches_sorts_highest_score_first(self):
+        # Even if one job is entry and one is growth, the higher match score MUST appear first
+        job_low = {"id": 101, "title": "Entry Job", "seniority_tier": "entry", "match_score": 25}
+        job_high = {"id": 102, "title": "Growth ML Role", "seniority_tier": "growth", "match_score": 65}
+        blended = blend_job_matches([job_low, job_high], limit=5, is_fresher_candidate=False)
+        self.assertEqual(len(blended), 2)
+        self.assertEqual(blended[0]["id"], 102)
+        self.assertEqual(blended[1]["id"], 101)
+
+    def test_blend_job_matches_allocates_growth_for_experienced_candidates(self):
+        # An experienced candidate (1.6 yrs) must not have growth roles blocked by entry quotas
+        scored = [
+            {"id": 1, "title": "ML Engineer", "seniority_tier": "growth", "match_score": 75},
+            {"id": 2, "title": "Python Dev", "seniority_tier": "growth", "match_score": 70},
+            {"id": 3, "title": "Backend Dev", "seniority_tier": "growth", "match_score": 65},
+            {"id": 4, "title": "Junior Python", "seniority_tier": "entry", "match_score": 60},
+        ]
+        blended = blend_job_matches(scored, limit=3, entry_ratio=0.2, is_fresher_candidate=False)
+        self.assertEqual(len(blended), 3)
+        self.assertEqual(blended[0]["id"], 1)
+        self.assertEqual(blended[1]["id"], 2)
+        self.assertEqual(blended[2]["id"], 3)
 
 
 

@@ -220,7 +220,7 @@ export async function submitJobFetchResume(
 ): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
   try {
     const result = await uploadJobFetchResume(file);
-    const withFeed = await loadFeed({ ...state, resumeOriginalName: result.filename });
+    const withFeed = await loadFeed({ ...state, resumeOriginalName: result.filename, step: "browsing" });
     const text = `🎉 **Awesome! Resume uploaded successfully!**\n\nI've saved **"${result.filename}"** to your profile. I'll use it to match you against all verified postings from employers across Tamil Nadu, Bangalore, and Remote.\n\nTell me: what specific roles or cities (e.g. Chennai, Coimbatore, Madurai, Trichy, Bangalore) would you like to prioritize?`;
     const options: ChatOption[] = [
       { label: "💼 Show best matches", value: "What are my best matching jobs?" },
@@ -243,7 +243,7 @@ async function saveProfileAndShowFeed(state: JobFetchFlowState): Promise<{ state
       preferred_work_mode: state.preferredWorkMode || undefined,
       experience_years: state.experienceYears,
     });
-    const withFeed = await loadFeed(state);
+    const withFeed = await loadFeed({ ...state, step: "browsing" });
     return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Profile saved! Here are your matched jobs.")] };
   } catch (error) {
     return { state, messages: [{ text: `I could not save your profile: ${(error as Error).message}. Try again.` }] };
@@ -314,7 +314,8 @@ export async function handleJobFetchText(
     }
 
     case "collecting_resume": {
-      if (/^skip$/i.test(trimmed)) return saveProfileAndShowFeed(state);
+      const isProceed = Boolean(state.resumeOriginalName) || /^(skip|done|next|proceed|continue|show jobs|view jobs|best match)/i.test(trimmed);
+      if (isProceed) return saveProfileAndShowFeed(state);
       return { state, messages: [{ text: "Attach a PDF/DOCX file using the paperclip button, or type \"skip\" to continue without one." }] };
     }
   }
