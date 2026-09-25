@@ -147,6 +147,14 @@ class Submission(Base):
     viva_answers_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     viva_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     viva_passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Finished viva attempts (up to VIVA_ATTEMPTS), oldest first: attempt number,
+    # its questions and answers, correct/total, the Good/Average/Bad rating and
+    # whether it passed. viva_questions_json/viva_answers_json above always hold
+    # the attempt currently in progress (or the last finished one).
+    viva_attempts_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # The certificate: the name printed on it, whether the student confirmed it
+    # (OK), its id and issue time. Absent until the student opens the preview.
+    certificate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     assignment: Mapped[ProjectAssignment] = relationship(back_populates="submissions")
 

@@ -94,32 +94,107 @@ def test_failed_evaluation_does_not_start_viva(client, workflow, monkeypatch, re
     assert workflow.update_state.call_args.args[1]["status"] == result["status"]
     viva_generator.assert_not_called()
 
-@pytest.mark.parametrize("correct_count,passed", [(5, False), (6, True), (10, True)])
-def test_viva_threshold_progress_persistence_and_replay(client, workflow, database, monkeypatch, correct_count, passed):
+def finish_attempt(client, submission_id, monkeypatch, correct_count, total=10):
+    """Answer every question of the current attempt; `correct_count` of them are judged correct."""
+    verdict = Mock(side_effect=[{"correct": i < correct_count, "note": "Reviewed"} for i in range(total)])
+    monkeypatch.setattr(routes, "verify_viva_answer", verdict)
+    last = None
+    for index in range(total):
+        response = answer(client, submission_id, index)
+        assert response.status_code == 200
+        last = response.json()
+    return last
+
+
+def start_attempt(client, submission_id):
+    return client.post("/api/invoke", json={"action": "start_viva_attempt", "payload": {"submission_id": submission_id}})
+
+
+@pytest.mark.parametrize("correct_count,rating", [(5, "Average"), (7, "Average"), (8, "Good"), (10, "Good")])
+def test_viva_pass_mark_is_fifty_percent_and_the_result_is_a_rating_not_a_mark(client, workflow, database, monkeypatch, correct_count, rating):
     submission_id = upload(client).json()["submission_id"]
-    verdict = Mock(side_effect=[{"correct": i < correct_count, "note": "Reviewed"} for i in range(10)])
+    assert answer(client, submission_id, 1).status_code == 409
+    result = finish_attempt(client, submission_id, monkeypatch, correct_count)
+    assert result["passed"] is True and result["status"] == "graded"
+    assert result["viva_rating"] == rating and result["final_score"] == 85
+    assert "Viva result: " + rating in result["feedback"] and " of 10" not in result["feedback"]
+    with database() as session:
+        row = session.get(Submission, submission_id)
+        assert row.viva_passed is True and row.status == SubmissionStatus.graded
+        assert [a["rating"] for a in row.viva_attempts_json] == [rating]
+    assert answer(client, submission_id, 0).status_code == 409
+
+
+def test_a_failed_attempt_can_be_retaken_with_new_questions_up_to_three_times(client, workflow, database, monkeypatch):
+    seen_avoid = []
+
+    def fresh_questions(topic, medium, code_files, avoid=None):
+        seen_avoid.append(list(avoid or []))
+        round_number = len(seen_avoid)
+        return [{"id": i, "question": f"Round {round_number} question {i}", "expected_concepts": ["c"]} for i in range(10)]
+
+    submission_id = upload(client).json()["submission_id"]
+    monkeypatch.setattr(routes, "generate_viva_questions", fresh_questions)
+
+    first = finish_attempt(client, submission_id, monkeypatch, 4)          # 40% -> not passed, 2 attempts left
+    assert first["status"] == "viva_retry" and first["viva_rating"] == "Bad"
+    assert first["viva_attempt"] == 1 and first["viva_attempts_left"] == 2 and first["viva_attempts_total"] == 3
+    assert first["passed"] is None and first["final_score"] is None       # nothing is revealed yet
+    assert answer(client, submission_id, 0).status_code == 409             # must start the next attempt first
+
+    second_start = start_attempt(client, submission_id).json()
+    assert second_start["status"] == "pending_viva" and second_start["viva_attempt"] == 2
+    assert second_start["viva_question"]["question"] == "Round 1 question 0"
+    assert any("Explain concept" in q for q in seen_avoid[0])              # attempt 1's questions are passed as "already asked"
+    assert start_attempt(client, submission_id).status_code == 409         # attempt 2 is under way
+
+    second = finish_attempt(client, submission_id, monkeypatch, 3)
+    assert second["status"] == "viva_retry" and second["viva_attempts_left"] == 1
+    third_start = start_attempt(client, submission_id).json()
+    assert third_start["viva_attempt"] == 3 and third_start["viva_attempts_left"] == 0
+    assert any("Round 1 question" in q for q in seen_avoid[1]) and any("Explain concept" in q for q in seen_avoid[1])
+
+    third = finish_attempt(client, submission_id, monkeypatch, 2)          # out of attempts
+    assert third["status"] == "needs_revision" and third["passed"] is False and third["viva_rating"] == "Bad"
+    assert "not passed after 3 attempts" in third["feedback"]
+    assert start_attempt(client, submission_id).status_code == 409
+    with database() as session:
+        row = session.get(Submission, submission_id)
+        assert row.viva_passed is False and len(row.viva_attempts_json) == 3
+
+
+def test_passing_on_a_later_attempt_grades_the_project(client, workflow, database, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    assert finish_attempt(client, submission_id, monkeypatch, 3)["status"] == "viva_retry"
+    assert start_attempt(client, submission_id).status_code == 200
+    result = finish_attempt(client, submission_id, monkeypatch, 9)
+    assert result["status"] == "graded" and result["passed"] is True and result["viva_rating"] == "Good"
+    with database() as session:
+        row = session.get(Submission, submission_id)
+        assert row.status == SubmissionStatus.graded and row.viva_passed is True
+        assert [a["passed"] for a in row.viva_attempts_json] == [False, True]
+
+
+def test_start_viva_attempt_guards(client, workflow, monkeypatch):
+    assert start_attempt(client, "missing").status_code == 404
+    submission_id = upload(client).json()["submission_id"]
+    assert start_attempt(client, submission_id).status_code == 409         # nothing finished yet
+    assert client.post("/api/invoke", json={"action": "start_viva_attempt", "payload": {}}).status_code == 400
+
+
+def test_viva_progress_is_reported_one_question_at_a_time_and_replays_are_rejected(client, workflow, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    verdict = Mock(return_value={"correct": True, "note": "ok"})
     monkeypatch.setattr(routes, "verify_viva_answer", verdict)
     assert answer(client, submission_id, 1).status_code == 409
     verdict.assert_not_called()
-    for index in range(10):
-        response = answer(client, submission_id, index)
-        assert response.status_code == 200
-        result = response.json()
-        if index < 9:
-            assert result["status"] == "pending_viva"
-            assert result["final_score"] is None
-            assert result["viva_question"]["id"] == index + 1
+    for index in range(9):
+        result = answer(client, submission_id, index).json()
+        assert result["status"] == "pending_viva" and result["final_score"] is None
+        assert result["viva_question"]["id"] == index + 1 and result["viva_attempt"] == 1
         assert answer(client, submission_id, index).status_code == 409
-    assert verdict.call_count == 10
-    assert result["passed"] is passed
-    assert result["viva_score"] == correct_count
-    assert result["final_score"] == 85
-    assert result["status"] == ("graded" if passed else "needs_revision")
-    with database() as session:
-        row = session.get(Submission, submission_id)
-        assert len(row.viva_answers_json) == 10
-        assert row.viva_passed is passed
-        assert row.status.value == result["status"]
+    assert verdict.call_count == 9
+
 
 def test_unknown_submission(client):
     assert answer(client, "missing", 0).status_code == 404
@@ -180,10 +255,36 @@ def test_evaluation_feedback_persists_grade_and_allows_revision(state, database,
         assert session.get(Submission, "submission").score_json["passed"] is passed
 
 def test_viva_question_limit_and_numbering(monkeypatch):
-    monkeypatch.setattr(viva, "call_json", lambda **kwargs: {"questions": [{"id": 90, "question": "Explain", "expected_concepts": ["concept"]}] * 12})
+    monkeypatch.setattr(viva, "call_json", lambda **kwargs: {"questions": [{"id": 90, "question": f"Explain {i}", "expected_concepts": ["concept"]} for i in range(12)]})
     questions = viva.generate_viva_questions({"title": "Task tracker"}, "local", {})
     assert [q["id"] for q in questions] == list(range(10))
     assert questions[0]["expected_concepts"] == ["concept"]
+
+
+def test_a_retake_never_repeats_an_earlier_question_even_if_the_model_does(monkeypatch):
+    earlier = ["What does the login function return?", "Why is a list used here?"]
+    calls = []
+
+    def model(**kwargs):
+        calls.append(kwargs["system"])
+        if len(calls) == 1:   # repeats both earlier questions (differently punctuated) plus 8 new ones
+            texts = ["what does the LOGIN function return", "Why is a list used here"] + [f"New question {i}" for i in range(8)]
+        else:
+            texts = ["Top-up question A", "Top-up question B", "New question 0"]
+        return {"questions": [{"question": t, "expected_concepts": ["c"]} for t in texts]}
+
+    monkeypatch.setattr(viva, "call_json", model)
+    questions = viva.generate_viva_questions({"title": "T"}, "local", {}, earlier)
+    texts = [q["question"] for q in questions]
+    assert len(texts) == 10 and len(set(texts)) == 10
+    assert not any(viva._fingerprint(t) in {viva._fingerprint(e) for e in earlier} for t in texts)
+    assert "RE-ATTEMPT" in calls[0] and "What does the login function return?" in calls[0]
+
+
+@pytest.mark.parametrize("correct,total,rating,passed", [(10, 10, "Good", True), (8, 10, "Good", True), (7, 10, "Average", True),
+                                                          (5, 10, "Average", True), (4, 10, "Bad", False), (0, 10, "Bad", False), (0, 0, "Bad", False)])
+def test_viva_rating_and_pass_mark(correct, total, rating, passed):
+    assert viva.viva_rating(correct, total) == rating and viva.viva_passed(correct, total) is passed
 
 
 def test_real_main_graph_pauses_for_topic_and_timer(state, monkeypatch, database):

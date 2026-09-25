@@ -70,7 +70,7 @@ endobj
 endobj
 11 0 obj
 <<
-/Length 6145
+/Length 6231
 >>
 stream
 1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
@@ -114,7 +114,7 @@ BT /F1 10 Tf 12 TL ET
 q
 1 0 0 1 10 8 cm
 q
-BT 1 0 0 1 0 46 Tm 14 TL /F2 10 Tf .062745 .094118 .156863 rg (EXAMPLE REPORT.) Tj /F1 10 Tf ( This shows the sections and the level of detail the Capstone agent expects. Your) Tj T* -0.123864 Tw (own .docx report needs exactly three sections: ) Tj /F2 10 Tf (Problem Statement) Tj /F1 10 Tf (, ) Tj /F2 10 Tf (Approach) Tj /F1 10 Tf ( and ) Tj /F2 10 Tf (Conclusion) Tj /F1 10 Tf (. Do not) Tj T* 0 Tw (paste your code or screenshots into it - your code goes in the .zip, where it is analysed in full. Write) Tj T* (about your own project; do not copy this one.) Tj T* ET
+BT 1 0 0 1 0 46 Tm 14 TL /F2 10 Tf .062745 .094118 .156863 rg (EXAMPLE REPORT.) Tj /F1 10 Tf ( This shows the sections and the level of detail the Capstone agent expects. Your) Tj T* -0.123864 Tw (own .docx report needs exactly three sections: ) Tj /F2 10 Tf (Problem Statement) Tj /F1 10 Tf (, ) Tj /F2 10 Tf (Approach) Tj /F1 10 Tf ( and ) Tj /F2 10 Tf (Conclusion) Tj /F1 10 Tf (. Do not) Tj T* 0 Tw (paste your code or screenshots into it - your code and your output screenshots both go in the .zip \(the) Tj T* (screenshots in its ) Tj /F2 10 Tf (output_screenshots) Tj /F1 10 Tf ( folder\). Write about your own project; do not copy this one.) Tj T* ET
 Q
 Q
 q
@@ -468,7 +468,7 @@ xref
 0000074579 00000 n 
 0000074906 00000 n 
 0000074972 00000 n 
-0000081169 00000 n 
+0000081255 00000 n 
 trailer
 <<
 /ID 
@@ -480,5 +480,5 @@ trailer
 /Size 13
 >>
 startxref
-85416
+85502
 %%EOF

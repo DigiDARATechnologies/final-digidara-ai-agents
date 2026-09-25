@@ -935,9 +935,10 @@ export default function App() {
 
     if (agent?.kind === "capstone") {
       const flowState = (resumeSnapshot as CapstoneFlowState | undefined) ?? createInitialCapstoneState(user);
-      handleCapstoneText(flowState, text).then(({ state: nextState, messages }) => {
+      handleCapstoneText(flowState, text).then(({ state: nextState, messages, openDashboard }) => {
         setCapstoneStates((prev) => ({ ...prev, [chatId]: nextState }));
         appendAgentMessages(chatId, messages);
+        if (openDashboard) setDashboardOpen(true);
         setTyping(false);
       });
       return;
