@@ -1,5 +1,5 @@
 import { normalizeResumeForTemplate } from "./resumeSchema.js";
-import { dateRange, displayProfileLink, splitProjectDescription } from "./templateUtils.jsx";
+import { dateRange, displayProfileLink, splitProjectDescription, DeclarationBlock } from "./templateUtils.jsx";
 
 function proficiencyDots(value) {
   const level = String(value || "").toLowerCase();
@@ -56,6 +56,11 @@ export default function NavyPortraitTemplate({ resume }) {
       <Section title="INTERESTS">{data.achievements.length > 0 && data.achievements.map((item, index) => <TimelineEntry key={index} item={item} project />)}</Section>
       <Section title="CERTIFICATES">{data.certifications.length > 0 && data.certifications.map((item, index) => <TimelineEntry key={index} item={{ title: item.name, date: item.date, description: item.issuer }} project />)}</Section>
       <Section title="PUBLICATIONS">{data.publications.length > 0 && data.publications.map((item, index) => <TimelineEntry key={index} item={item} project />)}</Section>
+      {data.declaration_enabled !== false && Boolean(data.declaration?.trim()) && (
+        <Section title="DECLARATION">
+          <DeclarationBlock text={data.declaration} />
+        </Section>
+      )}
     </main>
   </div>;
 }

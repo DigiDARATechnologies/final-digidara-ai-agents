@@ -18,6 +18,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.revision import explain_missing_path, explain_missing_screenshots, explain_missing_section, explain_weak_section
+from app.ingestion.screenshots import screenshot_status
+from app.ingestion.structure_check import drop_retired_sections
+
 
 def _checkbox(ok: bool) -> str:
     return "✅" if ok else "❌"
@@ -30,14 +34,9 @@ def _structure_section(state: dict[str, Any]) -> list[str]:
     for section in structure.get("matched_sections") or []:
         lines.append(f"- ✅ Section found: {section}")
     for section in structure.get("missing_sections") or []:
-        lines.append(f"- ❌ Missing section: **{section}**")
+        lines.append(f"- ❌ {explain_missing_section(section)}")
     for weak in structure.get("weak_sections") or []:
-        lines.append(f"- ⚠️ Weak section: {weak}")
-    screenshots_present = structure.get("screenshots_present")
-    if screenshots_present is not None:
-        lines.append(f"{_checkbox(bool(screenshots_present))} Output screenshots embedded in the report")
-    for missing_screenshot in structure.get("missing_screenshots") or []:
-        lines.append(f"- ❌ Missing screenshot: {missing_screenshot}")
+        lines.append(f"- ⚠️ {explain_weak_section(weak)}")
     if structure.get("notes"):
         lines.append("")
         lines.append(structure["notes"])
@@ -56,11 +55,7 @@ def _zip_structure_section(state: dict[str, Any]) -> list[str]:
     for item in matched:
         lines.append(f"- ✅ `{item['path']}` — {item.get('description') or 'present'}")
     for item in missing:
-        description = item.get("description") or ""
-        lines.append(
-            f"- ❌ `{item['path']}` — MISSING. {description} "
-            f"Add this {item.get('type', 'folder')} to your zip and resubmit."
-        )
+        lines.append(f"- ❌ {explain_missing_path(item)}")
     if zip_score.get("structure_quality"):
         lines.append("")
         lines.append(f"Organization quality: **{zip_score['structure_quality']}**")
@@ -69,6 +64,57 @@ def _zip_structure_section(state: dict[str, Any]) -> list[str]:
     if zip_score.get("notes"):
         lines.append("")
         lines.append(zip_score["notes"])
+    return lines
+
+
+def _screenshots_section(state: dict[str, Any]) -> list[str]:
+    status = screenshot_status(state.get("submission_guide") or {}, state.get("screenshot_evidence"))
+    if not status["required"]:
+        return []
+    lines = ["## Output Screenshots (in your zip)"]
+    lines.append(
+        f"{_checkbox(status['complete'])} {len(status['found_files'])} readable screenshot image(s) found; "
+        f"{len(status['required'])} required"
+    )
+    for name in status["found_files"]:
+        lines.append(f"- ✅ `{name}`")
+    if not status["complete"]:
+        explanation = explain_missing_screenshots(status)
+        if explanation:
+            lines.append("")
+            lines += [f"- ❌ {line}" if index == 0 else line for index, line in enumerate(explanation.splitlines())]
+    return lines
+
+
+def _syntax_section(state: dict[str, Any]) -> list[str]:
+    report = state.get("syntax_report")
+    if report is None:
+        return []
+    lines = ["## Syntax Check"]
+    errors = report.get("errors") or []
+    checked = report.get("checked_files") or []
+    if not errors:
+        if checked:
+            lines.append(f"✅ {len(checked)} file(s) parsed with no syntax errors ({', '.join(report.get('checked_languages') or [])}).")
+        else:
+            lines.append("_No Python, JSON or TOML files were present to parse._")
+    for error in errors:
+        where = f"{error['path']}, line {error['line']}" if error.get("line") else error["path"]
+        lines.append(f"- ❌ **{error['language']} syntax error in `{where}`**: {error['message']}")
+        if error.get("source_line"):
+            lines.append("")
+            lines.append("      " + error["source_line"])
+            if error.get("column"):
+                lines.append("      " + " " * (error["column"] - 1) + "^")
+            lines.append("")
+    hidden = (report.get("error_count") or 0) - len(errors)
+    if hidden > 0:
+        lines.append(f"- …and {hidden} more syntax error(s) not shown here.")
+    if report.get("unchecked_extensions"):
+        lines.append(
+            f"_{', '.join(report['unchecked_extensions'])} files are not machine-checked; they are read line by "
+            f"line in the code review below._"
+        )
     return lines
 
 
@@ -106,13 +152,23 @@ def _output_verification_section(state: dict[str, Any]) -> list[str]:
     verification = state.get("output_verification")
     if verification is None:
         return []
-    lines = ["## Output Verification"]
+    lines = ["## Requirements Check"]
     lines.append(
-        f"{_checkbox(bool(verification.get('output_correct')))} Output matches the project requirements "
+        f"{_checkbox(bool(verification.get('output_correct')))} The code implements the project requirements "
         f"(confidence: {verification.get('confidence', 'unknown')})"
     )
-    for req in verification.get("requirements_demonstrated") or []:
-        lines.append(f"- {req}")
+    icons = {"met": "✅", "partial": "⚠️", "not_met": "❌"}
+    checks = verification.get("requirements_check") or []
+    for item in checks:
+        lines.append(f"- {icons.get(item.get('status'), '⚠️')} {item.get('requirement')} — {item.get('evidence', '')}")
+    if not checks:
+        for req in verification.get("requirements_demonstrated") or []:
+            lines.append(f"- {req}")
+    for constraint in verification.get("constraints_check") or []:
+        lines.append(f"- {constraint}")
+    shot_icons = {"present": "✅", "unclear": "⚠️", "missing": "❌"}
+    for shot in verification.get("screenshots_check") or []:
+        lines.append(f"- {shot_icons.get(shot.get('status'), '⚠️')} Screenshot {shot.get('screenshot')} — {shot.get('evidence', '')}")
     for issue in verification.get("issues_found") or []:
         lines.append(f"- ⚠️ {issue}")
     if verification.get("notes"):
@@ -168,6 +224,8 @@ def build_review_markdown(state: dict[str, Any]) -> str:
     lines = [f"# Project Review — {topic_title}", "", f"**Result: {verdict}**", ""]
     lines += _structure_section(state) + [""]
     lines += _zip_structure_section(state) + [""]
+    lines += _screenshots_section(state) + [""]
+    lines += _syntax_section(state) + [""]
     lines += _execution_section(state) + [""]
     lines += _output_verification_section(state) + [""]
     lines += _code_quality_section(state) + [""]
@@ -181,7 +239,7 @@ def build_review_markdown(state: dict[str, Any]) -> str:
     elif passed:
         lines += [
             "## Next Step",
-            "Your code review passed. Complete the viva (oral defense) to finish certification.",
+            "Your code review passed. Complete the viva (oral defense) to get your certificate: you have up to 3 attempts, each with new questions, and need at least 50% correct.",
             "",
         ]
 
@@ -224,21 +282,25 @@ def build_about_markdown(state: dict[str, Any]) -> str:
     lines.append("")
 
     lines.append("## Required Sections In Your .docx Report")
-    for index, section in enumerate(guide.get("docx_required_sections") or [], start=1):
+    for index, section in enumerate(drop_retired_sections(guide.get("docx_required_sections")), start=1):
         lines.append(f"{index}. {section}")
+    lines.append("Do not put code or screenshots in the .docx report - your code and your screenshots both go in the zip.")
     lines.append("")
 
-    required_screenshots = guide.get("required_screenshots") or []
-    if required_screenshots:
-        lines.append("## Required Screenshots")
+    screenshots = guide.get("required_screenshots") or []
+    if screenshots:
+        lines.append("## Required Screenshots (image files in your zip's `output_screenshots` folder)")
         lines.append(
-            "Each of these must be its own screenshot, both saved in your `output_screenshots` folder "
-            "AND embedded in your .docx report (a screenshot only in one place doesn't count):"
+            "Save each of these as its own image file, using the file name shown, inside the `output_screenshots` "
+            "folder of your zip. They go in the zip, NOT in the .docx report."
         )
-        for index, item in enumerate(required_screenshots, start=1):
-            lines.append(f"{index}. **{item.get('description', '')}**")
+        for index, item in enumerate(screenshots, start=1):
+            lines.append(f"{index}. **`{item.get('filename', '')}`** — {item.get('module') or 'project screen'}")
+            lines.append(f"   - What must be visible: {item.get('description', '')}")
+            if item.get("how_to_capture"):
+                lines.append(f"   - How to capture it: {item['how_to_capture']}")
             if item.get("linked_requirement"):
-                lines.append(f"   _Proves: {item['linked_requirement']}_")
+                lines.append(f"   - Proves: {item['linked_requirement']}")
         lines.append("")
 
     if guide.get("worked_example_section"):

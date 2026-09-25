@@ -56,3 +56,25 @@ def test_multipart_import_reaches_existing_route(client):
     )
     assert response.status_code == 200
     assert response.get_json()["data"]["file"]["name"] == "resume.txt"
+
+
+def test_multipart_import_copies_uploaded_bytes_before_reentering_analyzer(client):
+    source = io.BytesIO(
+        b"Jane Doe\njane@example.com\n\nSkills\nPython, React\n\nExperience\nSoftware Engineer at Example Co\nBuilt product features."
+    )
+    # Simulate the adapter receiving an ordinary parsed multipart stream.
+    # Its downstream request must use a fresh byte buffer, not this live stream.
+    source.read()
+    source.seek(0)
+    response = client.post(
+        "/api/invoke",
+        data={
+            "action": "analyze_upload",
+            "payload": '{"user_id":"test-user"}',
+            "file": (source, "resume.txt", "text/plain"),
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["file"]["size"] > 0

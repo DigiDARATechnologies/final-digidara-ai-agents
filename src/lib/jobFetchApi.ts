@@ -39,6 +39,13 @@ export interface JobFeedItem {
   match_reasons: string[];
   is_saved: number;
   application_status: string | null;
+  trust_score?: number;
+  trust_badge?: string;
+  is_verified?: boolean;
+  seniority_tier?: "entry" | "growth" | "senior";
+  salary_text?: string | null;
+  experience_min?: number | null;
+  experience_max?: number | null;
 }
 
 export interface SavedJobItem {
@@ -100,6 +107,33 @@ export function updateJobFetchProfile(profile: {
   return invoke<{ message: string; profile_completed: boolean }>("update_profile", profile);
 }
 
+export interface JobAgentChatResponse {
+  reply: string;
+  show_jobs?: boolean;
+  updated_profile: {
+    skills: string[];
+    preferred_locations: string[];
+    preferred_titles: string[];
+    preferred_work_mode: string;
+    experience_years: number;
+    changed_fields: string[];
+  };
+  suggested_actions: Array<{ label: string; value: string }>;
+  matched_jobs: JobFeedItem[];
+}
+
+export function chatWithJobAgent(
+  message: string,
+  history: Array<{ role: string; content: string }> = [],
+  selectedJobId?: number,
+) {
+  return invoke<JobAgentChatResponse>("chat", {
+    message,
+    history,
+    selected_job_id: selectedJobId,
+  });
+}
+
 /** Resume upload — the one job_agent action that isn't plain JSON, so it
  * bypasses gatewayClient.ts's invoke() and posts multipart directly, the
  * same shape resumeBuilderApi.ts's upload uses. The platform bearer token
@@ -121,7 +155,26 @@ export async function uploadJobFetchResume(file: File): Promise<{ message: strin
   return body;
 }
 
-export function getJobFeed(filters: { q?: string; work_mode?: string; category?: string; saved?: boolean } = {}) {
+/** Download the authenticated user's stored resume file blob. */
+export async function downloadJobFetchResume(): Promise<Blob> {
+  const token = localStorage.getItem("digidara_token");
+  const response = await fetch(INVOKE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ action: "download_resume", payload: {} }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.error || body.message || "Failed to download resume");
+  }
+  return response.blob();
+}
+
+
+export function getJobFeed(filters: { q?: string; location?: string; work_mode?: string; category?: string; saved?: boolean } = {}) {
   return invoke<{ jobs: JobFeedItem[]; total: number; returned: number; plan_tier: string; limit: number }>(
     "get_feed",
     filters,
@@ -130,6 +183,16 @@ export function getJobFeed(filters: { q?: string; work_mode?: string; category?:
 
 export function jobFetchAction(jobId: number, action: "save" | "unsave" | "hide" | "unhide" | "apply") {
   return invoke<{ message: string; action: string }>("job_action", { job_id: jobId, action });
+}
+
+export function updateJobApplicationStatus(
+  jobId: number,
+  status: "applied" | "screening" | "interview" | "offer" | "rejected" | "withdrawn" | string,
+) {
+  return invoke<{ message: string; job_id: number; application_status: string }>("update_application_status", {
+    job_id: jobId,
+    status,
+  });
 }
 
 export function getJobFetchApplications() {
@@ -283,3 +346,45 @@ export function adminApifyRun(platform?: string) {
 export function adminTnCoverage() {
   return invoke<Record<string, any>>("admin_tn_coverage");
 }
+
+export function adminAdzunaStatus() {
+  return invoke<{ ready: boolean; enabled: boolean; configured: boolean; queries_count: number; reason: string }>(
+    "admin_adzuna_status"
+  );
+}
+
+export function adminAdzunaRun() {
+  return invoke<QueueCollectionResult>("admin_adzuna_run");
+}
+
+export function adminJSearchStatus() {
+  return invoke<{ ready: boolean; enabled: boolean; configured: boolean; queries_count: number; reason: string }>(
+    "admin_jsearch_status"
+  );
+}
+
+export function adminJSearchRun() {
+  return invoke<QueueCollectionResult>("admin_jsearch_run");
+}
+
+export interface JobTokenSettings {
+  free_daily_feed_limit: number;
+  free_daily_chat_turns: number;
+  tokens_per_extra_feed: number;
+  tokens_per_chat_turn: number;
+}
+
+export function adminGetTokenSettings() {
+  return invoke<{ token_settings: JobTokenSettings }>("admin_get_token_settings");
+}
+
+export function adminUpdateTokenSettings(settings: Partial<JobTokenSettings>) {
+  return invoke<{ message: string; token_settings: JobTokenSettings }>("admin_update_token_settings", settings);
+}
+
+export function adminPruneJobs(maxAgeDays = 30) {
+  return invoke<{ message: string; expired_count: number; deleted_count: number }>("admin_prune_jobs", {
+    max_age_days: maxAgeDays,
+  });
+}
+

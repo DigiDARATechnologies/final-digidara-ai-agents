@@ -30,6 +30,12 @@ MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 50)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 MAX_ZIP_FILES = _int("MAX_ZIP_FILES", 1000)
 
+# How much of the student's source code the reviewers read, in characters.
+# Every file is sent in full while the whole zip fits; past this the biggest
+# files are trimmed (fairly, and flagged as trimmed to the model). ~160k chars
+# is roughly 40k tokens -- comfortably inside the model's context and cheap.
+CODE_REVIEW_CHAR_BUDGET = _int("CODE_REVIEW_CHAR_BUDGET", 160_000)
+
 # File extensions treated as readable source/text inside a submitted zip.
 CODE_TEXT_EXTENSIONS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rb", ".php", ".c", ".h",

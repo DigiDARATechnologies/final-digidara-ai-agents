@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
 import { newChatId, nowStr, useChats } from "./hooks/useChats";
@@ -58,7 +59,7 @@ import { createInitialCertificateState, handleCertificateText, openCertificateCh
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
-import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, signup as signupApi, type AuthUser } from "./lib/authApi";
+import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
 
 type OpenMenu = "user" | "notif" | null;
@@ -83,6 +84,7 @@ function toUser(authUser: AuthUser): User {
 }
 
 
+
 export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
@@ -100,6 +102,7 @@ export default function App() {
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>({});
   const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
   const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>({});
+  const [jobFetchPendingFiles, setJobFetchPendingFiles] = useState<Record<string, File | null>>({});
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [capstoneOnline, setCapstoneOnline] = useState(false);
   const [codeforgeOnline, setCodeforgeOnline] = useState(false);
@@ -114,6 +117,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -238,7 +242,7 @@ export default function App() {
         showToast(`Welcome, ${newUser.name.split(" ")[0]}!`);
       })
       .catch((error) => {
-        showToast(`Google sign-in failed: ${(error as Error).message}`);
+        showToast(`Google sign-in failed: ${normalizeAuthError(error)}`);
       })
       .finally(() => setGoogleAuthPending(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,6 +438,11 @@ export default function App() {
 
   function handleDeleteChat(chatId: string) {
     persistChats(chats.filter((c) => c.id !== chatId));
+    setResumeBuilderStates((prev) => {
+      const next = { ...prev };
+      delete next[chatId];
+      return next;
+    });
     if (currentChatId === chatId) {
       startNewChatLanding();
     }
@@ -463,7 +472,7 @@ export default function App() {
       showToast(`${mode === "signup" ? "Account created" : "Welcome back"}, ${newUser.name.split(" ")[0]}!`);
       return null;
     } catch (error) {
-      return (error as Error).message;
+      return normalizeAuthError(error);
     }
   }
 
@@ -567,7 +576,7 @@ export default function App() {
    * agent's own dedicated multi-turn flow, without losing what was already
    * said — mirrors openAgentChat's per-kind setup but appends onto the
    * current chat instead of replacing it. */
-  async function handoffToAgent(chatId: string, agent: Agent) {
+  async function handoffToAgent(chatId: string, agent: Agent, initialText?: string) {
     if (!user) return;
     appendAgentMessages(chatId, [{ text: `Connecting you to the ${agent.name}…` }]);
     setChats((prev) => {
@@ -596,8 +605,19 @@ export default function App() {
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "resume-builder") {
       const { state, messages } = await openResumeBuilderChat(user);
-      setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
+      const initialCommand = initialText?.trim().toLowerCase() === "create a resume"
+        ? "new"
+        : initialText?.trim().toLowerCase() === "upload an existing resume"
+          ? "upload"
+          : undefined;
+      if (initialCommand) {
+        const result = await handleResumeBuilderText(state, user, initialCommand);
+        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: result.state }));
+        appendAgentMessages(chatId, result.messages);
+      } else {
+        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
+      }
     } else if (agent.kind === "certificate") {
       const { state, messages } = await openCertificateChat(user);
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
@@ -634,7 +654,7 @@ export default function App() {
       const result = await routeMessage(text, history);
       const matched = result.agent_name ? findAgentByBackendName(result.agent_name) : undefined;
       if (matched) {
-        await handoffToAgent(chatId, matched);
+        await handoffToAgent(chatId, matched, text);
         return;
       }
       appendAgentMessages(chatId, [{ text: result.reply || "I'm not sure how to help with that yet — could you rephrase it?" }]);
@@ -829,8 +849,8 @@ export default function App() {
     if (kind === "aptitude") return aptitudeStates[chatId];
     if (kind === "communication") return communicationStates[chatId];
     if (kind === "certificate") return certificateStates[chatId];
-    if (kind === "job-fetch") return jobFetchStates[chatId];
     if (kind === "mock-interview") return mockInterviewStates[chatId];
+    if (kind === "resume-builder") return resumeBuilderStates[chatId];
     return undefined;
   }
 
@@ -841,11 +861,30 @@ export default function App() {
    * Capstone topic-request message regenerate topics from the new wording:
    * it's just re-running the normal flow handler with different text from
    * the same starting point, not a special "edit" code path per agent. */
-  function sendMessage(text: string, editIndex?: number, internal = false, displayText?: string, mockAnswer?: { answer: string; timing: MockInterviewAnswerTiming }) {
-    if (!text.trim() || !currentChatId || !user) return;
+  function sendMessage(
+    text: string,
+    editIndex?: number,
+    internal = false,
+    displayText?: string,
+    mockAnswer?: { answer: string; timing: MockInterviewAnswerTiming }
+  ) {
+    if (!currentChatId || !user) return;
     const chatId = currentChatId;
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
+    const pendingResume = agent?.kind === "job-fetch" ? jobFetchPendingFiles[chatId] : null;
+
+    if (!text.trim() && !pendingResume) return;
+
+    if (pendingResume) {
+      setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
+    }
+
+    const effectiveText = displayText ?? (
+      pendingResume
+        ? (text.trim() ? `📎 ${pendingResume.name}\n${text.trim()}` : `📎 ${pendingResume.name}`)
+        : text
+    );
 
     const isEdit = editIndex != null && !!chat;
     const editedMessage = isEdit ? chat!.messages[editIndex!] : undefined;
@@ -871,7 +910,7 @@ export default function App() {
         ? baseMessages
         : [
             ...baseMessages,
-            { role: "user" as const, text: displayText ?? text, time: nowStr(), stateSnapshot: resumeSnapshot },
+            { role: "user" as const, text: effectiveText, time: nowStr(), stateSnapshot: resumeSnapshot },
             ...(certificateGenerationNotice
               ? [{ role: "agent" as const, text: certificateGenerationNotice, time: nowStr() }]
               : []),
@@ -881,7 +920,7 @@ export default function App() {
         ...c,
         messages,
         updatedAt: Date.now(),
-        title: isFirstUserMsg ? ((displayText ?? text).length > 42 ? (displayText ?? text).slice(0, 42) + "…" : (displayText ?? text)) : c.title,
+        title: isFirstUserMsg ? (effectiveText.length > 42 ? effectiveText.slice(0, 42) + "…" : effectiveText) : c.title,
       };
     });
     persistChats(withUserMsg);
@@ -889,9 +928,10 @@ export default function App() {
 
     if (agent?.kind === "capstone") {
       const flowState = (resumeSnapshot as CapstoneFlowState | undefined) ?? createInitialCapstoneState(user);
-      handleCapstoneText(flowState, text).then(({ state: nextState, messages }) => {
+      handleCapstoneText(flowState, text).then(({ state: nextState, messages, openDashboard }) => {
         setCapstoneStates((prev) => ({ ...prev, [chatId]: nextState }));
         appendAgentMessages(chatId, messages);
+        if (openDashboard) setDashboardOpen(true);
         setTyping(false);
       });
       return;
@@ -947,12 +987,22 @@ export default function App() {
     }
 
     if (agent?.kind === "resume-builder") {
-      const flowState = resumeBuilderStates[chatId] ?? createInitialResumeBuilderState();
-      handleResumeBuilderText(flowState, user, text).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-        appendAgentMessages(chatId, messages);
-        setTyping(false);
-      });
+      // Use the state captured immediately before this user message. Using
+      // the latest React state here allowed a rapid reply or edited message
+      // to be interpreted as the previous question's answer (for example a
+      // location becoming the target role), which then corrupted the draft.
+      const flowState = (resumeSnapshot as ResumeBuilderFlowState | undefined)
+        ?? resumeBuilderStates[chatId]
+        ?? createInitialResumeBuilderState();
+      handleResumeBuilderText(flowState, user, text)
+        .then(({ state, messages }) => {
+          setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
+          appendAgentMessages(chatId, messages);
+        })
+        .catch((error) => {
+          appendAgentMessages(chatId, [{ text: `Resume Builder request failed: ${(error as Error).message}` }]);
+        })
+        .finally(() => setTyping(false));
       return;
     }
 
@@ -992,7 +1042,39 @@ export default function App() {
         setTyping(false);
         return;
       }
-      handleJobFetchText(flowState, text)
+      const history = baseMessages.map((m) => ({
+        role: m.role === "agent" ? "assistant" : "user",
+        content: m.text,
+      }));
+
+      if (pendingResume) {
+        submitJobFetchResume(flowState, pendingResume)
+          .then(async ({ state: uploadedState, messages: resumeMessages }) => {
+            let currentState = uploadedState;
+            const allMessages = [...resumeMessages];
+
+            if (text.trim()) {
+              const updatedHistory = [
+                ...history,
+                { role: "user", content: `Uploaded resume: ${pendingResume.name}` },
+                ...resumeMessages.map((m) => ({ role: "assistant", content: m.text })),
+              ];
+              const { state: finalTextState, messages: textMessages } = await handleJobFetchText(uploadedState, text.trim(), updatedHistory);
+              currentState = finalTextState;
+              allMessages.push(...textMessages);
+            }
+
+            setJobFetchStates((prev) => ({ ...prev, [chatId]: currentState }));
+            appendAgentMessages(chatId, allMessages);
+          })
+          .catch((error) => {
+            appendAgentMessages(chatId, [{ text: `Resume upload failed: ${(error as Error).message}` }]);
+          })
+          .finally(() => setTyping(false));
+        return;
+      }
+
+      handleJobFetchText(flowState, text, history)
         .then(({ state, messages }) => {
           setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
@@ -1012,6 +1094,10 @@ export default function App() {
   }
 
   function handleChooseOption(value: string, label?: string) {
+    if (value === "open_resume_dashboard") {
+      setDashboardOpen(true);
+      return;
+    }
     if (value.startsWith("open:")) {
       const applyUrl = safeJobApplyUrl(value.slice(5));
       if (!applyUrl) {
@@ -1019,6 +1105,11 @@ export default function App() {
         return;
       }
       window.open(applyUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (value === "action:open_billing") {
+      setSettingsInitialTab("billing");
+      setSettingsOpen(true);
       return;
     }
     sendMessage(value, undefined, false, label);
@@ -1111,16 +1202,8 @@ export default function App() {
 
     if (agent?.kind === "job-fetch") {
       const file = Array.from(files)[0];
-      const flowState = jobFetchStates[chatId];
-      if (!file || !flowState) return;
-      setTyping(true);
-      submitJobFetchResume(flowState, file)
-        .then(({ state, messages }) => {
-          setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
-          appendAgentMessages(chatId, messages);
-        })
-        .catch((error) => appendAgentMessages(chatId, [{ text: `Resume upload failed: ${(error as Error).message}` }]))
-        .finally(() => setTyping(false));
+      if (!file) return;
+      setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: file }));
       return;
     }
 
@@ -1160,6 +1243,7 @@ export default function App() {
     setCodeforgeStates({});
     setAptitudeStates({});
     setCommunicationStates({});
+    setResumeBuilderStates({});
     startNewChatLanding();
     setSettingsOpen(false);
     showToast("Chat history cleared.");
@@ -1171,8 +1255,7 @@ export default function App() {
         <div className="login-overlay">
           <div className="login-card">
             <div className="login-logo">
-              <span className="logo-mark">⚡</span>
-              <span className="logo-text">Digi<b>DARA</b></span>
+              <Logo theme="light" size="md" />
             </div>
             <p className="login-sub">Signing you in with Google…</p>
           </div>
@@ -1203,7 +1286,28 @@ export default function App() {
   const jobFetchState = currentChat ? jobFetchStates[currentChat.id] : undefined;
   const mockInterviewState = currentChat ? mockInterviewStates[currentChat.id] : undefined;
 
-  const pendingFiles = capstoneState ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f) : [];
+  const pendingFiles = isJobFetchChat && currentChat && jobFetchPendingFiles[currentChat.id]
+    ? [jobFetchPendingFiles[currentChat.id]!]
+    : capstoneState
+      ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f)
+      : [];
+
+  function handleRemovePendingFile(index: number) {
+    if (!currentChatId) return;
+    if (isJobFetchChat) {
+      setJobFetchPendingFiles((prev) => ({ ...prev, [currentChatId]: null }));
+      return;
+    }
+    if (isCapstoneChat && capstoneState) {
+      const files = [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f);
+      const toRemove = files[index];
+      if (toRemove === capstoneState.docxFile) {
+        setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], docxFile: undefined } }));
+      } else if (toRemove === capstoneState.zipFile) {
+        setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], zipFile: undefined } }));
+      }
+    }
+  }
   const systemOnline = isCapstoneChat ? capstoneOnline : isCodeForgeChat ? codeforgeOnline : isAptitudeChat ? aptitudeOnline : isCommunicationChat ? communicationOnline : isResumeBuilderChat ? resumeBuilderOnline : isCertificateChat ? certificateOnline : isJobFetchChat ? jobFetchOnline : true;
 
   const CAPSTONE_STEP_LABELS: Record<string, string> = {
@@ -1263,6 +1367,17 @@ export default function App() {
           });
         },
       };
+    }
+    if (typing) {
+      if (capstoneState.step === "awaiting_topic_request") {
+        typingLabel = "Searching the web for real project ideas and generating two options…";
+      } else if (capstoneState.step === "awaiting_topic_choice") {
+        typingLabel = "Writing your detailed project requirements…";
+      } else if (capstoneState.step === "awaiting_submission") {
+        typingLabel = "Grading your submission — running your code, verifying the output, and scoring quality…";
+      } else if (capstoneState.step === "awaiting_viva_answer") {
+        typingLabel = "Checking your answer…";
+      }
     }
   } else if (isCodeForgeChat && codeforgeState) {
     connectorStatus = CODEFORGE_STEP_LABELS[codeforgeState.step] ?? codeforgeState.step;
@@ -1375,7 +1490,12 @@ export default function App() {
 
           {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
 
-          {view === "chat" && newChatPending && <NewChatLanding onSend={startNewChatWithMessage} />}
+          {view === "chat" && newChatPending && (
+            <NewChatLanding
+              onSend={startNewChatWithMessage}
+              onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
+            />
+          )}
 
           {view === "chat" && !newChatPending && currentChat && (
             <div className="chat-workspace">
@@ -1385,7 +1505,7 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
                 onBack={handleChatBack}
                 onSend={sendMessage}
@@ -1395,6 +1515,7 @@ export default function App() {
                 attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
+                onRemovePendingFile={handleRemovePendingFile}
                 onAttachDisabled={() => showToast("File attachments are only available in the Capstone Project Agent chat.")}
                 codeMode={isCodeForgeChat && codeforgeState?.step === "awaiting_code"}
                 codeSeed={codeforgeState?.starterCode}
@@ -1460,6 +1581,7 @@ export default function App() {
 
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsInitialTab}
         user={user}
         chats={chats}
         onOpenChat={(chatId) => {

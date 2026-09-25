@@ -107,7 +107,7 @@ class UserDataLifecycleTests(unittest.TestCase):
                 data={
                     "action": "upload_resume",
                     "payload": "{}",
-                    "file": (io.BytesIO(b"new resume"), "new_resume.pdf"),
+                    "file": (io.BytesIO(b"%PDF-1.4 test new resume content"), "new_resume.pdf"),
                 },
                 content_type="multipart/form-data",
                 headers=self.headers,
@@ -118,6 +118,73 @@ class UserDataLifecycleTests(unittest.TestCase):
             # The newly-saved file is the only thing left in the folder.
             self.assertEqual(len(list(user_dir.iterdir())), 1)
 
+    def test_upload_rejects_spoofed_magic_bytes(self):
+        # A file with an allowed extension (.pdf) whose content is not a PDF must be rejected.
+        response = self.client.post(
+            "/api/invoke",
+            data={
+                "action": "upload_resume",
+                "payload": "{}",
+                "file": (io.BytesIO(b"<script>alert(1)</script>"), "evil.pdf"),
+            },
+            content_type="multipart/form-data",
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("File content does not match", response.get_json()["error"])
+
+    @patch("job_agent.routes.get_db")
+    def test_resume_download_serves_stored_file(self, get_db):
+        db = MagicMock()
+        cursor = MagicMock()
+        db.cursor.return_value = cursor
+        cursor.fetchone.return_value = {
+            "user_id": "learner",
+            "resume_filename": "learner/saved_resume.pdf",
+            "resume_original_name": "My_CV.pdf",
+        }
+        get_db.return_value = db
+
+        with tempfile.TemporaryDirectory() as directory, patch("job_agent.routes.UPLOAD_DIR", Path(directory)):
+            user_dir = Path(directory) / "learner"
+            user_dir.mkdir()
+            pdf_file = user_dir / "saved_resume.pdf"
+            pdf_content = b"%PDF-1.4 stored resume bytes"
+            pdf_file.write_bytes(pdf_content)
+
+            response = self.client.post(
+                "/api/invoke",
+                json={"action": "download_resume", "payload": {}},
+                headers=self.headers,
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data, pdf_content)
+            self.assertIn("attachment", response.headers.get("Content-Disposition", ""))
+            self.assertIn("My_CV.pdf", response.headers.get("Content-Disposition", ""))
+
+    @patch("job_agent.routes.get_db")
+    def test_profile_rejects_invalid_or_javascript_resume_url(self, get_db):
+        db = MagicMock()
+        get_db.return_value = db
+        response = self.client.post(
+            "/api/invoke",
+            json={
+                "action": "update_profile",
+                "payload": {
+                    "full_name": "Test Learner",
+                    "skills": ["Python"],
+                    "preferred_titles": ["Dev"],
+                    "preferred_locations": ["Chennai"],
+                    "resume_url": "javascript:alert(1)",
+                },
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid resume URL", response.get_json()["error"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

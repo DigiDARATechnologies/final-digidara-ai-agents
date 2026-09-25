@@ -315,7 +315,12 @@ def test_generate_bullets_rejects_empty_raw_input(client):
     assert "raw_input" in response.get_json()["message"]
 
 
-def test_generate_bullets_rejects_very_short_raw_input(client):
+def test_generate_bullets_accepts_a_thin_but_nonempty_source(client, monkeypatch):
+    monkeypatch.setattr(
+        ai,
+        "get_ai_response_text",
+        lambda prompt, max_tokens: json.dumps({"bullets": ["Built API endpoints."]}),
+    )
     response = client.post(
         "/api/ai/generate-bullets",
         json={
@@ -325,8 +330,8 @@ def test_generate_bullets_rejects_very_short_raw_input(client):
         },
     )
 
-    assert response.status_code == 400
-    assert "at least" in response.get_json()["message"]
+    assert response.status_code == 200
+    assert response.get_json()["bullets"] == ["Built API endpoints."]
 
 
 def test_generate_summary_requires_resume_and_target_role(client):
@@ -349,6 +354,53 @@ def test_tailor_to_jd_requires_resume_and_job_description(client):
     assert response.status_code == 400
     assert "resume_json" in response.get_json()["message"]
     assert "job_description" in response.get_json()["message"]
+
+
+def test_resume_edit_returns_a_reviewable_proposal_without_mutating_identity(client, monkeypatch):
+    def fake_ai_response(prompt, max_tokens):
+        assert "Candidate request:" in prompt
+        assert max_tokens == 3500
+        return json.dumps({
+            "proposed_resume": {
+                "id": 999,
+                "user_id": "wrong-user",
+                "summary": "Concise, evidence-based software engineer summary.",
+                "skills": [{"skill_name": "Python"}],
+            },
+            "changes": ["Shortened the professional summary.", "Kept the supported Python skill."],
+            "warnings": ["Review the wording before applying it."],
+        })
+
+    monkeypatch.setattr(ai, "get_ai_response_text", fake_ai_response)
+    response = client.post(
+        "/api/ai/suggest-resume-edit",
+        json={
+            "edit_request": "Make my summary shorter.",
+            "resume": {
+                "id": 42,
+                "user_id": "test-user",
+                "title": "My resume",
+                "summary": "Long existing summary.",
+                "skills": [{"skill_name": "Python"}, {"skill_name": "SQL"}],
+                "education": [{"school": "Example University"}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["requires_confirmation"] is True
+    assert payload["resume"]["id"] == 42
+    assert payload["resume"]["user_id"] == "test-user"
+    assert payload["resume"]["summary"] == "Concise, evidence-based software engineer summary."
+    assert payload["resume"]["education"] == [{"school": "Example University"}]
+
+
+def test_resume_edit_requires_a_nonempty_request(client):
+    response = client.post("/api/ai/suggest-resume-edit", json={"resume": {"summary": "Existing"}})
+
+    assert response.status_code == 400
+    assert response.get_json()["message"] == "edit_request is required"
 
 
 def test_optimize_resume_returns_ai_generated_summary_and_bullets(client, monkeypatch):
@@ -414,6 +466,49 @@ def test_optimize_resume_returns_ai_generated_summary_and_bullets(client, monkey
         "achievements": 0,
         "declaration": False,
     }
+
+
+def test_optimize_resume_writes_the_selected_role_and_keeps_recommendations_out_of_skills(client, monkeypatch):
+    def fake_ai_response(prompt, max_tokens):
+        assert "Target role: Data Analyst" in prompt
+        assert '"skills":[{"skill_name":"Python"' in prompt
+        return json.dumps({
+            "summary": "Data Analyst candidate with verified Python and SQL skills.",
+            "skills": ["SQL", "DAX", "Python"],
+            "experience": [],
+            "projects": [],
+            "role_analysis": {
+                "matched_skills": ["Python", "SQL", "Power BI", "Excel"],
+                "recommended_skills_to_learn": ["DAX"],
+                "missing_information": ["Examples of data-analysis work"],
+            },
+        })
+
+    monkeypatch.setattr(ai, "get_ai_response_text", fake_ai_response)
+    response = client.post(
+        "/api/ai/optimize-resume",
+        json={
+            "target_role": "Data Analyst",
+            "resume": {
+                "target_role": "Python Web Developer",
+                "skills": [
+                    {"skill_name": "Python"}, {"skill_name": "SQL"},
+                    {"skill_name": "Power BI"}, {"skill_name": "Excel"},
+                ],
+                "experience": [{"role": "Python Web Developer", "company": "Acme", "raw_input": "Developed web applications using Python."}],
+                "education": [{"degree": "B.Tech", "field": "Computer Science", "school": "Anna University", "end_date": "2024"}],
+                "projects": [],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["resume"]["target_role"] == "Data Analyst"
+    assert payload["resume"]["experience"][0]["role"] == "Python Web Developer"
+    assert [item["skill_name"] for item in payload["resume"]["skills"]] == ["SQL", "Python", "Power BI", "Excel"]
+    assert payload["role_analysis"]["recommended_skills_to_learn"] == ["DAX"]
+    assert "DAX" not in [item["skill_name"] for item in payload["resume"]["skills"]]
 
 
 def test_optimize_resume_applies_grounded_achievement_and_declaration_content(client, monkeypatch):
@@ -566,13 +661,39 @@ def test_optimize_resume_keeps_original_project_when_ai_omits_its_bullets(client
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["resume"]["projects"][0]["description"].startswith("Built a reporting dashboard")
-    assert payload["generated"]["projects"] == 0
-    assert payload["skipped"] == [{
-        "section": "projects",
-        "index": 0,
-        "reason": "AI did not return usable rewritten bullets; the original uploaded text was retained.",
-    }]
+    assert payload["resume"]["projects"][0]["ai_generated_bullets"] == ["Built a reporting dashboard from verified sales data using SQL."]
+    assert payload["generated"]["projects"] == 1
+    assert payload["skipped"] == []
+
+
+def test_optimize_resume_turns_thin_source_notes_into_bullets_not_raw_paragraphs(client, monkeypatch):
+    monkeypatch.setattr(
+        ai,
+        "get_ai_response_text",
+        lambda prompt, max_tokens: json.dumps({
+            "summary": "Candidate with verified web development project experience.",
+            "skills": ["React JS"],
+            "experience": [{"index": 0, "bullets": ["Developed a Swiggy website."]}],
+            "projects": [{"index": 0, "bullets": ["Built the project with React JS."]}],
+        }),
+    )
+    response = client.post(
+        "/api/ai/optimize-resume",
+        json={
+            "target_role": "Frontend Developer",
+            "resume": {
+                "experience": [{"company": "Student Project", "role": "Developer", "raw_input": "i developed a swiggy website"}],
+                "projects": [{"title": "Food Delivery UI", "description": "react js"}],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    resume = response.get_json()["resume"]
+    assert resume["experience"][0]["ai_generated_bullets"]
+    assert resume["projects"][0]["ai_generated_bullets"]
+    assert resume["experience"][0]["ai_generated_bullets"] != ["i developed a swiggy website"]
+    assert resume["projects"][0]["ai_generated_bullets"] != ["react js"]
 
 
 def test_optimize_resume_reports_entries_without_usable_content(client, monkeypatch):

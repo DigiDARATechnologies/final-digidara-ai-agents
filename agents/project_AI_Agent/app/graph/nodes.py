@@ -19,11 +19,18 @@ from app.db.models import (
 from app.execution.browser_check import BrowserCheckUnavailable, run_html_submission
 from app.execution.entry_point import find_html_entry_point, find_node_entry_point, find_python_entry_point
 from app.execution.judge0_client import Judge0Unavailable, run_node_submission, run_python_submission
-from app.graph import prompts
+from app.graph import prompts, revision
 from app.graph.report import build_about_markdown, build_review_markdown
 from app.graph.state import ProjectAgentState
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
-from app.ingestion.structure_check import check_required_paths, check_required_sections
+from app.ingestion.structure_check import (
+    REPORT_SECTIONS,
+    check_required_paths,
+    check_required_sections,
+    drop_retired_sections,
+)
+from app.ingestion.screenshots import ensure_screenshot_folder, normalise_required_screenshots, screenshot_status
+from app.ingestion.syntax_check import check_syntax
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
 
@@ -177,6 +184,14 @@ def submission_guide_node(state: ProjectAgentState) -> dict:
         system=prompts.submission_guide_prompt(state),
         user="Write the submission guide now.",
     )
+    # What the report needs is decided here, not by the model: exactly three
+    # sections, no code and no screenshots inside the .docx. A model that wandered
+    # back to the old five-section layout is overridden.
+    result["docx_required_sections"] = list(REPORT_SECTIONS)
+    # The screenshots belong in the ZIP's output_screenshots folder. Each one gets a
+    # concrete file name, and the folder is guaranteed to be a required path.
+    result["required_screenshots"] = normalise_required_screenshots(result.get("required_screenshots"))
+    ensure_screenshot_folder(result)
     about_markdown = build_about_markdown({**state, "submission_guide": result})
 
     session = get_session()
@@ -199,11 +214,7 @@ def docx_ingest_node(state: ProjectAgentState) -> dict:
         parsed = ingest_docx(state["docx_path"])
     except DocxIngestError as exc:
         return {"status": "error", "feedback": str(exc)}
-    return {
-        "doc_sections": parsed["sections"],
-        "screenshots_present": parsed["screenshots_present"],
-        "screenshot_ocr_text": parsed["screenshot_ocr_text"],
-    }
+    return {"doc_sections": parsed["sections"]}
 
 
 # --- Node 7: ZipIngestNode (deterministic) ----------------------------------
@@ -217,7 +228,19 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
     return {
         "zip_file_tree": parsed["zip_file_tree"],
         "zip_code_files": parsed["zip_code_files"],
+        "screenshot_evidence": parsed["screenshot_evidence"],
     }
+
+
+# --- SyntaxCheckNode (deterministic) ---------------------------------------
+
+@log_node
+def syntax_check_node(state: ProjectAgentState) -> dict:
+    """Parse every checkable source file in the zip (Python, JSON, TOML) with a
+    real parser. Errors here are facts, not LLM opinion, and send the submission
+    back for another upload before any scoring happens. See
+    app/ingestion/syntax_check.py for what is and isn't covered."""
+    return {"syntax_report": check_syntax(state.get("zip_code_files"))}
 
 
 # --- Node 8: StructureValidationNode (deterministic presence check + LLM content quality) ---
@@ -225,7 +248,8 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
 @log_node
 def structure_validation_node(state: ProjectAgentState) -> dict:
     guide = state.get("submission_guide") or {}
-    deterministic = check_required_sections(guide.get("docx_required_sections"), state.get("doc_sections"))
+    required_sections = drop_retired_sections(guide.get("docx_required_sections"))
+    deterministic = check_required_sections(required_sections, state.get("doc_sections"))
 
     result = call_json(
         system=prompts.structure_validation_prompt(state, deterministic),
@@ -280,6 +304,15 @@ def structure_gate_passed(state: ProjectAgentState) -> bool:
     check either way — zip_ingest_node already hard-stops on that.)"""
     if state.get("status") == "error":
         return False
+    # A file that does not even parse is not gradable code either: it goes back
+    # for another upload instead of being scored.
+    if (state.get("syntax_report") or {}).get("has_errors"):
+        return False
+    # The screenshots the project needs must actually be in the zip (a count of
+    # real, readable images -- see app/ingestion/screenshots.py). A missing
+    # screenshots folder is the extreme case of this, and is explained on its own.
+    if not screenshot_status(state.get("submission_guide") or {}, state.get("screenshot_evidence"))["complete"]:
+        return False
     return bool(state.get("structure_score", {}).get("is_complete"))
 
 
@@ -332,12 +365,18 @@ def code_execution_node(state: ProjectAgentState) -> dict:
 def request_revision_node(state: ProjectAgentState) -> dict:
     structure = state.get("structure_score", {})
     zip_structure = state.get("zip_structure_score", {})
-    notes: list[str] = []
-    if not structure.get("is_complete", True):
-        notes.append(f"Report: {structure.get('notes', 'Missing required sections.')}")
-    if not zip_structure.get("is_complete", True):
-        notes.append(f"Code zip: {zip_structure.get('notes', 'Folder structure incomplete.')}")
-    revision_notes = "\n".join(notes) or "Submission is incomplete — see validation notes."
+    # Each problem is spelled out: WHAT is missing, what belongs in it and what
+    # to do about it (see app/graph/revision.py) -- not just "src folder is
+    # missing" or the reviewers' paraphrase.
+    notes = revision.revision_items(state)
+    # Syntax errors are NOT folded into these notes: they travel as structured
+    # data (syntax_report.errors) so the chat can show each one the way a
+    # terminal would, and the review report lists them in their own section.
+    # With syntax errors as the only problem there is nothing else to say.
+    if (state.get("syntax_report") or {}).get("has_errors"):
+        revision_notes = revision.as_bullets(notes)
+    else:
+        revision_notes = revision.as_bullets(notes) or "Submission is incomplete — see validation notes."
     review_markdown = build_review_markdown({**state, "status": "needs_revision", "revision_notes": revision_notes})
 
     session = get_session()
@@ -355,15 +394,66 @@ def request_revision_node(state: ProjectAgentState) -> dict:
     return {"status": "needs_revision", "revision_notes": revision_notes, "review_markdown": review_markdown}
 
 
-# --- Node 10: OutputVerificationNode (LLM, OCR-based) -----------------------
+_REQUIREMENT_STATUSES = {"met", "partial", "not_met"}
+
+
+_SCREENSHOT_STATUSES = {"present", "unclear", "missing"}
+
+
+def _normalise_screenshots_check(items) -> list[dict]:
+    """Same idea as the requirements check: a closed set of statuses, and anything
+    unrecognised is "unclear" -- never silently "present"."""
+    checks = []
+    for item in items or []:
+        if not isinstance(item, dict) or not str(item.get("screenshot", "")).strip():
+            continue
+        status = str(item.get("status", "")).strip().lower()
+        checks.append({
+            "screenshot": str(item["screenshot"]).strip(),
+            "status": status if status in _SCREENSHOT_STATUSES else "unclear",
+            "evidence": str(item.get("evidence", "")).strip(),
+        })
+    return checks
+
+
+def _normalise_requirements_check(items) -> list[dict]:
+    """Coerce the model's per-requirement verdicts into a clean, closed set of
+    statuses. An unrecognised status is treated as "partial" -- never silently as
+    "met", since "met" is the one verdict that has to be earned."""
+    checks = []
+    for item in items or []:
+        if not isinstance(item, dict) or not str(item.get("requirement", "")).strip():
+            continue
+        status = str(item.get("status", "")).strip().lower().replace(" ", "_").replace("-", "_")
+        checks.append({
+            "requirement": str(item["requirement"]).strip(),
+            "status": status if status in _REQUIREMENT_STATUSES else "partial",
+            "evidence": str(item.get("evidence", "")).strip(),
+        })
+    return checks
+
+
+# --- Node 10: OutputVerificationNode (LLM, reads the full code) --------------
 
 @log_node
 def output_verification_node(state: ProjectAgentState) -> dict:
     result = call_json(
         system=prompts.output_verification_prompt(state),
-        user="Verify the output evidence now.",
+        user="Verify the requirements against the code now.",
         temperature=_SCORING_TEMPERATURE,
     )
+    checks = _normalise_requirements_check(result.get("requirements_check"))
+    result["requirements_check"] = checks
+    result["screenshots_check"] = _normalise_screenshots_check(result.get("screenshots_check"))
+    # Kept in the shape the report and the score aggregator already read.
+    result["requirements_demonstrated"] = [
+        f"{item['requirement']}: {item['status'].replace('_', ' ')}" for item in checks
+    ]
+    # "Every requirement is met" is arithmetic over the per-requirement verdicts,
+    # so a model that lists a requirement as not met can't also declare the
+    # output correct.
+    if checks and any(item["status"] != "met" for item in checks):
+        result["output_correct"] = False
     return {"output_verification": result}
 
 
@@ -417,6 +507,13 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
         system=prompts.feedback_generator_prompt(state, config.PASS_THRESHOLD, passed),
         user="Write the feedback message now.",
     )
+    if not passed:
+        # The model's feedback is the readable summary; the specifics of what is
+        # missing (requirements the code doesn't implement, absent files/folders)
+        # are facts already established, so they are listed exactly, not paraphrased.
+        fixes = revision.fix_list(state)
+        if fixes:
+            feedback_text = f"{feedback_text}\n\n### What to fix before you resubmit\n{revision.as_bullets(fixes)}"
 
     # Passing a content grade is final. Failing one is not — the feedback we
     # just generated explicitly tells the student what to fix "to pass on
@@ -441,6 +538,11 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
                 "code_quality_score": state.get("code_quality_score"),
                 "structure_score": state.get("structure_score"),
                 "zip_structure_score": state.get("zip_structure_score"),
+                # Kept for the final project report (app/reports/final_report.py).
+                "syntax_report": {key: (state.get("syntax_report") or {}).get(key)
+                                  for key in ("checked_files", "checked_languages", "error_count")},
+                "screenshot_evidence": {"valid_files": (state.get("screenshot_evidence") or {}).get("valid_files") or []},
+                "submitted_files": list(state.get("zip_file_tree") or [])[:300],
             }
             submission.feedback_text = feedback_text
             submission.review_markdown = review_markdown

@@ -37,14 +37,21 @@ class ProjectAgentState(TypedDict, total=False):
 
     docx_path: str
     doc_sections: dict[str, str]
-    screenshots_present: bool
-    screenshot_ocr_text: str
     structure_score: dict[str, Any]  # StructureValidationNode output
 
     zip_path: str
     zip_file_tree: list[str]
     zip_code_files: dict[str, str]
     zip_structure_score: dict[str, Any]  # ZipStructureValidationNode output
+    # The output screenshots found in the zip (see app/ingestion/screenshots.py):
+    # {files, valid_files, ocr_text}. Only valid_files count towards the guide's
+    # required_screenshots.
+    screenshot_evidence: dict[str, Any]
+    # SyntaxCheckNode output -- real-parser results over the zip's Python/JSON/
+    # TOML files: {checked_files, checked_languages, unchecked_extensions,
+    # errors[{path, language, line, column, message, source_line}], error_count,
+    # has_errors}. Errors here send the submission back before any scoring.
+    syntax_report: dict[str, Any]
 
     # CodeExecutionNode output — best-effort, sandboxed (Judge0) run of the
     # submission's detected Python entry point. {"available": False, "reason": ...}

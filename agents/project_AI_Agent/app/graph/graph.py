@@ -95,6 +95,7 @@ def build_submission_graph():
 
     graph.add_node("docx_ingest", nodes.docx_ingest_node)
     graph.add_node("zip_ingest", nodes.zip_ingest_node)
+    graph.add_node("syntax_check", nodes.syntax_check_node)
     graph.add_node("structure_validation", nodes.structure_validation_node)
     graph.add_node("zip_structure_validation", nodes.zip_structure_validation_node)
     graph.add_node("request_revision", nodes.request_revision_node)
@@ -114,8 +115,9 @@ def build_submission_graph():
     graph.add_conditional_edges(
         "zip_ingest",
         _after_zip_ingest_router,
-        {"continue": "structure_validation", "halt": END},
+        {"continue": "syntax_check", "halt": END},
     )
+    graph.add_edge("syntax_check", "structure_validation")
     graph.add_edge("structure_validation", "zip_structure_validation")
     graph.add_conditional_edges(
         "zip_structure_validation",
