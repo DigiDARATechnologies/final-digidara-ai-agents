@@ -100,7 +100,7 @@ export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onT
             ))}
           </div>
         </div>
-        <button className="avatar avatar-btn">{user.initial}</button>
+        <button className="avatar avatar-btn">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : user.initial}</button>
       </div>
     </header>
   );
