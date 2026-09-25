@@ -737,7 +737,7 @@ OUTPUT: plain text only (this is shown directly on Screen 9, not JSON)."""
 
 # --- Viva (oral defense) prompts -- see app/viva.py ------------------------
 
-def viva_question_generator_prompt(chosen_topic: dict, course_medium: str, code_files: dict) -> str:
+def viva_question_generator_prompt(chosen_topic: dict, course_medium: str, code_files: dict, avoid_questions: list[str] | None = None) -> str:
     file_char_limit = 3000
 
     def _file_block(path: str, content: str) -> str:
@@ -746,6 +746,15 @@ def viva_question_generator_prompt(chosen_topic: dict, course_medium: str, code_
         return f"--- {path} (truncated) ---\n{content[:file_char_limit]}\n...[truncated]"
 
     files_text = "\n\n".join(_file_block(path, content) for path, content in list(code_files.items())[:8])
+
+    avoid_block = ""
+    if avoid_questions:
+        listed = "\n".join(f"- {question}" for question in avoid_questions)
+        avoid_block = f"""
+
+This is a RE-ATTEMPT. The student was already asked the questions below in earlier attempts. Every new question must be about a DIFFERENT point -- a different function, concept, design decision or scenario -- not a rewording of any of these:
+{listed}
+"""
 
     return f"""You are conducting a viva (oral defense) interview for a student's capstone project submission. The content grading already passed -- this viva verifies the student genuinely understands and built the project themselves.
 
@@ -756,7 +765,7 @@ TECHNOLOGY / MEDIUM: {course_medium}
 The student's actual submitted source code:
 
 {files_text}
-
+{avoid_block}
 Generate exactly 10 viva questions, mixing four kinds roughly evenly:
 1. PROJECT UNDERSTANDING -- what the project does, why specific design choices were made, what problem it solves.
 2. TECHNOLOGY-SPECIFIC -- core {course_medium} concepts this project necessarily relies on.

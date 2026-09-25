@@ -59,6 +59,31 @@ and the reviewer feedback, with the DigiDARA Technologies logo on every page
 (`app/reports/final_report.py`). It is rebuilt from the stored grading data, and
 refused with 409 before both are passed.
 
+**Viva.** After the code grade passes, the student is asked 10 questions about their
+own project. At least 50% correct passes. They get up to **3 attempts**; every attempt
+has a fresh set of questions, and no question already asked in an earlier attempt is
+asked again (checked in code, not left to the model). Results are reported as
+**Good** (80%+), **Average** (50-79%) or **Bad** — never as a mark. A failed attempt
+with attempts left answers `viva_retry`; the client then calls the gateway action
+`start_viva_attempt` for the next set. Failing all three sends the student back to
+resubmit. Finished attempts are kept in `submissions.viva_attempts_json`.
+
+**Certificate.** Once BOTH the code score and the viva are passed
+(`app/reports/certificate.py`, printed on the DigiDARA certificate template):
+
+| Gateway action | What it does |
+|---|---|
+| `preview_certificate` `{submission_id, name?}` | the certificate as a base64 JPEG plus the name that would be printed; stores nothing |
+| `confirm_certificate` `{submission_id, name}` | the student's OK: locks the name and issues it |
+| `download_certificate` `{submission_id}` | the PDF (base64), only after OK; also `GET /api/submission/{id}/certificate.pdf` |
+
+The certificate carries the student's name, **their project's title and summary**,
+its technology and skills, a Good/Average rating for the project and the viva (no marks),
+the issue date and an id (`DDT-CAP-<year>-<submission>`). Only the name can be edited,
+and only before OK; afterwards the stored name and issue date never change. The preview
+is rendered from the very PDF that is downloaded (`pypdfium2`), so what is approved is
+what is issued.
+
 ## Setup
 
 ```bash

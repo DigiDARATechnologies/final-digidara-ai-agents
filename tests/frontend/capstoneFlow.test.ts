@@ -6,6 +6,7 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   confirmTimer: jest.fn(),
   downloadFinalReport: jest.fn(),
   getThreadStatus: jest.fn(),
+  startVivaAttempt: jest.fn(),
   submitVivaAnswer: jest.fn(),
   uploadSubmission: jest.fn(),
 }));
@@ -298,14 +299,21 @@ describe('the final report after the score and the viva both pass', () => {
   const lastVivaAnswer: CapstoneFlowState = { ...vivaState, vivaProgress: '10 of 10', vivaSubmissionId: 'sub-42' };
   const passedState: CapstoneFlowState = { ...lastVivaAnswer, step: 'graded', passed: true, finalScore: 88 };
 
-  test('passing the viva offers the final report download, and says the project is complete', async () => {
+  const values = (options?: { value: string }[]) => (options ?? []).map((option) => option.value);
+
+  test('passing the viva offers the certificate and the final report, and says the project is complete', async () => {
     jest.mocked(api.submitVivaAnswer).mockResolvedValue({
-      thread_id: 'thread', status: 'graded', final_score: 88, passed: true, feedback: 'Great.', viva_score: 8, viva_passed: true,
+      thread_id: 'thread', status: 'graded', final_score: 88, passed: true, feedback: 'Great.', viva_score: 8, viva_passed: true, viva_rating: 'Good',
     } as never);
     const result = await handleCapstoneText(lastVivaAnswer, 'final answer');
     expect(result.state.step).toBe('graded');
     expect(result.messages[0].text).toContain('the code score and the viva are both passed');
-    expect(result.messages[0].options).toEqual([expect.objectContaining({ label: 'Download final report (PDF)', value: 'download_final_report' })]);
+    expect(result.messages[0].options).toEqual([
+      expect.objectContaining({ label: 'Get my certificate', value: 'open_certificate' }),
+      expect.objectContaining({ label: 'Download final report (PDF)', value: 'download_final_report' }),
+    ]);
+    expect(result.messages[0].text).toContain('Viva: Good');
+    expect(result.messages[0].text).not.toMatch(/\d+\s*\/\s*10\b/);   // a rating, never a mark
   });
 
   test('a failed grade never offers the report', async () => {
@@ -321,7 +329,7 @@ describe('the final report after the score and the viva both pass', () => {
     const result = await handleCapstoneText(passedState, 'download_final_report');
     expect(api.downloadFinalReport).toHaveBeenCalledWith('sub-42');
     expect(result.messages[0].text).toContain('final report has been downloaded');
-    expect(result.messages[0].options?.[0].value).toBe('download_final_report');   // can be downloaded again
+    expect(values(result.messages[0].options)).toContain('download_final_report');   // can be downloaded again
     expect(result.state.step).toBe('graded');
   });
 
@@ -329,7 +337,7 @@ describe('the final report after the score and the viva both pass', () => {
     jest.mocked(api.downloadFinalReport).mockRejectedValue(new Error('offline'));
     const result = await handleCapstoneText(passedState, 'download_final_report');
     expect(result.messages[0].text).toContain('could not download the report: offline');
-    expect(result.messages[0].options?.[0].value).toBe('download_final_report');
+    expect(values(result.messages[0].options)).toContain('download_final_report');
   });
 
   test('without a passed result and a submission there is nothing to download, and the backend is not called', async () => {
@@ -341,7 +349,100 @@ describe('the final report after the score and the viva both pass', () => {
   test('any other message once passed still gets the "already graded" reply, with the report option alongside', async () => {
     const result = await handleCapstoneText(passedState, 'thanks');
     expect(result.messages[0].text).toContain('already been graded');
-    expect(result.messages[0].options?.[0].value).toBe('download_final_report');
+    expect(values(result.messages[0].options)).toEqual(['open_certificate', 'download_final_report']);
+  });
+
+  test('choosing the certificate opens the dashboard preview, without calling the backend, and only once passed', async () => {
+    const result = await handleCapstoneText(passedState, 'open_certificate');
+    expect(result.openDashboard).toBe(true);
+    expect(result.messages[0].text).toContain('click OK');
+    expect(result.messages[0].text).toContain('only thing you can change');
+    const notPassed = await handleCapstoneText({ ...passedState, vivaSubmissionId: null }, 'open_certificate');
+    expect(notPassed.openDashboard).toBeUndefined();
+    expect(notPassed.messages[0].text).toContain('once both your project score and the viva are passed');
+  });
+});
+
+describe('the viva: three attempts, new questions each time, a rating instead of a mark', () => {
+  const lastAnswer: CapstoneFlowState = { ...vivaState, vivaProgress: '10 of 10', vivaAttempt: 1, vivaAttemptsTotal: 3 };
+  const retryState: CapstoneFlowState = { ...vivaState, vivaQuestionId: null, vivaQuestionText: null, vivaProgress: null, vivaRetryPending: true, vivaAttempt: 1, vivaAttemptsTotal: 3 };
+
+  test('a failed attempt with attempts left is not a failure: it reports a rating and offers the next attempt', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'viva_retry', viva_passed: false, viva_rating: 'Bad', viva_attempt: 1, viva_attempts_left: 2, viva_attempts_total: 3,
+    } as never);
+    const result = await handleCapstoneText(lastAnswer, 'final answer');
+    expect(result.state.step).toBe('awaiting_viva_answer');
+    expect(result.state.vivaRetryPending).toBe(true);
+    expect(result.state.vivaSubmissionId).toBe('submission');       // kept: the next attempt belongs to it
+    const text = result.messages[0].text;
+    expect(text).toContain('attempt 1 of 3');
+    expect(text).toContain('Result: Bad');
+    expect(text).toContain('at least 50%');
+    expect(text).toContain('2 attempts left');
+    expect(text).not.toMatch(/\d+\s*(\/|of)\s*10\b/);
+    expect(result.messages[0].options).toEqual([expect.objectContaining({ value: 'start_viva_attempt', label: 'Start viva attempt 2 of 3' })]);
+  });
+
+  test('the last attempt failing sends the student back to resubmit, with a rating', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'needs_revision', final_score: 80, passed: false, feedback: 'Viva not passed.', viva_score: 2, viva_passed: false,
+      viva_rating: 'Bad', viva_attempt: 3, viva_attempts_left: 0, viva_attempts_total: 3,
+    } as never);
+    const result = await handleCapstoneText({ ...lastAnswer, vivaAttempt: 3 }, 'final answer');
+    expect(result.state.step).toBe('awaiting_submission');
+    expect(result.state.vivaRetryPending).toBe(false);
+    expect(result.messages[0].text).toContain('Viva: Bad - Not passed');
+    expect(result.messages[0].text).not.toMatch(/Viva: \d/);
+  });
+
+  test('starting the next attempt asks for its first new question', async () => {
+    jest.mocked(api.startVivaAttempt).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', viva_question: { id: 0, question: 'A brand new question?' }, viva_progress: '1 of 10',
+      viva_attempt: 2, viva_attempts_left: 1, viva_attempts_total: 3,
+    } as never);
+    const result = await handleCapstoneText(retryState, 'start_viva_attempt');
+    expect(api.startVivaAttempt).toHaveBeenCalledWith('submission');
+    expect(result.state).toMatchObject({ vivaRetryPending: false, vivaQuestionId: 0, vivaQuestionText: 'A brand new question?', vivaAttempt: 2 });
+    expect(result.messages[0].text).toContain('attempt 2 of 3');
+    expect(result.messages[0].text).toContain('A brand new question?');
+  });
+
+  test('typing "yes" or "ready" also starts it', async () => {
+    jest.mocked(api.startVivaAttempt).mockResolvedValue({ thread_id: 'thread', status: 'pending_viva', viva_question: { id: 0, question: 'Q?' }, viva_progress: '1 of 10', viva_attempt: 2 } as never);
+    await handleCapstoneText(retryState, 'yes');
+    await handleCapstoneText(retryState, 'ready');
+    expect(api.startVivaAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  test('a failure to start is explained and the option stays', async () => {
+    jest.mocked(api.startVivaAttempt).mockRejectedValue(new Error('offline'));
+    const result = await handleCapstoneText(retryState, 'start_viva_attempt');
+    expect(result.messages[0].text).toContain('could not start the next attempt: offline');
+    expect(result.messages[0].options?.[0].value).toBe('start_viva_attempt');
+    expect(result.state.vivaRetryPending).toBe(true);
+  });
+
+  test('a question between attempts is answered by the project Q&A, then the attempt is offered again', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'The login function returns a token.', tools_used: [] });
+    const result = await handleCapstoneText(retryState, 'what does the login function return?');
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'what does the login function return?');
+    expect(api.startVivaAttempt).not.toHaveBeenCalled();
+    expect(result.messages[0].text).toContain('returns a token');
+    expect(result.messages[1].options?.[0].value).toBe('start_viva_attempt');
+  });
+
+  test('the first viva message says which attempt it is and how it is passed', async () => {
+    jest.mocked(api.uploadSubmission).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', submission_id: 'sub-1', viva_question: { id: 0, question: 'First?' }, viva_progress: '1 of 10',
+      viva_attempt: 1, viva_attempts_left: 2, viva_attempts_total: 3,
+    } as never);
+    const ready = { ...submissionState, docxFile: new File(['x'], 'r.docx'), zipFile: new File(['x'], 's.zip') };
+    const result = await submitCapstoneFiles(ready);
+    expect(result.state.vivaAttempt).toBe(1);
+    expect(result.messages[0].text).toContain('attempt 1 of 3');
+    expect(result.messages[0].text).toContain('at least 50%');
+    expect(result.messages[0].text).toContain('up to 3 attempts');
   });
 });
 

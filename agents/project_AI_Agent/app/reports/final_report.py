@@ -28,6 +28,8 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from app.viva import VIVA_ATTEMPTS, VIVA_PASS_PERCENT
+
 LOGO = Path(__file__).resolve().parents[1] / "assets" / "digidara-technologies-logo.png"
 
 BRAND_BLUE = colors.HexColor("#004AAD")
@@ -81,6 +83,8 @@ def report_filename(project_title: str) -> str:
 # ----------------------------------------------------------------- data ------
 
 def assemble_report_data(assignment: Any, student: Any, submission: Any, pass_mark: float, viva_pass_mark: int) -> dict[str, Any]:
+    from app.viva import viva_rating
+
     """Everything the report shows, from the stored rows. Missing pieces (an
     older submission that predates a field) simply come back empty."""
     score = dict(submission.score_json or {})
@@ -95,6 +99,14 @@ def assemble_report_data(assignment: Any, student: Any, submission: Any, pass_ma
             "number": index, "question": question.get("question", ""),
             "answer": given.get("answer", ""), "correct": bool(given.get("correct")), "note": given.get("note", ""),
         })
+    attempts = [
+        {"attempt": a.get("attempt", n), "rating": a.get("rating") or viva_rating(a.get("correct", 0), a.get("total", 0)),
+         "passed": bool(a.get("passed"))}
+        for n, a in enumerate(list(submission.viva_attempts_json or []), start=1)
+    ]
+    if not attempts and submission.viva_score is not None:   # graded before attempts were recorded
+        attempts = [{"attempt": 1, "rating": viva_rating(int(submission.viva_score), len(questions) or 10),
+                     "passed": bool(submission.viva_passed)}]
     verification = dict(score.get("output_verification") or {})
     syntax = dict(score.get("syntax_report") or {})
     return {
@@ -108,7 +120,8 @@ def assemble_report_data(assignment: Any, student: Any, submission: Any, pass_ma
         "submitted_at": submission.submitted_at, "deadline_at": assignment.deadline_at, "generated_at": datetime.now(timezone.utc),
         "final_score": score.get("final_score"), "pass_mark": pass_mark, "passed": bool(score.get("passed")),
         "viva_score": submission.viva_score, "viva_total": len(questions) or 10, "viva_pass_mark": viva_pass_mark,
-        "viva_passed": bool(submission.viva_passed),
+        "viva_passed": bool(submission.viva_passed), "viva_pass_percent": VIVA_PASS_PERCENT,
+        "viva_attempts": attempts, "viva_rating": attempts[-1]["rating"] if attempts else "-",
         "code_quality": dict(score.get("code_quality_score") or {}),
         "requirements_check": verification.get("requirements_check") or [],
         "constraints_check": verification.get("constraints_check") or [],
@@ -245,12 +258,11 @@ def _banner(data: dict[str, Any], styles: dict[str, ParagraphStyle]) -> Table:
 
     score = data["final_score"]
     score_text = f"{score:g} / 100" if isinstance(score, (int, float)) else "-"
-    viva = data["viva_score"]
-    viva_text = f"{viva:g} / {data['viva_total']}" if isinstance(viva, (int, float)) else "-"
+    viva_text = str(data.get("viva_rating") or "-").upper()
     table = Table([[
         cell("OVERALL RESULT", "PASSED" if ok else "NOT PASSED", "code score and viva both passed" if ok else "see the sections below"),
         cell("CODE SCORE", score_text, f"pass mark {data['pass_mark']:g}"),
-        cell("VIVA", viva_text, f"pass mark {data['viva_pass_mark']} correct"),
+        cell("VIVA", viva_text, f"at least {data.get('viva_pass_percent', VIVA_PASS_PERCENT)}% correct to pass"),
     ]], colWidths=[CONTENT_W / 3] * 3)
     table.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1, colors.HexColor(tone)), ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F6FEF9" if ok else "#FEF3F2")),
@@ -347,9 +359,20 @@ def build_final_report_pdf(data: dict[str, Any]) -> bytes:
 
     story.append(Paragraph("5. Viva (oral defence)", styles["h1"]))
     viva = data["viva"]
-    story.append(Paragraph(_markup(
-        f"**{data['viva_score']:g} of {data['viva_total']}** answers were correct (pass mark: {data['viva_pass_mark']}).")
-        if isinstance(data["viva_score"], (int, float)) else "Viva result not recorded.", styles["body"]))
+    attempts = data.get("viva_attempts", [])
+    if attempts:
+        story.append(Paragraph(_markup(
+            f"Result: **{data.get('viva_rating', '-')}**. The viva is passed with at least {data.get('viva_pass_percent', VIVA_PASS_PERCENT)}% of the "
+            f"answers correct; up to {VIVA_ATTEMPTS} attempts are allowed, each with new questions."), styles["body"]))
+        rows = [[Paragraph(h, styles["cellb"]) for h in ("Attempt", "Result", "Outcome")]]
+        for item in attempts:
+            outcome = ('<font color="%s"><b>Passed</b></font>' % GREEN) if item["passed"] else ('<font color="%s"><b>Not passed</b></font>' % RED)
+            rows.append([Paragraph(str(item["attempt"]), styles["cell"]), Paragraph(escape(item["rating"]), styles["cell"]),
+                         Paragraph(outcome, styles["cell"])])
+        story.append(_table(rows, [CONTENT_W * 0.2, CONTENT_W * 0.4, CONTENT_W * 0.4]))
+        story.append(Paragraph("Questions and answers of the final attempt", styles["h2"]))
+    else:
+        story.append(Paragraph("Viva result not recorded.", styles["body"]))
     if viva:
         rows = [[Paragraph(h, styles["cellb"]) for h in ("#", "Question", "Your answer", "Result")]]
         for item in viva:

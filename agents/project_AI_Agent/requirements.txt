@@ -16,6 +16,8 @@ pytesseract==0.3.13
 Pillow==12.3.0
 # Builds the final project report PDF (app/reports/final_report.py).
 reportlab>=4.2,<6
+# Renders the certificate PDF to an image for the preview (app/reports/certificate.py).
+pypdfium2>=4.30,<6
 pydantic==2.10.3
 httpx==0.28.1
 playwright==1.49.0
