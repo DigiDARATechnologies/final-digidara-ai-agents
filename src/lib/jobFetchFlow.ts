@@ -5,6 +5,7 @@ import {
   getJobFeed,
   getJobFetchProfile,
   jobFetchAction,
+  updateJobFetchProfile,
   uploadJobFetchResume,
   type JobFeedItem,
 } from "./jobFetchApi";
@@ -36,6 +37,17 @@ export interface JobFetchFlowState {
   resumeOriginalName?: string;
   feed: JobFeedItem[];
   selectedJobId?: number;
+}
+
+const WORK_MODE_OPTIONS: ChatOption[] = [
+  { label: "Remote", value: "remote" },
+  { label: "Hybrid", value: "hybrid" },
+  { label: "Onsite", value: "onsite" },
+  { label: "Any", value: "any" },
+];
+
+function splitList(text: string): string[] {
+  return text.split(/[,;\n]/).map((item) => item.trim()).filter(Boolean).slice(0, 20);
 }
 
 export function safeJobApplyUrl(value: string): string | null {
@@ -118,7 +130,7 @@ function jobDetailMessage(job: JobFeedItem, feed: JobFeedItem[]): JobFetchFlowMe
     job.skills.length ? `🛠️ **Skills:** ${job.skills.join(", ")}` : null,
     `🎯 **Match Score:** ${job.match_score}% — *${job.match_reasons.join("; ")}*`,
     job.description ? `\n📝 **Job Summary:**\n${job.description.slice(0, 600)}...` : null,
-    safeApplyUrl ? `\n🔗 **Application URL:** [Apply on Employer Portal](${safeApplyUrl})` : null,
+    safeApplyUrl ? `\n🔗 **Application URL:** [Apply on Employer Portal](${safeApplyUrl})\nApply here: ${safeApplyUrl}` : null,
   ].filter(Boolean);
 
   const options: ChatOption[] = [];
@@ -221,12 +233,91 @@ export async function submitJobFetchResume(
   }
 }
 
+async function saveProfileAndShowFeed(state: JobFetchFlowState): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
+  try {
+    await updateJobFetchProfile({
+      full_name: state.fullName,
+      skills: state.skills,
+      preferred_titles: state.preferredTitles,
+      preferred_locations: state.preferredLocations,
+      preferred_work_mode: state.preferredWorkMode || undefined,
+      experience_years: state.experienceYears,
+    });
+    const withFeed = await loadFeed(state);
+    return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Profile saved! Here are your matched jobs.")] };
+  } catch (error) {
+    return { state, messages: [{ text: `I could not save your profile: ${(error as Error).message}. Try again.` }] };
+  }
+}
+
 export async function handleJobFetchText(
   state: JobFetchFlowState,
   text: string,
   history: Array<{ role: string; content: string }> = [],
 ): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
   const trimmed = text.trim();
+
+  // Onboarding steps
+  switch (state.step) {
+    case "collecting_name": {
+      if (trimmed.length < 2) return { state, messages: [{ text: "Please enter your full name (at least 2 characters)." }] };
+      return {
+        state: { ...state, fullName: trimmed.slice(0, 255), step: "collecting_skills" },
+        messages: [{ text: `Thanks, ${trimmed.split(" ")[0]}. What skills should I match jobs against? (comma-separated, e.g. "Python, SQL, React")` }],
+      };
+    }
+
+    case "collecting_skills": {
+      const skills = splitList(trimmed);
+      if (!skills.length) return { state, messages: [{ text: "Please list at least one skill, comma-separated." }] };
+      return {
+        state: { ...state, skills, step: "collecting_titles" },
+        messages: [{ text: "Got it. What job titles are you targeting? (comma-separated, e.g. \"Data Analyst, Junior Python Developer\")" }],
+      };
+    }
+
+    case "collecting_titles": {
+      const titles = splitList(trimmed);
+      if (!titles.length) return { state, messages: [{ text: "Please list at least one target title, comma-separated." }] };
+      return {
+        state: { ...state, preferredTitles: titles, step: "collecting_locations" },
+        messages: [{ text: "Which locations do you prefer? (comma-separated, or type \"any\")" }],
+      };
+    }
+
+    case "collecting_locations": {
+      const locations = /^any$/i.test(trimmed) ? [] : splitList(trimmed);
+      return {
+        state: { ...state, preferredLocations: locations, step: "collecting_work_mode" },
+        messages: [{ text: "Preferred work mode?", options: WORK_MODE_OPTIONS }],
+      };
+    }
+
+    case "collecting_work_mode": {
+      const selected = trimmed.toLowerCase();
+      const mode = selected === "any"
+        ? ""
+        : WORK_MODE_OPTIONS.find((option) => option.value === selected)?.value ?? "";
+      return {
+        state: { ...state, preferredWorkMode: mode, step: "collecting_experience" },
+        messages: [{ text: "Last question — how many years of experience do you have? (enter a number, 0 if none)" }],
+      };
+    }
+
+    case "collecting_experience": {
+      const years = Number(trimmed.replace(/[^0-9.]/g, ""));
+      if (Number.isNaN(years)) return { state, messages: [{ text: "Please enter a number, e.g. \"0\" or \"2\"." }] };
+      return {
+        state: { ...state, experienceYears: years, step: "collecting_resume" },
+        messages: [{ text: "Would you like to upload your resume? Attach a PDF or DOCX file below, or type \"skip\"." }],
+      };
+    }
+
+    case "collecting_resume": {
+      if (/^skip$/i.test(trimmed)) return saveProfileAndShowFeed(state);
+      return { state, messages: [{ text: "Attach a PDF/DOCX file using the paperclip button, or type \"skip\" to continue without one." }] };
+    }
+  }
 
   // 1. URL opening no-op
   if (trimmed.startsWith("open:")) {
