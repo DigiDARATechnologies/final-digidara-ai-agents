@@ -3,8 +3,11 @@ import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import { Logo } from "./Logo";
+import blackThemeLogo from "../assets/Black_theme_logo.png";
+import whiteThemeLogo from "../assets/White_theme_logo.png";
 
 export interface SidebarProps {
+  theme: "dark" | "light";
   user: User;
   collapsed: boolean;
   mobileOpen: boolean;
@@ -27,6 +30,7 @@ export interface SidebarProps {
 }
 
 export default function Sidebar({
+  theme,
   user,
   collapsed,
   mobileOpen,
@@ -102,7 +106,11 @@ export default function Sidebar({
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
       <div className="sidebar-top">
         <div className="brand">
-          <Logo variant={collapsed ? "icon" : "full"} size="sm" />
+          <Logo
+            variant={collapsed ? "icon" : "full"}
+            size={collapsed ? 36 : 66}
+            src={collapsed ? undefined : theme === "dark" ? blackThemeLogo : whiteThemeLogo}
+          />
         </div>
         <button className="icon-btn" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -122,34 +130,70 @@ export default function Sidebar({
         className={`nav-item nav-item-primary${homeActive ? " active" : ""}`}
         onClick={onGoHome}
       >
-        <span className="nav-icon glow-icon">🏠</span>
+        <span className="nav-icon glow-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M3.5 10.8L12 3.5l8.5 7.3V20a1 1 0 01-1 1H15v-6h-6v6H4.5a1 1 0 01-1-1v-9.2z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+          </svg>
+        </span>
         <span className="label">DigiDARA Agents</span>
       </button>
 
       <nav className="nav-list">
         <button className="nav-item" onClick={() => onNavAction("my-agents")}>
-          <span className="nav-icon">🧩</span>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="13.5" y="3.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="3.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+              <rect x="13.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
+            </svg>
+          </span>
           <span className="label">My agents</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("workflows")}>
-          <span className="nav-icon">🔀</span>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+              <circle cx="6" cy="18" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+              <circle cx="18" cy="12" r="2.4" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M6 8.4v7.2M8.4 6h3.1a3 3 0 013 3v.6M8.4 18h3.1a3 3 0 003-3v-.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </span>
           <span className="label">Workflows</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("saved")}>
-          <span className="nav-icon">🔖</span>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6.5 3.5h11a1 1 0 011 1V21l-6.5-4.4L5.5 21V4.5a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+            </svg>
+          </span>
           <span className="label">Saved work</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("settings")}>
-          <span className="nav-icon">⚙️</span>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1.1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h0a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55h0a1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v0a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+          </span>
           <span className="label">Settings</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("playground")}>
-          <span className="nav-icon">▶</span>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8.5 7L3.5 12l5 5M15.5 7l5 5-5 5M13.5 5l-3 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
           <span className="label">Code Playground</span>
         </button>
         {user.isAdmin && (
           <button className="nav-item" onClick={() => onNavAction("admin")}>
-            <span className="nav-icon">🛠️</span>
+            <span className="nav-icon">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3l7.5 3v5.5c0 4.5-3.1 8.2-7.5 9.5-4.4-1.3-7.5-5-7.5-9.5V6L12 3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="M8.8 12.2l2.2 2.2 4.2-4.4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
             <span className="label">Admin</span>
           </button>
         )}
@@ -249,10 +293,35 @@ export default function Sidebar({
           </svg>
         </button>
         <div className={`user-menu${userMenuOpen ? " open" : ""}`}>
-          <button onClick={() => onUserMenuAction("profile")}>👤 Profile</button>
-          <button onClick={() => onUserMenuAction("settings")}>⚙️ Settings</button>
-          <button className="danger" onClick={() => onUserMenuAction("logout")}>
-            🚪 Log out
+          <div className="user-menu-head">
+            <span className="avatar">{user.initial}</span>
+            <span className="user-menu-id">
+              <span className="user-menu-name">{user.name}</span>
+              <span className="user-menu-plan">Pro Plan</span>
+            </span>
+          </div>
+          <div className="user-menu-sep" />
+          <button onClick={() => onUserMenuAction("profile")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+              <circle cx="12" cy="10" r="3" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M6.2 18.2c1.4-2.3 3.4-3.2 5.8-3.2s4.4.9 5.8 3.2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+            Profile
+          </button>
+          <button onClick={() => onUserMenuAction("settings")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1.1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h0a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55h0a1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v0a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+            Settings
+          </button>
+          <div className="user-menu-sep" />
+          <button onClick={() => onUserMenuAction("logout")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M9 4H6a2 2 0 00-2 2v12a2 2 0 002 2h3M16 8l4 4-4 4M20 12H9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Log out
           </button>
         </div>
       </div>

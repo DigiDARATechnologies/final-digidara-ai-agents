@@ -85,7 +85,14 @@ function toUser(authUser: AuthUser): User {
 
 
 
+type Theme = "dark" | "light";
+
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(() => (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("digidara_theme", theme); } catch { /* storage unavailable: theme just won't persist */ }
+  }, [theme]);
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
@@ -1267,7 +1274,7 @@ export default function App() {
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "DigiDARA Agents";
+  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "";
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1434,6 +1441,7 @@ export default function App() {
     <>
       <div className="app" id="app">
         <Sidebar
+          theme={theme}
           user={user}
           collapsed={sidebarCollapsed}
           mobileOpen={mobileOpen}
@@ -1470,6 +1478,8 @@ export default function App() {
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
+            theme={theme}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
