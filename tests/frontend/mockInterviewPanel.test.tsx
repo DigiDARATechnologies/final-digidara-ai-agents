@@ -68,3 +68,18 @@ test('completed interview shows concise summary sections and downloads its PDF',
   fireEvent.click(screen.getByRole('button', { name: 'Download PDF report' }));
   await waitFor(() => expect(downloadMockInterviewReport).toHaveBeenCalledWith('session', 42));
 });
+
+test('completed technical report offers weak-skill practice for reported weak subjects', () => {
+  const onPracticeWeakTopics = jest.fn();
+  const completed: MockInterviewFlowState = {
+    ...live, step: 'completed', question: undefined,
+    summary: {
+      interview_id: 42, overall_score: 6, technical_accuracy: 5,
+      communication_clarity: 8, confidence: 7,
+      subject_breakdown: { weak_subjects: ['SQL and relational databases'] },
+    },
+  };
+  render(<MockInterviewPanel state={completed} busy={false} onAnswer={jest.fn()} onExit={jest.fn()} onPracticeWeakTopics={onPracticeWeakTopics} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Practice weak skills' }));
+  expect(onPracticeWeakTopics).toHaveBeenCalledWith(['SQL and relational databases']);
+});

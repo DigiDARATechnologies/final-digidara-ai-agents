@@ -85,6 +85,7 @@ def infer_role_skills(role_or_topic, difficulty):
 def build_interview_questions(
     role, difficulty, round_type, total_count, generate_ai_question,
     already_asked_hashes=None, role_skills=None, initial_asked_context=None,
+    skill_order=None,
 ):
     return _build_interview_questions(
         role, difficulty, round_type, total_count,
@@ -92,6 +93,7 @@ def build_interview_questions(
         already_asked_hashes=already_asked_hashes,
         role_skills=role_skills,
         initial_asked_context=initial_asked_context,
+        skill_order=skill_order,
     )
 
 

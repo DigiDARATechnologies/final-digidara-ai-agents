@@ -25,7 +25,7 @@ class LearnerMixedTestConfig(db.Model):
             "learner_id", "category_id", name="uq_learner_mixed_test_category",
         ),
         db.CheckConstraint(
-            "question_count >= 3 AND question_count <= 10",
+            "question_count >= 0 AND question_count <= 10",
             name="ck_learner_mixed_question_count",
         ),
     )

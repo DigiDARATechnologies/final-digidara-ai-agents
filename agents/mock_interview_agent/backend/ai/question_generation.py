@@ -439,7 +439,7 @@ def fetch_live_real_questions(
 def build_interview_questions(
     role, difficulty, round_, total_count, *, chat_fn, generate_ai_question,
     rng, already_asked_hashes=None, role_skills=None,
-    initial_asked_context=None,
+    initial_asked_context=None, skill_order=None,
 ):
     """Synchronously create a complete AI-only plan for immediate serving.
 
@@ -449,14 +449,15 @@ def build_interview_questions(
     """
     already_asked_hashes = set(already_asked_hashes or ())
     initial_asked_context = list(initial_asked_context or ())
+    assignment_skills = list(skill_order or role_skills or [])
     skill_slots = (
         "Assign the output items to these skills in this exact order: "
         + " ".join(
-            f"Item {index + 1}: {role_skills[index % len(role_skills)]}. "
-            f"{_technical_skill_calibration(role_skills[index % len(role_skills)], difficulty)}"
+            f"Item {index + 1}: {assignment_skills[index % len(assignment_skills)]}. "
+            f"{_technical_skill_calibration(assignment_skills[index % len(assignment_skills)], difficulty)}"
             for index in range(total_count)
         )
-        if round_ == "technical" and role_skills else ""
+        if round_ == "technical" and assignment_skills else ""
     )
     # Batch mode keeps one model request for the complete initial plan.  Each
     # returned item is still persisted as an individual question row, so the
@@ -467,7 +468,7 @@ def build_interview_questions(
     batch_prompt = (
         f"Generate exactly {total_count} distinct {difficulty}-level {round_} interview questions for role/topic '{role}'. "
         f"{level_guidance} {skill_slots} "
-        f"Cover these skill areas in order, cycling if needed: {role_skills or ['core concepts']}. "
+        f"Cover these skill areas in order, cycling if needed: {assignment_skills or ['core concepts']}. "
         "Ask one concise question per item. Technical answers must be verbal; never require writing code. "
         f"Do not repeat these previous questions: {initial_asked_context}. "
         "Return ONLY valid JSON as an array of objects in this exact shape: "
@@ -493,7 +494,7 @@ def build_interview_questions(
     plan = []
     seen = set(already_asked_hashes)
     for index in range(total_count):
-        assigned_skill = role_skills[index % len(role_skills)] if role_skills else None
+        assigned_skill = assignment_skills[index % len(assignment_skills)] if assignment_skills else None
         item = parsed_batch[index] if index < len(parsed_batch) and isinstance(parsed_batch[index], dict) else {}
         question = " ".join(str(item.get("question", "")).split()).strip()
         returned_topic = " ".join(str(item.get("topic_area", "")).split()).casefold()
@@ -518,6 +519,7 @@ def build_interview_questions(
             "topic_area": assigned_skill or item.get("topic_area") or "core concepts",
             "source": "ai_generated",
             "assigned_skill_area": assigned_skill,
+            "subject_tag": assigned_skill,
         })
     rng.shuffle(plan)
     logger.info("Built batched AI interview plan with one LLM call: questions=%s", len(plan), extra={"event": "interview_question_plan_built"})
@@ -528,7 +530,7 @@ def build_interview_questions(
     assignments = [
         (
             index,
-            role_skills[index % len(role_skills)] if role_skills else None,
+            assignment_skills[index % len(assignment_skills)] if assignment_skills else None,
         )
         for index in range(total_count)
     ]

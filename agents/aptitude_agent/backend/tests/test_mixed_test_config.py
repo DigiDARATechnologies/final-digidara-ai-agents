@@ -40,7 +40,7 @@ def test_get_seeds_six_default_rows(app,client,auth_headers):
     data=response.get_json()
     assert data["total_questions"]==21
     assert {item["category_id"]:item["question_count"] for item in data["categories"]}==DEFAULTS
-    assert data["limits"]=={"min_per_category":3,"max_per_category":10,"max_total":60}
+    assert data["limits"]=={"min_per_category":0,"max_per_category":10,"max_total":60}
     with app.app_context():
         assert LearnerMixedTestConfig.query.count()==6
 
@@ -57,19 +57,40 @@ def test_put_updates_categories_independently_and_validates_bounds(client,auth_h
         for item in response.get_json()["categories"]
     }==counts
 
-    below_minimum={**DEFAULTS,"technical_aptitude":2}
-    rejected=client.put(
-        "/api/learner/mixed-test-config",headers=auth_headers,json=payload(below_minimum),
+    below_previous_minimum={**DEFAULTS,"technical_aptitude":2}
+    accepted=client.put(
+        "/api/learner/mixed-test-config",headers=auth_headers,json=payload(below_previous_minimum),
     )
-    assert rejected.status_code==400
-    assert "between 3 and 10" in rejected.get_json()["error"]
+    assert accepted.status_code==200,accepted.get_json()
+    assert accepted.get_json()["total_questions"]==20
+
+    zero_category={**DEFAULTS,"technical_aptitude":0}
+    accepted=client.put(
+        "/api/learner/mixed-test-config",headers=auth_headers,json=payload(zero_category),
+    )
+    assert accepted.status_code==200,accepted.get_json()
+    assert accepted.get_json()["total_questions"]==18
 
     invalid={**DEFAULTS,"technical_aptitude":11}
     rejected=client.put(
         "/api/learner/mixed-test-config",headers=auth_headers,json=payload(invalid),
     )
     assert rejected.status_code==400
-    assert "between 3 and 10" in rejected.get_json()["error"]
+    assert "between 0 and 10" in rejected.get_json()["error"]
+
+    negative={**DEFAULTS,"technical_aptitude":-1}
+    rejected=client.put(
+        "/api/learner/mixed-test-config",headers=auth_headers,json=payload(negative),
+    )
+    assert rejected.status_code==400
+    assert "between 0 and 10" in rejected.get_json()["error"]
+
+    empty={category_id:0 for category_id in DEFAULTS}
+    rejected=client.put(
+        "/api/learner/mixed-test-config",headers=auth_headers,json=payload(empty),
+    )
+    assert rejected.status_code==400
+    assert "at least one question" in rejected.get_json()["error"]
 
 
 def test_mixed_test_uses_saved_count_snapshot(app,client,auth_headers,monkeypatch):
@@ -145,15 +166,25 @@ def test_test_creation_rejects_unknown_technical_language(client,auth_headers):
     assert response.get_json()["code"]=="invalid_technical_language"
 
 
-def test_build_slots_rejects_a_category_below_minimum():
+def test_build_slots_allows_zero_and_subthree_category_counts():
     counts={category:3 for category in CATEGORIES}
     counts["Quantitative Aptitude"]=2
+    schedule=build_slots(seed="below-minimum-test",category_counts=counts)
+    assert len(schedule)==17
+    assert sum(row["category"]=="Quantitative Aptitude" for row in schedule)==2
+
+    counts["Quantitative Aptitude"]=0
+    schedule=build_slots(seed="zero-category-test",category_counts=counts)
+    assert len(schedule)==15
+    assert not any(row["category"]=="Quantitative Aptitude" for row in schedule)
+
+    counts["Quantitative Aptitude"]=-1
     try:
-        build_slots(seed="below-minimum-test",category_counts=counts)
+        build_slots(seed="negative-category-test",category_counts=counts)
     except ValueError as exc:
-        assert "between 3 and 10" in str(exc)
+        assert "between 0 and 10" in str(exc)
     else:
-        raise AssertionError("Expected an invalid Mixed Test category count")
+        raise AssertionError("Expected an invalid negative Mixed Test category count")
 
 
 def test_build_slots_supports_sixty_question_safety_ceiling():
