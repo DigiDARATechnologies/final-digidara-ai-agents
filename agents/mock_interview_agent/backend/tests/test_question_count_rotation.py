@@ -27,9 +27,14 @@ class QuestionCountRotationTests(unittest.TestCase):
                 skill_order=skills,
             )
             self.assertEqual(len(plan), count)
-            self.assertEqual(
-                {item["assigned_skill_area"] for item in plan}, set(skills)
-            )
+            assigned = {item["assigned_skill_area"] for item in plan}
+            # A five-question attempt cannot cover six distinct skills in
+            # one question per slot. It should cover five skills; the
+            # fifteen-question attempt must cover the complete catalog.
+            expected_count = min(count, len(skills))
+            self.assertEqual(len(assigned), expected_count)
+            if count >= len(skills):
+                self.assertEqual(assigned, set(skills))
 
 
 if __name__ == "__main__":
