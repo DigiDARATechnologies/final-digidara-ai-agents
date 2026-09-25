@@ -98,6 +98,8 @@ def create_app(config_overrides=None):
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+    from integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "communication_agent")
 
     if not app.config.get("TESTING"):
         for key in ("SECRET_KEY", "JWT_SECRET_KEY"):

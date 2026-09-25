@@ -311,6 +311,52 @@ Ordered slots ({count} total): {json.dumps(prompt_slots,separators=(',',':'))}
 Return all {count} questions in one complete response."""
 
 
+def _offender_message(reason):
+    return {
+        "duplicate wording":"response contains duplicate question wording",
+        "structurally duplicate numeric questions":"response contains structurally duplicate numeric questions",
+        "near-duplicate question concepts":"response contains near-duplicate question concepts",
+        "repeats a recent or in-test question concept":"response repeats a recent or in-test question concept",
+    }[reason]
+
+
+def _cross_check_offenders(validated,fresh,forbidden_questions):
+    """Indexes of questions to regenerate because they duplicate another question
+    in the test or a recent one, plus a short reason for the first offender.
+
+    Of two conflicting questions the one generated in this attempt is replaced;
+    when both are new (or both kept) the later one is. An empty set means the
+    batch is clean."""
+    offenders=set()
+    reasons={}
+
+    def blame(first,second,reason):
+        if first in offenders or second in offenders:return
+        if first in fresh and second not in fresh:victim=first
+        elif second in fresh and first not in fresh:victim=second
+        else:victim=max(first,second)
+        offenders.add(victim);reasons.setdefault(victim,reason)
+
+    seen_content={};seen_structure={}
+    for index,item in enumerate(validated):
+        if item["content_hash"] in seen_content:blame(seen_content[item["content_hash"]],index,"duplicate wording")
+        else:seen_content[item["content_hash"]]=index
+        structure=item.get("structural_hash")
+        if structure:
+            if structure in seen_structure:blame(seen_structure[structure],index,"structurally duplicate numeric questions")
+            else:seen_structure[structure]=index
+    for index,item in enumerate(validated):
+        for earlier in range(index):
+            if questions_are_near_duplicates(item["question"],validated[earlier]["question"]):
+                blame(earlier,index,"near-duplicate question concepts")
+    for index,item in enumerate(validated):
+        if index in offenders:continue
+        if any(questions_are_near_duplicates(item["question"],seen) for seen in forbidden_questions):
+            offenders.add(index);reasons.setdefault(index,"repeats a recent or in-test question concept")
+    if not offenders:return set(),""
+    return offenders,reasons[min(offenders)]
+
+
 def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
     total_started=time.perf_counter()
     if not current_app.config.get("OPENAI_API_KEY"):
@@ -438,24 +484,18 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 )
                 raise first_failure
             validated=[accepted[index] for index in range(count)]
-            try:
-                content_hashes=[item["content_hash"] for item in validated]
-                structural_hashes=[item["structural_hash"] for item in validated if item["structural_hash"]]
-                if len(content_hashes)!=len(set(content_hashes)):raise ValueError("response contains duplicate question wording")
-                if len(structural_hashes)!=len(set(structural_hashes)):raise ValueError("response contains structurally duplicate numeric questions")
-                if any(
-                    questions_are_near_duplicates(item["question"], previous["question"])
-                    for index, item in enumerate(validated)
-                    for previous in validated[:index]
-                ):
-                    raise ValueError("response contains near-duplicate question concepts")
-                if any(questions_are_near_duplicates(item["question"],seen) for item in validated for seen in forbidden_questions):
-                    raise ValueError("response repeats a recent or in-test question concept")
-            except ValueError:
-                # These checks compare questions with each other, so a failure
-                # can't be pinned on one slot: start the whole batch over.
-                accepted.clear()
-                raise
+            offenders,reason=_cross_check_offenders(validated,set(new_items),forbidden_questions)
+            if offenders:
+                # Duplicates involve two questions, so name the one to replace
+                # (a fresh one when possible) and keep the rest instead of
+                # discarding a whole batch of good questions.
+                for index in offenders:
+                    del accepted[index]
+                current_app.logger.warning(
+                    "Batch generation kept %s/%s questions; replacing %s that %s",
+                    len(accepted),count,len(offenders),reason,
+                )
+                raise ValueError(_offender_message(reason))
             current_app.logger.info(
                 "Batch generation timing step=parse_validate attempt=%s duration_ms=%.2f items=%s",
                 attempt,(time.perf_counter()-validation_started)*1000,len(validated),

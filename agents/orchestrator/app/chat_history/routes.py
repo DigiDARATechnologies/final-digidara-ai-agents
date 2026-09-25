@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field, field_validator
 
 from app.auth.security import get_current_user_id
+from app.agent_state import service as agent_state_service
 from app.chat_history import service
 
 router = APIRouter(prefix="/chats", tags=["chat-history"])
@@ -67,4 +68,5 @@ def sync_chat_history(
 ) -> dict:
     response.headers["Cache-Control"] = "no-store"
     chats = service.sync_history(user_id, request.chats, request.deleted_ids)
+    agent_state_service.delete_for_chats(user_id, request.deleted_ids)
     return {"chats": chats, "initialized": True}

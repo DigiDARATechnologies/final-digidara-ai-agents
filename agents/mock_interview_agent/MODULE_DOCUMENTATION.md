@@ -25,11 +25,11 @@ The Mock Interview Module is a voice-enabled practice platform where a student c
 
 - Configure a **technical** or **HR** interview at beginner, intermediate, or advanced difficulty.
 - Select 5 or 10 questions; technical interviews support preset and custom topics.
-- Generate the initial question and subsequent main/follow-up questions with AI.
+- Generate the initial question and subsequent planned main questions with AI.
 - Avoid recently used questions and topic areas for the same student where possible.
 - Ask questions aloud, capture the candidate's spoken answer, and provide typed-answer fallback.
 - Transcribe recorded WebM, OGG, M4A, MP3, or WAV audio with contextual prompts.
-- Evaluate each answer with verdict, reason, ideal answer, and scoring data.
+- Batch-evaluate all planned answers at interview completion, then store each verdict, reason, and ideal answer.
 - Generate a final report with overall score, technical accuracy, communication clarity, confidence, strengths, weaknesses, and feedback.
 - Save answer audio for replay in history.
 - Track browser visibility/window-focus loss events and show integrity summary data.
@@ -81,13 +81,12 @@ The Flask factory in `backend/app.py` registers all blueprints under `/api`, ena
 | --- | --- |
 | `routes.interviews.start_interview()` | Validates setup, checks student/quota/active session, generates and stores first question |
 | `routes.answers.transcribe()` | Validates audio, stores it, and requests contextual transcription |
-| `routes.answers.submit_answer()` | Saves answer, evaluates it, updates usage, then issues next or follow-up question |
-| `routes.answers._issue_next_question()` | Selects generated main/follow-up question and persists it |
-| `routes.interviews.end_interview()` | Validates completion, runs final AI evaluation, stores scores, invalidates dashboard cache |
+| `routes.answers.submit_answer()` | Saves answer, updates usage, then issues the next planned question |
+| `routes.answers._issue_next_question()` | Selects a generated main question and persists it |
+| `routes.interviews.end_interview()` | Batch-evaluates planned answers, runs final AI evaluation, stores scores, invalidates dashboard cache |
 | `routes.interviews.exit_interview()` | Optionally saves current text, closes focus events, marks session `exited` |
 | `ai.question_generation.generate_question()` | Produces a difficulty-appropriate question and topic area |
-| `ai.question_generation.generate_followup()` | Produces a targeted follow-up when policy permits |
-| `ai.answer_evaluation.evaluate_answer()` | Produces answer verdict, reason, score dimensions, and ideal answer |
+| `ai.answer_evaluation.evaluate_answers_batch()` | Produces per-answer verdicts, reasons, and ideal answers at completion |
 | `ai.answer_evaluation.evaluate_interview()` | Produces final interview-level feedback and scores |
 | `services.interview_state.active_interview_payload()` | Reconstructs a resumable active session |
 | `services.focus_tracking.focus_summary()` | Calculates focus-loss count and total away time |
@@ -104,7 +103,7 @@ Base URL: `http://localhost:5000/api` by default, overridden with `VITE_API_BASE
 | `GET` | `/daily_usage/:studentId` | `getDailyUsage` | None | Daily answered count, remaining count, and quota status |
 | `GET` | `/active_interview/:studentId` | `getActiveInterview` | None | Active/recoverable session and current question, or `{ active: false }` |
 | `POST` | `/transcribe` | `transcribeAudio` | `multipart/form-data`: `audio`; optional `interview_id`, `question_order` | Transcript; associates/stores answer audio when session metadata is supplied |
-| `POST` | `/submit_answer` | `submitAnswer` | `interview_id`, `question_order`, `answer`, `time_taken_sec`, `timed_out` (and optional audio data/path as supported) | Answer feedback plus next question/follow-up or completion state |
+| `POST` | `/submit_answer` | `submitAnswer` | `interview_id`, `question_order`, `answer`, `time_taken_sec`, `timed_out` (and optional audio data/path as supported) | Saved-answer status plus next planned question or completion state |
 | `POST` | `/end_interview` | `endInterview` | `interview_id` | Final scores, feedback, scorecard, question results, and integrity summary |
 | `POST` | `/exit_interview` | `exitInterview` | `interview_id`, optional `question_order`, `answer`, `time_taken_sec` | Marks active session exited |
 | `POST` | `/interviews/:id/focus-events` | `recordFocusEvent` | `event_uuid`, `action` (`left`/`returned`), and `source` for `left` | Idempotently opens or closes a focus-loss event |
@@ -182,7 +181,7 @@ Relationships: one student has many interviews; one interview has many `intervie
 
 ### Role-based interview data
 
-Role sessions store `interview_mode`, `role_name`, and `resolved_subjects` on `interviews`; each question stores `subject_tag`. Preset roles use the maintained mapping in `backend/services/role_interviews.py`. Custom roles use one LLM decomposition request to resolve three to six relevant subjects. Main questions rotate across those subjects, while follow-up questions retain the tag of the subject they clarify. The final report derives a deterministic Strong/Weak subject breakdown from stored verdicts and may launch a separate `weak_topic_practice` mini-session.
+Role sessions store `interview_mode`, `role_name`, and `resolved_subjects` on `interviews`; each question stores `subject_tag`. Preset roles use the maintained mapping in `backend/services/role_interviews.py`. Custom roles use one LLM decomposition request to resolve three to six relevant subjects. Planned questions rotate across those subjects. The final report derives a deterministic Strong/Weak subject breakdown from stored verdicts and may launch a separate `weak_topic_practice` mini-session. Existing historical follow-up rows remain readable.
 
 ## 10. Validation, limits, and error handling
 

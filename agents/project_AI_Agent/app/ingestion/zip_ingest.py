@@ -86,7 +86,15 @@ def ingest_zip(zip_path: str) -> dict:
                     code_files[rel_path] = raw.decode("utf-8", errors="replace")
 
         if not code_files:
-            raise ZipIngestError("No recognizable source-code files were found in the zip.")
+            found = sorted(file_tree)[:8]
+            listing = ", ".join(found) if found else "nothing"
+            more = f" (and {len(file_tree) - len(found)} more)" if len(file_tree) > len(found) else ""
+            raise ZipIngestError(
+                "Your zip has no source code files we can read. Put your project's code (for example .py, .js, "
+                "or .java files) inside the project folder - typically in a src folder such as "
+                f"MyProject/src/main.py - then zip that folder and upload it again. What was found in your zip: "
+                f"{listing}{more}."
+            )
 
     return {
         "zip_file_tree": sorted(file_tree),

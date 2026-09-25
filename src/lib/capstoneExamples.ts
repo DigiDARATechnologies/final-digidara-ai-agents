@@ -1,21 +1,22 @@
 import type { ChatOption } from "../types";
 
-/** Static reference files for the Capstone agent: a filled-in report and the
- * matching source zip, built once by scripts/build_capstone_examples.py and
- * served from public/capstone-examples/. They are the same for everyone and
- * are never regenerated per student. */
+/** Static reference files for the Capstone agent: a filled-in report (a PDF,
+ * so it reads as a reference rather than a template to edit) and the matching
+ * source zip, built once by scripts/build_capstone_examples.py and served from
+ * public/capstone-examples/. They are the same for everyone and are never
+ * regenerated per student. The student's own report is still a .docx. */
 export const CAPSTONE_EXAMPLE_FILES = [
   {
-    href: "/capstone-examples/capstone-example-report.docx",
-    download: "capstone-example-report.docx",
-    label: "Download example report (.docx)",
-    description: "A filled-in report: Problem Statement, Approach, Code, Output Screenshots, Conclusion.",
+    href: "/capstone-examples/capstone-example-report.pdf",
+    download: "capstone-example-report.pdf",
+    label: "Download example report (.pdf)",
+    description: "A filled-in report with the three sections you need: Problem Statement, Approach, Conclusion.",
   },
   {
     href: "/capstone-examples/capstone-example-project.zip",
     download: "capstone-example-project.zip",
     label: "Download example project (.zip)",
-    description: "The matching source folder: src/, tests/, README, requirements and output_screenshots/.",
+    description: "The matching source folder: src/, tests/, README and requirements.",
   },
 ] as const;
 

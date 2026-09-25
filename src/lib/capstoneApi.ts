@@ -101,11 +101,22 @@ export interface VivaQuestion {
   question: string;
 }
 
+/** One real syntax error the backend's parser found in the submitted code. */
+export interface SyntaxErrorDetail {
+  path: string;
+  language: string;
+  line?: number | null;
+  column?: number | null;
+  message: string;
+  source_line?: string | null;
+}
+
 export interface SubmissionResult {
   thread_id: string;
   status: string;
   submission_id?: string | null;
   revision_notes?: string | null;
+  syntax_errors?: SyntaxErrorDetail[] | null;
   final_score?: number | null;
   passed?: boolean | null;
   feedback?: string | null;

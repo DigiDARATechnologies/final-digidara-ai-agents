@@ -2,7 +2,7 @@
 orchestrator on boot, heartbeats on an interval, deregisters on shutdown, and
 exposes the two routes every agent needs: GET /health and POST /invoke.
 
-Copy this file as-is into your own agent's project. You should not need to
+Copy this file (and agent_signing.py next to it) as-is into your own agent's project. You should not need to
 edit it — configure via manifest.json and .env instead.
 """
 from __future__ import annotations
@@ -22,6 +22,8 @@ from typing import Any, Awaitable, Callable
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+
+from agent_signing import GatewaySignatureMiddleware
 
 load_dotenv()
 
@@ -145,6 +147,7 @@ def create_agent_app(manifest_path: str | Path, invoke_fn: InvokeFn) -> FastAPI:
         await _deregister(manifest)
 
     app = FastAPI(title=manifest["agent_name"], version=manifest["version"], lifespan=lifespan)
+    app.add_middleware(GatewaySignatureMiddleware, agent_name=manifest["agent_name"])
 
     @app.get("/health")
     def health() -> dict:

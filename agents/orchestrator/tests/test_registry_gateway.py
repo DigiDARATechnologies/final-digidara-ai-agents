@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import io
 import json
 import time
 import uuid
@@ -153,6 +154,37 @@ def test_job_database_actions_are_not_billed(client, upstream, database, action)
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000
 
+FREE_APTITUDE_AND_MOCK_ACTIONS = [
+    "dashboard", "history", "history_detail", "profile", "analytics", "mixed_test_config",
+    "save_mixed_test_config", "daily_usage", "active_interview", "status", "download_report",
+    "record_focus_event", "question", "answer", "skip", "abandon", "exit_interview",
+]
+LLM_ACTIONS = ["create_test", "hint", "results", "start_interview", "submit_answer", "end_interview"]
+
+
+@pytest.mark.parametrize("action", FREE_APTITUDE_AND_MOCK_ACTIONS)
+def test_aptitude_and_mock_interview_non_llm_actions_are_not_billed(client, upstream, database, action):
+    assert invoke(client, action).status_code == 200
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+
+
+@pytest.mark.parametrize("action", FREE_APTITUDE_AND_MOCK_ACTIONS)
+def test_free_actions_still_work_with_an_empty_balance(client, upstream, database, action):
+    with database() as session:
+        session.get(User, "learner").token_balance = 0
+        session.commit()
+    assert invoke(client, action).status_code == 200
+
+
+@pytest.mark.parametrize("action", LLM_ACTIONS)
+def test_llm_actions_stay_billable(client, upstream, database, action):
+    assert action not in gateway.FREE_ACTIONS
+    assert invoke(client, action).status_code == 200
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000 - gateway.TOKEN_COST_PER_CALL
+
+
 @pytest.mark.parametrize("reported,cost", [("25", 25), ("bad", gateway.TOKEN_COST_PER_CALL), ("0", gateway.TOKEN_COST_PER_CALL)])
 def test_billing_and_binary_response_forwarding(client, upstream, database, reported, cost):
     upstream.response = httpx.Response(201, content=b"%PDF-test", headers={"content-type": "application/pdf", "content-disposition": "attachment; filename=report.pdf", "x-tokens-used": reported})
@@ -163,6 +195,25 @@ def test_billing_and_binary_response_forwarding(client, upstream, database, repo
     assert upstream.calls[0][0] == PAYLOAD["endpoint"]
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000 - cost
+
+
+def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
+    response = client.post(
+        "/gateway/agents/test-agent/invoke",
+        data={
+            "action": "analyze_upload",
+            "payload": '{"user_id":"learner"}',
+        },
+        files={
+            "file": ("resume.txt", io.BytesIO(b"resume upload bytes"), "text/plain"),
+        },
+        headers={"authorization": "Bearer " + create_access_token("learner")},
+    )
+
+    assert response.status_code == 200
+    forwarded = upstream.calls[-1][1]
+    assert forwarded["headers"]["content-type"].startswith("multipart/form-data")
+    assert b"resume upload bytes" in forwarded["content"]
 
 @pytest.mark.parametrize("condition,status", [("unhealthy", 503), ("host", 403), ("balance", 402), ("deleted", 401)])
 def test_gateway_blocks_unavailable_or_unauthorized_calls(client, upstream, database, condition, status):
@@ -203,6 +254,20 @@ def test_batch_create_uses_longer_gateway_timeout(client, upstream, monkeypatch)
     assert upstream.timeouts[-1] == config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
     assert invoke(client, "health", token=False).status_code == 200
     assert upstream.timeouts[-1] == config.AGENT_CALL_TIMEOUT_SECONDS
+
+
+def test_mock_interview_generation_uses_longer_gateway_timeout(client, upstream, monkeypatch):
+    monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
+    service.register(AgentRegisterRequest(**dict(PAYLOAD, agent_name="mock_interview_agent")))
+    headers = {"authorization": "Bearer " + create_access_token("learner")}
+    for action in ("start_interview", "end_interview"):
+        response = client.post(
+            "/gateway/agents/mock_interview_agent/invoke",
+            json={"action": action, "payload": {}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert upstream.timeouts[-1] == config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
 
 
 def test_gateway_resolves_freshest_healthy_version(client, upstream, database):

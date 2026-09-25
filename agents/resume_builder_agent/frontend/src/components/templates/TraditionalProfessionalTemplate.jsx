@@ -49,7 +49,8 @@ function TemplateSection({ resume, section }) {
     );
   }
   if (section === "declaration") {
-    const text = resume.declaration ?? "I hereby declare that all the information provided above is true and correct to the best of my knowledge and belief.";
+    if (resume.declaration_enabled === false) return null;
+    const text = resume.declaration ?? "";
     if (!text || !text.trim()) return null;
     return (
       <ResumeSection title={SECTION_LABELS.declaration || "Declaration"}>

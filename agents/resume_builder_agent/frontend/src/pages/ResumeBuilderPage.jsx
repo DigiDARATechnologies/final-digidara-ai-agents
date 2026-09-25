@@ -65,7 +65,7 @@ const fresherSteps = [
 ];
 
 const DEFAULT_DECLARATION =
-  "I hereby declare that the information provided above is true and correct to the best of my knowledge.\n\nPlace: Chennai\nDate: DD/MM/YYYY\nSignature: Arun Kuma";
+  "I hereby declare that the information provided in this resume is true and accurate to the best of my knowledge and belief.";
 
 function findPdfPlaceholders(value, path = "resume", matches = []) {
   if (typeof value === "string") {
@@ -95,6 +95,7 @@ const emptyResume = {
   experience_level: null,
   summary: "",
   declaration: DEFAULT_DECLARATION,
+  declaration_enabled: true,
   personal_info: {
     name: "",
     email: "",
@@ -227,6 +228,16 @@ function normalizeResume(resume) {
     target_role: resume.target_role ?? "",
     status: resume.status ?? "draft",
     summary: resume.summary ?? "",
+    declaration:
+      resume.declaration !== undefined && resume.declaration !== null
+        ? String(resume.declaration)
+        : DEFAULT_DECLARATION,
+    declaration_enabled:
+      resume.declaration_enabled !== undefined
+        ? Boolean(resume.declaration_enabled)
+        : resume.declaration !== null && resume.declaration !== undefined
+        ? Boolean(String(resume.declaration).trim())
+        : true,
     template_choice: templateChoice,
     personal_info: {
       ...emptyResume.personal_info,
@@ -261,6 +272,7 @@ function draftFingerprint(resume) {
     status: resume.status,
     summary: resume.summary,
     declaration: resume.declaration,
+    declaration_enabled: resume.declaration_enabled,
     personal_info: resume.personal_info,
     education: resume.education,
     experience: resume.experience,
@@ -1710,6 +1722,7 @@ function SummaryStep({ dispatch, resume }) {
 
 function DeclarationStep({ dispatch, resume }) {
   const defaultDeclaration = DEFAULT_DECLARATION;
+  const isEnabled = resume.declaration_enabled !== false;
 
   const currentDeclaration =
     resume.declaration !== undefined ? resume.declaration : defaultDeclaration;
@@ -1717,50 +1730,79 @@ function DeclarationStep({ dispatch, resume }) {
   return (
     <div className="declaration-step">
       <div className="form-grid">
-        <label className="full-width">
-          Declaration statement
-          <textarea
-            onChange={(event) =>
+        <label className="full-width checkbox-field" style={{ marginBottom: "14px" }}>
+          <span>
+            <input
+              checked={isEnabled}
+              onChange={(event) => {
+                const nextEnabled = event.target.checked;
+                dispatch({
+                  type: "set_field",
+                  field: "declaration_enabled",
+                  value: nextEnabled,
+                });
+                if (nextEnabled && !resume.declaration?.trim()) {
+                  dispatch({
+                    type: "set_field",
+                    field: "declaration",
+                    value: defaultDeclaration,
+                  });
+                }
+              }}
+              type="checkbox"
+            />
+            Include Declaration section in resume
+          </span>
+        </label>
+
+        {isEnabled && (
+          <label className="full-width">
+            Declaration statement
+            <textarea
+              onChange={(event) =>
+                dispatch({
+                  type: "set_field",
+                  field: "declaration",
+                  value: event.target.value,
+                })
+              }
+              rows="4"
+              placeholder={DEFAULT_DECLARATION}
+              value={currentDeclaration}
+            />
+          </label>
+        )}
+      </div>
+      {isEnabled && (
+        <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
+          <button
+            className="secondary-button"
+            onClick={() =>
               dispatch({
                 type: "set_field",
                 field: "declaration",
-                value: event.target.value,
+                value: defaultDeclaration,
               })
             }
-            rows="4"
-            placeholder={DEFAULT_DECLARATION}
-            value={currentDeclaration}
-          />
-        </label>
-      </div>
-      <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
-        <button
-          className="secondary-button"
-          onClick={() =>
-            dispatch({
-              type: "set_field",
-              field: "declaration",
-              value: defaultDeclaration,
-            })
-          }
-          type="button"
-        >
-          Reset to default
-        </button>
-        <button
-          className="danger-button"
-          onClick={() =>
-            dispatch({
-              type: "set_field",
-              field: "declaration",
-              value: "",
-            })
-          }
-          type="button"
-        >
-          Clear declaration
-        </button>
-      </div>
+            type="button"
+          >
+            Reset to default
+          </button>
+          <button
+            className="danger-button"
+            onClick={() =>
+              dispatch({
+                type: "set_field",
+                field: "declaration",
+                value: "",
+              })
+            }
+            type="button"
+          >
+            Clear declaration
+          </button>
+        </div>
+      )}
     </div>
   );
 }

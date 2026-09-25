@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -26,11 +27,11 @@ def test_job_data_bridge_forwards_only_server_identity(monkeypatch):
     result = job_data.export_user_data("verified-user")
 
     assert result == {"profile": None, "job_actions": []}
-    assert captured["headers"] == {
-        "X-Digidara-User-Id": "verified-user",
-        "X-Digidara-Is-Admin": "false",
-    }
-    assert captured["json"]["action"] == "export_user_data"
+    headers = captured["headers"]
+    assert headers["X-Digidara-User-Id"] == "verified-user"
+    assert headers["X-Digidara-Is-Admin"] == "false"
+    assert headers["x-digidara-signature"] and headers["x-digidara-agent"] == "job_agent"
+    assert json.loads(captured["content"])["action"] == "export_user_data"
 
 
 def test_job_data_bridge_fails_closed_when_agent_is_unavailable(monkeypatch):

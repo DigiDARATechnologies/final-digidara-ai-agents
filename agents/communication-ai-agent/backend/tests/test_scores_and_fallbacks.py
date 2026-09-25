@@ -70,9 +70,9 @@ def test_speaking_feedback_prompt_requires_faithful_grammar_correction(monkeypat
         answer="in this morning I am bring some I'm copy and I am them done",
     )
 
-    assert "correct every clear grammar" in prompts["system"]
+    assert "CommuniCoach" in prompts["system"]
     assert "Do not invent personal facts" in prompts["system"]
-    assert "possibly misrecognized speech" in prompts["system"]
+    assert "unclear_transcript" in prompts["system"]
     assert "corrected_answer different from the incorrect transcript" in prompts["user"]
     assert feedback["corrected_answer"] == "This morning, I brought some copies, and I have done them."
     assert feedback["scores"]["grammar"] == 25

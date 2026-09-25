@@ -52,6 +52,16 @@ def ensure_schema_updates(app):
             if "cgpa" not in columns:
                 with db.engine.begin() as connection:
                     connection.execute(text("ALTER TABLE education ADD COLUMN cgpa VARCHAR(20)"))
+            # These nullable columns are additive. Existing education rows and
+            # clients that only send `cgpa` continue to work unchanged.
+            education_updates = {
+                "level": "ALTER TABLE education ADD COLUMN level VARCHAR(30)",
+                "percentage": "ALTER TABLE education ADD COLUMN percentage VARCHAR(20)",
+            }
+            with db.engine.begin() as connection:
+                for column_name, statement in education_updates.items():
+                    if column_name not in columns:
+                        connection.execute(text(statement))
 
             project_columns = {column["name"] for column in inspector.get_columns("projects")}
             if "ai_generated_bullets" not in project_columns:
@@ -63,6 +73,22 @@ def ensure_schema_updates(app):
                 with db.engine.begin() as connection:
                     connection.execute(text("ALTER TABLE experience ADD COLUMN is_current BOOLEAN NOT NULL DEFAULT FALSE"))
 
+            certification_columns = {column["name"] for column in inspector.get_columns("certifications")} if inspector.has_table("certifications") else set()
+            certification_updates = {
+                "issue_date": "ALTER TABLE certifications ADD COLUMN issue_date DATE",
+                "expiry_date": "ALTER TABLE certifications ADD COLUMN expiry_date DATE",
+                "credential_id": "ALTER TABLE certifications ADD COLUMN credential_id VARCHAR(255)",
+                "credential_url": "ALTER TABLE certifications ADD COLUMN credential_url VARCHAR(500)",
+                "description": "ALTER TABLE certifications ADD COLUMN description TEXT",
+            }
+            achievement_columns = {column["name"] for column in inspector.get_columns("achievements")} if inspector.has_table("achievements") else set()
+            with db.engine.begin() as connection:
+                for column_name, statement in certification_updates.items():
+                    if column_name not in certification_columns:
+                        connection.execute(text(statement))
+                if achievement_columns and "organization" not in achievement_columns:
+                    connection.execute(text("ALTER TABLE achievements ADD COLUMN organization VARCHAR(255)"))
+
             resume_columns = {column["name"] for column in inspector.get_columns("resumes")}
             resume_updates = {
                 "target_role": "ALTER TABLE resumes ADD COLUMN target_role VARCHAR(255)",
@@ -71,6 +97,7 @@ def ensure_schema_updates(app):
                 "status": "ALTER TABLE resumes ADD COLUMN status VARCHAR(30) NOT NULL DEFAULT 'draft'",
                 "last_downloaded_at": "ALTER TABLE resumes ADD COLUMN last_downloaded_at DATETIME",
                 "declaration": "ALTER TABLE resumes ADD COLUMN declaration TEXT",
+                "declaration_enabled": "ALTER TABLE resumes ADD COLUMN declaration_enabled BOOLEAN NOT NULL DEFAULT TRUE",
                 "ats_score": "ALTER TABLE resumes ADD COLUMN ats_score INT",
                 "job_match_score": "ALTER TABLE resumes ADD COLUMN job_match_score INT",
                 "download_count": "ALTER TABLE resumes ADD COLUMN download_count INT NOT NULL DEFAULT 0",
@@ -86,6 +113,9 @@ def ensure_schema_updates(app):
                 if not inspector.has_table("achievements"):
                     from app.models import Achievement
                     Achievement.__table__.create(bind=connection)
+                if not inspector.has_table("certifications"):
+                    from app.models import Certification
+                    Certification.__table__.create(bind=connection)
                 if not inspector.has_table("publications"):
                     from app.models import Publication
                     Publication.__table__.create(bind=connection)
@@ -124,6 +154,8 @@ def create_app(config_object: str | None = None) -> Flask:
     app = Flask(__name__)
     if config_object:
         app.config.from_object(config_object)
+    from integration.agent_signing import install as install_gateway_signing
+    install_gateway_signing(app, "resume_builder_agent")
 
     is_production = os.getenv("FLASK_ENV") == "production"
     secret_key = app.config.get("SECRET_KEY") or os.getenv("SECRET_KEY")

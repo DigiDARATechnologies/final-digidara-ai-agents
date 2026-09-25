@@ -482,6 +482,43 @@ def test_experience_accepts_month_year_dates(client, sample_resume_payload):
     assert created["experience"][0]["end_date"] == "June 2024"
 
 
+def test_experience_job_title_alias_never_reaches_date_parser(client, sample_resume_payload):
+    sample_resume_payload["experience"] = [{
+        "company": "DigiDARA Technologies",
+        "job_title": "Artificial Intelligence & Machine Learning Intern",
+        "start_date": "June 2025",
+        "end_date": "August 2025",
+        "raw_input": "Built and deployed a machine-learning feature with the engineering team.",
+    }]
+
+    created = create_resume(client, sample_resume_payload)
+
+    experience = created["experience"][0]
+    assert experience["role"] == "Artificial Intelligence & Machine Learning Intern"
+    assert experience["start_date"] == "June 2025"
+    assert experience["end_date"] == "August 2025"
+
+
+def test_experience_mapping_collision_keeps_title_out_of_start_date(client, sample_resume_payload):
+    title = "Artificial Intelligence & Machine Learning Intern"
+    sample_resume_payload["experience"] = [{
+        "company": "DigiDARA Technologies",
+        "role": "June 2025",
+        "job_title": title,
+        "start_date": title,
+        "startDate": "June 2025",
+        "end_date": "August 2025",
+        "raw_input": "Built and deployed a machine-learning feature with the engineering team.",
+    }]
+
+    created = create_resume(client, sample_resume_payload)
+
+    experience = created["experience"][0]
+    assert experience["role"] == title
+    assert experience["start_date"] == "June 2025"
+    assert experience["end_date"] == "August 2025"
+
+
 def test_create_resume_defaults_missing_title(client):
     response = client.post("/api/resume", json={"user_id": "test-user"})
     assert response.status_code == 201
@@ -664,3 +701,31 @@ def test_empty_legacy_alias_does_not_overwrite_populated_target_role(client, sam
     assert update_res.status_code == 200
     updated = update_res.get_json()["data"]
     assert updated["target_role"] == "DATA ANALYST"
+
+
+def test_resume_save_removes_chat_instruction_from_skills_and_normalizes_flattened_project_text(client, sample_resume_payload):
+    sample_resume_payload["skills"] = [
+        {"skill_name": "Python"},
+        {"skill_name": "You can improve it later with AI."},
+    ]
+    sample_resume_payload["projects"] = [{
+        "title": "Traffic Flow Prediction",
+        "description": "Technologies: Python, TensorFlow Developed a traffic prediction model.",
+    }]
+
+    created = create_resume(client, sample_resume_payload)
+
+    assert [item["skill_name"] for item in created["skills"]] == ["Python"]
+    assert created["projects"][0]["description"] == (
+        "Technologies: Python, TensorFlow\nDeveloped a traffic prediction model."
+    )
+
+
+def test_resume_save_splits_a_flattened_skill_category_blob(client, sample_resume_payload):
+    sample_resume_payload["skills"] = [{
+        "skill_name": "Technical Skills: Programming: Python, JavaScript, Libraries & Frameworks: Flask, Data & Analytics: SQL"
+    }]
+
+    created = create_resume(client, sample_resume_payload)
+
+    assert [item["skill_name"] for item in created["skills"]] == ["Python", "JavaScript", "Flask", "SQL"]

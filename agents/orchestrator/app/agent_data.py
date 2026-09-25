@@ -11,9 +11,12 @@ from any of them, so an outage cannot leave the account half-erased.
 """
 from urllib.parse import urlparse
 
+import json
+
 import httpx
 
 from app import config
+from app.auth.agent_signing import sign_headers
 from app.gateway.routes import ALLOWED_AGENT_HOSTS
 from app.registry import service as registry_service
 
@@ -40,10 +43,16 @@ def _endpoint(agent_name: str) -> str:
 
 def _invoke(agent_name: str, endpoint: str, action: str, user_id: str, email: str) -> dict:
     try:
+        body = json.dumps({"action": action, "payload": {"email": email}}).encode()
         response = httpx.post(
             endpoint,
-            json={"action": action, "payload": {"email": email}},
-            headers={"X-Digidara-User-Id": user_id, "X-Digidara-Is-Admin": "false"},
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Digidara-User-Id": user_id,
+                "X-Digidara-Is-Admin": "false",
+                **sign_headers(agent_name, "POST", endpoint, body, user_id, "false"),
+            },
             timeout=config.AGENT_CALL_TIMEOUT_SECONDS,
         )
         response.raise_for_status()

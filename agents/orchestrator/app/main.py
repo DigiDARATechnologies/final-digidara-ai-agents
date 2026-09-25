@@ -19,6 +19,7 @@ from app.rate_limit import limiter  # noqa: E402
 from app.registry.routes import router as registry_router  # noqa: E402
 from app.billing.routes import router as billing_router  # noqa: E402
 from app.chat_history.routes import router as chat_history_router  # noqa: E402
+from app.agent_state.routes import router as agent_state_router  # noqa: E402
 
 app = FastAPI(title="DigiDARA Orchestrator", version="1.0.0")
 
@@ -54,6 +55,7 @@ app.include_router(chat_router)
 app.include_router(gateway_router)
 app.include_router(billing_router)
 app.include_router(chat_history_router)
+app.include_router(agent_state_router)
 
 
 @app.on_event("startup")

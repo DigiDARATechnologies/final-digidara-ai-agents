@@ -40,9 +40,9 @@ FAILING_HR_QUESTION = (
 
 class QuestionGenerationPromptTests(unittest.TestCase):
     LEVELS = {
-        "beginner": ("BEGINNER -- apply these as hard constraints", 0.65),
-        "intermediate": ("INTERMEDIATE -- test application rather than basic recall", 0.8),
-        "advanced": ("ADVANCED -- require deeper reasoning and informed judgment", 0.9),
+        "beginner": ("BEGINNER / FRESHER", 0.65),
+        "intermediate": ("INTERMEDIATE: Assume basic definitions", 0.8),
+        "advanced": ("ADVANCED: Test informed judgment", 0.9),
     }
 
     def _generate_and_capture(self, difficulty, subject):
@@ -86,10 +86,11 @@ class QuestionGenerationPromptTests(unittest.TestCase):
     def test_beginner_prompt_enforces_one_short_single_concept_question(self):
         call = self._generate_and_capture("beginner", "python")
         prompt = call["messages"][0]["content"]
-        self.assertIn("exactly one basic concept", prompt)
-        self.assertIn("no more than 18 words", prompt)
-        self.assertIn("Do not combine concepts", prompt)
-        self.assertIn("Do not ask multi-part questions", prompt)
+        self.assertIn("exactly one everyday foundational concept", prompt)
+        self.assertIn("under 18 words", prompt)
+        self.assertIn("RESTful architecture", prompt)
+        self.assertIn("settings.py", prompt)
+        self.assertIn("with statement", prompt)
 
     def test_custom_topics_receive_every_difficulty_branch(self):
         for difficulty, (expected_rule, _) in self.LEVELS.items():
@@ -125,10 +126,7 @@ class QuestionGenerationPromptTests(unittest.TestCase):
                     "pick ONE to focus the question on",
                     prompt,
                 )
-                self.assertIn(
-                    "reserve the others for potential follow-up questions",
-                    prompt,
-                )
+                self.assertNotIn("follow-up question", prompt)
 
     def test_new_subjects_receive_role_specific_prompt_guidance(self):
         digital_prompt = self._generate_and_capture(
@@ -138,10 +136,10 @@ class QuestionGenerationPromptTests(unittest.TestCase):
             "beginner", "Docker & Kubernetes"
         )["messages"][0]["content"]
 
-        self.assertIn("campaign decisions", digital_prompt)
-        self.assertIn("generic software-engineering interviews", digital_prompt)
-        self.assertIn("reliably operating production systems", systems_prompt)
-        self.assertIn("Connect the selected topic area directly", systems_prompt)
+        self.assertIn("marketing, cloud, and systems topics", digital_prompt)
+        self.assertIn("not the most specialized item", digital_prompt)
+        self.assertIn("Docker container", systems_prompt)
+        self.assertIn("directly tied to the selected topic", systems_prompt)
 
     def test_validator_rejects_overly_complex_advanced_question(self):
         errors = groq_client._question_validation_errors(
@@ -254,7 +252,10 @@ class QuestionGenerationPromptTests(unittest.TestCase):
 
         self.assertEqual(mocked_chat.call_count, 3)
         self.assertEqual(result["topic_area"], "leadership")
-        self.assertIn(result["question"], groq_client.SAFE_HR_QUESTION_TEMPLATES["advanced"])
+        self.assertEqual(
+            result["question"],
+            "How did you lead a team through resistance to a difficult change?",
+        )
         self.assertFalse(
             groq_client._question_validation_errors(result["question"], "advanced")
         )
@@ -264,17 +265,6 @@ class QuestionGenerationPromptTests(unittest.TestCase):
         for difficulty, templates in groq_client.SAFE_HR_QUESTION_TEMPLATES.items():
             for candidate in templates:
                 with self.subTest(kind="hr_main", difficulty=difficulty, candidate=candidate):
-                    self.assertFalse(
-                        groq_client._question_validation_errors(candidate, difficulty)
-                    )
-
-        for round_type, levels in groq_client.SAFE_FOLLOWUP_QUESTIONS.items():
-            for difficulty, candidate in levels.items():
-                with self.subTest(
-                    kind=f"{round_type}_followup",
-                    difficulty=difficulty,
-                    candidate=candidate,
-                ):
                     self.assertFalse(
                         groq_client._question_validation_errors(candidate, difficulty)
                     )
@@ -332,9 +322,9 @@ class QuestionGenerationPromptTests(unittest.TestCase):
 
     def test_hr_difficulty_branches_are_behavioral(self):
         expectations = {
-            "beginner": "Do not require formal work experience",
-            "intermediate": "behavioral or situational HR question",
-            "advanced": "leadership, ownership, conflict",
+            "beginner": "Do not demand formal employment",
+            "intermediate": "behavioral or situational question",
+            "advanced": "leadership, complex conflict resolution",
         }
         for difficulty, expected in expectations.items():
             with self.subTest(difficulty=difficulty):
@@ -365,42 +355,23 @@ class QuestionGenerationPromptTests(unittest.TestCase):
 
 class AnswerEvaluationPromptTests(unittest.TestCase):
     def _evaluate_and_capture(self, question, answer, response):
-        response = {
-            "follow_up_needed": False,
-            "follow_up_question": None,
-            **response,
-        }
         capture = PromptCapture(json.dumps(response))
         with patch.object(groq_client, "_chat", side_effect=capture):
             result = groq_client.evaluate_answer(question, answer, "beginner")
         return result, capture.calls[0]
 
-    def test_technical_evaluation_combines_followup_decision_in_one_call(self):
+    def test_technical_evaluation_requests_only_verdict_reason_and_ideal_answer(self):
         response = {
             "verdict": "partial",
-            "reason": "You identified mutability but did not explain its practical effect.",
-            "ideal_answer": "A mutable object can change after creation, affecting every reference to it.",
-            "follow_up_needed": True,
-            "follow_up_question": "How can mutability affect two references to the same object?",
+            "reason": "The answer misses the practical effect.",
+            "ideal_answer": "A mutable object can change after creation.",
         }
         capture = PromptCapture(json.dumps(response))
         with patch.object(groq_client, "_chat", side_effect=capture) as mocked_chat:
-            result = groq_client.evaluate_answer(
-                "What does mutability mean in Python?",
-                "It means the value can change.",
-                "intermediate",
-                "technical",
-            )
-
+            result = groq_client.evaluate_answer("What is mutability?", "It can change.", "intermediate")
         self.assertEqual(mocked_chat.call_count, 1)
-        self.assertTrue(result["follow_up_needed"])
-        self.assertEqual(
-            result["follow_up_question"],
-            response["follow_up_question"],
-        )
-        prompt = capture.calls[0]["messages"][0]["content"]
-        self.assertIn('"follow_up_needed": true | false', prompt)
-        self.assertIn("material conceptual gap", prompt)
+        self.assertEqual(result, response)
+        self.assertNotIn("follow_up", capture.calls[0]["messages"][0]["content"])
 
     def test_rambling_list_tuple_answer_is_treated_as_conceptual_answer(self):
         answer = (
@@ -504,8 +475,6 @@ class AnswerEvaluationPromptTests(unittest.TestCase):
                 "I want to apply my project experience to products used by real customers "
                 "while learning from an experienced team and contributing what I already know."
             ),
-            "follow_up_needed": False,
-            "follow_up_question": None,
         }))
         with patch.object(groq_client, "_chat", side_effect=capture):
             result = groq_client.evaluate_answer(
@@ -516,54 +485,11 @@ class AnswerEvaluationPromptTests(unittest.TestCase):
             )
         prompt = capture.calls[0]["messages"][0]["content"]
         self.assertEqual(result["verdict"], "correct")
-        self.assertFalse(result["follow_up_needed"])
-        self.assertIsNone(result["follow_up_question"])
         self.assertIn("Do not require corporate buzzwords", prompt)
         self.assertIn("perfect STAR formatting", prompt)
         self.assertIn("final corrected meaning", prompt)
         self.assertIn(answer, capture.calls[0]["messages"][1]["content"])
 
-    def test_hr_prompt_requests_followup_only_for_material_gap(self):
-        capture = PromptCapture(json.dumps({
-            "verdict": "partial",
-            "reason": "You identified a deadline situation, but your specific actions remain unclear.",
-            "ideal_answer": (
-                "When our deadline moved forward, I prioritized the remaining tasks, divided "
-                "the work with my team, and used daily check-ins so we submitted on time."
-            ),
-            "follow_up_needed": True,
-            "follow_up_question": "What specific steps did you take to organize the work?",
-        }))
-        with patch.object(groq_client, "_chat", side_effect=capture):
-            result = groq_client.evaluate_answer(
-                "Describe a time you handled a difficult deadline.",
-                "The deadline got close, so we worked on it and submitted.",
-                "intermediate",
-                "hr",
-            )
-        prompt = capture.calls[0]["messages"][0]["content"]
-        self.assertTrue(result["follow_up_needed"])
-        self.assertIn("genuinely vague, off-topic, or incomplete", prompt)
-        self.assertIn("optional detail", prompt)
-
-    def test_hr_followup_contract_is_validated(self):
-        capture = PromptCapture(json.dumps({
-            "verdict": "partial",
-            "reason": "Your example needs your specific action.",
-            "ideal_answer": "I clarified the issue, agreed on priorities, and followed up.",
-            "follow_up_needed": True,
-            "follow_up_question": None,
-        }))
-        with (
-            patch.object(groq_client, "_chat", side_effect=capture),
-            self.assertRaisesRegex(ValueError, "invalid HR follow-up question"),
-        ):
-            groq_client.evaluate_answer(
-                "Tell me about a conflict.",
-                "We had a disagreement.",
-                "beginner",
-                "hr",
-            )
 
 
 class IdealAnswerGenerationPromptTests(unittest.TestCase):
@@ -603,131 +529,6 @@ class IdealAnswerGenerationPromptTests(unittest.TestCase):
         self.assertIn("interview-recommended HR answer", prompt)
         self.assertIn("not a memorized corporate script", prompt)
         self.assertNotIn("accurate technical terminology", prompt)
-
-
-class FollowupPromptTests(unittest.TestCase):
-    def test_correct_answer_returns_none_with_supportive_followup_rules(self):
-        capture = PromptCapture("NONE")
-        with patch.object(groq_client, "_chat", side_effect=capture):
-            result = groq_client.generate_followup(
-                "What is a tuple?",
-                "It is a locked collection that cannot be changed.",
-                "beginner",
-                "correct",
-                "The concept is correct; immutable is the precise term.",
-            )
-        system_prompt = capture.calls[0]["messages"][0]["content"]
-        user_prompt = capture.calls[0]["messages"][1]["content"]
-        self.assertIsNone(result)
-        self.assertIn("Return exactly NONE when the verdict is correct", system_prompt)
-        self.assertIn("an example not requested", system_prompt)
-        self.assertIn("Evaluation verdict: correct", user_prompt)
-        self.assertIn("Difficulty: beginner", user_prompt)
-
-    def test_hr_followup_does_not_demand_polish_or_star_format(self):
-        capture = PromptCapture("NONE")
-        with patch.object(groq_client, "_chat", side_effect=capture):
-            result = groq_client.generate_followup(
-                "Why do you want this job?",
-                "Honestly I want experience, and your products have real users.",
-                "beginner",
-                "correct",
-                "The motivation is relevant and connected to the role.",
-                "hr",
-            )
-        prompt = capture.calls[0]["messages"][0]["content"]
-        self.assertIsNone(result)
-        self.assertIn("perfect STAR formatting", prompt)
-        self.assertIn("genuinely vague, off-topic, or incomplete", prompt)
-
-    def test_overly_complex_technical_followup_is_regenerated(self):
-        valid_retry = "Which testing concern is most important for this dependency?"
-        with (
-            patch.object(
-                groq_client,
-                "_chat",
-                side_effect=[FAILING_ADVANCED_QUESTION, valid_retry],
-            ) as mocked_chat,
-            self.assertLogs("llm_client", level="INFO") as logs,
-        ):
-            result = groq_client.generate_followup(
-                "When would you choose an integration test?",
-                "I would use one when dependencies interact.",
-                "advanced",
-                "partial",
-                "The answer did not identify the main trade-off.",
-                "technical",
-            )
-
-        self.assertEqual(result, valid_retry)
-        self.assertEqual(mocked_chat.call_count, 2)
-        self.assertFalse(
-            groq_client._question_validation_errors(result, "advanced")
-        )
-        self.assertTrue(
-            any("type=technical_followup" in entry for entry in logs.output)
-        )
-
-    def test_overly_complex_inline_hr_followup_is_regenerated(self):
-        evaluation = json.dumps({
-            "verdict": "partial",
-            "reason": "The answer omitted the candidate's own action.",
-            "ideal_answer": "I would explain my action and its result.",
-            "follow_up_needed": True,
-            "follow_up_question": FAILING_HR_QUESTION,
-        })
-        valid_retry = "What specific action did you take in that situation?"
-        with (
-            patch.object(
-                groq_client,
-                "_chat",
-                side_effect=[evaluation, valid_retry],
-            ) as mocked_chat,
-            self.assertLogs("llm_client", level="INFO") as logs,
-        ):
-            result = groq_client.evaluate_answer(
-                "Tell me about a disagreement with a teammate?",
-                "We disagreed about the project.",
-                "advanced",
-                "hr",
-            )
-
-        self.assertEqual(result["follow_up_question"], valid_retry)
-        self.assertEqual(mocked_chat.call_count, 2)
-        self.assertFalse(
-            groq_client._question_validation_errors(valid_retry, "advanced")
-        )
-        self.assertTrue(
-            any("type=hr_inline_followup" in entry for entry in logs.output)
-        )
-
-    def test_followup_uses_safe_fallback_after_all_attempts_fail(self):
-        with (
-            patch.object(
-                groq_client,
-                "_chat",
-                side_effect=[FAILING_ADVANCED_QUESTION] * 3,
-            ) as mocked_chat,
-            self.assertLogs("llm_client", level="ERROR") as logs,
-        ):
-            result = groq_client.generate_followup(
-                "What trade-off matters most?",
-                "Several things matter.",
-                "advanced",
-                "partial",
-                "The answer is too broad.",
-                "technical",
-            )
-
-        self.assertEqual(mocked_chat.call_count, 3)
-        self.assertEqual(
-            result,
-            groq_client.SAFE_FOLLOWUP_QUESTIONS["technical"]["advanced"],
-        )
-        self.assertFalse(
-            groq_client._question_validation_errors(result, "advanced")
-        )
-        self.assertTrue(any("using fallback" in entry for entry in logs.output))
 
 
 class FinalEvaluationPromptTests(unittest.TestCase):

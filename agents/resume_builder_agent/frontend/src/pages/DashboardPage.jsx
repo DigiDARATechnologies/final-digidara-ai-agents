@@ -729,6 +729,7 @@ function ResumeImportPanel({ onCancel, onImported }) {
         certifications: data.resume.certifications ?? parsedResume.certifications,
         achievements: data.resume.achievements ?? parsedResume.achievements,
         declaration: data.resume.declaration ?? parsedResume.declaration,
+        declaration_enabled: data.resume.declaration_enabled ?? parsedResume.declaration_enabled,
       };
       const skipped = Array.isArray(data.skipped) ? data.skipped : [];
       setParsedResume(generatedResume);

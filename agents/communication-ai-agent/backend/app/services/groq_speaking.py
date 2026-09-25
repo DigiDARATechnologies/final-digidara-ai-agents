@@ -679,8 +679,10 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
 
     if mode == "topic":
         system_prompt = (
-            "You are a friendly English speaking teacher conducting a real-time, turn-based voice conversation. "
-            "Ask exactly one question at a time. You must wait for the learner's answer before asking another question."
+            "You are CommuniCoach, a friendly, encouraging English-speaking practice partner. "
+            "You are NOT a strict examiner — talk like a supportive coach who wants the learner to feel comfortable speaking, even if they make mistakes. "
+            "Ask exactly one question at a time. After evaluation, smoothly transition into the next question by logically continuing the topic discussion. "
+            "Never sound robotic or repeat the same phrasing pattern every turn — vary your transitions ('Nice one! Now tell me...', 'Good, let's move to...', 'I like that — next up...')."
         )
         user_prompt = (
             "Conversation mode: Topic-wise\n"
@@ -699,18 +701,21 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
             "2. Use the learner's previous answer to make the next question natural.\n"
             "3. Never ask multiple questions.\n"
             "4. Never repeat a previous question.\n"
-            "5. Do not provide feedback in the question response.\n"
+            "5. Do not provide feedback in the question response (this is handled in evaluation).\n"
             "6. For Easy, use short and simple questions.\n"
             "7. For Medium, ask for explanations, reasons and examples.\n"
             "8. For Hard, ask analytical, professional or opinion-based questions.\n"
-            "9. Return only the question as plain text.\n"
+            "9. Return only the question as plain text, including your conversational transition.\n"
             "10. Do not add numbering, quotation marks or introductions."
         )
     else:
         category = daily_category or "General Daily Talk"
         system_prompt = (
-            "You are a friendly English conversation partner and communication teacher. "
-            "You continue a natural voice conversation by asking exactly one short follow-up question."
+            "You are CommuniCoach, a friendly, encouraging English-speaking practice partner. "
+            "You are NOT a strict examiner — talk like a supportive coach who wants the learner to feel comfortable speaking, even if they make mistakes. "
+            "You continue a natural voice conversation by asking exactly one short follow-up question. "
+            "Smoothly transition into the next question, ideally referencing something the learner just said. "
+            "Never sound robotic or repeat the same phrasing pattern every turn — vary your transitions ('Nice one! Now tell me...', 'Good, let's move to...', 'I like that — next up...')."
         )
         user_prompt = (
             "Conversation mode: Daily Conversation\n"
@@ -762,23 +767,21 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
     answer = strip_completion_command(answer)
 
     system_prompt = (
-        "You are an expert spoken-English teacher. You receive a speech-to-text transcript, so ignore minor punctuation "
+        "You are CommuniCoach, a friendly, encouraging English-speaking practice partner. You receive a speech-to-text transcript. "
         "You must always create the learner-facing response in this order: "
         "1) reaction, 2) optional correction/tip when needed, 3) next contextual question will be generated separately. "
-        "The JSON reaction field is mandatory every time. It must be a short, warm, friend-like acknowledgment of the student's actual content, "
-        "not a generic score label and not a correction. "
-        "problems, but correct every clear grammar, tense, preposition, article, pronoun, word-order and word-choice error. "
-        "Preserve the learner's intended meaning. Use the current AI question and conversation context. Do not invent personal "
-        "facts. Do not invent meaning for unclear speech-recognition text. If a phrase is unclear, mark it as possibly "
-        "misrecognized speech and ask the learner to review or record that part again. Exclude voice completion commands such "
-        "as I am done, I'm done, I am finished, I'm finished, that is all, and that's all. Explain mistakes in simple "
-        "learner-friendly English as short, scannable bullet points, not a dense paragraph. Provide a complete corrected sentence and a natural "
-        "conversational alternative when a correction is available. Set has_errors and correction_available accurately. "
-        "Return a top-level 'mistake_points' JSON array with 2-4 short strings. Each bullet must be under 15 words, "
-        "cover one specific issue, and stay distinct: name the unclear/incorrect part, briefly say why it is wrong or confusing, "
-        "or explain what the corrected answer changes. Do not restate the same point in different words. If there are several "
-        "unrelated mistakes, use a few distinct bullets instead of merging them into one long sentence. If you include individual "
-        "mistake entries, each one may also have its own short 'mistake_points' array. Respond with STRICT JSON only, no markdown fences, matching this schema exactly:\n"
+        "The JSON reaction field is mandatory every time. It must be a short, warm, friend-like acknowledgment of the student's actual content. "
+        "HANDLING NOISY/IMPERFECT TRANSCRIPTS: "
+        "Focus only on words that form coherent, meaningful sentences. Ignore isolated noise tokens, repeated garbage characters, or fragments that don't fit. "
+        "If the transcript seems mostly noise with very little real speech, politely ask the learner to repeat (set fallback_reason to 'unclear_transcript'). "
+        "Never fabricate or 'auto-correct' words to what you assume the learner meant. Evaluate based on what was actually transcribed, but be lenient about small STT-related errors (like homophones) when scoring grammar/fluency. "
+        "EVALUATION: "
+        "Evaluate the answer on: fluency, grammar, and confidence. Give feedback in a warm, encouraging tone — mention one thing they did well before pointing out an area to improve. Keep feedback short (2-3 sentences) so the conversation keeps flowing naturally. "
+        "Preserve the learner's intended meaning. Do not invent personal facts. "
+        "Exclude voice completion commands such as 'I am done', 'that's all'. "
+        "Explain mistakes in simple learner-friendly English as short, scannable bullet points. Provide a complete corrected sentence and a natural conversational alternative when a correction is available. "
+        "Return a top-level 'mistake_points' JSON array with 2-4 short strings. Each bullet must be under 15 words. "
+        "Respond with STRICT JSON only, matching this schema exactly:\n"
         '{"reaction":"That sounds like a nice outing!","appreciation":"Good attempt.","status":"Needs Improvement","original_answer":"...",'
         '"has_errors":true,"transcript_clear":true,"unclear_phrases":[],"correction_available":true,'
         '"source":"groq","fallback_reason":null,'

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
+import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 
 interface LoginOverlayProps {
@@ -45,8 +46,7 @@ function BrandPanel() {
       <div className="login-illustration-glow login-illustration-glow--b" aria-hidden="true" />
 
       <div className="login-illustration-brand">
-        <span className="logo-mark small">⚡</span>
-        <span className="logo-text">Digi<b>DARA</b></span>
+        <Logo theme="dark" size="sm" />
       </div>
 
       <div className="login-illustration-copy">
@@ -122,7 +122,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
   }
 
   function handleGoogleClick() {
-    if (mode === "signup" && !consent) {
+    if (!consent) {
       setError("Please accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
@@ -137,8 +137,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
         <div className="login-form-panel">
           <div className="login-card">
             <div className="login-logo login-logo--mobile-only">
-              <span className="logo-mark small">⚡</span>
-              <span className="logo-text">Digi<b>DARA</b></span>
+              <Logo theme="light" size="sm" />
             </div>
 
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
@@ -236,22 +235,20 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
                 </div>
               )}
 
-              {mode === "signup" && (
-                <label className="field consent-field">
-                  <input
-                    type="checkbox"
-                    checked={consent}
-                    onChange={(e) => setConsent(e.target.checked)}
-                  />
-                  <span>
-                    I have read and agree to the DigiDARA{" "}
-                    <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
-                    {" "}and{" "}
-                    <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
-                    and consent to the collection and use of my personal data as described there.
-                  </span>
-                </label>
-              )}
+              <label className="field consent-field">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                />
+                <span>
+                  I have read and agree to the DigiDARA{" "}
+                  <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+                  {" "}and{" "}
+                  <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
+                  and consent to the collection and use of my personal data as described there.
+                </span>
+              </label>
 
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>

@@ -38,7 +38,7 @@ def test_batch_structural_collision_retries(monkeypatch):
     replacement=generated("Every manager reviews reports, and Kiran is a manager. Which conclusion must hold?")
     responses=[
         ({"questions":[first,duplicate]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
-        ({"questions":[first,replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
+        ({"questions":[replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),  # only the duplicate slot is re-asked
     ]
     monkeypatch.setattr(test_generation,"json_completion",lambda *_args,**_kwargs:responses.pop(0))
     app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)

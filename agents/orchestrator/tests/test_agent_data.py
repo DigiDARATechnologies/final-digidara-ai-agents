@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import httpx
@@ -28,8 +29,10 @@ def test_export_collects_every_privacy_agent_with_server_identity(monkeypatch):
     assert set(result) == set(agent_data.PRIVACY_AGENTS)
     assert len(calls) == 3
     for _, kwargs in calls:
-        assert kwargs["headers"] == {"X-Digidara-User-Id": "user-1", "X-Digidara-Is-Admin": "false"}
-        assert kwargs["json"] == {"action": "export_user_data", "payload": {"email": "a@b.com"}}
+        assert kwargs["headers"]["X-Digidara-User-Id"] == "user-1"
+        assert kwargs["headers"]["X-Digidara-Is-Admin"] == "false"
+        assert kwargs["headers"]["x-digidara-signature"]
+        assert json.loads(kwargs["content"]) == {"action": "export_user_data", "payload": {"email": "a@b.com"}}
 
 
 def test_erasure_deletes_nothing_when_any_agent_is_down(monkeypatch):

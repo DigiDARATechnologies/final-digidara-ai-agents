@@ -9,6 +9,7 @@ import {
   getProblem,
   runProblem,
   submitProblem,
+  submitMcqAnswer,
   type Course,
   type EvaluationResult,
   type ProblemSummary,
@@ -22,7 +23,8 @@ export type CodeForgeStep =
   | "awaiting_technology"
   | "awaiting_topic"
   | "awaiting_problem"
-  | "awaiting_code";
+  | "awaiting_code"
+  | "awaiting_mcq_answer";
 
 export interface CodeForgeFlowMessage {
   text: string;
@@ -47,6 +49,7 @@ export interface CodeForgeFlowState {
   problemId?: number;
   problemName?: string;
   starterCode?: string;
+  mcqOptions?: Record<string, string>;
   lastResult?: EvaluationResult;
   lastGuidance?: TutorGuidance;
 }
@@ -77,6 +80,11 @@ function problemOptions(problems: ProblemSummary[]): ChatOption[] {
     value: p.slug,
     description: p.attempts > 0 ? `${p.progress} · best ${p.best_score}` : p.progress,
   }));
+}
+
+// Same pattern as Aptitude's option map: {A: "text", B: "text", ...} -> clickable buttons.
+function mcqOptions(options: Record<string, string>): ChatOption[] {
+  return Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 }
 
 async function enterTopics(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
@@ -259,7 +267,26 @@ export async function handleCodeForgeText(
           state.topicSlug!,
           problem.slug,
         );
-        const exampleText = detail.examples
+        if (detail.question_type === "mcq") {
+          const options = detail.options ?? {};
+          return {
+            state: {
+              ...state,
+              step: "awaiting_mcq_answer",
+              problemSlug: detail.slug,
+              problemId: detail.id,
+              problemName: detail.name,
+              mcqOptions: options,
+              lastResult: undefined,
+              lastGuidance: undefined,
+            },
+            messages: [{
+              text: `${detail.name} (${detail.difficulty})\n\n${detail.description}`,
+              options: mcqOptions(options),
+            }],
+          };
+        }
+        const exampleText = (detail.examples ?? [])
           .map((ex, i) => `Example ${i + 1}:\n  Input: ${ex.input || "(none)"}\n  Output: ${ex.output}`)
           .join("\n");
         return {
@@ -298,6 +325,38 @@ export async function handleCodeForgeText(
         state,
         messages: [{ text: 'Use the Run or Submit buttons to try your code, or click "Explain this error" after a failed attempt.' }],
       };
+    }
+
+    case "awaiting_mcq_answer": {
+      const options = state.mcqOptions ?? {};
+      // Accepts a bare key ("B"), "option B", or "B." -- matches the values
+      // the option buttons send, and forgives a learner typing one by hand.
+      const match = /^(?:option\s*)?([a-z0-9]+)\.?$/i.exec(trimmed);
+      const selectedKey = match ? Object.keys(options).find((key) => key.toLowerCase() === match[1].toLowerCase()) : undefined;
+      if (!selectedKey || !state.sessionToken || !state.problemId) {
+        return { state, messages: [{ text: "Pick an option from the list.", options: mcqOptions(options) }] };
+      }
+      try {
+        const result = await submitMcqAnswer(state.sessionToken, state.problemId, selectedKey);
+        const feedback = [
+          result.isCorrect ? "Correct!" : "Not quite.",
+          !result.isCorrect ? `Correct answer: ${result.correctKey}. ${options[result.correctKey] ?? ""}` : "",
+          result.explanation,
+        ].filter(Boolean).join("\n\n");
+        return {
+          state: { ...state, step: "awaiting_problem" },
+          messages: [{
+            text: feedback,
+            options: [
+              { label: "Choose another problem", value: "choose_another_problem" },
+              { label: "Back to topics", value: "back_to_topics" },
+              { label: "Back to courses", value: "back_to_courses" },
+            ],
+          }],
+        };
+      } catch (error) {
+        return { state, messages: [{ text: `Could not submit your answer: ${(error as Error).message}`, options: mcqOptions(options) }] };
+      }
     }
   }
 }

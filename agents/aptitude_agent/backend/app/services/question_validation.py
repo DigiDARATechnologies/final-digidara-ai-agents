@@ -28,6 +28,9 @@ CONCEPT_PATTERNS={
 }
 
 
+CONCEPT_MAX_CONTENT_WORDS=8
+
+
 def normalize_question_text(text):
     """Return a stable learner-facing representation used for duplicate checks."""
     value=(text or "").replace("\r", " ").replace("\n", " ")
@@ -52,7 +55,14 @@ def questions_are_near_duplicates(left,right,threshold=.86):
     second_words={word for word in second.split() if word not in STOP_WORDS}
     if first_words and second_words and len(first_words&second_words)>=3:
         if len(first_words&second_words)/min(len(first_words),len(second_words))>=.75:return True
-    return any(pattern.search(first) and pattern.search(second) for pattern in CONCEPT_PATTERNS.values())
+    # A concept match means "two definitional questions about the same thing"
+    # (e.g. "What is the purpose of RAM?" / "What function does RAM perform?").
+    # It used to fire for any two questions that merely mentioned a keyword
+    # such as "queue" or "kernel", so long scenario questions rejected each
+    # other. Only treat short questions as concept duplicates.
+    if len(first_words)<=CONCEPT_MAX_CONTENT_WORDS and len(second_words)<=CONCEPT_MAX_CONTENT_WORDS:
+        return any(pattern.search(first) and pattern.search(second) for pattern in CONCEPT_PATTERNS.values())
+    return False
 
 
 def numeric_pattern(text):
@@ -89,13 +99,22 @@ def _states_correct_answer(explanation, option_text, answer_key):
     if explicit_correct_option:return explicit_correct_option.group(1).upper()==answer_key
     # Treat A-D as an answer key only when it is the complete conclusion.
     # Values such as "A stack" and "C++" are option text, not bare keys.
+    normalized_option = _normalized_words(option_text)
     explicit_key = re.search(
         r"\b(?:answer|correct\s+(?:answer|option|choice))\s*(?:is|=|:)?\s*(?:option\s*)?([A-D])\s*[.!]?\s*$",
         conclusion,re.IGNORECASE,
     )
-    if explicit_key:return explicit_key.group(1).upper()==answer_key
+    if explicit_key:
+        concluded=explicit_key.group(1).upper()
+        # Seating/ordering puzzles often label entities A-D as the option
+        # *content* itself (e.g. correct_answer="B", options={"B": "A", ...}
+        # -- "the answer is entity A"). A bare trailing letter is then the
+        # concluded entity, not a selected option key, so it must be checked
+        # against the option's own single-letter text, not just answer_key.
+        if len(normalized_option)==1 and normalized_option in "abcd":
+            return concluded==normalized_option.upper() or concluded==answer_key
+        return concluded==answer_key
     normalized_explanation = _normalized_words(explanation)
-    normalized_option = _normalized_words(option_text)
     if normalized_option and re.search(rf"(?<!\w){re.escape(normalized_option)}(?!\w)", normalized_explanation):
         return True
     option_words=[word for word in normalized_option.split() if len(word)>=3 and word not in {"the","and","for","with","from","that","this","none"}]
@@ -150,7 +169,7 @@ _ARITHMETIC_PATTERNS=(
     (re.compile(rf"({_NUM})\s*minus\s*({_NUM})",re.IGNORECASE),lambda a,b:a-b),
     (re.compile(rf"({_NUM})\s*subtracted\s+from\s*({_NUM})",re.IGNORECASE),lambda a,b:b-a),
     (re.compile(rf"subtract\s*({_NUM})\s*from\s*({_NUM})",re.IGNORECASE),lambda a,b:b-a),
-    (re.compile(rf"({_NUM})\s*[*×]\s*({_NUM})"),lambda a,b:a*b),
+    (re.compile(rf"({_NUM})\s*[*×xX]\s*({_NUM})"),lambda a,b:a*b),
     (re.compile(rf"({_NUM})\s*times\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
     (re.compile(rf"({_NUM})\s*multiplied\s+by\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
     (re.compile(rf"multiply\s*({_NUM})\s*by\s*({_NUM})",re.IGNORECASE),lambda a,b:a*b),
@@ -185,6 +204,26 @@ def _derived_numbers(text):
     return results
 
 
+_LOOSE_NUMBER=re.compile(
+    r"(?<![\w.])(?P<number>-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?:\s*%|[A-Za-z°²³]{1,6}(?![A-Za-z]))?"
+)
+
+
+def _plain_numbers(text):
+    """Numeric values in `text` ignoring type: "40m", "40 m", "40" and "40%" all
+    give "40". Used only to decide whether an answer's value was derived, where
+    a unit or percent sign written on the option but not in the working
+    (or the reverse) must not make a correct derivation look wrong."""
+    values=set()
+    for match in _LOOSE_NUMBER.finditer(text or ""):
+        try:
+            number=Decimal(match.group("number").replace(",",""))
+        except InvalidOperation:
+            continue
+        values.add(format(number.normalize(),"f"))
+    return values
+
+
 def _has_matching_math_conclusion(explanation, option_text):
     steps=list(re.finditer(r"\bStep\s+\d+\s*:",explanation,re.IGNORECASE))
     if len(steps)<2:return False
@@ -211,8 +250,11 @@ def _has_matching_math_conclusion(explanation, option_text):
     derivation_text=f"{preceding_steps} {final_step[:match.start()]}"
     option_numbers=set(numeric_pattern(option_text))
     known_numbers=set(numeric_pattern(derivation_text))|_derived_numbers(derivation_text)
-    if option_numbers:
-        return option_numbers.issubset(known_numbers)
+    if option_numbers and option_numbers.issubset(known_numbers):return True
+    option_values=_plain_numbers(option_text)
+    if option_values:
+        known_values={value.split(":",1)[1] for value in known_numbers}|_plain_numbers(derivation_text)
+        return option_values.issubset(known_values)
     return bool(re.search(rf"(?<!\w){re.escape(normalized_option)}(?!\w)",_normalized_words(derivation_text)))
 
 

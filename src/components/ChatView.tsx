@@ -1,9 +1,11 @@
-import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { unlockSpeechSynthesis } from "../lib/browserSpeech";
+import { renderMessageText } from "../lib/messageText";
 
 interface ChatViewProps {
   chat: Chat;
@@ -15,6 +17,8 @@ interface ChatViewProps {
   /** Locks the normal composer for agent flows that must not accept a second
    * turn while their backend is generating or grading. */
   composerDisabled?: boolean;
+  /** A live interview supplies its own voice and typed-answer controls. */
+  hideComposer?: boolean;
   onBack: () => void;
   onSend: (text: string, editIndex?: number, internal?: boolean, displayText?: string) => void;
   /** `value` is the internal action; `label` is what the learner sees. */
@@ -58,6 +62,8 @@ interface ChatViewProps {
   dailyChallengeStatus?: "pending" | "completed";
   onDailyChallenge?: () => void;
   immersiveSpeaking?: boolean;
+  /** Pronunciation uses microphone energy detection to stop after speech. */
+  autoStopVoiceOnSilence?: boolean;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -77,81 +83,6 @@ interface ChatViewProps {
   contextPanel?: ReactNode;
 }
 
-function renderFormattedChatText(text: string): ReactNode {
-  if (!text) return null;
-  const lines = text.split("\n");
-
-  return lines.map((line, lineIndex) => {
-    const isHeading3 = line.startsWith("### ");
-    const isHeading2 = line.startsWith("## ");
-    let lineContent = line;
-    if (isHeading3) lineContent = line.slice(4);
-    else if (isHeading2) lineContent = line.slice(3);
-
-    const regex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+[^<.,:;"')\]\s])|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
-    const parts: ReactNode[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = regex.exec(lineContent)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(lineContent.slice(lastIndex, match.index));
-      }
-      if (match[1] && match[2]) {
-        parts.push(
-          <a
-            key={`link-${lineIndex}-${match.index}`}
-            href={match[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="chat-bubble-link"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {match[1]}
-          </a>
-        );
-      } else if (match[3]) {
-        parts.push(
-          <a
-            key={`url-${lineIndex}-${match.index}`}
-            href={match[3]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="chat-bubble-link"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {match[3]}
-          </a>
-        );
-      } else if (match[4]) {
-        parts.push(<strong key={`b-${lineIndex}-${match.index}`}>{match[4]}</strong>);
-      } else if (match[5]) {
-        parts.push(<em key={`i-${lineIndex}-${match.index}`}>{match[5]}</em>);
-      } else if (match[6]) {
-        parts.push(<code key={`c-${lineIndex}-${match.index}`}>{match[6]}</code>);
-      }
-      lastIndex = regex.lastIndex;
-    }
-
-    if (lastIndex < lineContent.length) {
-      parts.push(lineContent.slice(lastIndex));
-    }
-
-    const node = isHeading3 || isHeading2 ? (
-      <strong key={`h-${lineIndex}`} className="chat-heading">{parts}</strong>
-    ) : (
-      <span key={`l-${lineIndex}`}>{parts}</span>
-    );
-
-    return (
-      <Fragment key={`frag-${lineIndex}`}>
-        {node}
-        {lineIndex < lines.length - 1 && <br />}
-      </Fragment>
-    );
-  });
-}
-
 export default function ChatView({
   chat,
   agent,
@@ -159,6 +90,7 @@ export default function ChatView({
   typing,
   typingLabel,
   composerDisabled = false,
+  hideComposer = false,
   onBack,
   onSend,
   onChooseOption,
@@ -187,6 +119,7 @@ export default function ChatView({
   dailyChallengeStatus,
   onDailyChallenge,
   immersiveSpeaking,
+  autoStopVoiceOnSilence = false,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -221,7 +154,7 @@ export default function ChatView({
     speech.start((text) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
-    });
+    }, { autoStopOnSilence: autoStopVoiceOnSilence });
   }
 
   useEffect(() => {
@@ -420,14 +353,14 @@ export default function ChatView({
           const isEditing = editingIndex === i;
           const hasContextPanel = m.role === "agent" && i === chat.messages.length - 1 && !!contextPanel;
           return (
-            <div className={`msg ${m.role === "user" ? "user" : "agent"}`} key={i}>
+            <div className={`msg ${m.role === "user" ? "user" : "agent"}${agent.kind === "mock-interview" ? " mock-interview-msg" : ""}`} key={i}>
               <span
                 className="avatar"
                 style={{ background: m.role === "user" ? "var(--accent-grad)" : msgAgent.color || "var(--accent-grad)" }}
               >
                 {m.role === "user" ? user.initial : msgAgent.icon}
               </span>
-              <div className={`msg-content${hasContextPanel ? " aptitude-question-section" : ""}`}>
+              <div className={`msg-content${hasContextPanel ? agent.kind === "mock-interview" ? " mock-interview-question-section" : " aptitude-question-section" : ""}`}>
                 {isEditing ? (
                   <div className="bubble-edit">
                     <textarea
@@ -454,7 +387,7 @@ export default function ChatView({
                 ) : (
                   <>
                     {hasContextPanel && contextPanel}
-                    <div className="bubble">{renderFormattedChatText(m.text)}</div>
+                    <div className="bubble">{renderMessageText(m.text)}</div>
                     {!!visibleOptions?.length && (
                       <div className="chat-options">
                         {visibleOptions.map((option) => option.href ? (
@@ -463,7 +396,7 @@ export default function ChatView({
                             {option.description && <span>{option.description}</span>}
                           </a>
                         ) : (
-                          <button key={option.value} type="button" disabled={!optionsActive} onClick={() => onChooseOption(option.value, option.label)}>
+                          <button key={option.value} type="button" disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
                             <strong>{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
                           </button>
@@ -544,7 +477,7 @@ export default function ChatView({
         </div>
       )}
 
-      {codeMode ? (
+      {hideComposer ? null : codeMode ? (
         <div className="code-composer">
           <textarea
             className="code-editor"
@@ -647,6 +580,9 @@ export default function ChatView({
             </svg>
           </button>
         </form>
+      )}
+      {!codeMode && !multilineMode && autoStopVoiceOnSilence && speech.listening && (
+        <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
     </section>

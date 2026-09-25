@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from io import BytesIO
 from urllib.parse import urlencode
 
 from flask import Blueprint, Response, current_app, jsonify, request
@@ -19,7 +20,7 @@ ACTION_ROUTE_MAP = {
     "get_resume": ("GET", "/api/resumes/{resume_id}"), "update_resume": ("PUT", "/api/resumes/{resume_id}"),
     "delete_resume": ("DELETE", "/api/resumes/{resume_id}"), "analyze_upload": ("POST", "/api/resumes/import/analyze"),
     "create_import_draft": ("POST", "/api/resumes/import/draft"), "analyze_resume": ("POST", "/api/resumes/{resume_id}/ats"),
-    "generate_resume": ("POST", "/api/ai/optimize-resume"), "generate_summary": ("POST", "/api/ai/generate-summary"),
+    "generate_resume": ("POST", "/api/ai/optimize-resume"), "suggest_resume_edit": ("POST", "/api/ai/suggest-resume-edit"), "generate_summary": ("POST", "/api/ai/generate-summary"),
     "generate_bullets": ("POST", "/api/ai/generate-bullets"), "generate_project_bullets": ("POST", "/api/ai/generate-project-bullets"),
     "improve_bullet": ("POST", "/api/ai/improve-bullet"), "suggest_skills": ("POST", "/api/ai/suggest-skills"),
     "analyze_job_description": ("POST", "/api/ai/analyze-job-description"), "generate_declaration": ("POST", "/api/ai/generate-declaration"),
@@ -108,10 +109,13 @@ def invoke():
     _invoke_reentry.active = True
     try:
         if request.mimetype == "multipart/form-data":
-            # This action only targets the existing import analyzer; Flask preserves file bytes/name/type.
+            # Rebuild each upload from bytes rather than forwarding its live
+            # request stream. The stream may already have been consumed while
+            # Flask parsed multipart fields, which otherwise makes a valid
+            # browser upload arrive at the analyzer as a zero-byte file.
             data = {key: value for key, value in request.form.items() if key not in {"action", "payload"}}
             for key, file in request.files.items():
-                data[key] = (file.stream, file.filename, file.mimetype)
+                data[key] = (BytesIO(file.read()), file.filename, file.mimetype)
             upstream = current_app.test_client().open(path, method=method, data=data, headers=headers, content_type=None)
         else:
             query = payload.get("query") if isinstance(payload.get("query"), dict) else {}

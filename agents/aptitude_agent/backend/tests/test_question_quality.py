@@ -331,7 +331,7 @@ def test_generation_retries_structurally_duplicate_batch(monkeypatch):
     replacement={**first,"question":"Every manager reviews reports, and Kiran is a manager. Which conclusion must hold?"}
     responses=[
         ({"questions":[first,duplicate]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
-        ({"questions":[first,replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),
+        ({"questions":[replacement]},{"input_tokens":20,"output_tokens":10,"total_tokens":30}),  # only the duplicate slot is re-asked
     ]
     calls=[]
 

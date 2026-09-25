@@ -1,4 +1,4 @@
-"""Main and follow-up interview question generation."""
+"""Planned interview question generation."""
 
 import json
 import logging
@@ -15,10 +15,11 @@ from services.question_history import question_hash
 
 from .validators import (
     QUESTION_WORD_LIMITS,
-    _safe_fallback_followup,
+    _beginner_technical_question_errors,
+    _intermediate_technical_question_errors,
     _safe_fallback_question,
+    _question_validation_errors,
     _validated_question_payload_with_retries,
-    _validated_question_with_retries,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,98 @@ search_client = None
 ROLE_SKILL_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 _role_skill_cache = {}
 
+TECHNICAL_LEVEL_GUIDANCE = {
+    "beginner": (
+        "BEGINNER / FRESHER: Ask exactly one everyday foundational concept in plain language. "
+        "The answer must fit a one- or two-sentence definition, purpose, or basic use. "
+        "Good types: 'What is a variable?', 'What does git status do?', "
+        "'What is CSS used for?', or a simple difference between two everyday concepts. "
+        "Do not ask to name or list multiple architectural principles or constraints; "
+        "'What are the main principles of RESTful architecture?' is NOT beginner. "
+        "Do not ask about framework configuration files or project structure conventions; "
+        "'What is settings.py for in Django?' is NOT beginner. "
+        "Do not ask about language internals or magic methods, context managers, the Python "
+        "with statement, __enter__/__exit__, decorators, or metaclasses; "
+        "'What is the purpose of the with statement?' is NOT beginner. "
+        "Avoid architecture, optimization, security design, deployment, and multi-step scenarios. "
+        "Keep one question under 18 words; if an assigned skill is broad, test its simplest user-facing idea."
+    ),
+    "intermediate": (
+        "INTERMEDIATE: Assume basic definitions are known. Ask one practical concept or a short "
+        "application/debugging scenario. Named principles and patterns such as REST constraints, "
+        "MVC, and ORM concepts, basic framework configuration, and common language features such "
+        "as context managers, decorators, and list comprehensions are appropriate. "
+        "Ask how or why a common choice works, or how the candidate would approach a familiar "
+        "problem. Framework configuration means ordinary settings and routing, not production "
+        "deployment planning. Do not require senior architecture, obscure internals, or complex multi-step "
+        "trade-offs. Keep one focused question under 30 words."
+    ),
+    "advanced": (
+        "ADVANCED: Test informed judgment through architecture trade-offs, performance and "
+        "optimization, security considerations, component-level system design, reliability, "
+        "or edge cases. A realistic multi-step scenario is appropriate when its parts form one "
+        "coherent decision. Ask the candidate to justify a choice and its consequences, not to "
+        "recite definitions. Keep one focused question under 45 words."
+    ),
+}
+
+HR_LEVEL_GUIDANCE = {
+    "beginner": (
+        "BEGINNER HR: Ask one simple conversational question about introduction, motivation, "
+        "strengths, goals, basic teamwork, feedback, or an everyday situation. "
+        "Examples: 'Tell me about yourself?' or 'How do you respond to feedback?' "
+        "Accept school, projects, volunteering, and daily life as experience. "
+        "Do not demand formal employment, leadership, conflict mediation, ambiguous trade-offs, "
+        "or a structured STAR story. Keep it under 18 words."
+    ),
+    "intermediate": (
+        "INTERMEDIATE HR: Ask one focused behavioral or situational question inviting a concrete "
+        "example with situation, personal action, and result or learning. Familiar teamwork, "
+        "prioritization, communication, adaptability, and manageable conflict fit this level. "
+        "Do not require executive leadership or highly ambiguous judgment. Keep it under 30 words."
+    ),
+    "advanced": (
+        "ADVANCED HR: Ask one realistic behavioral or ambiguous scenario about leadership, "
+        "complex conflict resolution, accountability, influencing without authority, or a "
+        "difficult ethical or strategic trade-off. Invite the candidate to explain their judgment, "
+        "actions, and consequences. Keep it focused and under 45 words."
+    ),
+}
+
+
+def _technical_skill_calibration(skill_area, difficulty):
+    """Return a compact, skill-specific calibration instruction for a slot."""
+    skill = str(skill_area or "").casefold()
+    if difficulty == "beginner":
+        examples = "define one everyday term, purpose, or basic command"
+    elif difficulty == "intermediate":
+        examples = "explain a named feature/pattern or a practical troubleshooting scenario"
+    else:
+        examples = "reason through a trade-off, failure mode, security/performance risk, or design decision"
+
+    if any(token in skill for token in ("python", "pandas", "numpy")):
+        focus = "stay within Python/data-library concepts named by this skill"
+    elif any(token in skill for token in ("sql", "database", "data model")):
+        focus = "stay within queries, joins, modeling, or database behavior named by this skill"
+    elif any(token in skill for token in ("statistics", "forecast", "experimental")):
+        focus = "stay within statistical reasoning, experiments, or forecasting named by this skill"
+    elif any(token in skill for token in ("excel", "dashboard", "visualization", "power bi", "tableau")):
+        focus = "stay within the spreadsheet, dashboard, or visualization practice named by this skill"
+    elif any(token in skill for token in ("flask", "django", "rest", "api", "frontend", "react", "git", "test")):
+        focus = "stay within the framework, API, frontend, version-control, or testing practice named by this skill"
+    elif any(token in skill for token in ("security", "iam", "cloud", "encryption", "network", "incident", "compliance", "container")):
+        focus = "stay within the cloud/security subject named by this skill"
+    else:
+        focus = "stay tightly within the exact skill label"
+    return f"For '{skill_area}', {examples}; {focus}."
+
 # These are deliberately role-level competencies, rather than the old
 # course/subject topic catalogue.  They provide predictable, reviewed
 # coverage for the roles offered in the UI while custom roles are inferred.
 PRESET_ROLE_SKILLS = {
     "python fullstack developer": {
         "beginner": ["Python fundamentals", "Flask or Django basics", "REST API basics", "SQL and relational databases", "HTML, CSS and JavaScript basics", "Git basics"],
-        "intermediate": ["Python application design", "Flask or Django architecture", "REST API design and authentication", "SQL queries and optimization", "React or frontend integration", "testing and debugging", "Git workflows and deployment"],
+        "intermediate": ["Python application design", "Flask or Django configuration and routing", "REST API design and authentication", "SQL joins and aggregations", "React or frontend integration", "testing and debugging", "Git workflows and deployment"],
         "advanced": ["Python performance and reliability", "scalable backend architecture", "API security and versioning", "database design and optimization", "frontend-backend system design", "CI/CD and cloud deployment", "observability and incident debugging"],
     },
     "data analyst": {
@@ -79,6 +165,7 @@ Number of questions needed: {count}
 {search_context}
 
 RULES:
+{difficulty_guidance}
 1. Return only questions commonly asked in real {role} interviews at {difficulty}, based on the search results.
 2. Keep source wording close; do not invent or creatively rephrase.
 3. Exclude duplicates, vague text, ads, navigation, and headers; prioritize repeated patterns.
@@ -242,6 +329,9 @@ def fetch_live_real_questions(
         difficulty=difficulty,
         round=round_,
         count=count,
+        difficulty_guidance=(
+            TECHNICAL_LEVEL_GUIDANCE if round_ == "technical" else HR_LEVEL_GUIDANCE
+        ).get(difficulty, ""),
         search_context=(
             f"Search for real, frequently-asked '{role}' interview "
             f"questions at '{difficulty}' level on Glassdoor and "
@@ -325,7 +415,13 @@ def fetch_live_real_questions(
     for item in value if isinstance(value, list) else []:
         question = " ".join(str(item.get("question", "")).split()).strip()
         key = question.casefold()
-        if question and question.endswith("?") and key not in seen and question_hash(question) not in already_asked_hashes:
+        if question and question.endswith("?") and key not in seen and question_hash(question) not in already_asked_hashes and not (
+            round_ == "technical" and (
+                _question_validation_errors(question, difficulty)
+                or (difficulty == "beginner" and _beginner_technical_question_errors(question))
+                or (difficulty == "intermediate" and _intermediate_technical_question_errors(question))
+            )
+        ):
             seen.add(key)
             questions.append({**item, "question": question, "source": "real"})
         if len(questions) >= count:
@@ -353,13 +449,26 @@ def build_interview_questions(
     """
     already_asked_hashes = set(already_asked_hashes or ())
     initial_asked_context = list(initial_asked_context or ())
+    skill_slots = (
+        "Assign the output items to these skills in this exact order: "
+        + " ".join(
+            f"Item {index + 1}: {role_skills[index % len(role_skills)]}. "
+            f"{_technical_skill_calibration(role_skills[index % len(role_skills)], difficulty)}"
+            for index in range(total_count)
+        )
+        if round_ == "technical" and role_skills else ""
+    )
     # Batch mode keeps one model request for the complete initial plan.  Each
     # returned item is still persisted as an individual question row, so the
     # student-facing sequence and database shape remain unchanged.
+    level_guidance = (
+        TECHNICAL_LEVEL_GUIDANCE if round_ == "technical" else HR_LEVEL_GUIDANCE
+    ).get(difficulty, "")
     batch_prompt = (
         f"Generate exactly {total_count} distinct {difficulty}-level {round_} interview questions for role/topic '{role}'. "
+        f"{level_guidance} {skill_slots} "
         f"Cover these skill areas in order, cycling if needed: {role_skills or ['core concepts']}. "
-        "Ask one concise concept question per item; do not require writing code. "
+        "Ask one concise question per item. Technical answers must be verbal; never require writing code. "
         f"Do not repeat these previous questions: {initial_asked_context}. "
         "Return ONLY valid JSON as an array of objects in this exact shape: "
         '{"questions":[{"topic_area":"concise lowercase area","question":"question text"}]}.'
@@ -387,7 +496,17 @@ def build_interview_questions(
         assigned_skill = role_skills[index % len(role_skills)] if role_skills else None
         item = parsed_batch[index] if index < len(parsed_batch) and isinstance(parsed_batch[index], dict) else {}
         question = " ".join(str(item.get("question", "")).split()).strip()
-        if not question or not question.endswith("?") or question_hash(question) in seen:
+        returned_topic = " ".join(str(item.get("topic_area", "")).split()).casefold()
+        required_topic = " ".join(str(assigned_skill or "").split()).casefold()
+        if not question or not question.endswith("?") or question_hash(question) in seen or (
+            (round_ == "technical" and role_skills and returned_topic != required_topic)
+            or
+            (_question_validation_errors(question, difficulty)
+             or (round_ == "technical" and difficulty == "beginner"
+                 and _beginner_technical_question_errors(question))
+             or (round_ == "technical" and difficulty == "intermediate"
+                 and _intermediate_technical_question_errors(question)))
+        ):
             question = _safe_fallback_question(
                 assigned_skill or role,
                 difficulty,
@@ -797,25 +916,7 @@ def generate_question(
     }.get(difficulty, 0.75)
 
     if round_type == "hr":
-        difficulty_guidance = {
-            "beginner": (
-                "Ask one short, natural, beginner-friendly HR question. Focus on the "
-                "candidate's background, motivation, goals, strengths, teamwork, feedback, "
-                "or a simple workplace situation. The candidate may use examples from "
-                "education, projects, volunteering, clubs, or everyday responsibilities. "
-                "Do not require formal work experience. Use no more than 18 words."
-            ),
-            "intermediate": (
-                "Ask one concise behavioral or situational HR question about teamwork, "
-                "prioritization, communication, adaptability, conflict, responsibility, or "
-                "role readiness. A practical example may be requested. Use no more than 30 words."
-            ),
-            "advanced": (
-                "Ask one realistic behavioral HR question requiring deeper judgment about "
-                "leadership, ownership, conflict, accountability, difficult trade-offs, or "
-                "decision-making. Keep it focused, conversational, and within 45 words."
-            ),
-        }.get(
+        difficulty_guidance = HR_LEVEL_GUIDANCE.get(
             difficulty,
             "Ask one realistic, conversational HR interview question.",
         )
@@ -835,9 +936,12 @@ def generate_question(
             "'What is a variable?', 'What is a data type?', 'What is a list?', or "
             "'What is a team?'. Do not use or mention any technical subject associated with "
             "the interview. Ask one question only and wait for the candidate's response before "
-            "any follow-up or next question. Never combine more than two distinct behavioral "
-            "ideas or question clauses. Do not repeat any of these already-asked questions "
-            f"(from this and prior attempts): {asked_so_far}. Reply ONLY with valid JSON "
+            "the next question. Never combine more than two distinct behavioral "
+            "ideas or question clauses. Write one sentence ending in exactly one question mark. "
+            "Do not append a second "
+            "question or enumerate separate prompts for situation, action, and outcome; invite "
+            "those details within one focused question. Do not repeat any of these already-asked "
+            f"questions (from this and prior attempts): {asked_so_far}. Reply ONLY with valid JSON "
             "in exactly this shape: "
             '{"topic_area":"<concise lowercase HR area>","question":"<question>"}. '
             f"Use exactly {area!r} as the topic_area. Recently used HR areas, which "
@@ -852,7 +956,7 @@ def generate_question(
             lambda: {
                 "topic_area": area,
                 "question": _safe_fallback_question(
-                    None,
+                    area,
                     difficulty,
                     asked_so_far,
                     round_type="hr",
@@ -915,33 +1019,7 @@ def generate_question(
             "selected from a subject checklist using least-recently-used ordering."
         )
 
-    difficulty_guidance = {
-        "beginner": (
-            "BEGINNER -- apply these as hard constraints: Ask about exactly one basic concept. "
-            "Use one short sentence of no more than 18 words and plain, beginner-friendly language. "
-            "Prefer a concrete definition, purpose, or basic behavior question whose answer needs "
-            "one simple idea. Do not combine concepts or add a second task using 'and', 'also', "
-            "or another clause. Do not ask multi-part questions, comparisons requiring several "
-            "explanations, scenarios, edge cases, internals, trade-offs, performance, design, "
-            "architecture, or work-experience questions. For technical interviews, good forms are "
-            "'What is X?', 'What does X do?', or 'Why is X used?'."
-        ),
-        "intermediate": (
-            "INTERMEDIATE -- test application rather than basic recall. Assume the candidate knows "
-            "common definitions. Ask about one concept or at most two closely related concepts. "
-            "You may ask how, why, comparison, debugging, or a short practical scenario requiring "
-            "moderate reasoning. Keep it to one concise sentence, normally no more than 30 words. "
-            "Do not require senior-level architecture, obscure edge cases, deep performance analysis, "
-            "or several independent tasks."
-        ),
-        "advanced": (
-            "ADVANCED -- require deeper reasoning and informed judgment. You may ask about edge cases, "
-            "trade-offs, performance, reliability, architecture, design choices, failure modes, or "
-            "why one approach should be chosen over another. Real-world scenarios and up to two tightly "
-            "connected parts are appropriate. The candidate should reason through consequences and "
-            "justify decisions aloud. Keep the wording clear and purposeful even when the concept is complex."
-        ),
-    }.get(
+    difficulty_guidance = TECHNICAL_LEVEL_GUIDANCE.get(
         difficulty,
         "Match the selected difficulty and keep the question realistic and conversational.",
     )
@@ -956,7 +1034,7 @@ def generate_question(
         "Never combine more than 2 distinct technical concepts in a single question, "
         "regardless of difficulty level. If the subject naturally has many sub-concepts "
         "(for example, OOP, type hinting, and protocols), pick ONE to focus the question "
-        "on and reserve the others for potential follow-up questions. Stay within the "
+        "on. Stay within the "
         "selected difficulty for the entire interview. Questions may vary within that level, "
         "but never escalate into the next level. Difficulty constraints override variety "
         "hints, subject-specific examples, and general question-style guidance. "
@@ -965,26 +1043,14 @@ def generate_question(
         "implement an algorithm, produce syntax, complete a coding exercise, provide a code "
         "snippet, or dictate code line by line. Ask about concepts, definitions, differences, "
         "use-cases, debugging approach, and reasoning that can be answered verbally. "
-        "For AI/ML subjects, ask about concepts like: what a vector embedding is and why it's "
-        "used, the difference between fine-tuning and prompt engineering, what RAG solves and "
-        "when you'd use it over pure prompting, what a LangChain/LangGraph agent is and how it "
-        "differs from a single LLM call, or how a vector database like Chroma or Pinecone is "
-        "used for similarity search. For 'AI & ML' as a subject, ask broader foundational "
-        "questions spanning supervised vs unsupervised learning, overfitting/underfitting, "
-        "common model evaluation metrics (accuracy, precision, recall), or the difference "
-        "between classical ML and deep learning -- keep it foundational for beginner/intermediate, "
-        "and add trade-off/architecture reasoning for advanced. For 'AI Agent Development' as "
-        "a subject, ask about concepts like: what an AI agent is and how it differs from a "
-        "chatbot, tool-calling/function-calling in LLM agents, the role of memory and state in "
-        "a LangGraph agent, how RAG fits into an agent's workflow, or how FastAPI is used to "
-        "serve an agent as an API. For SEO, SEM & Google Ads, Social Media Marketing, Content "
-        "Marketing, and Email Marketing, ask role-relevant questions about campaign decisions, "
-        "audiences, execution, measurement, optimization, privacy, or brand safety; do not turn "
-        "them into generic software-engineering interviews. For MLOps, Docker & Kubernetes, CI/CD "
-        "Pipelines, Cloud Platforms, and System Design, ask about designing, deploying, scaling, "
-        "observing, securing, and reliably operating production systems. Connect the selected topic "
-        "area directly to the chosen subject; avoid vague questions such as 'What is technology?'. "
-        f"Ask one question; wait for the response before follow-up. {role_priority_guidance} {variety_guidance} Do not repeat any of these "
+        "For AI/ML, marketing, cloud, and systems topics, choose a question type from the selected "
+        "difficulty, not the most specialized item in the topic. At Beginner ask what a familiar "
+        "tool or concept is or does (such as a model, social-media audience, Docker container, or "
+        "CI/CD pipeline). At Intermediate ask about a common workflow, pattern, metric, or simple "
+        "troubleshooting choice. At Advanced ask about a consequential design trade-off, failure "
+        "mode, performance, security, or reliability decision. Keep the question directly tied to "
+        "the selected topic; avoid vague questions such as 'What is technology?'. "
+        f"Ask one question at a time. {role_priority_guidance} {variety_guidance} Do not repeat any of these "
         f"already-asked questions (from this and prior attempts): {asked_so_far}. Reply ONLY "
         "with valid JSON in exactly this shape: "
         '{"topic_area":"<concise lowercase technical area>","question":"<question>"}. '
@@ -1012,78 +1078,4 @@ def generate_question(
             recent_topic_areas if is_custom_topic and not role_skills else ()
         ),
         fail_fast_on_transport_error=True,
-    )
-
-
-def generate_followup(
-    question,
-    answer,
-    difficulty,
-    verdict,
-    verdict_reason,
-    round_type="technical",
-    *,
-    chat_fn,
-):
-    """Return one validated follow-up question, or None."""
-    word_limit = QUESTION_WORD_LIMITS.get(difficulty, 45)
-    if round_type == "hr":
-        system_prompt = (
-            "You are a supportive HR interviewer deciding whether ONE follow-up question "
-            "is genuinely necessary after a spoken behavioral answer. Judge the candidate's "
-            "complete final intended meaning. Ignore fillers, repetition, rambling, false "
-            "starts, casual wording, and statements they clearly corrected. Do not require "
-            "corporate buzzwords, memorized phrasing, perfect STAR formatting, artificial "
-            "confidence, or formal work experience when an education, project, volunteer, "
-            "club, or everyday example is relevant. Return exactly NONE when the candidate "
-            "communicated a relevant and sufficiently complete answer; the only missing "
-            "information is optional context, polish, or extra detail; or a follow-up would "
-            "merely ask for the same information in different words. Ask one short, supportive "
-            "follow-up only when the answer is genuinely vague, off-topic, or incomplete and "
-            "one clarification could reveal material missing substance, such as the candidate's "
-            "own action, reasoning, result, motivation, or lesson when that element is necessary "
-            "for the original question. Do not turn the interview into an interrogation. If a "
-            "follow-up is genuinely necessary, respond with only that one question. Keep it "
-            "focused on one behavioral gap, never combine more than two question clauses, and "
-            f"use no more than {word_limit} words. Otherwise, respond exactly: NONE"
-        )
-    else:
-        system_prompt = (
-            "You are a supportive interviewer deciding whether ONE follow-up question is "
-            "genuinely necessary after a spoken answer. Judge the candidate's final intended "
-            "meaning. Ignore fillers, repetition, rambling, false starts, and statements they "
-            "clearly corrected. Accept informal terminology and analogies when the underlying "
-            "concept is clear. Return exactly NONE when the verdict is correct; the core concept "
-            "was answered despite informal wording; the only missing material is optional depth, "
-            "an example not requested by the original question, an edge case, or a more precise "
-            "technical term; or a follow-up would merely repeat an already-understood idea. Ask "
-            "one short follow-up only when the answer has a genuine conceptual gap, material "
-            "error, unresolved contradiction, or is too vague to establish basic understanding. "
-            "The follow-up must directly clarify that core gap and remain at the stated difficulty. "
-            "Do not turn the interview into an interrogation. Do not ask for extra depth merely "
-            "because more could be said, and do not request code. If a follow-up is genuinely "
-            "necessary, respond with only that one question. Focus on one technical gap, never "
-            "combine more than two question clauses, and use no more than "
-            f"{word_limit} words. Otherwise, respond exactly: NONE"
-        )
-
-    user_prompt = (
-        f"Difficulty: {difficulty}\n"
-        f"Evaluation verdict: {verdict}\n"
-        f"Evaluation reason: {verdict_reason}\n"
-        f"Question: {question}\n"
-        f"Candidate answer: {answer}"
-    )
-    return partial(
-        _validated_question_with_retries,
-        chat_fn=chat_fn,
-    )(
-        [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        difficulty,
-        lambda: _safe_fallback_followup(round_type, difficulty),
-        f"{round_type}_followup",
-        allow_none=True,
     )
