@@ -6,6 +6,7 @@ import { newChatId, nowStr, useChats } from "./hooks/useChats";
 import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
+  capstonePendingFiles,
   createInitialCapstoneState,
   initialCapstoneMessage,
   mergeCapstoneFiles,
@@ -924,8 +925,9 @@ export default function App() {
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
     const pendingResume = agent?.kind === "job-fetch" ? jobFetchPendingFiles[chatId] : null;
+    const pendingImage = agent?.kind === "capstone" ? capstoneStates[chatId]?.imageFile : undefined;
 
-    if (!text.trim() && !pendingResume) return;
+    if (!text.trim() && !pendingResume && !pendingImage) return;
 
     if (pendingResume) {
       setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
@@ -934,7 +936,9 @@ export default function App() {
     const effectiveText = displayText ?? (
       pendingResume
         ? (text.trim() ? `📎 ${pendingResume.name}\n${text.trim()}` : `📎 ${pendingResume.name}`)
-        : text
+        : pendingImage
+          ? (text.trim() ? `📎 ${pendingImage.name}\n${text.trim()}` : `📎 ${pendingImage.name}`)
+          : text
     );
 
     const isEdit = editIndex != null && !!chat;
@@ -1339,9 +1343,7 @@ export default function App() {
 
   const pendingFiles = isJobFetchChat && currentChat && jobFetchPendingFiles[currentChat.id]
     ? [jobFetchPendingFiles[currentChat.id]!]
-    : capstoneState
-      ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f)
-      : [];
+    : capstonePendingFiles(capstoneState);
 
   function handleRemovePendingFile(index: number) {
     if (!currentChatId) return;
@@ -1350,9 +1352,10 @@ export default function App() {
       return;
     }
     if (isCapstoneChat && capstoneState) {
-      const files = [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f);
-      const toRemove = files[index];
-      if (toRemove === capstoneState.docxFile) {
+      const toRemove = capstonePendingFiles(capstoneState)[index];
+      if (toRemove && toRemove === capstoneState.imageFile) {
+        setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], imageFile: undefined } }));
+      } else if (toRemove === capstoneState.docxFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], docxFile: undefined } }));
       } else if (toRemove === capstoneState.zipFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], zipFile: undefined } }));
