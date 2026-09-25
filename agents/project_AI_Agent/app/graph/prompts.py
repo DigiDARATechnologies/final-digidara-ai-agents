@@ -395,9 +395,8 @@ OUTPUT FORMAT (strict JSON):
 {{
   "clutter_flags": ["<file/folder that shouldn't be there>", "..."],
   "structure_quality": "<poor|acceptable|good>",
-  "notes": "<short explanation for the student, in plain language — if the deterministic
-    result found missing items, explain what each one is for and where to add it; always
-    end with any additional organization/clutter observations>"
+  "notes": "<short explanation for the student, in plain language, about organization and
+    clutter ONLY - do not list or explain missing required items, that is written separately>"
 }}
 
 Be strict but fair — a slightly different-but-sensible folder name is fine; a flat dump of
@@ -665,11 +664,12 @@ CONTEXT:
 
 TASK:
 Write a short (150-250 words), direct, encouraging-but-honest feedback message
-for the student. Structure it as:
+for the student. A separate, exact list of missing requirements/files is appended
+after your message, so do not try to enumerate those yourself. Structure it as:
 1. One-line overall verdict — use the exact verdict given above (pass or needs revision) together with the score. Never state the opposite verdict or hedge on it.
 2. 2-3 concrete things done well.
 3. 2-3 concrete things to improve, phrased actionably (not vague).
-4. If the verdict is "DID NOT PASS", one clear sentence on what to fix to pass on resubmission.
+4. If the verdict is "DID NOT PASS", one clear sentence on what to fix to pass on resubmission - name the specific requirement(s) and the file(s) to change, never a vague "improve the code".
 
 Write in second person ("you"), plain English, no corporate filler, no excessive
 praise language. This is read by a real learner right after a stressful deadline —
