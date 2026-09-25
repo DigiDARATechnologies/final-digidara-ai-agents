@@ -164,7 +164,7 @@ export async function openJobFetchChat(user: User): Promise<{ state: JobFetchFlo
     });
 
     const firstName = (profile.full_name || user.name || "there").split(" ")[0];
-    const isProfileComplete = profile.profile_completed === 1;
+    const isProfileComplete = Boolean(profile.profile_completed);
 
     // IF USER HAS NOT COMPLETED ONBOARDING YET:
     if (!isProfileComplete) {
@@ -368,10 +368,10 @@ export async function handleJobFetchText(
 
     // Suggested conversational actions from AI
     if (Array.isArray(chatRes.suggested_actions)) {
-      for (const act of chatRes.suggested_actions) {
+      for (const act of chatRes.suggested_actions as Array<any>) {
         if (!act) continue;
-        const label = typeof act === "string" ? act.trim() : (act.label || "").trim();
-        const value = typeof act === "string" ? act.trim() : (act.value || act.label || "").trim();
+        const label = typeof act === "string" ? act.trim() : String(act.label || "").trim();
+        const value = typeof act === "string" ? act.trim() : String(act.value || act.label || "").trim();
         if (label && value && label.length > 1 && label !== ".") {
           options.push({ label, value });
         }
