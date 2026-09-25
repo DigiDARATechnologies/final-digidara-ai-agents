@@ -8,7 +8,7 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   submitVivaAnswer: jest.fn(),
   uploadSubmission: jest.fn(),
 }));
-import { handleCapstoneText, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
+import { handleCapstoneText, mergeCapstoneFiles, submitCapstoneFiles, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
 import * as api from '../../src/lib/capstoneApi';
 
 const vivaState: CapstoneFlowState = {
@@ -41,6 +41,69 @@ const topicChoiceState: CapstoneFlowState = {
 };
 
 afterEach(() => jest.clearAllMocks());
+
+describe('resubmitting after a failed grade', () => {
+  const lastVivaAnswerState: CapstoneFlowState = { ...vivaState, vivaProgress: '10 of 10' };
+  const docx = new File(['d'], 'report.docx');
+  const zip = new File(['z'], 'project.zip');
+
+  test('failing the viva goes back to awaiting_submission instead of the locked "graded" step', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'needs_revision', final_score: 42, passed: false,
+      feedback: 'Too few viva answers were correct.', viva_score: 3, viva_passed: false,
+    } as never);
+    const result = await handleCapstoneText(lastVivaAnswerState, 'my final answer');
+    expect(result.state.step).toBe('awaiting_submission');
+    expect(result.state.passed).toBe(false);
+    expect(result.state.docxFile).toBeUndefined();
+    expect(result.messages[0].text).toContain('Not passed');
+    expect(result.messages[0].text).toContain('no limit on resubmitting');
+  });
+
+  test('after a failed viva the student can attach both files again and resubmit', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'needs_revision', final_score: 42, passed: false, feedback: 'Try again.',
+    } as never);
+    const failed = await handleCapstoneText(lastVivaAnswerState, 'my final answer');
+    const merged = mergeCapstoneFiles(failed.state, [docx, zip]);
+    expect(merged.state.docxFile).toBe(docx);
+    expect(merged.state.zipFile).toBe(zip);
+    expect(merged.messages[0].text).toContain('Both files received');
+  });
+
+  test('a low-scoring content grade also stays open for another upload', async () => {
+    jest.mocked(api.uploadSubmission).mockResolvedValue({
+      thread_id: 'thread', status: 'needs_revision', final_score: 12, passed: false, revision_notes: 'Needs more work.',
+    } as never);
+    const result = await submitCapstoneFiles({ ...submissionState, docxFile: docx, zipFile: zip });
+    expect(result.state.step).toBe('awaiting_submission');
+    expect(result.state.docxFile).toBeUndefined();
+    expect(result.messages[0].text).toContain('attach both files again');
+  });
+
+  test('a chat already stuck in the old locked "graded" step with a failed result is reopened for upload', () => {
+    const stuck: CapstoneFlowState = { ...submissionState, step: 'graded', passed: false, finalScore: 30 };
+    const merged = mergeCapstoneFiles(stuck, [docx, zip]);
+    expect(merged.state.step).toBe('awaiting_submission');
+    expect(merged.state.zipFile).toBe(zip);
+  });
+
+  test('a genuinely passed "graded" chat stays locked', async () => {
+    const passed: CapstoneFlowState = { ...submissionState, step: 'graded', passed: true, finalScore: 90 };
+    const result = await handleCapstoneText(passed, 'anything');
+    expect(result.state.step).toBe('graded');
+    expect(mergeCapstoneFiles(passed, [docx, zip]).messages[0].text).toContain('becomes available');
+  });
+
+  test('passing the viva still finishes at the terminal graded step', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'graded', final_score: 88, passed: true, feedback: 'Great work.', viva_score: 9, viva_passed: true,
+    } as never);
+    const result = await handleCapstoneText(lastVivaAnswerState, 'my final answer');
+    expect(result.state.step).toBe('graded');
+    expect(result.messages[0].text).toContain('You passed!');
+  });
+});
 
 describe('mid-viva question/dispute detection', () => {
   test('a genuine question is answered via the Q&A agent, not submitted as the viva answer', async () => {

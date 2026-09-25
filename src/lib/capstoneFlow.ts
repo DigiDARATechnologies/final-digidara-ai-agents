@@ -225,11 +225,22 @@ async function generateTopicsFor(
   }
 }
 
+/** A chat saved before failed grades were made retryable can be sitting in
+ * the terminal "graded" step with `passed === false`. That is never a real
+ * end state (only a pass is), so reopen it for another upload. */
+function reopenIfFailed(state: CapstoneFlowState): CapstoneFlowState {
+  if (state.step === "graded" && state.passed === false) {
+    return { ...state, step: "awaiting_submission", docxFile: undefined, zipFile: undefined };
+  }
+  return state;
+}
+
 export async function handleCapstoneText(
   state: CapstoneFlowState,
   text: string,
 ): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
   const trimmed = text.trim();
+  state = reopenIfFailed(state);
 
   switch (state.step) {
     case "awaiting_topic_request": {
@@ -388,6 +399,36 @@ export async function handleCapstoneText(
             messages: [{ text: `Question ${result.viva_progress}:\n\n${result.viva_question.question}` }],
           };
         }
+        // A failed grade (low code score or too few viva answers) is not a
+        // dead end: the backend leaves the assignment at `needs_revision`, not
+        // `graded`, and accepts unlimited resubmissions until one passes.
+        // Moving to the terminal "graded" step here used to lock the student
+        // out of uploading again, so a fail goes back to awaiting_submission.
+        if (result.status === "needs_revision" || result.passed === false) {
+          return {
+            state: {
+              ...state,
+              step: "awaiting_submission",
+              docxFile: undefined,
+              zipFile: undefined,
+              vivaSubmissionId: null,
+              vivaQuestionId: null,
+              vivaQuestionText: null,
+              vivaProgress: null,
+              finalScore: result.final_score,
+              passed: false,
+              feedback: result.feedback,
+              revisionNotes: result.feedback ?? null,
+              scoreReasoning: result.score_reasoning ?? null,
+              codeQualityScore: result.code_quality_score ?? null,
+              vivaScore: result.viva_score ?? null,
+              vivaPassed: result.viva_passed ?? null,
+            },
+            messages: [{
+              text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both your .docx report and .zip source archive again — there is no limit on resubmitting until you pass.`,
+            }],
+          };
+        }
         return {
           state: {
             ...state,
@@ -400,7 +441,7 @@ export async function handleCapstoneText(
             vivaScore: result.viva_score ?? null,
             vivaPassed: result.viva_passed ?? null,
           },
-          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - ${result.passed ? "You passed!" : "Not passed"}\n\n${result.feedback ?? ""}` }],
+          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - You passed!\n\n${result.feedback ?? ""}` }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
@@ -459,6 +500,7 @@ export async function regenerateTopicsForDifficulty(
 }
 
 export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { state: CapstoneFlowState; messages: CapstoneFlowMessage[] } {
+  state = reopenIfFailed(state);
   if (state.step !== "awaiting_submission") return { state, messages: [{ text: "File upload becomes available after your project timer starts." }] };
   let docxFile = state.docxFile;
   let zipFile = state.zipFile;
@@ -516,6 +558,25 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         },
         messages: [{
           text: `Your project passed content grading. Before your score is revealed, a short viva (${result.viva_progress}): \n\n${result.viva_question.question}`,
+        }],
+      };
+    }
+
+    if (result.passed === false) {
+      return {
+        state: {
+          ...state,
+          docxFile: undefined,
+          zipFile: undefined,
+          finalScore: result.final_score,
+          passed: false,
+          feedback: result.feedback,
+          revisionNotes: result.feedback ?? null,
+          scoreReasoning: result.score_reasoning ?? null,
+          codeQualityScore: result.code_quality_score ?? null,
+        },
+        messages: [{
+          text: `Score: ${result.final_score ?? "-"}/100 - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both files again — there is no limit on resubmitting until you pass.`,
         }],
       };
     }
