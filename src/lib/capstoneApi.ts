@@ -2,8 +2,8 @@ import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
-function invoke<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  return invokeAgent<T>(INVOKE_URL, action, payload);
+function invoke<T>(action: string, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
+  return invokeAgent<T>(INVOKE_URL, action, payload, 1, timeoutMs);
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -216,7 +216,8 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
 
 /** After a failed viva attempt with attempts left: fetches the next attempt's fresh questions. */
 export function startVivaAttempt(submission_id: string) {
-  return invoke<SubmissionResult>("start_viva_attempt", { submission_id });
+  // Ten fresh questions are written by the model: allow longer than an ordinary call.
+  return invoke<SubmissionResult>("start_viva_attempt", { submission_id }, 240_000);
 }
 
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
@@ -232,6 +233,19 @@ export interface QAAskResult {
  * submitted code/report/grading result (see the backend's app/agentic/qa_agent.py).
  * Used mid-viva when the student is asking something rather than answering
  * the pending question — see capstoneFlow.ts's looksLikeQuestionNotAnswer. */
-export function askProjectQuestion(thread_id: string, question: string) {
-  return invoke<QAAskResult>("ask_project_question", { thread_id, question });
+export async function askProjectQuestion(thread_id: string, question: string, image?: File) {
+  if (!image) return invoke<QAAskResult>("ask_project_question", { thread_id, question });
+  // An image can only travel as multipart; the agent reads it and folds what it sees into the answer.
+  const form = new FormData();
+  form.append("action", "ask_project_question");
+  form.append("thread_id", thread_id);
+  form.append("question", question);
+  form.append("attachment", image);
+  const platformToken = localStorage.getItem("digidara_token");
+  const response = await fetch(INVOKE_URL, {
+    method: "POST",
+    headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
+    body: form,
+  });
+  return parseResponse<QAAskResult>(response);
 }

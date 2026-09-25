@@ -131,6 +131,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
     # agent plus media type instead of trusting a client-supplied billing
     # override header/query parameter.
     is_job_resume_upload = agent_name == "job_agent" and request.headers.get("content-type", "").startswith("multipart/form-data")
+    is_multipart = request.headers.get("content-type", "").startswith("multipart/form-data")
     is_free_action = action_name in FREE_ACTIONS or is_job_resume_upload
     is_billable = bool(user_id) and not is_free_action
 
@@ -169,6 +170,9 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         if agent_name == "aptitude_agent" and action_name == "create_test"
         else config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
         if agent_name == "mock_interview_agent" and action_name in {"start_interview", "end_interview"}
+        # The submission upload is multipart (no decoded action), and a new viva attempt writes ten questions.
+        else config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
+        if agent_name == "capstone_project_agent" and (is_multipart or action_name == "start_viva_attempt")
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
     # Sign last, over the final body and the exact identity headers set above,
