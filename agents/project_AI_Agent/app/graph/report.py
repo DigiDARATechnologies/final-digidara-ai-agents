@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.graph.revision import explain_missing_path, explain_missing_section, explain_weak_section
 from app.ingestion.structure_check import drop_retired_paths, drop_retired_sections, drop_retired_tree_lines
 
 
@@ -32,9 +33,9 @@ def _structure_section(state: dict[str, Any]) -> list[str]:
     for section in structure.get("matched_sections") or []:
         lines.append(f"- ✅ Section found: {section}")
     for section in structure.get("missing_sections") or []:
-        lines.append(f"- ❌ Missing section: **{section}**")
+        lines.append(f"- ❌ {explain_missing_section(section)}")
     for weak in structure.get("weak_sections") or []:
-        lines.append(f"- ⚠️ Weak section: {weak}")
+        lines.append(f"- ⚠️ {explain_weak_section(weak)}")
     if structure.get("notes"):
         lines.append("")
         lines.append(structure["notes"])
@@ -53,11 +54,7 @@ def _zip_structure_section(state: dict[str, Any]) -> list[str]:
     for item in matched:
         lines.append(f"- ✅ `{item['path']}` — {item.get('description') or 'present'}")
     for item in missing:
-        description = item.get("description") or ""
-        lines.append(
-            f"- ❌ `{item['path']}` — MISSING. {description} "
-            f"Add this {item.get('type', 'folder')} to your zip and resubmit."
-        )
+        lines.append(f"- ❌ {explain_missing_path(item)}")
     if zip_score.get("structure_quality"):
         lines.append("")
         lines.append(f"Organization quality: **{zip_score['structure_quality']}**")
