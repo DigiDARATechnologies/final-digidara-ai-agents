@@ -19,7 +19,7 @@ from app.db.models import (
 from app.execution.browser_check import BrowserCheckUnavailable, run_html_submission
 from app.execution.entry_point import find_html_entry_point, find_node_entry_point, find_python_entry_point
 from app.execution.judge0_client import Judge0Unavailable, run_node_submission, run_python_submission
-from app.graph import prompts
+from app.graph import prompts, revision
 from app.graph.report import build_about_markdown, build_review_markdown
 from app.graph.state import ProjectAgentState
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
@@ -359,19 +359,18 @@ def code_execution_node(state: ProjectAgentState) -> dict:
 def request_revision_node(state: ProjectAgentState) -> dict:
     structure = state.get("structure_score", {})
     zip_structure = state.get("zip_structure_score", {})
-    notes: list[str] = []
-    if not structure.get("is_complete", True):
-        notes.append(f"Report: {structure.get('notes', 'Missing required sections.')}")
-    if not zip_structure.get("is_complete", True):
-        notes.append(f"Code zip: {zip_structure.get('notes', 'Folder structure incomplete.')}")
+    # Each problem is spelled out: WHAT is missing, what belongs in it and what
+    # to do about it (see app/graph/revision.py) -- not just "src folder is
+    # missing" or the reviewers' paraphrase.
+    notes = revision.revision_items(state)
     # Syntax errors are NOT folded into these notes: they travel as structured
     # data (syntax_report.errors) so the chat can show each one the way a
     # terminal would, and the review report lists them in their own section.
     # With syntax errors as the only problem there is nothing else to say.
     if (state.get("syntax_report") or {}).get("has_errors"):
-        revision_notes = "\n".join(notes)
+        revision_notes = revision.as_bullets(notes)
     else:
-        revision_notes = "\n".join(notes) or "Submission is incomplete — see validation notes."
+        revision_notes = revision.as_bullets(notes) or "Submission is incomplete — see validation notes."
     review_markdown = build_review_markdown({**state, "status": "needs_revision", "revision_notes": revision_notes})
 
     session = get_session()
@@ -482,6 +481,13 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
         system=prompts.feedback_generator_prompt(state, config.PASS_THRESHOLD, passed),
         user="Write the feedback message now.",
     )
+    if not passed:
+        # The model's feedback is the readable summary; the specifics of what is
+        # missing (requirements the code doesn't implement, absent files/folders)
+        # are facts already established, so they are listed exactly, not paraphrased.
+        fixes = revision.fix_list(state)
+        if fixes:
+            feedback_text = f"{feedback_text}\n\n### What to fix before you resubmit\n{revision.as_bullets(fixes)}"
 
     # Passing a content grade is final. Failing one is not — the feedback we
     # just generated explicitly tells the student what to fix "to pass on

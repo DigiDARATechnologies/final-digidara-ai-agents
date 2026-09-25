@@ -76,7 +76,9 @@ def test_build_review_markdown_lists_missing_required_paths():
     }
     markdown = build_review_markdown(state)
     assert "TaskTracker/output_screenshots" in markdown
-    assert "MISSING" in markdown
+    # Not just "MISSING": what was missing, what belongs in it, and what to do.
+    assert 'Your zip has no "output_screenshots" folder' in markdown
+    assert "It should contain: screenshots." in markdown
     assert "TaskTracker/src" in markdown
 
 
@@ -477,3 +479,132 @@ def test_scorer_and_verifier_prompts_get_the_requirements_and_the_syntax_report(
         assert "1 Python file(s) parsed with no syntax errors" in prompt
         assert "NOT machine-checked (.js files)" in prompt
         assert "src/main.py" in prompt and "web/app.js" in prompt
+
+
+# --- clear, specific "what is missing and what to do" instructions ---------------
+
+from app.graph import revision  # noqa: E402
+
+
+def test_a_missing_section_says_what_belongs_in_it_and_how_to_add_it():
+    text = revision.explain_missing_section("Approach")
+    assert 'The "Approach" section is missing' in text
+    assert "Heading 1" in text                         # how to make it detectable
+    assert "design decisions" in text                  # what belongs in it
+    assert "do not paste code" in text
+
+
+def test_every_report_section_has_its_own_guidance_and_unknown_ones_get_a_fallback():
+    assert "who has it" in revision.explain_missing_section("Problem Statement")
+    assert "limitations" in revision.explain_missing_section("2. Conclusion")   # numbered heading still recognised
+    assert "several full sentences" in revision.explain_missing_section("Testing Strategy")
+
+
+def test_a_missing_folder_is_never_just_reported_as_missing():
+    text = revision.explain_missing_path(
+        {"path": "TaskTracker/src", "type": "dir", "description": "All the source code of the tracker."})
+    assert 'no "src" folder' in text
+    assert "TaskTracker/src" in text                   # exactly what was looked for
+    assert "It should contain: All the source code of the tracker." in text
+    assert "move the matching files into it" in text and "zip the project again" in text
+
+
+def test_a_missing_file_says_where_to_add_it():
+    text = revision.explain_missing_path({"path": "TaskTracker/README.md", "type": "file", "description": "How to run it."})
+    assert 'no "README.md" file' in text and "Add the file at TaskTracker/README.md" in text
+
+
+def test_an_unmet_requirement_names_it_says_what_is_missing_and_what_to_do():
+    text = revision.explain_requirement(
+        {"requirement": "Export the expenses to CSV", "status": "not_met", "evidence": "no export function exists anywhere"})
+    assert 'Requirement is not implemented:** "Export the expenses to CSV"' in text
+    assert "No export function exists anywhere." in text
+    assert "upload the zip again" in text
+    partial = revision.explain_requirement({"requirement": "Show totals", "status": "partial", "evidence": "monthly totals are missing"})
+    assert "only partly implemented" in partial
+
+
+def test_revision_items_lists_every_problem_specifically_and_ignores_retired_paths():
+    state = {
+        "structure_score": {"missing_sections": ["Conclusion"], "weak_sections": ["Approach: only two sentences, no design decisions"]},
+        "zip_structure_score": {"required_paths_detail": {"missing_items": [
+            {"path": "T/src", "type": "dir", "description": "Source code."},
+            {"path": "T/output_screenshots", "type": "dir", "description": "Screenshots."},
+        ]}},
+    }
+    items = revision.revision_items(state)
+    assert len(items) == 3                                       # section + weak section + the src folder only
+    assert 'The "Conclusion" section is missing' in items[0]
+    assert 'The "Approach" section needs more detail.** only two sentences, no design decisions' in items[1]
+    assert 'no "src" folder' in items[2]
+    assert not any("screenshot" in item.lower() for item in items)
+
+
+def test_request_revision_node_gives_bulleted_specific_instructions(monkeypatch, database):
+    monkeypatch.setattr(nodes, "build_review_markdown", lambda state: "review")
+    state = {
+        "submission_id": "missing",
+        "structure_score": {"is_complete": False, "missing_sections": ["Approach"], "notes": "vague reviewer note"},
+        "zip_structure_score": {"is_complete": False, "notes": "vague zip note",
+                                "required_paths_detail": {"missing_items": [{"path": "T/src", "type": "dir", "description": "Source code."}]}},
+    }
+    notes = nodes.request_revision_node(state)["revision_notes"]
+    lines = notes.splitlines()
+    assert len(lines) == 2 and all(line.startswith("- ") for line in lines)
+    assert 'The "Approach" section is missing' in lines[0]
+    assert 'no "src" folder' in lines[1]
+    assert "vague" not in notes                                    # the specifics replace the paraphrase
+
+
+def test_a_failed_grade_appends_the_exact_fix_list_to_the_feedback(monkeypatch, database):
+    monkeypatch.setattr(nodes, "call_text", lambda **kwargs: "You did not pass this time.")
+    state = {
+        "passed": False, "final_score": 41, "submission_id": "missing", "assignment_id": "missing",
+        "student_name": "Learner", "chosen_topic": {"title": "T"},
+        "output_verification": {"requirements_check": [
+            {"requirement": "Add an expense", "status": "met", "evidence": "x"},
+            {"requirement": "Export to CSV", "status": "not_met", "evidence": "no export code"},
+        ]},
+    }
+    result = nodes.feedback_generator_node(state)
+    assert result["feedback"].startswith("You did not pass this time.")
+    assert "### What to fix before you resubmit" in result["feedback"]
+    assert 'Requirement is not implemented:** "Export to CSV"' in result["feedback"]
+    assert "Add an expense" not in result["feedback"].split("### What to fix")[1]     # met ones are not listed
+    assert result["revision_notes"] == result["feedback"]
+
+
+def test_a_passing_grade_gets_no_fix_list(monkeypatch, database):
+    monkeypatch.setattr(nodes, "call_text", lambda **kwargs: "Great work.")
+    state = {"passed": True, "final_score": 90, "submission_id": "missing", "assignment_id": "missing",
+             "student_name": "L", "chosen_topic": {"title": "T"},
+             "output_verification": {"requirements_check": [{"requirement": "A", "status": "partial", "evidence": "x"}]}}
+    assert nodes.feedback_generator_node(state)["feedback"] == "Great work."
+
+
+def test_the_review_report_uses_the_same_specific_wording():
+    markdown = build_review_markdown({
+        "chosen_topic": {"title": "T"}, "status": "needs_revision",
+        "structure_score": {"is_complete": False, "missing_sections": ["Conclusion"], "matched_sections": ["Approach"]},
+        "zip_structure_score": {"required_paths_detail": {"missing_items": [{"path": "T/src", "type": "dir", "description": "Source code."}]}},
+    })
+    assert 'The "Conclusion" section is missing from your report' in markdown
+    assert 'Your zip has no "src" folder' in markdown and "It should contain: Source code." in markdown
+
+
+def test_a_zip_with_no_code_says_what_was_found_and_where_code_should_go(tmp_path):
+    import zipfile
+    from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
+    archive = tmp_path / "docs_only.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("Proj/notes.pdf", "x")
+        zf.writestr("Proj/logo.png", "x")
+    try:
+        ingest_zip(str(archive))
+    except ZipIngestError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("a zip with no source code must be rejected")
+    assert "no source code files we can read" in message
+    assert "src folder" in message and "MyProject/src/main.py" in message
+    assert "Proj/notes.pdf" in message and "Proj/logo.png" in message   # what WAS in the zip
