@@ -12,6 +12,7 @@ import zipfile
 from pathlib import PurePosixPath
 
 from app import config
+from app.ingestion.screenshots import ingest_screenshots
 
 
 class ZipIngestError(Exception):
@@ -85,6 +86,8 @@ def ingest_zip(zip_path: str) -> dict:
                 except UnicodeDecodeError:
                     code_files[rel_path] = raw.decode("utf-8", errors="replace")
 
+        screenshot_evidence = ingest_screenshots(zf, infos)
+
         if not code_files:
             found = sorted(file_tree)[:8]
             listing = ", ".join(found) if found else "nothing"
@@ -99,4 +102,5 @@ def ingest_zip(zip_path: str) -> dict:
     return {
         "zip_file_tree": sorted(file_tree),
         "zip_code_files": code_files,
+        "screenshot_evidence": screenshot_evidence,
     }

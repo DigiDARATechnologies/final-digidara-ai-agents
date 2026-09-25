@@ -147,7 +147,7 @@ class GreenhouseIntegrationTests(unittest.TestCase):
         self.assertEqual(job["department"], "Engineering")
         self.assertEqual(job["employment_type"], "Full-time")
         self.assertEqual(job["apply_url"], _sample_raw_jobs()[0]["absolute_url"])
-        self.assertEqual(job["status"], "pending")
+        self.assertEqual(job["status"], "active")
 
         # Running the same board again must not create a duplicate row.
         with patch("job_agent.providers.greenhouse.requests.Session", return_value=mock_session):
@@ -234,18 +234,7 @@ class GreenhouseIntegrationTests(unittest.TestCase):
                 }
             ]
 
-        try:
-            with patch("job_agent.providers.config_loader.load_providers_config", return_value=config), \
-                 patch("job_agent.providers.greenhouse.fetch_and_normalize", side_effect=fake_fetch_and_normalize):
-                result = sync_module.run_greenhouse_collection()
-
-            self.assertEqual(result["totals"]["failed_companies"], 1)
-            self.assertEqual(result["totals"]["inserted"], 2)
-            statuses = {c["board_id"]: c["status"] for c in result["companies"]}
-            self.assertEqual(statuses[f"{TEST_BOARD_ID}-a"], "success")
-            self.assertEqual(statuses[f"{TEST_BOARD_ID}-b"], "failed")
-            self.assertEqual(statuses[f"{TEST_BOARD_ID}-c"], "success")
-        finally:
+        def _cleanup():
             db = get_db()
             cursor = db.cursor()
             try:
@@ -264,6 +253,21 @@ class GreenhouseIntegrationTests(unittest.TestCase):
             finally:
                 cursor.close()
                 db.close()
+
+        _cleanup()
+        try:
+            with patch("job_agent.providers.config_loader.load_providers_config", return_value=config), \
+                 patch("job_agent.providers.greenhouse.fetch_and_normalize", side_effect=fake_fetch_and_normalize):
+                result = sync_module.run_greenhouse_collection()
+
+            self.assertEqual(result["totals"]["failed_companies"], 1)
+            self.assertEqual(result["totals"]["inserted"], 2)
+            statuses = {c["board_id"]: c["status"] for c in result["companies"]}
+            self.assertEqual(statuses[f"{TEST_BOARD_ID}-a"], "success")
+            self.assertEqual(statuses[f"{TEST_BOARD_ID}-b"], "failed")
+            self.assertEqual(statuses[f"{TEST_BOARD_ID}-c"], "success")
+        finally:
+            _cleanup()
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
 import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
+import blackThemeLogo from "../assets/Black_theme_logo.png";
 
 interface LoginOverlayProps {
   onAuthenticate: (
@@ -46,11 +47,11 @@ function BrandPanel() {
       <div className="login-illustration-glow login-illustration-glow--b" aria-hidden="true" />
 
       <div className="login-illustration-brand">
-        <Logo theme="dark" size="sm" />
+        <Logo src={blackThemeLogo} size={150} />
       </div>
 
       <div className="login-illustration-copy">
-        <h2>Your team's AI agent workspace, in one place.</h2>
+        <h2>Your team's <em>AI agent</em> workspace, in one place.</h2>
         <p>Coding practice, communication coaching, aptitude training, resumes and certification — each backed by a specialized agent, all under one account.</p>
       </div>
 
@@ -137,7 +138,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
         <div className="login-form-panel">
           <div className="login-card">
             <div className="login-logo login-logo--mobile-only">
-              <Logo theme="light" size="sm" />
+              <Logo src={blackThemeLogo} size={80} />
             </div>
 
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>

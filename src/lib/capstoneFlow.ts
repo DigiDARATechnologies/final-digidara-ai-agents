@@ -6,7 +6,9 @@ import {
   chooseTopic,
   clarifyTopicRequest,
   confirmTimer,
+  downloadFinalReport,
   getThreadStatus,
+  startVivaAttempt,
   submitVivaAnswer,
   uploadSubmission,
   type CodeQualityScore,
@@ -45,6 +47,50 @@ function looksLikeQuestionOrDispute(text: string): boolean {
  * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
  * heuristic above. */
 const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
+
+/** The chat option that downloads the final report PDF. */
+export const FINAL_REPORT_ACTION = "download_final_report";
+
+/** The chat option that opens the certificate preview (name check, OK, download). */
+export const CERTIFICATE_ACTION = "open_certificate";
+
+/** The chat option that begins the next viva attempt after a failed one. */
+export const START_VIVA_ACTION = "start_viva_attempt";
+
+function finalReportOptions(): ChatOption[] {
+  return [{
+    label: "Download final report (PDF)",
+    value: FINAL_REPORT_ACTION,
+    description: "Your score, viva results and project details, with the DigiDARA Technologies logo on every page.",
+  }];
+}
+
+function certificateOptions(): ChatOption[] {
+  return [{
+    label: "Get my certificate",
+    value: CERTIFICATE_ACTION,
+    description: "Preview it, check your name, click OK, and download the PDF.",
+  }];
+}
+
+/** Everything a student who passed can take away, certificate first. */
+function passOptions(): ChatOption[] {
+  return [...certificateOptions(), ...finalReportOptions()];
+}
+
+const VIVA_PASS_PERCENT = 50;
+
+function vivaRetryOptions(nextAttempt: number, total: number): ChatOption[] {
+  return [{
+    label: `Start viva attempt ${nextAttempt} of ${total}`,
+    value: START_VIVA_ACTION,
+    description: "A fresh set of questions — none repeated from your earlier attempt.",
+  }];
+}
+
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
 
 export type CapstoneStep =
   | "awaiting_topic_request"
@@ -104,6 +150,20 @@ export interface CapstoneFlowState {
   vivaProgress?: string | null;
   vivaScore?: number | null;
   vivaPassed?: boolean | null;
+  /** The viva result as a word (Good / Average / Bad) -- never shown as a mark. */
+  vivaRating?: string | null;
+  vivaAttempt?: number | null;
+  vivaAttemptsTotal?: number | null;
+  /** A viva attempt just failed and another is available: waiting for the student
+   * to start it (there is no pending question until they do). */
+  vivaRetryPending?: boolean;
+}
+
+export interface CapstoneFlowResult {
+  state: CapstoneFlowState;
+  messages: CapstoneFlowMessage[];
+  /** One-shot request for the chat to open the dashboard (the certificate preview lives there). */
+  openDashboard?: boolean;
 }
 
 export function createInitialCapstoneState(user: User): CapstoneFlowState {
@@ -142,6 +202,14 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
   const lines: string[] = [`Your 7-day timer has started. Deadline: ${new Date(deadlineAt).toLocaleString()}`];
   if (guide.docx_required_sections?.length) lines.push(`\nRequired report sections: ${guide.docx_required_sections.join(" -> ")}`);
   if (guide.folder_structure?.length) lines.push(`\nZip folder structure:\n${guide.folder_structure.map((line: string) => `  ${line}`).join("\n")}`);
+  if (guide.required_screenshots?.length) {
+    lines.push("\nOutput screenshots - save each as its own image file in the output_screenshots folder of your zip (not in the .docx report):");
+    guide.required_screenshots.forEach((item: { filename?: string; module?: string; description?: string }, index: number) => {
+      const module = item.module ? `${item.module}: ` : "";
+      lines.push(`${index + 1}. ${item.filename ?? "screenshot.png"} - ${module}${item.description ?? ""}`);
+    });
+    lines.push("Ask me about any screenshot and I will explain exactly what it must show and how to capture it.");
+  }
   if (guide.common_mistakes?.length) {
     lines.push("\nCommon mistakes to avoid:");
     guide.common_mistakes.forEach((item: string) => lines.push(`- ${item}`));
@@ -239,7 +307,7 @@ function reopenIfFailed(state: CapstoneFlowState): CapstoneFlowState {
 export async function handleCapstoneText(
   state: CapstoneFlowState,
   text: string,
-): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
+): Promise<CapstoneFlowResult> {
   const trimmed = text.trim();
   state = reopenIfFailed(state);
 
@@ -366,6 +434,55 @@ export async function handleCapstoneText(
     }
 
     case "awaiting_viva_answer": {
+      if (state.vivaRetryPending) {
+        if (!state.vivaSubmissionId) {
+          return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
+        }
+        const total = state.vivaAttemptsTotal ?? 3;
+        const nextAttempt = (state.vivaAttempt ?? 1) + 1;
+        if (trimmed === START_VIVA_ACTION || /^(y(es)?|start|ok(ay)?|ready|next|continue|retry|go|begin)\b/i.test(trimmed)) {
+          try {
+            const result = await startVivaAttempt(state.vivaSubmissionId);
+            if (result.viva_question) {
+              return {
+                state: {
+                  ...state,
+                  vivaRetryPending: false,
+                  vivaQuestionId: result.viva_question.id,
+                  vivaQuestionText: result.viva_question.question,
+                  vivaProgress: result.viva_progress,
+                  vivaAttempt: result.viva_attempt ?? nextAttempt,
+                  vivaAttemptsTotal: result.viva_attempts_total ?? total,
+                },
+                messages: [{
+                  text: `Viva attempt ${result.viva_attempt ?? nextAttempt} of ${result.viva_attempts_total ?? total} — a new set of questions.\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
+                }],
+              };
+            }
+          } catch (error) {
+            return {
+              state,
+              messages: [{ text: `I could not start the next attempt: ${(error as Error).message}`, options: vivaRetryOptions(nextAttempt, total) }],
+            };
+          }
+        }
+        // Anything else is a question about the project -- answer it, then offer the attempt again.
+        let answer = "";
+        if (state.threadId && trimmed) {
+          try {
+            answer = (await askProjectQuestion(state.threadId, trimmed)).answer;
+          } catch {
+            // Q&A itself failed -- just re-offer the next attempt.
+          }
+        }
+        return {
+          state,
+          messages: [
+            ...(answer ? [{ text: answer }] : []),
+            { text: `Start viva attempt ${nextAttempt} of ${total} whenever you're ready.`, options: vivaRetryOptions(nextAttempt, total) },
+          ],
+        };
+      }
       if (!trimmed) {
         return { state, messages: [{ text: "Please answer the question above before continuing." }] };
       }
@@ -400,8 +517,33 @@ export async function handleCapstoneText(
             messages: [{ text: `Question ${result.viva_progress}:\n\n${result.viva_question.question}` }],
           };
         }
-        // A failed grade (low code score or too few viva answers) is not a
-        // dead end: the backend leaves the assignment at `needs_revision`, not
+        const rating = result.viva_rating ?? null;
+        const total = result.viva_attempts_total ?? 3;
+        // An attempt that did not pass, with attempts left: nothing is decided yet.
+        // The student starts the next attempt (new questions) when they are ready.
+        if (result.status === "viva_retry") {
+          const attempt = result.viva_attempt ?? 1;
+          const left = result.viva_attempts_left ?? 0;
+          return {
+            state: {
+              ...state,
+              vivaRetryPending: true,
+              vivaQuestionId: null,
+              vivaQuestionText: null,
+              vivaProgress: null,
+              vivaAttempt: attempt,
+              vivaAttemptsTotal: total,
+              vivaRating: rating,
+              vivaPassed: false,
+            },
+            messages: [{
+              text: `Viva attempt ${attempt} of ${total} finished. Result: ${rating ?? "-"}.\n\nYou need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass, so this attempt did not pass. You have ${plural(left, "attempt")} left, and every attempt asks new questions. Review your project, then start the next attempt when you're ready.`,
+              options: vivaRetryOptions(attempt + 1, total),
+            }],
+          };
+        }
+        // A failed grade (low code score, or the viva not passed in every attempt) is
+        // not a dead end: the backend leaves the assignment at `needs_revision`, not
         // `graded`, and accepts unlimited resubmissions until one passes.
         // Moving to the terminal "graded" step here used to lock the student
         // out of uploading again, so a fail goes back to awaiting_submission.
@@ -416,6 +558,8 @@ export async function handleCapstoneText(
               vivaQuestionId: null,
               vivaQuestionText: null,
               vivaProgress: null,
+              vivaRetryPending: false,
+              vivaAttempt: null,
               finalScore: result.final_score,
               passed: false,
               feedback: result.feedback,
@@ -424,9 +568,10 @@ export async function handleCapstoneText(
               codeQualityScore: result.code_quality_score ?? null,
               vivaScore: result.viva_score ?? null,
               vivaPassed: result.viva_passed ?? null,
+              vivaRating: rating,
             },
             messages: [{
-              text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both your .docx report and .zip source archive again — there is no limit on resubmitting until you pass.`,
+              text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${rating ?? "-"} - Not passed\n\n${result.feedback ?? ""}\n\nYou can improve your project and attach both your .docx report and .zip source archive again — there is no limit on resubmitting until you pass.`,
             }],
           };
         }
@@ -441,8 +586,13 @@ export async function handleCapstoneText(
             codeQualityScore: result.code_quality_score ?? null,
             vivaScore: result.viva_score ?? null,
             vivaPassed: result.viva_passed ?? null,
+            vivaRating: rating,
+            vivaRetryPending: false,
           },
-          messages: [{ text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${result.viva_score ?? "-"}/10 - You passed!\n\n${result.feedback ?? ""}` }],
+          messages: [{
+            text: `Score: ${result.final_score ?? "-"}/100 - Viva: ${rating ?? "-"} - You passed!\n\n${result.feedback ?? ""}\n\nYour project is complete: the code score and the viva are both passed. Your certificate and your final report are ready.`,
+            options: passOptions(),
+          }],
         };
       } catch (error) {
         return { state, messages: [{ text: `I could not record that answer: ${(error as Error).message}` }] };
@@ -468,8 +618,36 @@ export async function handleCapstoneText(
       }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
     }
-    case "graded":
-      return { state, messages: [{ text: "This project has already been graded. Open the dashboard to review the result." }] };
+    case "graded": {
+      const canDownload = Boolean(state.passed && state.vivaSubmissionId);
+      if (trimmed === CERTIFICATE_ACTION) {
+        if (!canDownload) return { state, messages: [{ text: "The certificate is available once both your project score and the viva are passed." }] };
+        return {
+          state,
+          openDashboard: true,
+          messages: [{
+            text: "Your certificate preview is open in the project dashboard on the right. Check that your name is spelled the way you want it printed — the name is the only thing you can change — then click OK to issue it. After that, the PDF is ready to download.",
+            options: passOptions(),
+          }],
+        };
+      }
+      if (trimmed === FINAL_REPORT_ACTION) {
+        if (!canDownload) return { state, messages: [{ text: "The final report is available once both your project score and the viva are passed." }] };
+        try {
+          await downloadFinalReport(state.vivaSubmissionId!);
+          return { state, messages: [{ text: "Your final report has been downloaded. You can download it again any time from here or the dashboard.", options: passOptions() }] };
+        } catch (error) {
+          return { state, messages: [{ text: `I could not download the report: ${(error as Error).message}`, options: passOptions() }] };
+        }
+      }
+      return {
+        state,
+        messages: [{
+          text: "This project has already been graded. Open the dashboard to review the result.",
+          options: canDownload ? passOptions() : undefined,
+        }],
+      };
+    }
   }
 }
 
@@ -585,9 +763,12 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
           vivaQuestionId: result.viva_question.id,
           vivaQuestionText: result.viva_question.question,
           vivaProgress: result.viva_progress,
+          vivaRetryPending: false,
+          vivaAttempt: result.viva_attempt ?? 1,
+          vivaAttemptsTotal: result.viva_attempts_total ?? 3,
         },
         messages: [{
-          text: `Your project passed content grading. Before your score is revealed, a short viva (${result.viva_progress}): \n\n${result.viva_question.question}`,
+          text: `Your project passed content grading. Before your score is revealed, there is a short viva: attempt ${result.viva_attempt ?? 1} of ${result.viva_attempts_total ?? 3}. You need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass; if you don't, you can try again with new questions (up to ${result.viva_attempts_total ?? 3} attempts).\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
         }],
       };
     }

@@ -5,17 +5,18 @@ import { fetchAllUsageSummaries, type AgentUsageResult } from "../lib/usageApi";
 import BillingPanel from "./BillingPanel";
 import { bridgeIdentity, getDashboard, getHistory, type DashboardData } from "../lib/communicationApi";
 
-interface Props { open: boolean; user: User; chats: Chat[]; glowOn: boolean; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
+interface Props { open: boolean; user: User; chats: Chat[]; glowOn: boolean; initialTab?: Tab; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
 type Tab = "general" | "billing" | "usage" | "agent-chats";
 function formatTokens(value: number) { return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : String(value); }
 
-export default function SettingsModal({ open, user, chats, glowOn, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
-  const [tab, setTab] = useState<Tab>("general"); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); 
+export default function SettingsModal({ open, user, chats, glowOn, initialTab, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
+  const [tab, setTab] = useState<Tab>(initialTab || "general"); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); 
   const [exporting, setExporting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  useEffect(() => { if (open && initialTab) setTab(initialTab); }, [open, initialTab]);
   useEffect(() => { if (!open) return; fetchAllUsageSummaries().then(setUsage); }, [open]);
   const [coachProgress, setCoachProgress] = useState<{ dashboard: DashboardData; history: Array<Record<string, any>> } | null>(null);
   const [coachProgressLoading, setCoachProgressLoading] = useState(false);

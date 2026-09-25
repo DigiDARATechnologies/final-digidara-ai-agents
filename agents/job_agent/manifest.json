@@ -18,12 +18,14 @@
           "get_profile",
           "update_profile",
           "upload_resume",
+          "chat",
           "get_categories",
           "get_feed",
           "get_saved_jobs",
           "get_hidden_jobs",
           "job_action",
           "get_applications",
+          "update_application_status",
           "export_user_data",
           "delete_user_data",
           "admin_list_users",
@@ -49,8 +51,13 @@
           "admin_apify_status",
           "admin_apify_actors",
           "admin_apify_run",
+          "admin_adzuna_status",
+          "admin_adzuna_run",
+          "admin_jsearch_status",
+          "admin_jsearch_run",
           "admin_tn_coverage"
         ]
+
       },
       "payload": { "type": "object" }
     },

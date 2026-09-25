@@ -126,6 +126,11 @@ export interface SubmissionResult {
   viva_progress?: string | null;
   viva_score?: number | null;
   viva_passed?: boolean | null;
+  /** The viva is reported as Good / Average / Bad, never as a mark. */
+  viva_rating?: "Good" | "Average" | "Bad" | null;
+  viva_attempt?: number | null;
+  viva_attempts_left?: number | null;
+  viva_attempts_total?: number | null;
 }
 
 export interface ThreadStatus {
@@ -143,6 +148,57 @@ export function getThreadStatus(thread_id: string) {
   return invoke<ThreadStatus>("status", { thread_id });
 }
 
+/** Downloads the final project report (PDF). The backend only issues it once BOTH the
+ * code score and the viva are passed, and returns it base64-encoded through the JSON
+ * gateway -- the same shape the mock-interview agent's report uses. */
+export async function downloadFinalReport(submission_id: string): Promise<void> {
+  const report = await invoke<{ content_type: string; filename: string; data: string }>("download_final_report", { submission_id });
+  if (report.content_type !== "application/pdf" || !report.data) throw new Error("The final report is unavailable.");
+  saveBase64Pdf(report.data, report.filename || "Capstone_Project_Report.pdf");
+}
+
+export interface CertificatePreview {
+  name: string;
+  project_title: string;
+  certificate_id: string;
+  /** True once the student clicked OK -- the name is then locked. */
+  confirmed: boolean;
+  editable: boolean;
+  content_type: string;
+  /** The certificate page as a base64 JPEG. */
+  preview: string;
+}
+
+/** The certificate as an image, with the name that would be printed. Nothing is stored. */
+export function previewCertificate(submission_id: string, name?: string) {
+  return invoke<CertificatePreview>("preview_certificate", name === undefined ? { submission_id } : { submission_id, name });
+}
+
+/** The student's OK: locks the name and issues the certificate. */
+export function confirmCertificate(submission_id: string, name: string) {
+  return invoke<{ name: string; certificate_id: string; confirmed: boolean; editable: boolean }>("confirm_certificate", { submission_id, name });
+}
+
+function saveBase64Pdf(data: string, filename: string) {
+  const binary = atob(data);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Downloads the confirmed certificate (PDF). Refused until the student has clicked OK. */
+export async function downloadCertificate(submission_id: string): Promise<void> {
+  const certificate = await invoke<{ content_type: string; filename: string; data: string }>("download_certificate", { submission_id });
+  if (certificate.content_type !== "application/pdf" || !certificate.data) throw new Error("The certificate is unavailable.");
+  saveBase64Pdf(certificate.data, certificate.filename || "DigiDARA_Capstone_Certificate.pdf");
+}
+
 export async function uploadSubmission(thread_id: string, docxFile: File, zipFile: File) {
   const form = new FormData();
   form.append("action", "upload_submission");
@@ -156,6 +212,11 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
     body: form,
   });
   return parseResponse<SubmissionResult>(response);
+}
+
+/** After a failed viva attempt with attempts left: fetches the next attempt's fresh questions. */
+export function startVivaAttempt(submission_id: string) {
+  return invoke<SubmissionResult>("start_viva_attempt", { submission_id });
 }
 
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {

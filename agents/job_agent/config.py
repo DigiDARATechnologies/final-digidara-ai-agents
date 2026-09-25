@@ -60,6 +60,13 @@ except Exception as exc:
 # lives in the orchestrator's billing module once wired up.
 PLAN_TIERS = ("free", "pro")
 DEFAULT_PLAN_TIER = "free"
-# Free-tier daily feed cap — enforced in routes.py's feed endpoint. Kept as a
-# single constant (not per-category) so it's one obvious place to tune.
-FREE_TIER_DAILY_FEED_LIMIT = int(os.getenv("JOBS_FREE_TIER_FEED_LIMIT", "20"))
+
+# Dynamic SaaS Token & Daily Free Quota Defaults (can be overridden by DB or .env)
+DEFAULT_FREE_DAILY_FEED_LIMIT = int(os.getenv("JOBS_FREE_DAILY_FEED_LIMIT", "20"))
+DEFAULT_FREE_DAILY_CHAT_TURNS = int(os.getenv("JOBS_FREE_DAILY_CHAT_TURNS", "10"))
+DEFAULT_TOKENS_PER_EXTRA_FEED = int(os.getenv("JOBS_TOKENS_PER_EXTRA_FEED", "2000"))
+DEFAULT_TOKENS_PER_CHAT_TURN = int(os.getenv("JOBS_TOKENS_PER_CHAT_TURN", "500"))
+
+# Backwards compatibility
+FREE_TIER_DAILY_FEED_LIMIT = DEFAULT_FREE_DAILY_FEED_LIMIT
+

@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Response, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import func
@@ -41,7 +41,14 @@ from app.api.schemas import (
     VivaAnswerRequest,
     VivaQuestionOut,
 )
-from app.viva import VIVA_PASS_THRESHOLD, generate_viva_questions, verify_viva_answer
+from app.viva import (
+    VIVA_ATTEMPTS,
+    VIVA_PASS_THRESHOLD,
+    generate_viva_questions,
+    verify_viva_answer,
+    viva_passed as viva_is_passed,
+    viva_rating,
+)
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
@@ -56,7 +63,17 @@ from app.db.models import (
 from app.graph import prompts
 from app.graph.graph import compiled_graph, submission_graph
 from app.ingestion.docx_ingest import DocxIngestError, ingest_docx
+from app.ingestion.zip_ingest import ingest_zip
 from app.llm.client import LLMError, call_json, call_text
+from app.reports.final_report import assemble_report_data, build_final_report_pdf, report_filename
+from app.reports.certificate import (
+    assemble_certificate_data,
+    build_certificate_pdf,
+    certificate_filename,
+    clean_recipient_name,
+    now_utc,
+    render_preview_jpeg,
+)
 from app.vision.structure_screenshot import analyze_structure_screenshot
 
 router = APIRouter(prefix="/api")
@@ -504,6 +521,9 @@ async def submission_upload(
         submission_id=submission_id,
         viva_question=VivaQuestionOut(**first_question) if first_question else None,
         viva_progress=f"1 of {len(questions)}" if questions else None,
+        viva_attempt=1,
+        viva_attempts_left=VIVA_ATTEMPTS - 1,
+        viva_attempts_total=VIVA_ATTEMPTS,
     )
 
 
@@ -531,6 +551,8 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
         thread_id = submission.assignment.thread_id
         questions = submission.viva_questions_json or []
         answers = submission.viva_answers_json or []
+        if questions and len(answers) >= len(questions):
+            raise HTTPException(409, "This viva attempt is finished. Start the next attempt to continue.")
         expected_index = len(answers)
         if req.question_id != expected_index:
             raise HTTPException(409, f"Expected an answer for question {expected_index}, got {req.question_id}.")
@@ -557,25 +579,55 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
                 submission_id=req.submission_id,
                 viva_question=VivaQuestionOut(**next_question),
                 viva_progress=f"{len(answers) + 1} of {len(questions)}",
+                viva_attempt=len(submission.viva_attempts_json or []) + 1,
+                viva_attempts_left=VIVA_ATTEMPTS - len(submission.viva_attempts_json or []) - 1,
+                viva_attempts_total=VIVA_ATTEMPTS,
             )
 
-        # Last question just answered -- finalize both scores together.
+        # Last question just answered -- close this attempt.
         correct_count = sum(1 for a in answers if a["correct"])
-        viva_passed = correct_count >= VIVA_PASS_THRESHOLD
+        total = len(questions)
+        passed_now = viva_is_passed(correct_count, total)
+        rating = viva_rating(correct_count, total)
+        history = list(submission.viva_attempts_json or [])
+        attempt_number = len(history) + 1
+        history.append({
+            "attempt": attempt_number, "questions": questions, "answers": answers,
+            "correct": correct_count, "total": total, "rating": rating, "passed": passed_now,
+        })
+        submission.viva_attempts_json = history
         submission.viva_score = float(correct_count)
-        submission.viva_passed = viva_passed
+        attempts_left = VIVA_ATTEMPTS - attempt_number
+
+        if not passed_now and attempts_left > 0:
+            # Not over yet: the student may take another attempt, with fresh
+            # questions. The submission stays pending_viva; the finished attempt's
+            # questions/answers stay in place until start_viva_attempt replaces them.
+            session.commit()
+            return SubmissionResultResponse(
+                thread_id=thread_id,
+                status="viva_retry",
+                submission_id=req.submission_id,
+                viva_passed=False,
+                viva_rating=rating,
+                viva_attempt=attempt_number,
+                viva_attempts_left=attempts_left,
+                viva_attempts_total=VIVA_ATTEMPTS,
+            )
+
+        submission.viva_passed = passed_now
 
         code_result = submission.score_json or {}
         code_passed = bool(code_result.get("passed"))
-        overall_passed = code_passed and viva_passed
+        overall_passed = code_passed and passed_now
 
         final_status = SubmissionStatus.graded if overall_passed else SubmissionStatus.needs_revision
         submission.status = final_status
         session.commit()
 
         viva_note = (
-            f"\n\nViva result: {correct_count} of {len(questions)} correct "
-            f"({'passed' if viva_passed else 'not enough correct answers to pass'})."
+            f"\n\nViva result: {rating} "
+            f"({'passed' if passed_now else f'not passed after {VIVA_ATTEMPTS} attempts'})."
         )
         combined_feedback = (code_result.get("feedback") or "") + viva_note
 
@@ -603,7 +655,63 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
             code_quality_score=code_result.get("code_quality_score"),
             review_markdown=submission.review_markdown,
             viva_score=submission.viva_score,
-            viva_passed=viva_passed,
+            viva_passed=passed_now,
+            viva_rating=rating,
+            viva_attempt=attempt_number,
+            viva_attempts_left=0 if passed_now else attempts_left,
+            viva_attempts_total=VIVA_ATTEMPTS,
+        )
+    finally:
+        session.close()
+
+
+def start_viva_attempt(payload: dict) -> SubmissionResultResponse:
+    """Begin the next viva attempt after a failed one: a fresh set of questions,
+    none repeating an earlier attempt's. Only valid while attempts remain."""
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id, with_for_update=True)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        if submission.status != SubmissionStatus.pending_viva:
+            raise HTTPException(409, "This submission is not awaiting a viva attempt.")
+        history = list(submission.viva_attempts_json or [])
+        questions = submission.viva_questions_json or []
+        answers = submission.viva_answers_json or []
+        if not history or len(answers) < len(questions):
+            raise HTTPException(409, "Finish the current viva attempt first.")
+        if len(history) >= VIVA_ATTEMPTS:
+            raise HTTPException(409, f"All {VIVA_ATTEMPTS} viva attempts have been used.")
+
+        assignment = submission.assignment
+        thread_id = assignment.thread_id
+        asked = [q.get("question", "") for attempt in history for q in attempt.get("questions", [])]
+        try:
+            code_files = ingest_zip(submission.zip_path).get("zip_code_files") or {}
+        except Exception:
+            # The archive is gone or unreadable -- the questions then rest on the
+            # project's topic alone, which is still a valid (if less specific) viva.
+            logger.warning("viva retry: could not re-read %s", submission.zip_path)
+            code_files = {}
+        fresh = generate_viva_questions(assignment.topic_json or {}, assignment.medium.value, code_files, asked)
+        if not fresh:
+            raise HTTPException(502, "Could not prepare new viva questions. Please try again.")
+        submission.viva_questions_json = fresh
+        submission.viva_answers_json = []
+        session.commit()
+        attempt_number = len(history) + 1
+        return SubmissionResultResponse(
+            thread_id=thread_id,
+            status="pending_viva",
+            submission_id=submission_id,
+            viva_question=VivaQuestionOut(**fresh[0]),
+            viva_progress=f"1 of {len(fresh)}",
+            viva_attempt=attempt_number,
+            viva_attempts_left=VIVA_ATTEMPTS - attempt_number,
+            viva_attempts_total=VIVA_ATTEMPTS,
         )
     finally:
         session.close()
@@ -686,6 +794,155 @@ def get_review_markdown(submission_id: str) -> PlainTextResponse:
     if not submission.review_markdown:
         raise HTTPException(404, "No review report is available for this submission yet.")
     return PlainTextResponse(submission.review_markdown, media_type="text/markdown")
+
+
+def _final_report(submission_id: str) -> tuple[bytes, str]:
+    """The final project report PDF and its file name -- only once BOTH the code
+    score and the viva have been passed. Built from what grading stored, so it can
+    be regenerated at any time and always matches the recorded result."""
+    session = get_session()
+    try:
+        submission = session.get(Submission, submission_id)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        score = submission.score_json or {}
+        if not (submission.status == SubmissionStatus.graded and score.get("passed") is True and submission.viva_passed is True):
+            raise HTTPException(409, "The final report is available once both the project score and the viva are passed.")
+        assignment = session.get(ProjectAssignment, submission.assignment_id)
+        if assignment is None:
+            raise HTTPException(404, "Assignment not found.")
+        student = session.get(Student, assignment.student_id)
+        data = assemble_report_data(assignment, student, submission, config.PASS_THRESHOLD, VIVA_PASS_THRESHOLD)
+    finally:
+        session.close()
+    return build_final_report_pdf(data), report_filename(data["project_title"])
+
+
+@router.get("/submission/{submission_id}/final-report.pdf")
+def get_final_report(submission_id: str) -> Response:
+    """Downloadable final project report (PDF) -- see app/reports/final_report.py."""
+    pdf, filename = _final_report(submission_id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def final_report_action(payload: dict) -> dict:
+    """The same report through the gateway's JSON-only `invoke` contract: the PDF
+    comes back base64-encoded, exactly as the mock-interview agent's report does."""
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    pdf, filename = _final_report(submission_id)
+    return {"content_type": "application/pdf", "filename": filename, "data": base64.b64encode(pdf).decode("ascii")}
+
+
+def _certificate_parts(session, submission_id: str):
+    """(submission, assignment, student) -- only once BOTH the project score and the
+    viva are passed; anything earlier is refused."""
+    submission = session.get(Submission, submission_id)
+    if submission is None:
+        raise HTTPException(404, "Submission not found.")
+    score = submission.score_json or {}
+    if not (submission.status == SubmissionStatus.graded and score.get("passed") is True and submission.viva_passed is True):
+        raise HTTPException(409, "The certificate is available once both the project score and the viva are passed.")
+    assignment = session.get(ProjectAssignment, submission.assignment_id)
+    if assignment is None:
+        raise HTTPException(404, "Assignment not found.")
+    return submission, assignment, session.get(Student, assignment.student_id)
+
+
+def _certificate_pdf(session, submission_id: str, name: str | None) -> tuple[dict, bytes, dict]:
+    """(certificate record, PDF, template data). Once confirmed the stored name and
+    issue time are used and the requested `name` is ignored -- a confirmed
+    certificate cannot be edited."""
+    submission, assignment, student = _certificate_parts(session, submission_id)
+    record = dict(submission.certificate_json or {})
+    if record.get("confirmed"):
+        printed, issued_at = record["name"], datetime.fromisoformat(record["issued_at"])
+    else:
+        candidate = name if name is not None else (record.get("name") or getattr(student, "name", "") or "")
+        try:
+            printed = clean_recipient_name(candidate)
+        except ValueError as exc:
+            if name is not None:
+                raise HTTPException(422, str(exc))
+            printed = " ".join(str(candidate).split())[:60] or "Student"   # only for the first preview
+        issued_at = now_utc()
+    data = assemble_certificate_data(assignment, student, submission, printed, issued_at)
+    return record, build_certificate_pdf(data), data
+
+
+def certificate_preview_action(payload: dict) -> dict:
+    """The certificate as an image, with the name that would be printed. The name is
+    editable until the student confirms (OK); nothing is stored by a preview."""
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    name = payload.get("name")
+    session = get_session()
+    try:
+        record, pdf, data = _certificate_pdf(session, submission_id, None if name is None else str(name))
+    finally:
+        session.close()
+    return {
+        "name": data["name"], "project_title": data["project_title"], "certificate_id": data["certificate_id"],
+        "confirmed": bool(record.get("confirmed")), "editable": not record.get("confirmed"),
+        "content_type": "image/jpeg", "preview": base64.b64encode(render_preview_jpeg(pdf)).decode("ascii"),
+    }
+
+
+def certificate_confirm_action(payload: dict) -> dict:
+    """The student's OK: locks the name and issues the certificate. After this the
+    name cannot be changed and the PDF can be downloaded."""
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    session = get_session()
+    try:
+        submission, assignment, student = _certificate_parts(session, submission_id)
+        record = dict(submission.certificate_json or {})
+        if not record.get("confirmed"):
+            try:
+                name = clean_recipient_name(payload.get("name") if payload.get("name") is not None else getattr(student, "name", ""))
+            except ValueError as exc:
+                raise HTTPException(422, str(exc))
+            issued_at = now_utc()
+            data = assemble_certificate_data(assignment, student, submission, name, issued_at)
+            submission.certificate_json = {
+                "name": name, "confirmed": True, "certificate_id": data["certificate_id"], "issued_at": issued_at.isoformat(),
+            }
+            session.commit()
+        record = dict(submission.certificate_json)
+        return {"name": record["name"], "certificate_id": record["certificate_id"], "confirmed": True, "editable": False}
+    finally:
+        session.close()
+
+
+def _confirmed_certificate(submission_id: str) -> tuple[bytes, str]:
+    session = get_session()
+    try:
+        submission, _assignment, _student = _certificate_parts(session, submission_id)
+        record = submission.certificate_json or {}
+        if not record.get("confirmed"):
+            raise HTTPException(409, "Confirm the certificate (OK) before downloading it.")
+        _record, pdf, data = _certificate_pdf(session, submission_id, None)
+    finally:
+        session.close()
+    return pdf, certificate_filename(data["project_title"], data["name"])
+
+
+def certificate_download_action(payload: dict) -> dict:
+    submission_id = str(payload.get("submission_id", "")).strip()
+    if not submission_id:
+        raise HTTPException(400, "submission_id is required.")
+    pdf, filename = _confirmed_certificate(submission_id)
+    return {"content_type": "application/pdf", "filename": filename, "data": base64.b64encode(pdf).decode("ascii")}
+
+
+@router.get("/submission/{submission_id}/certificate.pdf")
+def get_certificate(submission_id: str) -> Response:
+    """Downloadable certificate (PDF), once confirmed -- see app/reports/certificate.py."""
+    pdf, filename = _confirmed_certificate(submission_id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.post("/submission/{submission_id}/structure-screenshot", response_model=StructureScreenshotResponse)
@@ -848,8 +1105,18 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(usage_summary, request.headers.get("x-digidara-user-id"))
     elif action == "submit_viva_answer":
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
+    elif action == "start_viva_attempt":
+        result = await run_in_threadpool(start_viva_attempt, payload)
     elif action == "ask_project_question":
         result = await run_in_threadpool(qa_ask_action, payload)
+    elif action == "download_final_report":
+        result = await run_in_threadpool(final_report_action, payload)
+    elif action == "preview_certificate":
+        result = await run_in_threadpool(certificate_preview_action, payload)
+    elif action == "confirm_certificate":
+        result = await run_in_threadpool(certificate_confirm_action, payload)
+    elif action == "download_certificate":
+        result = await run_in_threadpool(certificate_download_action, payload)
     elif action in {"export_user_data", "delete_user_data"}:
         result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
     else:

@@ -52,7 +52,7 @@ export default function NewChatLanding({ onSend, onAttachClick }: NewChatLanding
     <section className="view view-chat new-chat-landing active">
       <div className="landing-center">
         <div style={{ marginBottom: "18px" }}>
-          <Logo variant="icon" size="lg" />
+          <Logo variant="icon" size={96} />
         </div>
         <h1>What's on the agenda today?</h1>
 

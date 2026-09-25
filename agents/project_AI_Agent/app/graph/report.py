@@ -18,8 +18,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.graph.revision import explain_missing_path, explain_missing_section, explain_weak_section
-from app.ingestion.structure_check import drop_retired_paths, drop_retired_sections, drop_retired_tree_lines
+from app.graph.revision import explain_missing_path, explain_missing_screenshots, explain_missing_section, explain_weak_section
+from app.ingestion.screenshots import screenshot_status
+from app.ingestion.structure_check import drop_retired_sections
 
 
 def _checkbox(ok: bool) -> str:
@@ -63,6 +64,25 @@ def _zip_structure_section(state: dict[str, Any]) -> list[str]:
     if zip_score.get("notes"):
         lines.append("")
         lines.append(zip_score["notes"])
+    return lines
+
+
+def _screenshots_section(state: dict[str, Any]) -> list[str]:
+    status = screenshot_status(state.get("submission_guide") or {}, state.get("screenshot_evidence"))
+    if not status["required"]:
+        return []
+    lines = ["## Output Screenshots (in your zip)"]
+    lines.append(
+        f"{_checkbox(status['complete'])} {len(status['found_files'])} readable screenshot image(s) found; "
+        f"{len(status['required'])} required"
+    )
+    for name in status["found_files"]:
+        lines.append(f"- ✅ `{name}`")
+    if not status["complete"]:
+        explanation = explain_missing_screenshots(status)
+        if explanation:
+            lines.append("")
+            lines += [f"- ❌ {line}" if index == 0 else line for index, line in enumerate(explanation.splitlines())]
     return lines
 
 
@@ -146,6 +166,9 @@ def _output_verification_section(state: dict[str, Any]) -> list[str]:
             lines.append(f"- {req}")
     for constraint in verification.get("constraints_check") or []:
         lines.append(f"- {constraint}")
+    shot_icons = {"present": "✅", "unclear": "⚠️", "missing": "❌"}
+    for shot in verification.get("screenshots_check") or []:
+        lines.append(f"- {shot_icons.get(shot.get('status'), '⚠️')} Screenshot {shot.get('screenshot')} — {shot.get('evidence', '')}")
     for issue in verification.get("issues_found") or []:
         lines.append(f"- ⚠️ {issue}")
     if verification.get("notes"):
@@ -201,6 +224,7 @@ def build_review_markdown(state: dict[str, Any]) -> str:
     lines = [f"# Project Review — {topic_title}", "", f"**Result: {verdict}**", ""]
     lines += _structure_section(state) + [""]
     lines += _zip_structure_section(state) + [""]
+    lines += _screenshots_section(state) + [""]
     lines += _syntax_section(state) + [""]
     lines += _execution_section(state) + [""]
     lines += _output_verification_section(state) + [""]
@@ -215,7 +239,7 @@ def build_review_markdown(state: dict[str, Any]) -> str:
     elif passed:
         lines += [
             "## Next Step",
-            "Your code review passed. Complete the viva (oral defense) to finish certification.",
+            "Your code review passed. Complete the viva (oral defense) to get your certificate: you have up to 3 attempts, each with new questions, and need at least 50% correct.",
             "",
         ]
 
@@ -250,18 +274,34 @@ def build_about_markdown(state: dict[str, Any]) -> str:
     lines.append("")
 
     lines.append("## Required Folder Structure (inside the .zip)")
-    for tree_line in drop_retired_tree_lines(guide.get("folder_structure")):
+    for tree_line in guide.get("folder_structure") or []:
         lines.append(f"    {tree_line}")
     lines.append("")
-    for item in drop_retired_paths(guide.get("required_paths")):
+    for item in guide.get("required_paths") or []:
         lines.append(f"- `{item.get('path')}` ({item.get('type')}) — {item.get('description', '')}")
     lines.append("")
 
     lines.append("## Required Sections In Your .docx Report")
     for index, section in enumerate(drop_retired_sections(guide.get("docx_required_sections")), start=1):
         lines.append(f"{index}. {section}")
-    lines.append("Do not put code or screenshots in the report - your code is analysed from the zip.")
+    lines.append("Do not put code or screenshots in the .docx report - your code and your screenshots both go in the zip.")
     lines.append("")
+
+    screenshots = guide.get("required_screenshots") or []
+    if screenshots:
+        lines.append("## Required Screenshots (image files in your zip's `output_screenshots` folder)")
+        lines.append(
+            "Save each of these as its own image file, using the file name shown, inside the `output_screenshots` "
+            "folder of your zip. They go in the zip, NOT in the .docx report."
+        )
+        for index, item in enumerate(screenshots, start=1):
+            lines.append(f"{index}. **`{item.get('filename', '')}`** — {item.get('module') or 'project screen'}")
+            lines.append(f"   - What must be visible: {item.get('description', '')}")
+            if item.get("how_to_capture"):
+                lines.append(f"   - How to capture it: {item['how_to_capture']}")
+            if item.get("linked_requirement"):
+                lines.append(f"   - Proves: {item['linked_requirement']}")
+        lines.append("")
 
     if guide.get("worked_example_section"):
         lines += [

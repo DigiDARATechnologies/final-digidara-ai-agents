@@ -363,18 +363,36 @@ apify:
     - platform: naukri
       actor_id: crawloop/naukri-jobs-scraper
       enabled: true
+      run_input:
+        position: "Software Engineer"
+        location: "Chennai"
+        maxItems: 15
 
     - platform: foundit
       actor_id: crawloop/foundit-jobs-scraper
       enabled: true
+      run_input:
+        position: "Software Engineer"
+        location: "Chennai"
+        maxItems: 15
 
     - platform: hirist
       actor_id: crawloop/hirist-jobs-scraper
       enabled: true
+      run_input:
+        position: "Software Engineer"
+        location: "Chennai"
+        maxItems: 15
 
     - platform: instahyre
       actor_id: parsebird/instahyre-jobs-scraper
       enabled: true
+      run_input:
+        keywords:
+          - "Software Engineer"
+        locations:
+          - "Chennai"
+        maxItems: 15
 
     - platform: internshala
       actor_id: hipersoft/internshala-scraper
@@ -383,15 +401,19 @@ apify:
     - platform: indeed
       actor_id: solidscrape/indeed-jobs-scraper
       enabled: true
+      run_input:
+        searchQueries:
+          - "Software Engineer"
+        location: "Chennai, Tamil Nadu"
+        country: "in"
+        maxItems: 15
 
+    # Glassdoor: simpleapi actor is a paid rental actor on Apify Store (HTTP 403).
+    # Kept disabled until a free community actor or paid store subscription is configured.
     - platform: glassdoor
       actor_id: simpleapi/glassdoor-jobs-scraper
-      enabled: true
+      enabled: false
 
-    # Pending: needs a LinkedIn actor id and a sample dataset item before
-    # normalize_job() can map it (every LinkedIn-scraping actor on Apify
-    # uses different field names) — kept here, disabled, as the known next
-    # platform to wire up.
     - platform: linkedin
       actor_id: artificially/linkedin-jobs-scraper
       enabled: true
@@ -399,11 +421,42 @@ apify:
         searchQueries:
           - software engineer
         location: Chennai, Tamil Nadu, India
-        maxJobs: 5
+        maxJobs: 15
         jobType:
           - full-time
-        experienceLevel:
-          - entry
-          - associate
-        datePosted: past-week
         remoteFilter: any
+
+# Adzuna India Job Search API — Official REST API for regional postings.
+# Credentials are read from ADZUNA_APP_ID and ADZUNA_APP_KEY in the environment.
+adzuna:
+  enabled: true
+  queries:
+    - what: "Software Engineer"
+      where: "Chennai"
+    - what: "Junior Developer"
+      where: "Tamil Nadu"
+    - what: "Python Developer"
+      where: "Chennai"
+    - what: "Entry Level Developer"
+      where: "Coimbatore"
+    - what: "Web Developer"
+      where: "Madurai"
+    - what: "Junior Software Engineer"
+      where: "Bengaluru"
+    - what: "Junior Software Engineer"
+      where: "Hyderabad"
+    - what: "Data Analyst"
+      where: "Chennai"
+
+# RapidAPI JSearch — Unified real-time search across LinkedIn, Indeed, Glassdoor.
+# Token is read from RAPIDAPI_KEY in the environment.
+jsearch:
+  enabled: true
+  queries:
+    - query: "Software Engineer Fresher in Chennai"
+    - query: "Junior Developer in Tamil Nadu"
+    - query: "Python Developer Fresher in Coimbatore"
+    - query: "Software Engineer Fresher in Bengaluru"
+    - query: "Junior Software Engineer in Hyderabad"
+
+
