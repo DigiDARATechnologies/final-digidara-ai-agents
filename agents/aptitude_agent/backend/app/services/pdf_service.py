@@ -1,6 +1,7 @@
 """Generate learner-facing assessment PDFs without persisting files."""
 
 from io import BytesIO
+from pathlib import Path
 import re
 from xml.sax.saxutils import escape
 
@@ -11,7 +12,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     HRFlowable, KeepTogether, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table,
-    TableStyle,
+    TableStyle, Image,
 )
 
 from .test_label import test_label
@@ -28,6 +29,15 @@ LINE=colors.HexColor("#DED9F2")
 SOFT=colors.HexColor("#F6F3FF")
 GREEN=colors.HexColor("#167A50")
 ROSE=colors.HexColor("#A43B49")
+LOGO_PATH=Path(__file__).resolve().parents[2]/"assets"/"digidara-logo.jpg"
+
+
+def _logo():
+    if not LOGO_PATH.is_file():
+        return ""
+    logo=Image(str(LOGO_PATH),width=38*mm,height=21.375*mm)
+    logo.hAlign="RIGHT"
+    return logo
 
 
 def _plain(value):
@@ -169,11 +179,18 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
         title=f"Aptitude Test - {test_label(test)} results",author="Aptitude Test",
     )
     style=_styles();story=[]
-    story.extend([
+    title_block=[
         Paragraph("APTITUDE TEST",style["title"]),
         Paragraph("Assessment Results",style["subtitle"]),
         Paragraph(_html(test_label(test)),style["subtitle"]),
-    ])
+    ]
+    report_header=Table([[title_block,_logo()]],colWidths=[138*mm,38*mm],hAlign="LEFT")
+    report_header.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),0),("BOTTOMPADDING",(0,0),(-1,-1),0),
+    ]))
+    story.extend([report_header,Spacer(1,4*mm)])
     test_type="Category Practice" if test.test_mode=="category_practice" else "Mixed Test"
     details=[
         [Paragraph("STUDENT",style["label"]),Paragraph("TEST TYPE",style["label"]),Paragraph("COMPLETED",style["label"])],

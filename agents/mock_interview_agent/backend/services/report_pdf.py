@@ -1,6 +1,7 @@
 """Render the completed interview report with readable, aligned question reviews."""
 
 from io import BytesIO
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -10,7 +11,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     CondPageBreak, HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate,
-    Spacer, Table, TableStyle,
+    Spacer, Table, TableStyle, Image,
 )
 
 
@@ -19,6 +20,15 @@ INK = colors.HexColor("#24232E")
 MUTED = colors.HexColor("#626575")
 LINE = colors.HexColor("#DED9F2")
 SOFT = colors.HexColor("#F6F3FF")
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "digidara-logo.jpg"
+
+
+def _logo():
+    if not LOGO_PATH.is_file():
+        return ""
+    logo = Image(str(LOGO_PATH), width=38*mm, height=21.375*mm)
+    logo.hAlign = "RIGHT"
+    return logo
 
 
 def _html(value):
@@ -71,7 +81,14 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
         title="Mock Interview Report", author="DigiDARA",
     )
     style = _styles()
-    story = [Paragraph("MOCK INTERVIEW", style["title"]), Paragraph("Interview Report", style["subtitle"])]
+    title_block = [Paragraph("MOCK INTERVIEW", style["title"]), Paragraph("Interview Report", style["subtitle"])]
+    report_header = Table([[title_block, _logo()]], colWidths=[138*mm, 38*mm], hAlign="LEFT")
+    report_header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story = [report_header, Spacer(1, 4*mm)]
 
     metadata = [
         ("STUDENT", interview.get("student_name")),
