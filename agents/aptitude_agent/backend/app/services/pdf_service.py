@@ -10,6 +10,7 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     HRFlowable, KeepTogether, Paragraph, Preformatted, SimpleDocTemplate, Spacer, Table,
     TableStyle, Image,
@@ -30,14 +31,23 @@ SOFT=colors.HexColor("#F6F3FF")
 GREEN=colors.HexColor("#167A50")
 ROSE=colors.HexColor("#A43B49")
 LOGO_PATH=Path(__file__).resolve().parents[2]/"assets"/"digidara-logo.jpg"
+LOGO_WIDTH=38*mm
+LOGO_HEIGHT=21.375*mm
 
 
 def _logo():
-    if not LOGO_PATH.is_file():
-        return ""
-    logo=Image(str(LOGO_PATH),width=38*mm,height=21.375*mm)
-    logo.hAlign="RIGHT"
-    return logo
+    return ""
+
+
+def _draw_logo(canvas,doc):
+    if LOGO_PATH.is_file():
+        canvas.drawImage(
+            ImageReader(str(LOGO_PATH)),
+            A4[0]-doc.rightMargin-LOGO_WIDTH,
+            A4[1]-26*mm,
+            width=LOGO_WIDTH,height=LOGO_HEIGHT,
+            preserveAspectRatio=True,mask="auto",
+        )
 
 
 def _plain(value):
@@ -161,6 +171,7 @@ def _styles():
 
 def _page_footer(canvas,doc):
     canvas.saveState()
+    _draw_logo(canvas,doc)
     width,_height=A4
     canvas.setStrokeColor(LINE);canvas.setLineWidth(.5)
     canvas.line(doc.leftMargin,13*mm,width-doc.rightMargin,13*mm)
@@ -175,7 +186,7 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
     output=BytesIO()
     document=SimpleDocTemplate(
         output,pagesize=A4,rightMargin=17*mm,leftMargin=17*mm,
-        topMargin=17*mm,bottomMargin=20*mm,
+        topMargin=30*mm,bottomMargin=20*mm,
         title=f"Aptitude Test - {test_label(test)} results",author="Aptitude Test",
     )
     style=_styles();story=[]

@@ -95,9 +95,9 @@ export default function useAnswerCapture({ interviewId, currentQuestionRef, capt
     if (isListening || captureInProgressRef.current || isExitBlocked()) return;
     const generation = captureGenerationRef.current;
     captureInProgressRef.current = true;
-    debugInterview("answer capture started", { questionOrder: currentQuestionRef.current.order });
+    const captureRequestedAt = performance.now();
+    debugInterview("answer capture requested", { questionOrder: currentQuestionRef.current.order, monotonic_ms: Math.round(captureRequestedAt) });
     setError(null);
-    setPhase("answering");
     if (!isSpeechRecognitionSupported) {
       enableManualAnswer("Speech recognition is not supported in this browser. Type your answer below instead.");
       return;
@@ -112,7 +112,16 @@ export default function useAnswerCapture({ interviewId, currentQuestionRef, capt
       mediaStreamRef.current = stream;
       audioBlobRef.current = null;
       audioBlobPromiseRef.current = new Promise((resolve) => { resolveAudioBlob = resolve; });
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordingChunks.push(e.data); };
+      let firstAudioChunkLogged = false;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordingChunks.push(e.data);
+          if (!firstAudioChunkLogged) {
+            firstAudioChunkLogged = true;
+            debugInterview("first audio chunk received", { questionOrder: currentQuestionRef.current.order, monotonic_ms: Math.round(performance.now()), bytes: e.data.size });
+          }
+        }
+      };
       recorder.onstop = () => {
         const blob = new Blob(recordingChunks, { type: "audio/webm" });
         if (recordingGenerationRef.current === recordingGeneration) {
@@ -125,7 +134,15 @@ export default function useAnswerCapture({ interviewId, currentQuestionRef, capt
         if (mediaRecorderRef.current === recorder) mediaRecorderRef.current = null;
       };
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      debugInterview("media recorder start requested", { questionOrder: currentQuestionRef.current.order, monotonic_ms: Math.round(performance.now()) });
+      // Emit short chunks so instrumentation can measure the first captured
+      // audio promptly and so the recording has a small pre-roll before the
+      // browser recognizer reports its listening state.
+      recorder.start(250);
+      // MediaRecorder transitions to `recording` synchronously. The UI cue is
+      // deliberately deferred until SpeechRecognition's onstart callback,
+      // while this recorder is already collecting pre-roll audio.
+      debugInterview("media recorder capturing", { questionOrder: currentQuestionRef.current.order, monotonic_ms: Math.round(performance.now()), state: recorder.state });
     } catch (e) {
       resolveAudioBlob?.(null);
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -134,7 +151,12 @@ export default function useAnswerCapture({ interviewId, currentQuestionRef, capt
       reportClientWarning("local_audio_recording_unavailable", e, { interview_id: interviewId, question_order: currentQuestionRef.current.order });
     }
     try {
-      const text = await listen({ onTranscript: (nextTranscript) => {
+      const text = await listen({
+        onListeningStart: () => {
+          setPhase("answering");
+          debugInterview("listening cue shown", { questionOrder: currentQuestionRef.current.order, monotonic_ms: Math.round(performance.now()) });
+        },
+        onTranscript: (nextTranscript) => {
         if (captureGenerationRef.current !== generation) return;
         transcriptRef.current = nextTranscript;
         setTranscript(nextTranscript);

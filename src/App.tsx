@@ -58,6 +58,7 @@ import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
+import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
@@ -560,6 +561,49 @@ export default function App() {
       saveChats(next);
       return next;
     });
+  }
+
+  async function handlePracticeWeakTopics(subjects: string[]) {
+    const chatId = currentChatId;
+    const currentState = chatId ? mockInterviewStates[chatId] : undefined;
+    const weakSubjects = subjects.map((subject) => subject.trim()).filter(Boolean);
+    if (!chatId || !currentState?.sessionToken || !currentState.roleName || !weakSubjects.length) return;
+
+    setTyping(true);
+    try {
+      const session = await startMockInterview(currentState.sessionToken, {
+        round_type: "technical",
+        interview_mode: "weak_topic_practice",
+        role_name: currentState.roleName,
+        resolved_subjects: weakSubjects,
+        subject: weakSubjects[0],
+        difficulty: currentState.difficulty ?? "intermediate",
+        num_questions: 5,
+      });
+      const nextState: MockInterviewFlowState = {
+        ...currentState,
+        step: "in_interview",
+        roundType: "technical",
+        interviewMode: "weak_topic_practice",
+        interviewId: session.interview_id,
+        question: session.question,
+        questionOrder: session.question_order,
+        realQuestionIndex: session.real_question_index ?? session.question_order,
+        totalQuestions: session.total_questions ?? 5,
+        questionCount: 5,
+        error: undefined,
+        summary: undefined,
+      };
+      setMockInterviewStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, [
+        { text: `Starting a 5-question practice interview for your weak skills: ${weakSubjects.join(", ")}.` },
+        { text: `Question ${nextState.realQuestionIndex ?? 1} of ${nextState.totalQuestions}:\n\n${session.question}`, options: [{ label: "Exit interview", value: "exit_interview", description: "Stop now; unanswered questions will not be scored." }] },
+      ]);
+    } catch (error) {
+      appendAgentMessages(chatId, [{ text: `I couldn't start weak-skill practice: ${(error as Error).message}` }]);
+    } finally {
+      setTyping(false);
+    }
   }
 
   function scheduleReply(chatId: string) {
@@ -1543,7 +1587,7 @@ export default function App() {
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} />
+                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
