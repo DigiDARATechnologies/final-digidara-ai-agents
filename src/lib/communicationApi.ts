@@ -156,6 +156,7 @@ export interface SpeakingTurnResult {
   total_turns?: number;
   next_question?: string;
   done?: boolean;
+  message?: string;
   feedback?: {
     scores?: Record<string, number | null>;
     explanation?: string;
