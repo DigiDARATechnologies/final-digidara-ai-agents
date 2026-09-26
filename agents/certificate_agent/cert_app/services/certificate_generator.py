@@ -25,20 +25,20 @@ _FONT_DIRS = [
 ]
 
 # ── Layout: Pixel-verified coordinates for 1414 × 2000 px Canvas ───────────────
-_Y_OF_ACHIEVEMENT = 518   # "OF ACHIEVEMENT" in Larger Gold Stylish Font
-_Y_SUBTITLE       = 538   # "OF COMPLETION" / "OF ACHIEVEMENT"
+_Y_OF_ACHIEVEMENT = 532   # "OF ACHIEVEMENT" in Larger Gold Stylish Font
+_Y_SUBTITLE       = 532   # "OF COMPLETION" / "OF ACHIEVEMENT"
 _Y_FLORAL         = 585   # Golden Floral Ornament --- ❖ ---
-_Y_PRESENTED      = 625   # "This certificate is proudly presented to" in Larger Italic
-_Y_SUBHEADER      = 685   # "for successfully completing the course/assessment"
-_Y_NAME           = 775   # Recipient Name (above gold bar y=882)
-_Y_COURSE         = 940   # Course / Subject Title (below gold bar y=882, Stylish Serif)
+_Y_PRESENTED      = 624   # "This certificate is proudly presented to" in Larger Italic
+_Y_SUBHEADER      = 680   # "for successfully completing the course/assessment"
+_Y_NAME           = 755   # Recipient Name (above gold bar y=882)
+_Y_COURSE         = 932   # Course / Subject Title (below gold bar y=882, Stylish Serif)
 _Y_SCORE_LBL1     = 1045  # "and demonstrating proficiency through"
-_Y_SCORE_LBL2     = 1085  # "the final assessment with a score of" / "the assessment with a score of"
-_Y_SCORE_VAL      = 1140  # Score value e.g. "85%"
-_Y_LEVEL_BADGE    = 1230  # Certification-level pill badge
-_Y_DOTTED_DIVIDER = 1315  # Dotted line with gold end-dots
-_Y_DATE           = 1355  # Date of Issue
-_Y_CERT_ID        = 1405  # Certificate ID
+_Y_SCORE_LBL2     = 1088  # "the final assessment with a score of" / "the assessment with a score of"
+_Y_SCORE_VAL      = 1135  # Score value e.g. "85%"
+_Y_LEVEL_BADGE    = 1238  # Certification-level pill badge
+_Y_DOTTED_DIVIDER = 1324  # Dotted line with gold end-dots
+_Y_DATE           = 1358  # Date of Issue
+_Y_CERT_ID        = 1406  # Certificate ID
 _Y_WEBSITE        = 1824  # Website footer line
 
 # ── Layout & Colours ───────────────────────────────────────────────────────────
@@ -134,11 +134,11 @@ def _get_level(score: float) -> tuple:
 
 def _draw_level_badge(draw: ImageDraw.Draw, img_w: int, y: int,
                       level: str, badge_color: tuple) -> None:
-    f_badge   = _load_font(28, bold=True, serif=True)
+    f_badge   = _load_font(32, bold=True, serif=True)
     badge_txt = f"  \u2605  {level}  \u2605  "
     bbox      = draw.textbbox((0, 0), badge_txt, font=f_badge)
     tw, th    = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    pad_x, pad_y = 36, 14
+    pad_x, pad_y = 40, 14
     rw  = tw + 2 * pad_x
     rh  = th + 2 * pad_y
     x0  = (img_w - rw) // 2
@@ -283,33 +283,33 @@ def _render_certificate_image(username: str, topic: str, score: float, cert_numb
         draw = ImageDraw.Draw(img)
         
         # Cover pre-printed text "OF COMPLETION" on the template background
-        draw.rectangle([(400, 530), (1014, 595)], fill=(255, 255, 255))
+        draw.rectangle([(350, 515), (1064, 600)], fill=(255, 255, 255))
 
         # Draw "OF ACHIEVEMENT" dynamically
         subtitle_text = "OF ACHIEVEMENT"
-        f_subtitle = _load_font(36, bold=True, serif=True)
+        f_subtitle = _load_font(44, bold=True, serif=True)
         _centered_text(draw, _Y_SUBTITLE, subtitle_text, f_subtitle, _COL_GOLD, IMG_W)
         
         # Cover pre-printed text "This certificate is proudly awarded to" on the template background
-        draw.rectangle([(200, 620), (1214, 700)], fill=(255, 255, 255))
+        draw.rectangle([(180, 615), (1234, 715)], fill=(255, 255, 255))
 
         # 1. "This certificate is proudly presented to" (italic, soft dark gray)
-        f_pres = _load_font(28, italic=True, serif=True)
+        f_pres = _load_font(34, italic=True, serif=True)
         _centered_text(draw, _Y_PRESENTED, "This certificate is proudly presented to", f_pres, _COL_GRAY, IMG_W)
 
         # 2. Sub-header line above student name
         sub_text = "for successfully completing the course" if is_course_final else "for successfully completing the assessment"
-        f_sub = _load_font(24, bold=False, serif=True)
+        f_sub = _load_font(29, bold=False, serif=True)
         _centered_text(draw, _Y_SUBHEADER, sub_text, f_sub, _COL_GRAY, IMG_W)
 
         # 3. Recipient Name (centered, bold navy blue)
         name_text = username.strip().upper()
-        f_name_size = 64
+        f_name_size = 74
         f_name = _load_font(f_name_size, bold=True, serif=True)
         name_bbox = draw.textbbox((0, 0), name_text, font=f_name)
         name_w = name_bbox[2] - name_bbox[0]
 
-        max_name_w = IMG_W - 300
+        max_name_w = IMG_W - 260
         if name_w > max_name_w:
             scaled_size = max(36, int(f_name_size * max_name_w / name_w))
             f_name = _load_font(scaled_size, bold=True, serif=True)
@@ -317,10 +317,10 @@ def _render_certificate_image(username: str, topic: str, score: float, cert_numb
         _centered_text(draw, _Y_NAME, name_text, f_name, _COL_BLUE, IMG_W)
 
         # 4. Course / Topic title (centered, bold navy blue)
-        f_course = _load_font(44, bold=True, serif=True)
-        course_lines = _wrap_text(draw, topic.strip().upper(), f_course, IMG_W - 300)
+        f_course = _load_font(52, bold=True, serif=True)
+        course_lines = _wrap_text(draw, topic.strip().upper(), f_course, IMG_W - 260)
         y_cur = _Y_COURSE
-        line_h = draw.textbbox((0, 0), "A", font=f_course)[3] + 10
+        line_h = draw.textbbox((0, 0), "A", font=f_course)[3] + 12
         for line in course_lines:
             _centered_text(draw, y_cur, line, f_course, _COL_BLUE, IMG_W)
             y_cur += line_h
@@ -328,12 +328,12 @@ def _render_certificate_image(username: str, topic: str, score: float, cert_numb
         # 5. Proficiency description text
         demo_line1 = "and demonstrating proficiency through"
         demo_line2 = "the final assessment with a score of" if is_course_final else "the assessment with a score of"
-        f_body = _load_font(24, bold=False, serif=True)
+        f_body = _load_font(29, bold=False, serif=True)
         _centered_text(draw, _Y_SCORE_LBL1, demo_line1, f_body, _COL_GRAY, IMG_W)
         _centered_text(draw, _Y_SCORE_LBL2, demo_line2, f_body, _COL_GRAY, IMG_W)
 
         # 6. Score percentage (large gold)
-        f_score_val = _load_font(72, bold=True, serif=True)
+        f_score_val = _load_font(82, bold=True, serif=True)
         _centered_text(draw, _Y_SCORE_VAL, f"{score:.0f}%", f_score_val, _COL_GOLD, IMG_W)
 
         # 7. Certification level badge (gold pill)
@@ -345,15 +345,15 @@ def _render_certificate_image(username: str, topic: str, score: float, cert_numb
 
         # 9. Date of issue (gold)
         issued = _ordinal_date(datetime.now())
-        f_date = _load_font(26, bold=True, serif=True)
+        f_date = _load_font(30, bold=True, serif=True)
         _centered_text(draw, _Y_DATE, f"Date of Issue:  {issued}", f_date, _COL_GOLD, IMG_W)
 
         # 10. Certificate ID (gold)
-        f_cert_id = _load_font(22, bold=True, serif=True)
+        f_cert_id = _load_font(27, bold=True, serif=True)
         _centered_text(draw, _Y_CERT_ID, f"Certificate ID:  {cert_number}", f_cert_id, _COL_GOLD, IMG_W)
 
         # 11. Website / contact footer line (centered, gold)
-        f_website = _load_font(24, bold=True, serif=True)
+        f_website = _load_font(27, bold=True, serif=True)
         _centered_text(draw, _Y_WEBSITE,
                        "www.digidaratechnologies.com  |  support@digidaratechnologies.com",
                        f_website, _COL_GOLD, IMG_W)
