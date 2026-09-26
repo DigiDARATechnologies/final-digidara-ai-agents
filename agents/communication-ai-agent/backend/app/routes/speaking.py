@@ -1058,27 +1058,35 @@ def respond():
     history = _history(session)
     previous_questions = [turn.ai_question for turn in session.turns]
     should_end = False
+    use_engine = (
+        not current_app.config.get("TESTING")
+        and getattr(groq_service, "process_speaking_turn_conversation_engine", None) is not None
+    )
 
-    try:
-        engine_res = groq_service.process_speaking_turn_conversation_engine(
-            session.mode,
-            session.difficulty,
-            session.topic_title,
-            current_turn.ai_question,
-            answer,
-            history,
-            total_turns=session.total_turns,
-            previous_questions=previous_questions,
-            topic_description=session.topic_description,
-        )
-        feedback = engine_res["feedback"]
-        next_question = engine_res["next_question"]
-        should_end = bool(engine_res.get("should_end_session"))
-        next_question_source = "groq"
-        if engine_res.get("detected_new_topic"):
-            session.topic_title = str(engine_res["detected_new_topic"])[:120]
-    except Exception as exc:
-        current_app.logger.warning("Conversation engine fallback triggered: %s", exc)
+    if use_engine:
+        try:
+            engine_res = groq_service.process_speaking_turn_conversation_engine(
+                session.mode,
+                session.difficulty,
+                session.topic_title,
+                current_turn.ai_question,
+                answer,
+                history,
+                total_turns=session.total_turns,
+                previous_questions=previous_questions,
+                topic_description=session.topic_description,
+            )
+            feedback = engine_res["feedback"]
+            next_question = engine_res["next_question"]
+            should_end = bool(engine_res.get("should_end_session"))
+            next_question_source = "groq"
+            if engine_res.get("detected_new_topic"):
+                session.topic_title = str(engine_res["detected_new_topic"])[:120]
+        except Exception as exc:
+            current_app.logger.warning("Conversation engine fallback triggered: %s", exc)
+            use_engine = False
+
+    if not use_engine:
         try:
             feedback = groq_service.evaluate_speaking_answer(
                 session.mode,
@@ -1092,6 +1100,7 @@ def respond():
             return _api_error("Could not evaluate your answer right now. Please retry.", "GROQ_UNAVAILABLE", 502)
 
         next_turn_number = current_turn.turn_number + 1
+        next_question_source = "groq"
         try:
             next_question = groq_service.generate_speaking_question(
                 session.mode,
@@ -1104,8 +1113,26 @@ def respond():
                 previous_questions=previous_questions,
                 topic_description=session.topic_description,
             )
-            next_question_source = "groq"
-        except Exception:
+        except groq_service.GroqRateLimitError as exc:
+            current_app.logger.warning("Groq next question rate limit exhausted; using fallback question: %s", exc)
+            next_question = groq_service.fallback_speaking_question(
+                session.mode,
+                session.difficulty,
+                session.topic_title,
+                next_turn_number,
+                history,
+                total_turns=session.total_turns,
+                daily_category=session.daily_category,
+                previous_questions=previous_questions,
+                topic_description=session.topic_description,
+            )
+            next_question_source = "fallback"
+        except RuntimeError as exc:
+            current_app.logger.warning("Groq configuration error during next question generation: %s", exc)
+            db.session.rollback()
+            return _api_error("AI setup issue - please contact support.", "GROQ_CONFIG_ERROR", 503)
+        except Exception as exc:
+            current_app.logger.warning("Groq next question generation failed; using fallback question: %s", exc, exc_info=True)
             next_question = groq_service.fallback_speaking_question(
                 session.mode,
                 session.difficulty,
