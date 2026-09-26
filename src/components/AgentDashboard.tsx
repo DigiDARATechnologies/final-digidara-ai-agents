@@ -22,7 +22,7 @@ function FinalReportButton({ submissionId }: { submissionId: string }) {
   }
   return (
     <div className="dashboard-section">
-      <h3>Final report</h3>
+      <h3>Final Report</h3>
       <p className="muted">Your score, viva results and project details, as a PDF.</p>
       <button type="button" className="btn btn-primary" disabled={busy} onClick={download}>
         {busy ? "Preparing report..." : "Download final report (PDF)"}
@@ -74,7 +74,7 @@ function CertificateSection({ submissionId }: { submissionId: string }) {
 
   return (
     <div className="dashboard-section certificate-section">
-      <h3>Your certificate</h3>
+      <h3>Your Certificate</h3>
       {!preview && (
         <>
           <p className="muted">You passed the project and the viva. Preview your certificate, check your name, then click OK to issue it.</p>
@@ -96,7 +96,7 @@ function CertificateSection({ submissionId }: { submissionId: string }) {
           ) : (
             <>
               <label className="field">
-                Name on the certificate
+                Name on the Certificate
                 <input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} aria-label="Name on the certificate" />
               </label>
               <p className="muted">Only the name can be edited. Update the preview to see a change, then click OK to issue the certificate.</p>
@@ -145,7 +145,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
   return (
     <aside className="agent-dashboard">
       <div className="dashboard-head">
-        <div><span>Capstone agent</span><h2>Project dashboard</h2></div>
+        <div><span>Capstone Agent</span><h2>Project Dashboard</h2></div>
         <button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button>
       </div>
 
@@ -156,7 +156,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
       </div>
 
       <div className="dashboard-section">
-        <h3>Example files</h3>
+        <h3>Example Files</h3>
         <p className="muted">See the expected report format and zip folder structure. They are the same for every project; write your own for yours.</p>
         <div className="chat-options">
           {CAPSTONE_EXAMPLE_FILES.map((file) => (
@@ -180,7 +180,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
       <div className="dashboard-section">
         <h3>Project</h3>
         <dl>
-          <div><dt>Requested topic</dt><dd>{state.topicSeed ?? "Not set"}</dd></div>
+          <div><dt>Requested Topic</dt><dd>{state.topicSeed ?? "Not set"}</dd></div>
           <div><dt>Topic</dt><dd>{state.chosenTopic?.title ?? "Not selected"}</dd></div>
           <div><dt>Deadline</dt><dd>{state.deadlineAt ? new Date(state.deadlineAt).toLocaleString() : "Not started"}</dd></div>
           <div><dt>Files</dt><dd>{state.docxFile || state.zipFile ? `${state.docxFile ? "Report " : ""}${state.zipFile ? "Source" : ""}` : "Not uploaded"}</dd></div>
@@ -204,7 +204,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
       )}
       {state.codeQualityScore && (
         <div className="dashboard-section">
-          <h3>Code review breakdown</h3>
+          <h3>Code Review Breakdown</h3>
           <dl>
             <div><dt>Structure</dt><dd>{state.codeQualityScore.structure_score ?? "-"}/25</dd></div>
             <div><dt>Syntax</dt><dd>{state.codeQualityScore.syntax_score ?? "-"}/25</dd></div>
@@ -229,7 +229,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
           )}
         </div>
       )}
-      {state.revisionNotes && <div className="dashboard-alert"><strong>Revision requested</strong><p>{state.revisionNotes}</p></div>}
+      {state.revisionNotes && <div className="dashboard-alert"><strong>Revision Requested</strong><p>{state.revisionNotes}</p></div>}
     </aside>
   );
 }

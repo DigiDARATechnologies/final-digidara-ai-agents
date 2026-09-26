@@ -62,7 +62,7 @@ test('completed interview shows concise summary sections and downloads its PDF',
   }
   expect(screen.getByText('Strong fundamentals. Keep answers concise.')).toBeInTheDocument();
   expect(screen.getByText('Strengths')).toBeInTheDocument();
-  expect(screen.getByText('Areas to improve')).toBeInTheDocument();
+  expect(screen.getByText('Areas to Improve')).toBeInTheDocument();
   expect(screen.queryByText(/Review answer feedback/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Clear answer/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Download PDF report' }));
@@ -80,6 +80,6 @@ test('completed technical report offers weak-skill practice for reported weak su
     },
   };
   render(<MockInterviewPanel state={completed} busy={false} onAnswer={jest.fn()} onExit={jest.fn()} onPracticeWeakTopics={onPracticeWeakTopics} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Practice weak skills' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Practice Weak Skills' }));
   expect(onPracticeWeakTopics).toHaveBeenCalledWith(['SQL and relational databases']);
 });

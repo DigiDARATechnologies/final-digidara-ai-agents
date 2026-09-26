@@ -110,6 +110,10 @@ AGENTS.push({
 
 
 
+/** Agents that are live today (wired to a backend service). The rest of AGENTS are
+ * store placeholders, so surfaces that advertise what DigiDARA can do use this list. */
+export const LIVE_AGENTS: Agent[] = AGENTS.filter((a) => a.kind);
+
 export const DEFAULT_AGENT: Agent = {
   id: "digidara-assistant",
   name: "DigiDARA Assistant",

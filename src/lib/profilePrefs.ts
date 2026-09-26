@@ -2,6 +2,13 @@ export interface ProfilePrefs {
   displayName?: string;
   username?: string;
   avatar?: string;
+  mobile?: string;
+}
+
+// Optional +, then 7-15 digits; spaces, dashes and brackets are allowed as separators.
+export function normalizeMobile(value: string): string | null {
+  const cleaned = value.trim().replace(/[\s\-().]/g, "");
+  return /^\+?\d{7,15}$/.test(cleaned) ? cleaned : null;
 }
 
 export const USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;

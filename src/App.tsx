@@ -29,6 +29,7 @@ import {
 } from "./lib/communicationFlow";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import HelpPage from "./components/HelpPage";
+import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -119,7 +120,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
-  const [activeTab, setActiveTab] = useState("Top Picks");
+  const [activeTab, setActiveTab] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [newChatPending, setNewChatPending] = useState(true);
@@ -146,7 +147,15 @@ export default function App() {
   const [codeBusy, setCodeBusy] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const onChange = (e: MediaQueryListEvent) => { setIsMobile(e.matches); if (!e.matches) setMobileOpen(false); };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
   const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
   const [planName, setPlanName] = useState("Free");
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
@@ -587,6 +596,7 @@ export default function App() {
         name: profilePrefs.displayName || user.name,
         initial: ((profilePrefs.displayName || user.name).trim()[0] || user.initial || "?").toUpperCase(),
         avatarUrl: profilePrefs.avatar,
+        mobile: profilePrefs.mobile || user.mobile,
       }
     : null;
 
@@ -1375,7 +1385,7 @@ export default function App() {
         </div>
       );
     }
-    return <LoginOverlay onAuthenticate={handleAuthenticate} />;
+    return <LoginOverlay theme={theme} onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")} onAuthenticate={handleAuthenticate} />;
   }
 
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
@@ -1552,7 +1562,8 @@ export default function App() {
           theme={theme}
           planName={planName}
           user={displayUser ?? user}
-          collapsed={sidebarCollapsed}
+          collapsed={sidebarCollapsed && !isMobile}
+          onCloseMobile={() => setMobileOpen(false)}
           mobileOpen={mobileOpen}
           homeActive={isHome}
           chats={chats}
@@ -1635,6 +1646,7 @@ export default function App() {
           {view === "chat" && newChatPending && (
             <NewChatLanding
               onSend={startNewChatWithMessage}
+              onOpenAgent={openAgentChat}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
           )}
@@ -1721,6 +1733,13 @@ export default function App() {
         </main>
       </div>
 
+      <RatingPrompt
+        agent={view === "chat" && !newChatPending && currentChat ? currentAgent : null}
+        chatId={view === "chat" && !newChatPending ? currentChatId : null}
+        userId={user.id}
+        onToast={showToast}
+      />
+
       <SettingsModal
         themePref={themePref}
         onThemeChange={setThemePref}
@@ -1729,7 +1748,7 @@ export default function App() {
         onLogout={handleLogout}
         initialTab={settingsTab}
         open={settingsOpen}
-        user={user}
+        user={displayUser ?? user}
         chats={chats}
         onOpenChat={(chatId) => {
           setSettingsOpen(false);

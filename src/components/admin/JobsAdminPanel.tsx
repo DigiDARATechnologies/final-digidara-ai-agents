@@ -257,7 +257,7 @@ export default function JobsAdminPanel() {
   return (
     <div className="admin-panel">
       <div className="admin-panel-tabs">
-        <button className={`admin-tab${tab === "jobs" ? " active" : ""}`} onClick={() => setTab("jobs")}>Job moderation</button>
+        <button className={`admin-tab${tab === "jobs" ? " active" : ""}`} onClick={() => setTab("jobs")}>Job Moderation</button>
         <button className={`admin-tab${tab === "sources" ? " active" : ""}`} onClick={() => setTab("sources")}>
           Sources &amp; Automation
           {automation && (
@@ -297,7 +297,7 @@ export default function JobsAdminPanel() {
             <div className="admin-filter-field">
               <label>Source</label>
               <select value={jobSourceFilter} onChange={(e) => setJobSourceFilter(e.target.value)}>
-                <option value="">All sources</option>
+                <option value="">All Sources</option>
                 <option value="adzuna">Adzuna</option>
                 <option value="jsearch">RapidAPI (LinkedIn/Indeed)</option>
                 <option value="manual">Manual</option>
@@ -306,7 +306,7 @@ export default function JobsAdminPanel() {
             <div className="admin-filter-field">
               <label>Category</label>
               <select value={jobCategoryFilter} onChange={(e) => { setJobCategoryFilter(e.target.value); loadJobs(jobStatusFilter, e.target.value, jobLocationFilter); }}>
-                <option value="">All categories</option>
+                <option value="">All Categories</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
@@ -325,7 +325,7 @@ export default function JobsAdminPanel() {
                 <button className="btn btn-outline btn-sm" onClick={applyLocationFilter}>Apply</button>
               </div>
             </div>
-            <button className="admin-filter-clear" onClick={clearJobFilters}>Clear filters</button>
+            <button className="admin-filter-clear" onClick={clearJobFilters}>Clear Filters</button>
           </div>
 
           {loading ? (
@@ -497,10 +497,10 @@ export default function JobsAdminPanel() {
             </button>
           </div>
 
-          <h4>Configured sources</h4>
+          <h4>Configured Sources</h4>
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last Run</th><th>Actions</th></tr></thead>
               <tbody>
                 {sources.filter((s) => s.source_type !== "greenhouse").map((source) => (
                   <tr key={source.id}>
@@ -524,7 +524,7 @@ export default function JobsAdminPanel() {
           <h4>Job boards (Apify — manual only, never scheduled)</h4>
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>Platform</th><th>Status</th><th>Jobs fetched</th><th>Last run</th><th>Last error</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Platform</th><th>Status</th><th>Jobs Fetched</th><th>Last Run</th><th>Last Error</th><th>Actions</th></tr></thead>
               <tbody>
                 {apifyActors.map((actor) => (
                   <tr key={actor.platform}>
@@ -554,7 +554,7 @@ export default function JobsAdminPanel() {
             </table>
           </div>
 
-          <h4>Recent ingestion runs</h4>
+          <h4>Recent Ingestion Runs</h4>
           <div className="admin-table-card">
             <table className="admin-table">
               <thead><tr><th>Source</th><th>Status</th><th>Queued</th><th>Fetched</th><th>Inserted</th><th>Updated</th><th>Error</th></tr></thead>
@@ -581,7 +581,7 @@ export default function JobsAdminPanel() {
         <div className="admin-section">
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>User</th><th>Plan</th><th>Profile complete</th><th>Joined</th><th>Actions</th></tr></thead>
+              <thead><tr><th>User</th><th>Plan</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.user_id}>

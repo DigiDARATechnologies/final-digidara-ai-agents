@@ -95,6 +95,30 @@ def _personal_data(action: str, payload: dict):
     return jsonify(privacy.erase_student(email))
 
 
+def _usage_summary():
+    """Platform-wide AI usage, in the same shape every other agent returns for the
+    Settings > Usage screen."""
+    totals, _ = db.query(
+        "SELECT COUNT(*) AS total_requests, COALESCE(SUM(total_tokens), 0) AS total_tokens, "
+        "COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens "
+        "FROM ai_usage_records",
+        fetchone=True,
+    )
+    rows, _ = db.query(
+        "SELECT request_type, COUNT(*) AS request_count FROM ai_usage_records GROUP BY request_type",
+        fetch=True,
+    )
+    totals = totals or {}
+    return jsonify(
+        agent_name=AGENT_NAME,
+        total_requests=int(totals.get("total_requests") or 0),
+        total_tokens=int(totals.get("total_tokens") or 0),
+        prompt_tokens=int(totals.get("prompt_tokens") or 0),
+        completion_tokens=int(totals.get("completion_tokens") or 0),
+        by_request_type={row["request_type"]: int(row["request_count"]) for row in (rows or [])},
+    )
+
+
 def _owns_interview(student_id: int, interview_id) -> bool:
     try:
         interview_id = int(interview_id)
@@ -171,6 +195,8 @@ def invoke():
 
     if action == "health":
         return jsonify(status="ok", agent_name=AGENT_NAME)
+    if action == "usage_summary":
+        return _usage_summary()
     if action == "ensure_session":
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:

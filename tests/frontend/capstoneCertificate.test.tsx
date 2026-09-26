@@ -31,13 +31,13 @@ beforeEach(() => { mockPreview.mockReset(); mockConfirm.mockReset(); mockDownloa
 
 test('the certificate section appears only once the score and the viva are both passed', () => {
   const { rerender } = render(<AgentDashboard user={user} state={{ ...graded, passed: false }} onClose={jest.fn()} />);
-  expect(screen.queryByText('Your certificate')).toBeNull();
+  expect(screen.queryByText('Your Certificate')).toBeNull();
   rerender(<AgentDashboard user={user} state={{ ...graded, step: 'awaiting_viva_answer' }} onClose={jest.fn()} />);
-  expect(screen.queryByText('Your certificate')).toBeNull();
+  expect(screen.queryByText('Your Certificate')).toBeNull();
   rerender(<AgentDashboard user={user} state={{ ...graded, vivaSubmissionId: null }} onClose={jest.fn()} />);
-  expect(screen.queryByText('Your certificate')).toBeNull();
+  expect(screen.queryByText('Your Certificate')).toBeNull();
   rerender(<AgentDashboard user={user} state={graded} onClose={jest.fn()} />);
-  expect(screen.getByText('Your certificate')).toBeInTheDocument();
+  expect(screen.getByText('Your Certificate')).toBeInTheDocument();
 });
 
 test('previewing shows the certificate and the name, editable, with no download yet', async () => {

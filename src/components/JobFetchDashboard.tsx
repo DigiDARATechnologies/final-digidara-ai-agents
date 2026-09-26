@@ -67,7 +67,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
   return (
     <aside className="agent-dashboard">
       <div className="dashboard-head">
-        <div><span>Job Fetching Agent</span><h2>Career dashboard</h2></div>
+        <div><span>Job Fetching Agent</span><h2>Career Dashboard</h2></div>
         <button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button>
       </div>
 
@@ -86,9 +86,9 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
           <div><dt>Name</dt><dd>{state.fullName || user.name}</dd></div>
           <div><dt>Plan</dt><dd>{state.planTier === "pro" ? "Pro" : "Free"}</dd></div>
           <div><dt>Skills</dt><dd>{state.skills.length ? state.skills.join(", ") : "—"}</dd></div>
-          <div><dt>Target titles</dt><dd>{state.preferredTitles.length ? state.preferredTitles.join(", ") : "—"}</dd></div>
+          <div><dt>Target Titles</dt><dd>{state.preferredTitles.length ? state.preferredTitles.join(", ") : "—"}</dd></div>
           <div><dt>Locations</dt><dd>{state.preferredLocations.length ? state.preferredLocations.join(", ") : "Any"}</dd></div>
-          <div><dt>Work mode</dt><dd>{state.preferredWorkMode || "Any"}</dd></div>
+          <div><dt>Work Mode</dt><dd>{state.preferredWorkMode || "Any"}</dd></div>
           <div><dt>Resume</dt><dd>{state.resumeOriginalName || "Not uploaded"}</dd></div>
         </dl>
       </div>
@@ -97,7 +97,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
         <div className="dashboard-section">
           <h3>Feed</h3>
           <dl>
-            <div><dt>Matched jobs</dt><dd>{state.feed.length}</dd></div>
+            <div><dt>Matched Jobs</dt><dd>{state.feed.length}</dd></div>
             <div><dt>Saved</dt><dd>{savedJobs.length}</dd></div>
             <div><dt>Applied</dt><dd>{applications.length}</dd></div>
           </dl>
@@ -106,7 +106,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
 
       {savedJobs.length > 0 && (
         <div className="dashboard-section">
-          <h3>Saved jobs</h3>
+          <h3>Saved Jobs</h3>
           <dl>
             {savedJobs.slice(0, 10).map((job) => {
               const safeApplyUrl = safeJobApplyUrl(job.apply_url);
@@ -122,9 +122,9 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
       )}
 
       {!savedJobs.length && !savedError && state.step === "browsing" && (
-        <div className="dashboard-section"><h3>Saved jobs</h3><p>No saved jobs yet. Save a job from its details to keep it here.</p></div>
+        <div className="dashboard-section"><h3>Saved Jobs</h3><p>No saved jobs yet. Save a job from its details to keep it here.</p></div>
       )}
-      {savedError && <div className="dashboard-section"><h3>Saved jobs</h3><p>Saved jobs could not be loaded: {savedError}</p></div>}
+      {savedError && <div className="dashboard-section"><h3>Saved Jobs</h3><p>Saved jobs could not be loaded: {savedError}</p></div>}
 
       {applications.length > 0 && (
         <div className="dashboard-section">
@@ -153,7 +153,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
 
       {hiddenJobs.length > 0 && (
         <div className="dashboard-section">
-          <h3>Hidden jobs</h3>
+          <h3>Hidden Jobs</h3>
           <dl>
             {hiddenJobs.slice(0, 10).map((job) => (
               <div key={job.id} className="saved-job-row">
@@ -177,9 +177,9 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
       )}
 
       {!hiddenJobs.length && !hiddenError && state.step === "browsing" && (
-        <div className="dashboard-section"><h3>Hidden jobs</h3><p>No hidden jobs. Jobs you mark "Not interested" will show up here so you can undo it.</p></div>
+        <div className="dashboard-section"><h3>Hidden Jobs</h3><p>No hidden jobs. Jobs you mark "Not interested" will show up here so you can undo it.</p></div>
       )}
-      {hiddenError && <div className="dashboard-section"><h3>Hidden jobs</h3><p>Hidden jobs could not be loaded: {hiddenError}</p></div>}
+      {hiddenError && <div className="dashboard-section"><h3>Hidden Jobs</h3><p>Hidden jobs could not be loaded: {hiddenError}</p></div>}
     </aside>
   );
 }

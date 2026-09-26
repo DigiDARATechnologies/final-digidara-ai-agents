@@ -332,7 +332,7 @@ export default function ChatView({
         )}
         {certificateExamTimer && (
           <div className="certificate-timer" aria-label="Exam timing">
-            <span>Time remaining</span>
+            <span>Time Remaining</span>
             <strong>{String(Math.floor(certificateExamTimer.secondsLeft / 60)).padStart(2, "0")}:{String(certificateExamTimer.secondsLeft % 60).padStart(2, "0")}</strong>
             <small>Question {certificateExamTimer.currentQuestion} of {certificateExamTimer.totalQuestions}</small>
           </div>
@@ -340,7 +340,7 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening automatically ... sends after 3 seconds of silence" : "Starting conversation..."}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening automatically ... sends after 3 seconds of silence" : "Starting conversation..."}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"

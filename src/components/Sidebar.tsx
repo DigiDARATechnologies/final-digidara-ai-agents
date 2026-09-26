@@ -4,6 +4,7 @@ import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
+import SearchChatsModal from "./SearchChatsModal";
 import blackThemeLogo from "../assets/Black_theme_logo.png";
 import whiteThemeLogo from "../assets/White_theme_logo.png";
 
@@ -19,6 +20,7 @@ export interface SidebarProps {
   userMenuOpen: boolean;
   openChatMenuId: string | null;
   onToggleCollapse: () => void;
+  onCloseMobile: () => void;
   onNewChat: () => void;
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
@@ -34,6 +36,7 @@ export interface SidebarProps {
 
 export default function Sidebar({
   theme,
+  onCloseMobile,
   planName,
   user,
   collapsed,
@@ -57,6 +60,17 @@ export default function Sidebar({
   onDeleteChat,
 }: SidebarProps) {
   const [helpOpen, setHelpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
   useEffect(() => {
     if (!userMenuOpen) setHelpOpen(false);
@@ -113,16 +127,21 @@ export default function Sidebar({
   }
 
   return (
+    <>
+    <div className={`sidebar-backdrop${mobileOpen ? " open" : ""}`} onClick={onCloseMobile} aria-hidden="true" />
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
       <div className="sidebar-top">
         <div className="brand">
           <Logo
             variant={collapsed ? "icon" : "full"}
-            size={collapsed ? 36 : 66}
+            size={collapsed ? 44 : 66}
             src={collapsed ? undefined : theme === "dark" ? blackThemeLogo : whiteThemeLogo}
           />
         </div>
-        <button className="icon-btn" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
+        <button className="icon-btn sidebar-close-mobile" onClick={onCloseMobile} aria-label="Close menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+        </button>
+        <button className="icon-btn sidebar-collapse-desktop" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -133,7 +152,17 @@ export default function Sidebar({
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
           <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
-        <span className="label">New chat</span>
+        <span className="label">New Chat</span>
+      </button>
+
+      <button className="nav-item" onClick={() => { onCloseMobile(); setSearchOpen(true); }} title="Search chats (Ctrl+K)">
+        <span className="nav-icon">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+        </span>
+        <span className="label">Search Chats</span>
       </button>
 
       <button
@@ -158,26 +187,7 @@ export default function Sidebar({
               <rect x="13.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
             </svg>
           </span>
-          <span className="label">My agents</span>
-        </button>
-        <button className="nav-item" onClick={() => onNavAction("workflows")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <circle cx="6" cy="18" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <circle cx="18" cy="12" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M6 8.4v7.2M8.4 6h3.1a3 3 0 013 3v.6M8.4 18h3.1a3 3 0 003-3v-.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-          </span>
-          <span className="label">Workflows</span>
-        </button>
-        <button className="nav-item" onClick={() => onNavAction("saved")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6.5 3.5h11a1 1 0 011 1V21l-6.5-4.4L5.5 21V4.5a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="label">Saved work</span>
+          <span className="label">My Agents</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("settings")}>
           <span className="nav-icon">
@@ -282,7 +292,7 @@ export default function Sidebar({
             ✏️ Rename
           </button>
           <button type="button" role="menuitem" onClick={() => onTogglePinChat(openMenuChat.id)}>
-            📌 {openMenuChat.pinned ? "Unpin chat" : "Pin chat"}
+            📌 {openMenuChat.pinned ? "Unpin Chat" : "Pin Chat"}
           </button>
           <button type="button" role="menuitem" className="danger" onClick={() => onDeleteChat(openMenuChat.id)}>
             🗑️ Delete
@@ -318,7 +328,7 @@ export default function Sidebar({
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 3.5l2.2 5.3 5.3 2.2-5.3 2.2L12 18.5l-2.2-5.3L4.5 11l5.3-2.2L12 3.5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
             </svg>
-            {planName === "Free" ? "Upgrade plan" : "Manage plan"}
+            {planName === "Free" ? "Upgrade Plan" : "Manage Plan"}
           </button>
           <button onClick={() => onUserMenuAction("profile")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -363,13 +373,13 @@ export default function Sidebar({
                   <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
                   <path d="M9.6 9.4a2.5 2.5 0 114 2c-.9.6-1.6 1.1-1.6 2.1M12 16.9v.1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
                 </svg>
-                Help center
+                Help Center
               </button>
               <button type="button" role="menuitem" onClick={() => onOpenHelpPage("release-notes")}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M4 20l1.2-4.2L16.5 4.5a2 2 0 012.8 0l.2.2a2 2 0 010 2.8L8.2 18.8 4 20zM14.5 6.5l3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Release notes
+                Release Notes
               </button>
               <div className="user-menu-sep" />
               <button type="button" role="menuitem" onClick={() => onOpenHelpPage("contact")}>
@@ -377,7 +387,7 @@ export default function Sidebar({
                   <rect x="3.5" y="5.5" width="17" height="13" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
                   <path d="M4 7.5l8 6 8-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Contact support
+                Contact Support
               </button>
               <button type="button" role="menuitem" onClick={() => setLegalTab("terms")}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -398,7 +408,7 @@ export default function Sidebar({
                   <rect x="8" y="8" width="8" height="11" rx="4" stroke="currentColor" strokeWidth="1.7" />
                   <path d="M9.5 8a2.5 2.5 0 015 0M4 12h4M16 12h4M5 18l3-2M19 18l-3-2M5 6l3 2M19 6l-3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
                 </svg>
-                Report a bug
+                Report a Bug
               </button>
             </div>
           </div>
@@ -406,11 +416,16 @@ export default function Sidebar({
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M9 4H6a2 2 0 00-2 2v12a2 2 0 002 2h3M16 8l4 4-4 4M20 12H9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Log out
+            Log Out
           </button>
         </div>
       </div>
+      {searchOpen && createPortal(
+        <SearchChatsModal chats={chats} onOpenChat={onOpenChat} onClose={() => setSearchOpen(false)} />,
+        document.body,
+      )}
       {legalTab && createPortal(<LegalModal key={legalTab} open initialTab={legalTab} onClose={() => setLegalTab(null)} />, document.body)}
     </aside>
+    </>
   );
 }

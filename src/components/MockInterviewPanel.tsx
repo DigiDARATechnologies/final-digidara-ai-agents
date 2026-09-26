@@ -169,16 +169,16 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       ["Confidence score", summary.confidence],
     ] as const;
     return <section className="mock-interview-panel mock-interview-report" aria-label="Mock interview report">
-      <div className="mock-interview-header"><div><small>INTERVIEW COMPLETE</small><h3>Your interview report</h3></div></div>
+      <div className="mock-interview-header"><div><small>INTERVIEW COMPLETE</small><h3>Your Interview Report</h3></div></div>
       <div className="mock-interview-scores">{metrics.map(([label, value]) => <div key={label} className="mock-interview-score"><span>{label}</span><strong>{score(value)}</strong></div>)}</div>
       {summary.max_marks != null && <p className="mock-interview-scorecard-total">Correct-answer score: {summary.total_marks ?? 0} / {summary.max_marks} ({summary.max_marks} questions)</p>}
       {summary.feedback && <p className="mock-interview-report-feedback">{compactFeedback(summary.feedback)}</p>}
       {(summary.strengths || summary.weaknesses) && <div className="mock-interview-feedback-grid">
         <div className="mock-interview-strengths"><strong>Strengths</strong>{feedbackPoints(summary.strengths).map((point, index) => <p key={index}>{point}</p>)}</div>
-        <div className="mock-interview-weaknesses"><strong>Areas to improve</strong>{feedbackPoints(summary.weaknesses).map((point, index) => <p key={index}>{point}</p>)}</div>
+        <div className="mock-interview-weaknesses"><strong>Areas to Improve</strong>{feedbackPoints(summary.weaknesses).map((point, index) => <p key={index}>{point}</p>)}</div>
       </div>}
       <div className="mock-interview-report-actions">
-        {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice weak skills</button>}
+        {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice Weak Skills</button>}
         <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF…" : "Download PDF report"}</button>
       </div>
       {downloadError && <p className="mock-interview-error" role="alert">{downloadError}</p>}
@@ -193,7 +193,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   return <section className="mock-interview-panel" aria-label="Live mock interview">
     <div className="mock-interview-header"><div><small>LIVE INTERVIEW</small><p className="mock-interview-round">{state.roundType === "hr" ? "HR interview" : state.roleName || state.subject} · {state.difficulty}</p></div>
       <div className="mock-interview-progress" aria-label={`Question ${currentQuestion} of ${totalQuestions}`}><span>{currentQuestion}/{totalQuestions}</span><div className="mock-interview-progress-track"><i style={{ width: `${progressPercent}%` }} /></div></div>
-      <div className={`mock-interview-timer${secondsLeft !== null && secondsLeft <= 15 ? " warning" : ""}`} role="timer"><span>Time left</span><strong>{secondsLeft === null ? "—" : `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`}</strong></div>
+      <div className={`mock-interview-timer${secondsLeft !== null && secondsLeft <= 15 ? " warning" : ""}`} role="timer"><span>Time Left</span><strong>{secondsLeft === null ? "—" : `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`}</strong></div>
     </div>
     <div className="mock-interview-question"><span className="mock-interview-question-number" aria-hidden="true">{currentQuestion}.</span><span>{state.question}</span></div>
     <div className={`mock-interview-voice${speech.listening ? " listening" : ""}`}>
@@ -220,6 +220,6 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     {speech.error && <p className="mock-interview-error" role="alert">{speech.error} You can type your answer below.</p>}
     <label className="mock-interview-answer-label" htmlFor="mock-interview-answer">Your answer (voice transcription appears here)</label>
     <textarea id="mock-interview-answer" value={typedAnswer} onChange={(event) => { typedRef.current = event.target.value; setTypedAnswer(event.target.value); }} placeholder="Your answer…" disabled={busy} rows={4} />
-    <div className="mock-interview-actions"><button type="button" className="btn btn-primary" disabled={busy || !activeAnswer || secondsLeft === null} onClick={() => submitAnswer(activeAnswer)}>{busy ? "Saving…" : "Submit answer"}</button><button type="button" className="btn btn-outline" disabled={busy} onClick={() => { if (window.confirm("Exit this interview? Unanswered questions will not be scored.")) onExit(); }}>Exit interview</button></div>
+    <div className="mock-interview-actions"><button type="button" className="btn btn-primary" disabled={busy || !activeAnswer || secondsLeft === null} onClick={() => submitAnswer(activeAnswer)}>{busy ? "Saving…" : "Submit answer"}</button><button type="button" className="btn btn-outline" disabled={busy} onClick={() => { if (window.confirm("Exit this interview? Unanswered questions will not be scored.")) onExit(); }}>Exit Interview</button></div>
   </section>;
 }

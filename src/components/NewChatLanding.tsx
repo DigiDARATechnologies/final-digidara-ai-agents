@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { Logo } from "./Logo";
+import { LIVE_AGENTS } from "../data/agents";
 
 interface NewChatLandingProps {
   onSend: (text: string) => void;
@@ -9,9 +10,11 @@ interface NewChatLandingProps {
    * caller can explain that (e.g. a toast), matching how the main composer
    * already handles attachments being unavailable for the current agent. */
   onAttachClick: () => void;
+  /** Starts a chat with the chosen agent. */
+  onOpenAgent: (agentId: string) => void;
 }
 
-export default function NewChatLanding({ onSend, onAttachClick }: NewChatLandingProps) {
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const speech = useSpeechRecognition();
@@ -54,7 +57,7 @@ export default function NewChatLanding({ onSend, onAttachClick }: NewChatLanding
         <div style={{ marginBottom: "18px" }}>
           <Logo variant="icon" size={96} />
         </div>
-        <h1>What's on the agenda today?</h1>
+        <h1 className="landing-title">What's on the agenda today?</h1>
 
         <form className="landing-composer glow-border" onSubmit={handleSubmit}>
           <button type="button" className="icon-btn" title="Attach file" onClick={onAttachClick}>
@@ -102,6 +105,30 @@ export default function NewChatLanding({ onSend, onAttachClick }: NewChatLanding
           </button>
         </form>
         {speech.error && <div className="mic-error">{speech.error}</div>}
+
+        <div className="landing-agents">
+          <div className="landing-agents-label"><span>Start with an agent</span></div>
+          <div className="landing-agents-grid">
+            {LIVE_AGENTS.map((agent, i) => (
+              <button
+                key={agent.id}
+                type="button"
+                className="landing-agent"
+                style={{ ["--agent-color" as string]: agent.color, ["--i" as string]: i }}
+                onClick={() => onOpenAgent(agent.id)}
+              >
+                <span className="landing-agent-icon">{agent.icon}</span>
+                <span className="landing-agent-text">
+                  <b>{agent.name.replace(/ Agent$/, "")}</b>
+                  <small>{agent.desc}</small>
+                </span>
+                <svg className="landing-agent-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M7 17L17 7M9 7h8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
