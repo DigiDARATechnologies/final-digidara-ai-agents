@@ -1,6 +1,8 @@
 import type { ChatOption, User } from "../types";
 import {
   bridgeIdentity,
+  downloadSpeakingReportPdf,
+  downloadWritingReportPdf,
   endPronunciationSession,
   endSpeaking,
   endWriting,
@@ -84,14 +86,10 @@ function normalizedSentence(value?: string): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
-  const reaction = String(feedback?.reaction || "You're doing well!").trim();
-  const corrected = String(feedback?.corrected_answer || "").trim();
-  const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
-  const correction = hasCorrection
-    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
-    : "";
-  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
+function speakingCoachReply(_answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
+  const reaction = String(feedback?.reaction || "").trim();
+  const question = String(nextQuestion || "").trim();
+  return [reaction, question].filter(Boolean).join(" ") || "Tell me more about that.";
 }
 
 const DIFFICULTY_OPTIONS: ChatOption[] = [
@@ -363,6 +361,60 @@ export async function handleCommunicationText(
 
   if (command === "menu" || command === "back_to_menu") return showMenu(state, "What would you like to practice next?");
 
+  if (command === "download_speaking_pdf") {
+    if (!state.sessionId || !state.authToken) {
+      return showMenu(state, "No completed speaking session found to download.");
+    }
+    try {
+      await downloadSpeakingReportPdf(state.authToken, state.sessionId);
+      return {
+        state: { ...state, step: "main_menu" as const },
+        messages: [{
+          text: "Your Speaking Practice Report PDF has been downloaded successfully! 📄✨\n\nWhat would you like to practice next?",
+          options: MENU_OPTIONS,
+        }],
+      };
+    } catch (error) {
+      return {
+        state: { ...state, step: "main_menu" as const },
+        messages: [{
+          text: `Could not download the report PDF: ${(error as Error).message}`,
+          options: [
+            { label: "📄 Try Download PDF Again", value: "download_speaking_pdf" },
+            ...MENU_OPTIONS,
+          ],
+        }],
+      };
+    }
+  }
+
+  if (command === "download_writing_pdf") {
+    if (!state.sessionId || !state.authToken) {
+      return showMenu(state, "No completed writing session found to download.");
+    }
+    try {
+      await downloadWritingReportPdf(state.authToken, state.sessionId);
+      return {
+        state: { ...state, step: "main_menu" as const },
+        messages: [{
+          text: "Your Writing Practice Report PDF has been downloaded successfully! 📄✨\n\nWhat would you like to practice next?",
+          options: MENU_OPTIONS,
+        }],
+      };
+    } catch (error) {
+      return {
+        state: { ...state, step: "main_menu" as const },
+        messages: [{
+          text: `Could not download the writing report PDF: ${(error as Error).message}`,
+          options: [
+            { label: "📄 Try Download PDF Again", value: "download_writing_pdf" },
+            ...MENU_OPTIONS,
+          ],
+        }],
+      };
+    }
+  }
+
   if (state.step === "main_menu") {
     if (command === "dashboard") return showDashboard(state);
     if (command === "history") return showHistory(state);
@@ -447,10 +499,19 @@ export async function handleCommunicationText(
     if (command === "end_session") {
       try {
         const summary = await endWriting(state.authToken!, state.sessionId!);
-        return showMenu(
-          state,
-          `Session complete! Overall score: ${summary.overall_score ?? "—"}/10\n${summary.summary_feedback ?? summary.summary ?? ""}`,
-        );
+        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
+          ? `${summary.overall_score}/10`
+          : "—/10";
+        return {
+          state: { ...state, step: "main_menu" as const },
+          messages: [{
+            text: `Writing practice complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? summary.summary ?? ""}\n\nYour Writing Practice Report PDF is ready:`,
+            options: [
+              { label: "📄 Download PDF Report", value: "download_writing_pdf", description: "Download your detailed writing analysis PDF" },
+              ...MENU_OPTIONS,
+            ],
+          }],
+        };
       } catch (error) {
         return showMenu(state, `Could not end the session: ${(error as Error).message}`);
       }
@@ -491,7 +552,19 @@ export async function handleCommunicationText(
     if (command === "end_session") {
       try {
         const summary = await endWriting(state.authToken!, state.sessionId!);
-        return showMenu(state, `Writing practice complete! Overall score: ${summary.overall_score ?? "—"}/10\n${summary.summary_feedback ?? ""}`);
+        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
+          ? `${summary.overall_score}/10`
+          : "—/10";
+        return {
+          state: { ...state, step: "main_menu" as const },
+          messages: [{
+            text: `Writing practice complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? summary.summary ?? ""}\n\nYour Writing Practice Report PDF is ready:`,
+            options: [
+              { label: "📄 Download PDF Report", value: "download_writing_pdf", description: "Download your detailed writing analysis PDF" },
+              ...MENU_OPTIONS,
+            ],
+          }],
+        };
       } catch (error) {
         return showMenu(state, `Could not end the session: ${(error as Error).message}`);
       }
@@ -519,10 +592,19 @@ export async function handleCommunicationText(
       try {
         const result = await endSpeaking(state.authToken!, state.sessionId!);
         const summary = result.summary || {};
-        return showMenu(
-          state,
-          `Session complete! Overall score: ${summary.overall_score ?? "—"}/10\n${summary.summary_feedback ?? ""}`,
-        );
+        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
+          ? `${summary.overall_score}/10`
+          : "—/10";
+        return {
+          state: { ...state, step: "main_menu" as const },
+          messages: [{
+            text: `Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
+            options: [
+              { label: "📄 Download PDF Report", value: "download_speaking_pdf", description: "Download your detailed speaking analysis PDF" },
+              ...MENU_OPTIONS,
+            ],
+          }],
+        };
       } catch (error) {
         return showMenu(state, `Could not end the session: ${(error as Error).message}`);
       }
@@ -531,10 +613,21 @@ export async function handleCommunicationText(
       const result = await respondSpeaking(state.authToken!, state.sessionId!, trimmed);
       if (result.done) {
         const summary = result.summary || {};
-        return showMenu(
-          state,
-          `Session complete! Overall score: ${summary.overall_score ?? "—"}/10\n${summary.summary_feedback ?? ""}`,
-        );
+        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
+          ? `${summary.overall_score}/10`
+          : "—/10";
+        const farewell = String(result.message || result.feedback?.reaction || "").trim();
+        const farewellPrefix = farewell ? `${farewell}\n\n` : "";
+        return {
+          state: { ...state, step: "main_menu" as const },
+          messages: [{
+            text: `${farewellPrefix}Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
+            options: [
+              { label: "📄 Download PDF Report", value: "download_speaking_pdf", description: "Download your detailed speaking analysis PDF" },
+              ...MENU_OPTIONS,
+            ],
+          }],
+        };
       }
       const nextQuestion = result.next_question || "Tell me more.";
       const coachReply = speakingCoachReply(trimmed, result.feedback, nextQuestion);

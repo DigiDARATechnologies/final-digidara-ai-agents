@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
+import client from "../api/client.js";
 import QuestionReviewList from "./QuestionReviewList.jsx";
 import RecommendationCard from "./RecommendationCard.jsx";
 import SessionScoreSummary from "./SessionScoreSummary.jsx";
@@ -21,6 +23,37 @@ export default function SessionResultDashboard({ session, summary, type, onStart
   const data = normalizeSession({ ...session, type: type || session?.type }, summary);
   const modeLabel = data.mode === "topic" ? "Topic-wise" : type === "writing" ? "Daily Writing Challenge" : "Daily Speaking Challenge";
   const dateLabel = data.created_at ? new Date(data.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownloadPdf() {
+    if (!data?.id) return;
+    setDownloading(true);
+    try {
+      const isWriting = Boolean(type === "writing" || data?.type === "writing" || data?.mode === "topic" && data?.turns?.[0]?.user_response !== undefined);
+      const endpoint = isWriting
+        ? `/writing/report/${data.id}/pdf`
+        : `/speaking/report/${data.id}/pdf`;
+      const response = await client.get(endpoint, {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const prefix = isWriting ? "Writing" : "Speaking";
+      link.download = `${prefix}_Report_${data.id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF download failed", err);
+      alert("Could not download report PDF: " + (err.response?.data?.message || err.message));
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div className={embedded ? "space-y-5" : "mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8"}>
@@ -53,6 +86,15 @@ export default function SessionResultDashboard({ session, summary, type, onStart
         <RecommendationCard recommendation={data.recommendation} nextPractice={data.next_practice_suggestion} />
 
         {showActions && <div className="flex flex-wrap gap-2">
+          {data?.id && (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="min-h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-sm font-bold text-white flex items-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              📄 {downloading ? "Downloading PDF..." : "Download PDF Report"}
+            </button>
+          )}
           {onStartAnother && (
             <button onClick={onStartAnother} className="min-h-10 rounded-xl bg-brand-600 px-4 py-2 text-sm font-bold text-white">
               {startAnotherLabel}

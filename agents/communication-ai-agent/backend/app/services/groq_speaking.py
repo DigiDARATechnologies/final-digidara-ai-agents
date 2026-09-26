@@ -1,9 +1,12 @@
+import logging
 import re
 import time
 
 import httpcore
 import httpx
 from flask import current_app
+
+logger = logging.getLogger(__name__)
 
 from .speaking_local_rules import apply_local_speaking_correction
 from .groq_common import (
@@ -29,6 +32,18 @@ COMPLETION_COMMAND_PATTERN = re.compile(
     r"that[\s,.;:!?-]*(?:is|['\u2019]?s)[\s,.;:!?-]+all|"
     r"all[\s,.;:!?-]+done"
     r")[\s,.;:!?-]*$",
+    re.IGNORECASE,
+)
+GOODBYE_PHRASE_PATTERN = re.compile(
+    r"^(?:ok|okay|well|alright|thanks|thank\s+you)?[\s,.;:!?-]*"
+    r"(?:bye|goodbye|good\s+bye|bye\s+bye|see\s+you|see\s+ya|see\s+you\s+later|"
+    r"i\s*(?:am|['\u2019]?m)?\s*done(?:\s+for\s+today)?|that(?:'s|\s+is)\s+all|"
+    r"i\s+have\s+to\s+go|i\s+must\s+go|i\s+want\s+to\s+stop|let(?:'s|\s+us)\s+stop|"
+    r"stop(?:\s+here)?|i\s+don['\u2019]?t\s+want\s+to\s+continue|"
+    r"i\s+need\s+to\s+leave(?:\s+now)?|good\s+night|talk\s+to\s+you\s+later|"
+    r"i(?:'m|\s+am)\s+driving[,\s]+(?:i['\u2019]?ll|i\s+will)\s+talk\s+later|"
+    r"enough\s+for\s+today|end\s+the\s+session)"
+    r"[\s,.;:!?-]*(?:bye|goodbye|thank\s+you|thanks)?[\s,.;:!?-]*$",
     re.IGNORECASE,
 )
 
@@ -899,3 +914,186 @@ def summarize_speaking_session(mode, topic_title, turns):
         "next_practice_suggestion": data.get("next_practice_suggestion") or "Try another short conversation on a familiar topic.",
     }
 
+def analyze_speaking_intent(answer, history):
+    system_prompt = (
+        "You are an Intent Detection Engine for an English speaking practice app. "
+        "Analyze the user's latest response in the context of the conversation. "
+        "Return STRICT JSON only matching this schema exactly:\n"
+        '{"intent": "ANSWER", "explanation": "Why you chose this intent"}\n'
+        "Valid intents: ANSWER, QUESTION, DONT_KNOW, CLARIFICATION, SHORT_ANSWER, TOPIC_CHANGE, GOODBYE."
+    )
+    history_text = "\n".join([f"AI: {h.get('question', '')}\nUser: {h.get('answer', '')}" for h in history[-3:]])
+    user_prompt = f"Conversation History:\n{history_text}\n\nUser's latest response:\n{answer}\n\nDetect the intent."
+    try:
+        raw = _chat(system_prompt, user_prompt, temperature=0.1, max_tokens=150, operation="speaking.intent_detection", module="speaking", service="groq_speaking.analyze_speaking_intent")
+        data = _extract_json(raw)
+        return data.get("intent", "ANSWER")
+    except Exception:
+        return "ANSWER"
+def process_speaking_turn_conversation_engine(
+    mode,
+    difficulty,
+    topic_title,
+    current_question,
+    answer,
+    history,
+    total_turns=5,
+    daily_category=None,
+    previous_questions=None,
+    topic_description=None,
+):
+    """Single-pass conversation engine:
+    Detects user intent (GOODBYE, DONT_KNOW, CLARIFICATION, etc.),
+    evaluates grammar/fluency with exact phrase correction,
+    and generates the dynamic follow-up response in ONE call.
+    """
+    clean_ans = strip_completion_command(answer or "")
+    if clean_ans and GOODBYE_PHRASE_PATTERN.match(clean_ans):
+        farewell = "Okay! Goodbye! Have a great day! 😊"
+        lower_ans = clean_ans.lower()
+        if "night" in lower_ans:
+            farewell = "Good night! Sleep well! 🌙"
+        elif "stop" in lower_ans:
+            farewell = "Sure. We can stop here. Take care!"
+        elif "driving" in lower_ans and "later" in lower_ans:
+            farewell = "Of course. Drive safely! Talk to you later."
+        return {
+            "intent": "GOODBYE",
+            "should_end_session": True,
+            "feedback": {
+                "reaction": farewell,
+                "appreciation": "Thank you for practicing today!",
+                "corrected_answer": None,
+                "explanation": "",
+                "mistake_points": [],
+                "has_errors": False,
+                "correction_available": False,
+                "source": "engine",
+                "scores": {"confidence": 85, "fluency": 85, "grammar": 85, "overall": 85},
+            },
+            "next_question": None,
+            "detected_new_topic": None,
+        }
+
+    history_slice = history[-4:] if isinstance(history, list) else []
+    history_text = "\n".join([f"Q: {h.get('question', '')}\nA: {h.get('answer', '')}" for h in history_slice]) or "None yet."
+
+    system_prompt = (
+        "You are CommuniCoach, a friendly, warm, human-like English conversation partner and speaking coach.\n"
+        "Your primary goal during live conversation is to maintain an engaging, natural human conversation. "
+        "You are NOT an examiner or robot. DO NOT behave like a grammar tester or rigid question generator.\n\n"
+        "CORE CONVERSATION BEHAVIOR RULES:\n"
+        "1. Listen carefully to the user's latest answer; understand meaning, situation, and tone before responding.\n"
+        "2. Keep your live spoken response concise: exactly 1 natural reaction sentence + 1 relevant follow-up question (1-2 sentences total).\n"
+        "3. Vary your acknowledgments naturally: 'Oh, nice!', 'I see.', 'That's good to hear!', 'Sounds interesting!', 'Oh, I'm sorry to hear that.', 'Got it!', 'That's great!'. Never repeat robotic phrases like 'Good attempt!'.\n"
+        "4. Follow the user's conversational chain. Extract entities (e.g. Chennai -> shopping -> dinner -> biryani -> food experience; Python project -> features). Never abruptly jump to an unrelated topic.\n"
+        "5. If the user naturally changes topic, follow their lead gracefully (e.g., pivoted to a movie -> ask about the movie).\n"
+        "6. EMOTIONAL & HEALTH CONCERN:\n"
+        "   If the user shares negative feelings or health issues (headache, stress, bad sleep, argument): acknowledge -> show gentle concern -> ask a supportive question.\n"
+        "   Example: 'I have a headache.' -> 'I'm sorry to hear that. Are you getting some time to rest?'\n"
+        "7. CELEBRATE POSITIVE MILESTONES:\n"
+        "   If user shares great news (got a job, passed exam): congratulate warmly! 'That's great! Congratulations! What kind of job is it?'\n"
+        "8. SITUATIONAL & SAFETY AWARENESS:\n"
+        "   - Driving: 'Okay, drive safely! Where are you going?' (If they say they'll talk later -> end session).\n"
+        "   - Cooking: 'Nice! What do you enjoy cooking the most?'\n"
+        "   - Relaxing / Free time: 'Sounds relaxing! What did you do at home?'\n"
+        "   - Heading to bed: 'Rest well! Did you have a good day?'\n"
+        "9. SHORT ANSWERS & 'I DON'T KNOW':\n"
+        "   - 'Yes'/'No'/'Maybe'/'Nothing': do not scold or punish. Encourage and simplify: 'Fair enough! What makes you unsure?' or 'Sounds like a quiet day! Did you get time to relax?'\n"
+        "   - 'I don't know': encourage gently: 'That's completely okay! Take your time. What comes to mind first?'\n"
+        "10. AI HONESTY (DO NOT PRETEND TO BE HUMAN):\n"
+        "   Never claim to eat, sleep, travel, or have a physical family. If asked 'What did you eat?' or 'What's your favorite food?':\n"
+        "   'I don't eat food because I'm an AI, but I can definitely talk about food! What did you have?'\n"
+        "11. USER ASKS FOR CLARIFICATION:\n"
+        "   'I don't understand' -> simplify and rephrase: 'No problem! Let me put it more simply. What do you usually do in the evening?'\n"
+        "12. USER ASKS AI A QUESTION:\n"
+        "   Answer warmly and honestly as an AI, then redirect naturally back to the student.\n"
+        "13. GOODBYE & TERMINATION:\n"
+        "   If student indicates departure or stop ('bye', 'goodbye', 'see you', 'that is all', 'I am done', 'stop', 'good night', 'have to go'):\n"
+        "   - intent: 'GOODBYE'\n"
+        "   - should_end_session: true\n"
+        "   - reaction: warm farewell (e.g. 'Okay, goodbye! Have a great day! 👋' or 'Good night! Sleep well! 🌙')\n"
+        "   - next_question: null  (STRICT: NEVER ask a question on goodbye!)\n\n"
+        "BACKGROUND LANGUAGE ANALYSIS (SILENT - FOR FINAL REPORT ONLY):\n"
+        "- Do NOT put grammar corrections in 'reaction' or 'next_question'. Those fields are strictly for live spoken conversation.\n"
+        "- In 'corrected_answer': provide the grammatically correct version (e.g., 'I have been working with Python for two years.'). Set null if already correct.\n"
+        "- In 'explanation': briefly explain the grammar rule for the final report (e.g., 'Use for with time duration instead of from.').\n"
+        "- In 'mistake_points': list specific mistake items.\n"
+        "- In 'scores': assign scores { confidence, fluency, grammar, overall (0-100) }.\n\n"
+        "Return STRICT JSON only matching this schema:\n"
+        '{"intent":"ANSWER","should_end_session":false,'
+        '"reaction":"That sounds like a productive day!","corrected_answer":null,"explanation":"...","mistake_points":[],'
+        '"next_question":"What kind of Python project are you building?","detected_new_topic":null,'
+        '"scores":{"confidence":80,"fluency":80,"grammar":80,"overall":80}}'
+    )
+    user_prompt = (
+        f"Mode: {mode}. Topic: {topic_title or 'General Conversation'}. Difficulty: {difficulty}.\n"
+        f"Recent History:\n{history_text}\n\n"
+        f"Current Question: {current_question}\n"
+        f"Student's Answer: {clean_ans}\n\n"
+        "Respond with the JSON object."
+    )
+
+    try:
+        raw = _chat(
+            system_prompt,
+            user_prompt,
+            temperature=0.4,
+            max_tokens=600,
+            operation="speaking.conversation_engine",
+            module="speaking",
+            service="groq_speaking.process_speaking_turn_conversation_engine",
+        )
+        data = _extract_json(raw)
+    except Exception as exc:
+        logger.warning("Conversation engine call failed; using fallback split pipeline: %s", exc)
+        data = {}
+
+    intent = str(data.get("intent") or "ANSWER").upper()
+    should_end = bool(data.get("should_end_session") or intent == "GOODBYE")
+
+    if not isinstance(data, dict) or (not should_end and not data.get("next_question")):
+        # Fallback to existing separate evaluation and question generation
+        try:
+            fb = evaluate_speaking_answer(mode, difficulty, topic_title, current_question, clean_ans)
+        except Exception:
+            fb = {"reaction": "That sounds interesting!", "corrected_answer": None, "scores": {"overall": 75}}
+        try:
+            nq = generate_speaking_question(mode, difficulty, topic_title, len(history_slice) + 1, history, total_turns=total_turns)
+        except Exception:
+            nq = "Tell me more about that!"
+        return {
+            "intent": "ANSWER",
+            "should_end_session": False,
+            "feedback": fb,
+            "next_question": nq,
+            "detected_new_topic": None,
+        }
+
+    scores = data.get("scores") if isinstance(data.get("scores"), dict) else {}
+    clamped_scores = {
+        "confidence": _clamp_score(scores.get("confidence", 80)),
+        "fluency": _clamp_score(scores.get("fluency", 80)),
+        "grammar": _clamp_score(scores.get("grammar", 80)),
+        "overall": _clamp_score(scores.get("overall", 80)),
+    }
+
+    feedback = {
+        "reaction": data.get("reaction") or ("Okay! Goodbye! Have a great day! 😊" if should_end else "Thank you for sharing that."),
+        "appreciation": data.get("reaction") or "Good effort.",
+        "corrected_answer": data.get("corrected_answer"),
+        "explanation": data.get("explanation") or "",
+        "mistake_points": data.get("mistake_points") if isinstance(data.get("mistake_points"), list) else [],
+        "has_errors": bool(data.get("corrected_answer")),
+        "correction_available": bool(data.get("corrected_answer")),
+        "source": "groq",
+        "scores": clamped_scores,
+    }
+
+    return {
+        "intent": intent,
+        "should_end_session": should_end,
+        "feedback": feedback,
+        "next_question": None if should_end else (data.get("next_question") or "Tell me more about that."),
+        "detected_new_topic": data.get("detected_new_topic"),
+    }
