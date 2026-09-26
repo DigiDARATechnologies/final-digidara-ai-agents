@@ -43,6 +43,33 @@ class PruneAndApprovalUnitTests(unittest.TestCase):
         self.assertTrue(mock_cursor.close.called)
         self.assertTrue(mock_db.close.called)
 
+    @patch("job_agent.routes.get_db")
+    def test_admin_jobs_bulk_status_all_pending(self, mock_get_db):
+        from job_agent.routes import admin_jobs_bulk_status
+        from flask import Flask
+
+        app = Flask(__name__)
+        mock_db = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.rowcount = 42
+        mock_get_db.return_value = mock_db
+        mock_db.cursor.return_value = mock_cursor
+
+        with app.test_request_context(
+            "/api/jobs/admin/jobs/bulk-status",
+            method="PUT",
+            json={"ids": "all_pending", "status": "active"},
+            headers={"X-Digidara-User-Id": "admin", "X-Digidara-Is-Admin": "true"},
+        ):
+            resp = admin_jobs_bulk_status()
+            data = resp.get_json()
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(data["updated"], 42)
+            self.assertEqual(data["status"], "active")
+            mock_cursor.execute.assert_called_once_with(
+                "UPDATE jobs SET status=%s WHERE status='pending'", ("active",)
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

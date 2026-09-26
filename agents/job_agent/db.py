@@ -111,7 +111,7 @@ def init_job_tables():
                 source_url TEXT,
                 published_at DATETIME NULL,
                 expires_at DATETIME NULL,
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
                 content_hash CHAR(64) NOT NULL,
                 first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -227,6 +227,8 @@ def init_job_tables():
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN department VARCHAR(150) NULL AFTER employment_type")
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN category VARCHAR(50) NULL AFTER department")
         _add_column(cursor, "ALTER TABLE jobs ADD INDEX idx_jobs_category (category)")
+        _add_column(cursor, "ALTER TABLE jobs MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'")
+        cursor.execute("UPDATE jobs SET status='active' WHERE status='pending'")
 
         # Source lifecycle: DISCOVERED -> VALIDATING -> ACTIVE, or ->
         # TEMPORARILY_FAILED (transient, auto-retried next run) / INVALID

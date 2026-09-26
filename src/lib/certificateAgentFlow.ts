@@ -92,7 +92,6 @@ export const initialCertificateMessage = (user: User): CertificateFlowMessage =>
   text: `Hi ${user.name.split(" ")[0]}! Welcome to the AI Certification Agent.\n\nChoose an action to begin:`,
   options: [
     { label: "Take Certification Exam", value: "start_exam" },
-    { label: "AI Tutor Chat Exam", value: "start_chat" },
     { label: "My Certificates", value: "my_certificates" },
     { label: "Leaderboard", value: "leaderboard" },
   ],

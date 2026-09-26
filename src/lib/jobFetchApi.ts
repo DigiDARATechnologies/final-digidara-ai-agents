@@ -244,6 +244,10 @@ export function adminUpdateJobStatus(jobId: number, status: "pending" | "active"
   return invoke<{ message: string; status: string }>("admin_update_job_status", { job_id: jobId, status });
 }
 
+export function adminBulkUpdateJobStatus(jobIds: number[] | "all_pending", status: "pending" | "active" | "rejected" | "expired") {
+  return invoke<{ message: string; status: string; updated: number }>("admin_bulk_update_job_status", { ids: jobIds, status });
+}
+
 export function adminListSources(page: { limit?: number; offset?: number } = {}) {
   const payload: Record<string, number> = {};
   if (page.limit != null) payload.limit = page.limit;
