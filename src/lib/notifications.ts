@@ -4,6 +4,8 @@ import type { CapstoneFlowState } from "./capstoneFlow";
 
 /** One "you have something pending" entry for the bell: which agent, what is waiting. */
 export interface PendingNotification {
+  /** Changes when the agent moves to a new step, so a dismissed notification returns only for new work. */
+  key: string;
   id: string;
   chatId: string;
   icon: string;
@@ -79,6 +81,7 @@ export function buildPendingNotifications(sources: NotificationSources, now: num
     const agent = findAgent(chat.agentId);
     if (!agent?.kind) continue;
     const id = chat.id;
+    const step = (sources[({ capstone: "capstone", codeforge: "codeforge", aptitude: "aptitude", communication: "communication", "resume-builder": "resumeBuilder", "mock-interview": "mockInterview", certificate: "certificate", "job-fetch": "jobFetch" } as const)[agent.kind]] as Record<string, Progress>)[id]?.step ?? "";
     let body: string | null = null;
     switch (agent.kind) {
       case "capstone": {
@@ -130,7 +133,7 @@ export function buildPendingNotifications(sources: NotificationSources, now: num
         break;
       }
     }
-    if (body) result.push({ id, chatId: chat.id, icon: agent.icon, agentName: agent.name, body });
+    if (body) result.push({ key: `${id}:${step}`, id, chatId: chat.id, icon: agent.icon, agentName: agent.name, body });
   }
   return result;
 }

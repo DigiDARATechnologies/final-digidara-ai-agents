@@ -17,9 +17,10 @@ interface TopbarProps {
   /** What is pending in each agent (see lib/notifications.ts). */
   notifications: PendingNotification[];
   onOpenNotification: (notification: PendingNotification) => void;
+  onDismissNotification: (notification: PendingNotification) => void;
 }
 
-export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, theme, onToggleTheme, notifications, onOpenNotification }: TopbarProps) {
+export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, theme, onToggleTheme, notifications, onOpenNotification, onDismissNotification }: TopbarProps) {
   return (
     <header className="topbar">
       <button className="icon-btn mobile-only" onClick={onToggleMobileMenu} aria-label="Open menu">
@@ -105,6 +106,16 @@ export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onT
                   <br />
                   {n.body}
                 </div>
+                <button
+                  type="button"
+                  className="icon-btn notif-dismiss"
+                  aria-label={`Dismiss ${n.agentName} notification`}
+                  title="Dismiss"
+                  onClick={(event) => { event.stopPropagation(); onDismissNotification(n); }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  ✕
+                </button>
               </div>
             ))}
           </div>
