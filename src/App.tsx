@@ -33,6 +33,7 @@ import HelpPage from "./components/HelpPage";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
@@ -1593,6 +1594,11 @@ export default function App() {
             systemOnline={systemOnline}
             theme={theme}
             onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
+            notifications={buildPendingNotifications({
+              chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
+              resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
+            })}
+            onOpenNotification={(notification) => { setOpenMenu(null); openChatById(notification.chatId); }}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
