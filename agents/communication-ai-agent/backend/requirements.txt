@@ -14,3 +14,4 @@ requests==2.33.0
 # Production process manager target (see ecosystem.config.js) — not used by
 # the Flask dev server in local dev, and doesn't run as a server on Windows.
 gunicorn==23.0.0
+reportlab==4.4.10
