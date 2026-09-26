@@ -144,3 +144,9 @@ def test_agents_show_health_actions_and_usage(api, seeded):
     assert by_name["capstone_project_agent"]["online"] is True and by_name["capstone_project_agent"]["actions"] == ["health", "status"]
     assert by_name["old_agent"]["online"] is False and by_name["old_agent"]["heartbeat_age_seconds"] >= 3 * 3600 - 5
     assert {u["agent_id"] for u in body["chat_usage"]} == {"capstone-project", "leetcode"}
+
+
+def test_money_is_always_a_number_even_when_the_database_sums_to_a_decimal():
+    from decimal import Decimal
+    assert admin._rupees(Decimal("59900")) == 599.0 and isinstance(admin._rupees(Decimal("59900")), float)
+    assert admin._rupees(None) == 0.0 and admin._rupees(49900) == 499.0

@@ -40,8 +40,9 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat() if value else None
 
 
-def _rupees(paise: int | None) -> float:
-    return round((paise or 0) / 100, 2)
+def _rupees(paise) -> float:
+    # int(): MySQL's SUM() returns a Decimal, which JSON would send as the string "599.00".
+    return round(int(paise or 0) / 100, 2)
 
 
 def _paid_by_user(session) -> dict[str, int]:
