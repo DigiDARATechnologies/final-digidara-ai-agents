@@ -46,7 +46,7 @@ describe('Sidebar: delete chat', () => {
   const chat = { id: 'c1', agentId: 'capstone-project', title: 'portfolio website', messages: [], updatedAt: 1 };
   const renderSidebar = (onDeleteChat: jest.Mock) => render(
     <Sidebar theme="light" planName="Basic" user={user} collapsed={false} mobileOpen={false} homeActive={false} chats={[chat]} currentChatId={null}
-      userMenuOpen={false} openChatMenuId="c1" onToggleCollapse={jest.fn()} onNewChat={jest.fn()} onGoHome={jest.fn()} onOpenChat={jest.fn()}
+      userMenuOpen={false} openChatMenuId="c1" onToggleCollapse={jest.fn()} onCloseMobile={jest.fn()} onNewChat={jest.fn()} onGoHome={jest.fn()} onOpenChat={jest.fn()}
       onOpenHelpPage={jest.fn()} onNavAction={jest.fn()} onToggleUserMenu={jest.fn()} onUserMenuAction={jest.fn()} onToggleChatMenu={jest.fn()}
       onRenameChat={jest.fn()} onTogglePinChat={jest.fn()} onDeleteChat={onDeleteChat} />,
   );

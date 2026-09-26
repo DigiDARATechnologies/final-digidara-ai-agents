@@ -19,7 +19,7 @@ beforeEach(() => {
 
 test('typing and submitting sends the trimmed text', () => {
   const onSend = jest.fn();
-  render(<NewChatLanding onSend={onSend} onAttachClick={jest.fn()} />);
+  render(<NewChatLanding onSend={onSend} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
   fireEvent.change(screen.getByPlaceholderText('Ask anything'), { target: { value: '  hello there  ' } });
   fireEvent.submit(screen.getByPlaceholderText('Ask anything').closest('form')!);
   expect(onSend).toHaveBeenCalledWith('hello there');
@@ -27,14 +27,14 @@ test('typing and submitting sends the trimmed text', () => {
 
 test('the attach button calls onAttachClick instead of silently doing nothing', () => {
   const onAttachClick = jest.fn();
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={onAttachClick} />);
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={onAttachClick} onOpenAgent={jest.fn()} />);
   fireEvent.click(screen.getByTitle('Attach file'));
   expect(onAttachClick).toHaveBeenCalledTimes(1);
 });
 
 test('the mic button starts voice capture, which fills the textarea', () => {
   mockStart.mockImplementation((onTranscript: (text: string) => void) => onTranscript('dictated text'));
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} />);
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
   fireEvent.click(screen.getByTitle('Voice input'));
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(screen.getByPlaceholderText('Ask anything')).toHaveValue('dictated text');
@@ -42,7 +42,7 @@ test('the mic button starts voice capture, which fills the textarea', () => {
 
 test('clicking the mic again while listening stops it instead of starting a second session', () => {
   mockListening = true;
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} />);
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
   fireEvent.click(screen.getByTitle('Stop recording'));
   expect(mockStop).toHaveBeenCalledTimes(1);
   expect(mockStart).not.toHaveBeenCalled();
@@ -50,6 +50,13 @@ test('clicking the mic again while listening stops it instead of starting a seco
 
 test('the mic button is hidden entirely when the browser has no speech recognition support', () => {
   mockSupported = false;
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} />);
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
   expect(screen.queryByTitle('Voice input')).not.toBeInTheDocument();
+});
+
+test('the agent cards under the message box start a chat with that agent', () => {
+  const onOpenAgent = jest.fn();
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={onOpenAgent} />);
+  fireEvent.click(screen.getByRole('button', { name: /Aptitude Trainer/ }));
+  expect(onOpenAgent).toHaveBeenCalledWith('aptitude');
 });
