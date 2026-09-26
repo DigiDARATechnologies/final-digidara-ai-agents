@@ -160,3 +160,59 @@ def test_a_single_slot_batch_still_works(monkeypatch):
     questions, _model, _usage = run(monkeypatch, provider, [SLOT], attempts=2)
     assert provider.asked_for == [1, 1]
     assert questions[0]["question"] == Q_MANAGER
+
+
+RECENT_CHAIRS = "In a row of five chairs, Meera sits left of Ravi and right of Tara. Who sits in the middle?"
+
+
+def run_with_history(monkeypatch, provider, attempts):
+    monkeypatch.setattr(test_generation, "json_completion", provider)
+    app = Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context():
+        return test_generation.generate_questions([SLOT] * 3, avoid_questions=[RECENT_CHAIRS], max_validation_attempts=attempts)
+
+
+def test_resembling_an_old_question_on_every_attempt_no_longer_fails_the_whole_test(monkeypatch):
+    # The live failure: with a long history the model kept resembling a past question, all three
+    # attempts were rejected, and the learner got "We could not prepare a quality assessment".
+    provider = Provider(
+        [good(Q_MANAGER), good(Q_CODE), good(Q_CHAIRS)],
+        [good(Q_CHAIRS)],
+        [good(Q_CHAIRS)],
+    )
+    questions, _model, usage = run_with_history(monkeypatch, provider, attempts=3)
+    assert provider.asked_for == [3, 1, 1]                      # it still tried to get a fresh one every time
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_CODE, Q_CHAIRS]
+    assert usage["validation_attempt_count"] == 3
+
+
+def test_a_fresh_replacement_is_still_preferred_over_accepting_a_resemblance(monkeypatch):
+    provider = Provider([good(Q_MANAGER), good(Q_CODE), good(Q_CHAIRS)], [good(Q_AGES)])
+    questions, _model, _usage = run_with_history(monkeypatch, provider, attempts=3)
+    assert provider.asked_for == [3, 1]
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_CODE, Q_AGES]
+
+
+def test_duplicates_inside_the_same_test_are_never_accepted(monkeypatch):
+    provider = Provider([good(Q_MANAGER), good(Q_CODE), good(Q_CODE)], [good(Q_CODE)])
+    with pytest.raises(ValueError, match="duplicate question wording"):
+        run(monkeypatch, provider, [SLOT] * 3, attempts=2)
+
+
+def test_a_resemblance_is_not_accepted_when_a_real_duplicate_is_also_left(monkeypatch):
+    provider = Provider(
+        [good(Q_MANAGER), good(Q_CHAIRS), good(Q_CHAIRS)],   # a recent repeat AND an in-test twin
+        [good(Q_CHAIRS), good(Q_CHAIRS)],
+    )
+    with pytest.raises(ValueError):
+        run_with_history(monkeypatch, provider, attempts=2)
+
+
+def test_offender_reasons_say_which_kind_of_repeat_each_one_is():
+    def item(text):
+        return {"question": text, "content_hash": text, "structural_hash": None}
+    offenders, first, reasons = test_generation._cross_check_offenders(
+        [item(Q_MANAGER), item(Q_CHAIRS)], {0, 1}, [RECENT_CHAIRS], return_reasons=True)
+    assert offenders == {1} and first == test_generation.RECENT_REPEAT_REASON and reasons == {1: first}
+    assert test_generation._cross_check_offenders([item(Q_MANAGER)], {0}, [], return_reasons=True) == (set(), "", {})

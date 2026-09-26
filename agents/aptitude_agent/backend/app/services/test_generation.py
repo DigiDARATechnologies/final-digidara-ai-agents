@@ -326,7 +326,10 @@ def _offender_message(reason):
     }[reason]
 
 
-def _cross_check_offenders(validated,fresh,forbidden_questions):
+RECENT_REPEAT_REASON="repeats a recent or in-test question concept"
+
+
+def _cross_check_offenders(validated,fresh,forbidden_questions,*,return_reasons=False):
     """Indexes of questions to regenerate because they duplicate another question
     in the test or a recent one, plus a short reason for the first offender.
 
@@ -359,8 +362,9 @@ def _cross_check_offenders(validated,fresh,forbidden_questions):
         if index in offenders:continue
         if any(questions_are_near_duplicates(item["question"],seen) for seen in forbidden_questions):
             offenders.add(index);reasons.setdefault(index,"repeats a recent or in-test question concept")
-    if not offenders:return set(),""
-    return offenders,reasons[min(offenders)]
+    if not offenders:return (set(),"",{}) if return_reasons else (set(),"")
+    first=reasons[min(offenders)]
+    return (offenders,first,reasons) if return_reasons else (offenders,first)
 
 
 def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
@@ -490,7 +494,19 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 )
                 raise first_failure
             validated=[accepted[index] for index in range(count)]
-            offenders,reason=_cross_check_offenders(validated,set(new_items),forbidden_questions)
+            offenders,reason,offender_reasons=_cross_check_offenders(validated,set(new_items),forbidden_questions,return_reasons=True)
+            only_resembles_history=bool(offenders) and all(offender_reasons.get(index)==RECENT_REPEAT_REASON for index in offenders)
+            if offenders and only_resembles_history and attempt==max_validation_attempts:
+                # Resembling a question the learner saw before is a soft preference, not a
+                # defect: these questions are valid and differ from every other question in
+                # this test. With a long history the model can fail to avoid all of it on every
+                # attempt, and that used to fail the whole test ("We could not prepare a quality
+                # assessment") -- so on the last attempt they are accepted instead.
+                current_app.logger.warning(
+                    "Batch generation accepting %s question(s) that resemble a recent question after %s attempts (history=%s)",
+                    len(offenders),attempt,len(forbidden_questions),
+                )
+                offenders=set()
             if offenders:
                 # Duplicates involve two questions, so name the one to replace
                 # (a fresh one when possible) and keep the rest instead of
