@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import type { User } from "../types";
-import { FAQ, RELEASES, SUPPORT_EMAIL } from "../data/helpContent";
-import { AGENTS, CATEGORIES } from "../data/agents";
+import { AGENT_WORKFLOWS, FAQ, RELEASES, SUPPORT_EMAIL } from "../data/helpContent";
+import { LIVE_AGENTS } from "../data/agents";
 
 export type HelpPageKind = "help-center" | "release-notes" | "contact" | "bug-report";
 
@@ -54,7 +54,7 @@ function SendPanel({ subject, body, onToast }: { subject: string; body: string; 
           className="btn btn-outline"
           onClick={async () => onToast((await copyText(`To: ${SUPPORT_EMAIL}\nSubject: ${subject}\n\n${body}`)) ? "Message copied. Paste it into any email app." : "Could not copy. Please select and copy the text manually.")}
         >
-          Copy message
+          Copy Message
         </button>
       </div>
     </div>
@@ -64,6 +64,7 @@ function SendPanel({ subject, body, onToast }: { subject: string; body: string; 
 function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string>("All");
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [openIdx, setOpenIdx] = useState<number | null>(0);
   const q = query.trim().toLowerCase();
 
@@ -75,13 +76,54 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
 
   const agents = useMemo(
     () =>
-      AGENTS.filter(
+      LIVE_AGENTS.filter(
         (a) =>
           (category === "All" || a.category?.includes(category)) &&
           (!q || a.name.toLowerCase().includes(q) || (a.desc ?? "").toLowerCase().includes(q) || (a.category ?? []).join(" ").toLowerCase().includes(q)),
       ),
     [category, q],
   );
+
+  const categories = useMemo(() => Array.from(new Set(LIVE_AGENTS.flatMap((a) => a.category ?? []))), []);
+  const selected = agentId ? LIVE_AGENTS.find((a) => a.id === agentId) : undefined;
+  const workflow = selected ? AGENT_WORKFLOWS[selected.id] : undefined;
+
+  if (selected) {
+    return (
+      <section className="hp-group hp-workflow" style={{ ["--agent-color" as string]: selected.color }}>
+        <button type="button" className="hp-back" onClick={() => setAgentId(null)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          All Agents
+        </button>
+        <div className="hp-wf-head">
+          <span className="hp-agent-icon">{selected.icon}</span>
+          <div>
+            <h3>{selected.name}</h3>
+            <p>{workflow?.summary ?? selected.desc}</p>
+          </div>
+        </div>
+        <h4 className="hp-wf-title">How It Works</h4>
+        <ol className="hp-wf-steps">
+          {(workflow?.steps ?? []).map((step, i) => (
+            <li key={step.title}>
+              <span className="hp-wf-num">{i + 1}</span>
+              <div>
+                <b>{step.title}</b>
+                <p>{step.body}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        {workflow && workflow.tips.length > 0 && (
+          <div className="hp-wf-tips">
+            <b>Tips</b>
+            <ul>{workflow.tips.map((t) => <li key={t}>{t}</li>)}</ul>
+          </div>
+        )}
+        <p className="hp-lead">Open <b>My Agents</b> from the sidebar and choose {selected.name} to start.</p>
+      </section>
+    );
+  }
 
   return (
     <>
@@ -97,12 +139,12 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
       />
 
       <section className="hp-group">
-        <h3>Meet the agents</h3>
+        <h3>Meet the Agents</h3>
         <p className="hp-lead">
-          Each DigiDARA agent is built for a specific job. Pick the one that matches your goal, or open My agents to try any of them.
+          Each DigiDARA agent is built for a specific job. Pick one to see how it works, step by step.
         </p>
         <div className="hp-chips" role="tablist" aria-label="Filter agents by category">
-          {["All", ...CATEGORIES].map((c) => (
+          {["All", ...categories].map((c) => (
             <button key={c} type="button" className={`hp-chip${category === c ? " active" : ""}`} onClick={() => setCategory(c)}>
               {c}
             </button>
@@ -113,7 +155,7 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
         ) : (
           <div className="hp-agents">
             {agents.map((a) => (
-              <div key={a.id} className="hp-agent" style={{ ["--agent-color" as string]: a.color }}>
+              <button type="button" key={a.id} className="hp-agent" onClick={() => setAgentId(a.id)} style={{ ["--agent-color" as string]: a.color }}>
                 <span className="hp-agent-icon">{a.icon}</span>
                 <div className="hp-agent-main">
                   <b>{a.name}</b>
@@ -124,7 +166,7 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
                     ))}
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -159,8 +201,8 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
           <span>Our team is happy to help.</span>
         </div>
         <div className="hp-cta-actions">
-          <button type="button" className="btn btn-primary" onClick={() => onNavigate("contact")}>Contact support</button>
-          <button type="button" className="btn btn-outline" onClick={() => onNavigate("bug-report")}>Report a bug</button>
+          <button type="button" className="btn btn-primary" onClick={() => onNavigate("contact")}>Contact Support</button>
+          <button type="button" className="btn btn-outline" onClick={() => onNavigate("bug-report")}>Report a Bug</button>
         </div>
       </div>
     </>
@@ -211,11 +253,11 @@ function ContactForm({ user, onToast }: { user: User; onToast: (m: string) => vo
     <form className="hp-form" onSubmit={submit}>
       <div className="hp-form-grid">
         <label className="hp-field">
-          <span>Your name</span>
+          <span>Your Name</span>
           <input value={user.name} readOnly />
         </label>
         <label className="hp-field">
-          <span>Your email</span>
+          <span>Your Email</span>
           <input value={user.email} readOnly />
         </label>
       </div>
@@ -242,22 +284,11 @@ function ContactForm({ user, onToast }: { user: User; onToast: (m: string) => vo
 
 function BugForm({ user, theme, onToast }: { user: User; theme: "dark" | "light"; onToast: (m: string) => void }) {
   const [title, setTitle] = useState("");
-  const [steps, setSteps] = useState("");
-  const [expected, setExpected] = useState("");
-  const [actual, setActual] = useState("");
-  const [severity, setSeverity] = useState("Minor - something looks or works oddly");
   const [ready, setReady] = useState(false);
 
   const subject = `[Bug] ${title.trim()}`;
   const body = [
     `Summary: ${title.trim()}`,
-    `Severity: ${severity}`,
-    "",
-    `Steps to reproduce:\n${steps.trim() || "-"}`,
-    "",
-    `What I expected:\n${expected.trim() || "-"}`,
-    "",
-    `What actually happened:\n${actual.trim() || "-"}`,
     "",
     "--- Diagnostics (added automatically) ---",
     `User: ${user.name} <${user.email}>`,
@@ -283,31 +314,9 @@ function BugForm({ user, theme, onToast }: { user: User; theme: "dark" | "light"
       }}
     >
       <label className="hp-field">
-        <span>Short summary</span>
+        <span>Short Summary</span>
         <input required placeholder="e.g. Send button does nothing in the Capstone agent" value={title} onChange={touch(setTitle)} />
       </label>
-      <label className="hp-field">
-        <span>How serious is it?</span>
-        <select value={severity} onChange={touch(setSeverity)}>
-          {["Minor - something looks or works oddly", "Major - I can't finish what I was doing", "Critical - the app is unusable"].map((t) => (
-            <option key={t}>{t}</option>
-          ))}
-        </select>
-      </label>
-      <label className="hp-field">
-        <span>Steps to reproduce</span>
-        <textarea rows={4} placeholder={"1. Open…\n2. Click…\n3. See the problem"} value={steps} onChange={touch(setSteps)} />
-      </label>
-      <div className="hp-form-grid">
-        <label className="hp-field">
-          <span>What did you expect?</span>
-          <textarea rows={3} value={expected} onChange={touch(setExpected)} />
-        </label>
-        <label className="hp-field">
-          <span>What happened instead?</span>
-          <textarea rows={3} value={actual} onChange={touch(setActual)} />
-        </label>
-      </div>
       <p className="hp-diag">Your browser, screen size, theme and account email are added automatically to help us fix it faster.</p>
       {!ready ? (
         <button type="submit" className="btn btn-primary hp-submit" disabled={!title.trim()}>Continue</button>

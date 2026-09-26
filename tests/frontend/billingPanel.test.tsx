@@ -50,7 +50,7 @@ test('shows Basic, Standard, Premium and a Custom plan, each with its price', as
   expect(within(cards[0]).getByText('₹499')).toBeInTheDocument();
   expect(within(cards[1]).getByText('₹999')).toBeInTheDocument();
   expect(within(cards[2]).getByText('₹1,999')).toBeInTheDocument();
-  expect(within(cards[1]).getByText('Most popular')).toBeInTheDocument();
+  expect(within(cards[1]).getByText('Most Popular')).toBeInTheDocument();
   expect(within(cards[3]).getByText('you choose')).toBeInTheDocument();
   expect(screen.queryByText(/Pro Monthly|Pro Annual/)).not.toBeInTheDocument();
 });

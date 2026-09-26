@@ -81,7 +81,7 @@ export default function ConnectorPill({
         )}
         {difficultyPicker && (
           <div className="connector-difficulty">
-            <span className="muted">Project difficulty</span>
+            <span className="muted">Project Difficulty</span>
             <div className="connector-difficulty-options">
               {(Object.keys(DIFFICULTY_LABELS) as ProjectDifficultyLevel[]).map((level) => (
                 <button

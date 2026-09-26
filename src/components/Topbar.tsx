@@ -1,5 +1,5 @@
 import type { User } from "../types";
-import { AGENTS } from "../data/agents";
+import { LIVE_AGENTS } from "../data/agents";
 import type { PendingNotification } from "../lib/notifications";
 
 interface TopbarProps {
@@ -33,7 +33,7 @@ export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onT
       <div className="agent-ticker" aria-hidden="true">
         <div className="agent-ticker-track">
           {[0, 1].map((copy) =>
-            AGENTS.map((a) => (
+            LIVE_AGENTS.map((a) => (
               <span className="agent-ticker-chip" key={`${copy}-${a.id}`} style={{ ["--chip-color" as string]: a.color }}>
                 <span className="agent-ticker-icon">{a.icon}</span>
                 {a.name}
@@ -51,7 +51,7 @@ export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onT
         )}
         {!systemOnline && (
           <span className="status-pill offline">
-            <span className="status-dot" /> Project agent offline
+            <span className="status-dot" /> Project Agent Offline
           </span>
         )}
         <button
