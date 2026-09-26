@@ -26,7 +26,10 @@ interface SpeechRecognitionLike {
   abort(): void;
 }
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
-type VoiceCaptureOptions = { autoStopOnSilence?: boolean };
+type VoiceCaptureOptions = {
+  autoStopOnSilence?: boolean;
+  onAudioLevel?: (level: number) => void;
+};
 
 declare global {
   interface Window {
@@ -128,6 +131,7 @@ export default function useSpeechRecognition(locale = "en-US") {
         const cleanupVad = () => {
           disposed = true;
           if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+          options.onAudioLevel?.(0);
           stream?.getTracks().forEach((track) => track.stop());
           if (audioContext && audioContext.state !== "closed") void audioContext.close();
           if (vadCleanupRef.current === cleanupVad) vadCleanupRef.current = null;
@@ -164,9 +168,14 @@ export default function useSpeechRecognition(locale = "en-US") {
             }
             const rms = Math.sqrt(sum / samples.length);
             const now = performance.now();
+            const normalizedLevel = Math.min(1, Math.max(0, (rms - 0.012) * 8.5));
+            options.onAudioLevel?.(normalizedLevel);
             if (rms >= 0.015) {
               speechDetected = true;
               quietSince = 0;
+              if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+                window.speechSynthesis.cancel();
+              }
             } else if (speechDetected) {
               if (!quietSince) quietSince = now;
               if (now - quietSince >= 7000) {

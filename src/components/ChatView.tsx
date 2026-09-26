@@ -143,10 +143,21 @@ export default function ChatView({
   const voiceSessionRef = useRef(0);
   const silenceTimerRef = useRef<number | undefined>(undefined);
 
+  const orbRef = useRef<HTMLButtonElement | null>(null);
+
   function handleMicClick() {
+    if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+      window.speechSynthesis.cancel();
+      setAgentSpeaking(false);
+    }
     if (speech.listening) {
       voiceSessionRef.current += 1;
       speech.stop();
+      if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
+      if (input.trim()) {
+        onSend(input.trim());
+        setInput("");
+      }
       return;
     }
     setInput("");
@@ -154,7 +165,12 @@ export default function ChatView({
     speech.start((text) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
-    }, { autoStopOnSilence: autoStopVoiceOnSilence });
+    }, {
+      autoStopOnSilence: autoStopVoiceOnSilence,
+      onAudioLevel: (lvl) => {
+        if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+      },
+    });
   }
 
   useEffect(() => {
@@ -257,6 +273,10 @@ export default function ChatView({
       setInput("");
       speech.start((text) => {
         if (voiceSessionRef.current !== session || submitted) return;
+        if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+          window.speechSynthesis.cancel();
+          setAgentSpeaking(false);
+        }
         const next = text.trim();
         latestTranscript = next;
         setInput(text);
@@ -264,9 +284,14 @@ export default function ChatView({
           observedTranscript = next;
           lastSpeechAt = Date.now();
         }
+      }, {
+        autoStopOnSilence: true,
+        onAudioLevel: (lvl) => {
+          if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+        },
       });
       silenceCheck = window.setInterval(() => {
-        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 3000) submitSpokenTurn();
+        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 4000) submitSpokenTurn();
       }, 200);
     };
 
@@ -340,7 +365,7 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening automatically ... sends after 3 seconds of silence" : "Starting conversation..."}</p></div><button type="button" aria-label={speech.listening ? "Stop listening" : "Start speaking"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening... (Pause or tap orb to send)" : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"

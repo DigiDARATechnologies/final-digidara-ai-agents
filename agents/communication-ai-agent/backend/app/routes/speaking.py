@@ -18,7 +18,7 @@ speaking_bp = Blueprint("speaking", __name__)
 
 ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
 ALLOWED_MODES = {"topic", "daily"}
-ALLOWED_TOTAL_TURNS = {5, 10}
+ALLOWED_TOTAL_TURNS = {5, 10, 15, 20, 25, 30}
 DAILY_TOTAL_QUESTIONS = 20
 DAILY_CATEGORIES = {
     "General Daily Talk",
@@ -1047,72 +1047,98 @@ def respond():
     if session.mode == "daily_conversation":
         return jsonify(_respond_daily(session, current_turn, answer, answer_time_seconds))
 
+    history = _history(session)
+    previous_questions = [turn.ai_question for turn in session.turns]
+    should_end = False
+
     try:
-        feedback = groq_service.evaluate_speaking_answer(
+        engine_res = groq_service.process_speaking_turn_conversation_engine(
             session.mode,
             session.difficulty,
             session.topic_title,
             current_turn.ai_question,
             answer,
+            history,
+            total_turns=session.total_turns,
+            previous_questions=previous_questions,
+            topic_description=session.topic_description,
         )
-    except Exception:
-        current_app.logger.exception("Groq answer evaluation failed")
-        return _api_error("Could not evaluate your answer right now. Please retry.", "GROQ_UNAVAILABLE", 502)
+        feedback = engine_res["feedback"]
+        next_question = engine_res["next_question"]
+        should_end = bool(engine_res.get("should_end_session"))
+        next_question_source = "groq"
+        if engine_res.get("detected_new_topic"):
+            session.topic_title = str(engine_res["detected_new_topic"])[:120]
+    except Exception as exc:
+        current_app.logger.warning("Conversation engine fallback triggered: %s", exc)
+        try:
+            feedback = groq_service.evaluate_speaking_answer(
+                session.mode,
+                session.difficulty,
+                session.topic_title,
+                current_turn.ai_question,
+                answer,
+            )
+        except Exception:
+            current_app.logger.exception("Groq answer evaluation failed")
+            return _api_error("Could not evaluate your answer right now. Please retry.", "GROQ_UNAVAILABLE", 502)
+
+        next_turn_number = current_turn.turn_number + 1
+        try:
+            next_question = groq_service.generate_speaking_question(
+                session.mode,
+                session.difficulty,
+                session.topic_title,
+                next_turn_number,
+                history,
+                total_turns=session.total_turns,
+                daily_category=session.daily_category,
+                previous_questions=previous_questions,
+                topic_description=session.topic_description,
+            )
+            next_question_source = "groq"
+        except Exception:
+            next_question = groq_service.fallback_speaking_question(
+                session.mode,
+                session.difficulty,
+                session.topic_title,
+                next_turn_number,
+                history,
+                total_turns=session.total_turns,
+                daily_category=session.daily_category,
+                previous_questions=previous_questions,
+                topic_description=session.topic_description,
+            )
+            next_question_source = "fallback"
 
     current_turn.user_answer = answer
     current_turn.answer_time_seconds = answer_time_seconds or None
     _apply_feedback_to_turn(current_turn, feedback)
     session.answered_turns = len(_answered_turns(session))
 
-    history = _history(session)
-    next_turn_number = current_turn.turn_number + 1
-    previous_questions = [turn.ai_question for turn in session.turns]
-    next_question_source = "groq"
-    try:
-        next_question = groq_service.generate_speaking_question(
-            session.mode,
-            session.difficulty,
-            session.topic_title,
-            next_turn_number,
-            history,
-            total_turns=session.total_turns,
-            daily_category=session.daily_category,
-            previous_questions=previous_questions,
-            topic_description=session.topic_description,
-        )
-    except groq_service.GroqRateLimitError as exc:
-        current_app.logger.warning("Groq next question rate limit exhausted; using fallback question: %s", exc)
-        next_question = groq_service.fallback_speaking_question(
-            session.mode,
-            session.difficulty,
-            session.topic_title,
-            next_turn_number,
-            history,
-            total_turns=session.total_turns,
-            daily_category=session.daily_category,
-            previous_questions=previous_questions,
-            topic_description=session.topic_description,
-        )
-        next_question_source = "fallback"
-    except RuntimeError as exc:
-        current_app.logger.warning("Groq configuration error during next question generation: %s", exc)
-        db.session.rollback()
-        return _api_error("AI setup issue - please contact support.", "GROQ_CONFIG_ERROR", 503)
-    except Exception as exc:
-        current_app.logger.warning("Groq next question generation failed; using fallback question: %s", exc, exc_info=True)
-        next_question = groq_service.fallback_speaking_question(
-            session.mode,
-            session.difficulty,
-            session.topic_title,
-            next_turn_number,
-            history,
-            total_turns=session.total_turns,
-            daily_category=session.daily_category,
-            previous_questions=previous_questions,
-            topic_description=session.topic_description,
-        )
-        next_question_source = "fallback"
+    if should_end or (session.total_turns and session.answered_turns >= session.total_turns):
+        summary = _finalize_session(session, ended_by_user=should_end)
+        db.session.commit()
+        payload = {
+            "done": True,
+            "session_id": session.id,
+            "status": session.status,
+            "answered_turns": session.answered_turns,
+            "total_turns": session.total_turns,
+            "summary": {
+                **_summary_payload(session),
+                "strengths": summary.get("strengths", []),
+                "areas_to_improve": summary.get("areas_to_improve", []),
+                "turns": [_turn_payload(turn) for turn in session.turns],
+            },
+            "feedback": _feedback_response(feedback),
+            "next_question": next_question,
+        }
+        current_turn.submission_response_json = json.dumps(payload)
+        db.session.commit()
+        return jsonify(payload)
 
+    next_turn_number = current_turn.turn_number + 1
     next_turn = SpeakingTurn(session_id=session.id, turn_number=next_turn_number, ai_question=next_question)
     db.session.add(next_turn)
     payload = {
