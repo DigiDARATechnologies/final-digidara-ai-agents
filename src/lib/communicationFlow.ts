@@ -86,14 +86,10 @@ function normalizedSentence(value?: string): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
-  const reaction = String(feedback?.reaction || "You're doing well!").trim();
-  const corrected = String(feedback?.corrected_answer || "").trim();
-  const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
-  const correction = hasCorrection
-    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
-    : "";
-  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
+function speakingCoachReply(_answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
+  const reaction = String(feedback?.reaction || "").trim();
+  const question = String(nextQuestion || "").trim();
+  return [reaction, question].filter(Boolean).join(" ") || "Tell me more about that.";
 }
 
 const DIFFICULTY_OPTIONS: ChatOption[] = [
@@ -620,10 +616,12 @@ export async function handleCommunicationText(
         const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
           ? `${summary.overall_score}/10`
           : "—/10";
+        const farewell = String(result.message || result.feedback?.reaction || "").trim();
+        const farewellPrefix = farewell ? `${farewell}\n\n` : "";
         return {
           state: { ...state, step: "main_menu" as const },
           messages: [{
-            text: `Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
+            text: `${farewellPrefix}Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
             options: [
               { label: "📄 Download PDF Report", value: "download_speaking_pdf", description: "Download your detailed speaking analysis PDF" },
               ...MENU_OPTIONS,
