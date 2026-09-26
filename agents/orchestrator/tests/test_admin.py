@@ -33,6 +33,7 @@ def seeded(database):
             User(id="asha", name="Asha Rao", email="asha@x.io", mobile="99999", token_balance=120_000, created_at=NOW - timedelta(days=3)),
             User(id="ravi", name="Ravi K", email="ravi@x.io", token_balance=0, google_id="g1", created_at=NOW - timedelta(days=40)),
         ])
+        s.flush()   # parents first: MySQL enforces the foreign keys (SQLite does not), and there are no relationships to order the inserts
         s.add_all([
             Payment(id="p1", user_id="asha", plan_id="basic", amount=49900, razorpay_order_id="o1", razorpay_payment_id="pay1", status="paid", created_at=NOW - timedelta(days=2), paid_at=NOW - timedelta(days=2)),
             Payment(id="p2", user_id="asha", plan_id="topup_100000", amount=10000, razorpay_order_id="o2", razorpay_payment_id="pay2", status="paid", created_at=NOW - timedelta(days=45), paid_at=NOW - timedelta(days=45)),
