@@ -83,3 +83,13 @@ describe('pending notifications', () => {
     expect(bodies(sources({ chats: [chat('g', 'career-guide'), chat('c', 'capstone-project')] }))).toEqual([]);
   });
 });
+
+describe('dismissal key', () => {
+  test('stays the same while the agent is on the same step (days ticking down), changes when it moves on', () => {
+    const key = (state: Partial<CapstoneFlowState>, now: number) =>
+      buildPendingNotifications(sources({ chats: [chat('c1', 'capstone-project')], capstone: { c1: capstone({ deadlineAt: '2026-10-03T10:00:00Z', ...state }) } }), now)[0].key;
+    expect(key({}, NOW)).toBe(key({}, NOW + 24 * 3_600_000));
+    expect(key({}, NOW)).toBe('c1:awaiting_submission');
+    expect(key({ step: 'awaiting_viva_answer' }, NOW)).toBe('c1:awaiting_viva_answer');
+  });
+});
