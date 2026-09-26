@@ -2,6 +2,10 @@ import { useState } from "react";
 import type { User } from "../types";
 import { ADMIN_PANELS } from "../data/adminPanels";
 import JobsAdminPanel from "./admin/JobsAdminPanel";
+import DashboardPanel from "./admin/DashboardPanel";
+import UsersPanel from "./admin/UsersPanel";
+import PaymentsPanel from "./admin/PaymentsPanel";
+import AgentsPanel from "./admin/AgentsPanel";
 import AdminChangePassword from "./admin/AdminChangePassword";
 
 interface AdminShellProps {
@@ -47,6 +51,10 @@ export default function AdminShell({ user, onBack }: AdminShellProps) {
               <h2>{ADMIN_PANELS.find((p) => p.id === activePanelId)!.label}</h2>
               <p>{ADMIN_PANELS.find((p) => p.id === activePanelId)!.desc}</p>
             </div>
+            {activePanelId === "dashboard" && <DashboardPanel />}
+            {activePanelId === "users" && <UsersPanel />}
+            {activePanelId === "payments" && <PaymentsPanel />}
+            {activePanelId === "agents" && <AgentsPanel />}
             {activePanelId === "job-agent" && <JobsAdminPanel />}
           </>
         ) : (

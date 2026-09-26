@@ -11,6 +11,10 @@ export interface AdminPanelMeta {
 }
 
 export const ADMIN_PANELS: AdminPanelMeta[] = [
+  { id: "dashboard", label: "Dashboard", icon: "📊", desc: "Revenue, users, tokens and agent activity at a glance." },
+  { id: "users", label: "Users", icon: "👥", desc: "Every account, and each user's payments, chats and progress from end to end." },
+  { id: "payments", label: "Payments", icon: "💳", desc: "Every payment: what was bought, how much was credited, and its status." },
+  { id: "agents", label: "Agents", icon: "🤖", desc: "Every registered agent: health, actions, endpoint and how much it is used." },
   {
     id: "job-agent",
     label: "Job Fetching Agent",

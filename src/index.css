@@ -1266,6 +1266,44 @@ body.glow-off .send-btn:hover{
 .admin-error{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.35);color:var(--err);padding:10px 14px;border-radius:10px;font-size:13px;}
 .admin-success{background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.35);color:var(--ok);padding:10px 14px;border-radius:10px;font-size:13px;}
 .admin-loading{color:var(--canvas-text-dim);font-size:13px;}
+.admin-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;}
+.admin-kpi{display:flex;flex-direction:column;gap:4px;padding:14px 16px;border:1px solid var(--canvas-border);border-radius:12px;background:var(--canvas-bg-soft);}
+.admin-kpi span{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--canvas-text-dim);}
+.admin-kpi strong{font-size:22px;font-weight:800;color:var(--canvas-text);overflow-wrap:anywhere;}
+.admin-kpi small{font-size:11.5px;color:var(--canvas-text-faint);}
+.admin-chart{display:flex;align-items:flex-end;gap:3px;height:120px;padding:12px;border:1px solid var(--canvas-border);border-radius:12px;background:var(--canvas-bg-soft);}
+.admin-chart-col{flex:1;height:100%;display:flex;align-items:flex-end;}
+.admin-chart-col span{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--canvas-border);}
+.admin-chart-col span.has-value{background:var(--accent1);}
+.admin-two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+.admin-search{flex:1;min-width:0;border:1px solid var(--canvas-border);background:var(--canvas-bg-soft);color:var(--canvas-text);border-radius:8px;padding:8px 10px;font-size:13px;}
+.admin-row-click{cursor:pointer;}
+.admin-row-click:hover{background:var(--ov-1);}
+.admin-user-head h3{margin:0 0 4px;font-size:18px;display:flex;align-items:center;gap:8px;}
+.admin-user-head p{margin:0;color:var(--canvas-text-dim);font-size:13px;}
+.admin-user-head small{color:var(--canvas-text-faint);font-size:11.5px;}
+.admin-conversation{display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--canvas-border);border-radius:12px;background:var(--canvas-bg-soft);max-height:420px;overflow-y:auto;}
+.admin-message{max-width:82%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;}
+.admin-message p{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.admin-message small{font-size:10.5px;color:var(--canvas-text-faint);}
+.admin-message.from-user{align-self:flex-end;background:var(--canvas-accent-soft);}
+.admin-message.from-agent{align-self:flex-start;background:var(--ov-1);}
+.admin-agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;}
+.admin-agent-card{border:1px solid var(--canvas-border);border-radius:14px;background:var(--canvas-bg-soft);padding:14px;display:flex;flex-direction:column;gap:10px;}
+.admin-agent-card header{display:flex;align-items:center;gap:10px;}
+.admin-agent-card header > div{flex:1;min-width:0;display:flex;flex-direction:column;}
+.admin-agent-card header small{color:var(--canvas-text-faint);font-size:11px;overflow-wrap:anywhere;}
+.admin-agent-card p{margin:0;font-size:12.5px;line-height:1.45;color:var(--canvas-text-dim);}
+.admin-agent-icon{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:18px;background:var(--canvas-border);flex:none;}
+.admin-agent-card dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;}
+.admin-agent-card dl div{display:flex;justify-content:space-between;gap:8px;font-size:12px;}
+.admin-agent-card dt{color:var(--canvas-text-faint);}
+.admin-agent-card dd{margin:0;font-weight:650;text-align:right;overflow-wrap:anywhere;}
+.admin-agent-card summary{cursor:pointer;font-size:12px;color:var(--accent3);}
+.admin-endpoint{display:block;margin:8px 0;font-size:11px;overflow-wrap:anywhere;color:var(--canvas-text-dim);}
+.admin-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.admin-chips span{padding:3px 9px;border:1px solid var(--canvas-border);border-radius:999px;font-size:11.5px;color:var(--canvas-text-dim);}
+@media (max-width:900px){.admin-two-col{grid-template-columns:1fr;}.admin-agent-card dl{grid-template-columns:1fr;}}
 .admin-change-password-toggle{margin-top:6px;font-size:11.5px;color:var(--accent3);text-decoration:underline;text-underline-offset:2px;}
 .admin-change-password{margin-top:8px;display:flex;flex-direction:column;gap:8px;background:var(--canvas-bg-soft);border:1px solid var(--canvas-border);border-radius:12px;padding:12px;}
 .admin-change-password-head{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;}
