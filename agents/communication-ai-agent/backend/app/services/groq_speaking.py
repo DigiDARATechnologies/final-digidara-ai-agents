@@ -1,9 +1,12 @@
+import logging
 import re
 import time
 
 import httpcore
 import httpx
 from flask import current_app
+
+logger = logging.getLogger(__name__)
 
 from .speaking_local_rules import apply_local_speaking_correction
 from .groq_common import (
