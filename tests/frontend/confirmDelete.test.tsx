@@ -75,3 +75,20 @@ describe('Sidebar: delete chat', () => {
     expect(screen.queryByText('Delete this chat?')).toBeNull();
   });
 });
+
+describe('Settings: agent chats list', () => {
+  test('lists only the built agents, not the placeholder cards', () => {
+    const user = { id: 'u', name: 'A', email: 'a@x.y', mobile: '1', initial: 'A' };
+    render(
+      <SettingsModal open user={user} chats={[]} glowOn initialTab="agent-chats" onClose={jest.fn()} onOpenChat={jest.fn()} onGlowToggle={jest.fn()}
+        onClearHistory={jest.fn()} onToast={jest.fn()} onExportData={jest.fn()} onDeleteAccount={jest.fn()} />,
+    );
+    for (const name of ['Capstone Project Agent', 'LeetCode / DSA Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
+      expect(screen.getByText(name)).toBeInTheDocument();
+    }
+    for (const name of ['Research Agent', 'Career Guidance Agent', 'Content Writer Agent', 'Data Analyst Agent', 'Video AI Agent', 'Business Strategy Agent', 'Coding Assistant Agent']) {
+      expect(screen.queryByText(name)).toBeNull();
+    }
+    expect(screen.getByText('8 agents')).toBeInTheDocument();
+  });
+});
