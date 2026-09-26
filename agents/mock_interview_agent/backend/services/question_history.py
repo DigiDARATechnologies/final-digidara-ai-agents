@@ -48,6 +48,51 @@ def get_recent_asked_hashes(user_id, round_type, role_or_topic, difficulty, wind
     return get_recent_asked_history(user_id, round_type, role_or_topic, difficulty, window)[0]
 
 
+def get_recent_skill_coverage(user_id, role_name, round_type, difficulty):
+    """Return skill areas ordered by when they were last covered.
+
+    The scope is deliberately the same student, role, round, and difficulty
+    as the current interview.  A missing skill is returned first by callers,
+    so short interviews eventually cover the complete role skill set.
+    """
+    if not role_name or round_type != "technical":
+        return []
+    rows, _ = db.query(
+        """SELECT d.subject_tag, MAX(d.created_at) AS last_covered
+           FROM interview_details d
+           JOIN interviews i ON i.id = d.interview_id
+           WHERE i.student_id = %s AND i.round_type = %s
+             AND LOWER(TRIM(i.role_name)) = LOWER(TRIM(%s))
+             AND i.difficulty = %s
+             AND d.is_followup = FALSE AND d.subject_tag IS NOT NULL
+             AND i.status IN ('completed', 'exited')
+           GROUP BY d.subject_tag
+           ORDER BY last_covered ASC""",
+        (user_id, round_type, role_name, difficulty),
+        fetch=True,
+    )
+    if not isinstance(rows, list):
+        return []
+    return [str(row["subject_tag"]).strip() for row in rows if row.get("subject_tag")]
+
+
+def prioritize_skill_areas(skill_areas, recently_covered):
+    """Put never/least-recently-covered skills first, preserving stable ties."""
+    skills = [str(skill).strip() for skill in (skill_areas or []) if str(skill).strip()]
+    recency = {
+        " ".join(str(skill).split()).casefold(): index
+        for index, skill in enumerate(recently_covered or [])
+    }
+    return sorted(
+        skills,
+        key=lambda skill: (
+            0 if " ".join(skill.split()).casefold() not in recency else 1,
+            recency.get(" ".join(skill.split()).casefold(), -1),
+            skills.index(skill),
+        ),
+    )
+
+
 def record_served_questions(user_id, round_type, role_or_topic, difficulty, interview_session_id, questions):
     scope = normalize_role_or_topic(role_or_topic)
     for item in questions:

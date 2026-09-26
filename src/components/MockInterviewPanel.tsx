@@ -11,6 +11,7 @@ interface Props {
   busy: boolean;
   onAnswer: (answer: string, timing: MockInterviewAnswerTiming) => void;
   onExit: () => void;
+  onPracticeWeakTopics?: (subjects: string[]) => void;
 }
 
 function score(value: number | null | undefined): string {
@@ -34,7 +35,7 @@ function compactFeedback(value?: string): string {
   return `${sentences.slice(0, 277).trimEnd()}…`;
 }
 
-export default function MockInterviewPanel({ state, busy, onAnswer, onExit }: Props) {
+export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPracticeWeakTopics }: Props) {
   const speech = useSpeechRecognition();
   const [spokenAnswer, setSpokenAnswer] = useState("");
   const [typedAnswer, setTypedAnswer] = useState("");
@@ -170,12 +171,16 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit }: Pr
     return <section className="mock-interview-panel mock-interview-report" aria-label="Mock interview report">
       <div className="mock-interview-header"><div><small>INTERVIEW COMPLETE</small><h3>Your interview report</h3></div></div>
       <div className="mock-interview-scores">{metrics.map(([label, value]) => <div key={label} className="mock-interview-score"><span>{label}</span><strong>{score(value)}</strong></div>)}</div>
+      {summary.max_marks != null && <p className="mock-interview-scorecard-total">Correct-answer score: {summary.total_marks ?? 0} / {summary.max_marks} ({summary.max_marks} questions)</p>}
       {summary.feedback && <p className="mock-interview-report-feedback">{compactFeedback(summary.feedback)}</p>}
       {(summary.strengths || summary.weaknesses) && <div className="mock-interview-feedback-grid">
         <div className="mock-interview-strengths"><strong>Strengths</strong>{feedbackPoints(summary.strengths).map((point, index) => <p key={index}>{point}</p>)}</div>
         <div className="mock-interview-weaknesses"><strong>Areas to improve</strong>{feedbackPoints(summary.weaknesses).map((point, index) => <p key={index}>{point}</p>)}</div>
       </div>}
-      <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF…" : "Download PDF report"}</button>
+      <div className="mock-interview-report-actions">
+        {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice weak skills</button>}
+        <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF…" : "Download PDF report"}</button>
+      </div>
       {downloadError && <p className="mock-interview-error" role="alert">{downloadError}</p>}
     </section>;
   }

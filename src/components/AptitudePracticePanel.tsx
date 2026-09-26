@@ -100,7 +100,10 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
       : item));
   };
   const save = async () => {
-    if (!state.sessionToken || !limits || total > limits.max_total) return;
+    if (!state.sessionToken || !limits || total === 0 || total > limits.max_total) {
+      if (total === 0) setError("Select at least one question across the categories.");
+      return;
+    }
     setSaving(true); setError("");
     try {
       const result = await saveMixedTestConfig(state.sessionToken, draft.map(({ category_id, question_count }) => ({ category_id, question_count })));
@@ -142,7 +145,7 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
     return <section className="aptitude-practice-panel" aria-label="Mixed Test overview and setup">
       <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">MIXED TEST</span><h2>Test overview</h2><p>Build a balanced mix of aptitude topics and fixed difficulty levels, then choose the Technical Aptitude language below.</p></div>
       <div className="aptitude-overview-grid"><OverviewStat label="Categories" value="6 areas" /><OverviewStat label="Questions" value={loading ? "…" : `${total || 0} total`} /><OverviewStat label="Timer" value="60–120 sec" /><OverviewStat label="Difficulty" value="Easy + Medium + Hard" /></div>
-      <div className="aptitude-config-heading"><div><h3>Categories covered</h3><p>Set each category independently from 3 to 10 questions.</p></div><b>{total} total</b></div>
+      <div className="aptitude-config-heading"><div><h3>Categories covered</h3><p>Set each category independently from 0 to 10 questions. Select at least one question overall.</p></div><b>{total} total</b></div>
       <div className="aptitude-config-grid">
         {draft.map((category) => <div className="aptitude-config-card" key={category.category_id}><span>{CATEGORY_ICONS[category.category_name] || "✦"}</span><div><strong>{category.category_name}</strong><small>{CATEGORY_DETAILS[category.category_name]}</small></div><div className="aptitude-stepper"><button type="button" aria-label={`Remove question from ${category.category_name}`} onClick={() => updateCount(category.category_id, -1)} disabled={saving || !limits || category.question_count <= limits.min_per_category}>−</button><b>{category.question_count}</b><button type="button" aria-label={`Add question to ${category.category_name}`} onClick={() => updateCount(category.category_id, 1)} disabled={saving || !limits || category.question_count >= limits.max_per_category}>+</button></div></div>)}
       </div>

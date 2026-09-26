@@ -4,15 +4,16 @@ import {
   type MockInterviewQuestion, type MockInterviewSummary,
 } from "./mockInterviewApi";
 
-export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "in_interview" | "completed" | "error";
+export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "choose_question_count" | "in_interview" | "completed" | "error";
 export interface MockInterviewFlowState {
   step: MockInterviewStep;
   sessionToken?: string;
   roundType?: "technical" | "hr";
-  interviewMode?: "course" | "custom_topic" | "role";
+  interviewMode?: "course" | "custom_topic" | "role" | "weak_topic_practice";
   subject?: string;
   roleName?: string;
   difficulty?: "beginner" | "intermediate" | "advanced";
+  questionCount?: 5 | 10 | 15;
   interviewId?: number;
   question?: string;
   questionOrder?: number;
@@ -47,6 +48,11 @@ const difficultyOptions: ChatOption[] = [
   { label: "Intermediate · 90 seconds", value: "intermediate" },
   { label: "Advanced · 120 seconds", value: "advanced" },
 ];
+const questionCountOptions: ChatOption[] = [
+  { label: "5 questions", value: "5", description: "Focused practice session." },
+  { label: "10 questions", value: "10", description: "Complete interview practice session." },
+  { label: "15 questions", value: "15", description: "Extended interview practice session." },
+];
 const restartOption: ChatOption[] = [{ label: "Start another interview", value: "restart" }];
 const exitOption: ChatOption[] = [{ label: "Exit interview", value: "exit_interview", description: "Stop now; unanswered questions will not be scored." }];
 
@@ -57,14 +63,14 @@ function questionMessage(question: string, order: number, total?: number, realIn
   return { text: `${heading}:\n\n${question}`, options: exitOption };
 }
 
-async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "intermediate" | "advanced"): Promise<MockInterviewFlowResult> {
+async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "intermediate" | "advanced", questionCount: 5 | 10 | 15 = 10): Promise<MockInterviewFlowResult> {
   try {
     const q: MockInterviewQuestion = await startMockInterview(state.sessionToken!, {
       round_type: state.roundType!,
       interview_mode: state.roundType === "hr" ? "course" : state.interviewMode === "role" ? "role" : "custom_topic",
       ...(state.interviewMode === "role" ? { role_name: state.roleName } : { subject: state.subject }),
       difficulty,
-      num_questions: 10,
+      num_questions: questionCount,
     });
     const next: MockInterviewFlowState = {
       ...state, step: "in_interview", difficulty: q.difficulty ?? difficulty,
@@ -75,6 +81,7 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
       question: q.question, questionOrder: q.question_order,
       realQuestionIndex: q.real_question_index ?? q.question_order,
       totalQuestions: q.total_questions,
+      questionCount,
       error: undefined,
     };
     const intro = q.resumed_existing ? "Resuming your interview in progress." : "Your interview has started. The question will be read aloud; you can speak or type your answer.";
@@ -112,6 +119,8 @@ export async function openMockInterviewChat(user: User): Promise<MockInterviewFl
           interviewId: active.interview_id, question: active.question,
           questionOrder: active.question_order, realQuestionIndex: active.real_question_index ?? active.question_order,
           totalQuestions: active.total_questions,
+          questionCount: active.total_questions === 5 || active.total_questions === 10 || active.total_questions === 15
+            ? active.total_questions : undefined,
         };
         return { state: resumed, messages: [
           { text: "You have an interview in progress. Let's continue where you left off." },
@@ -136,7 +145,7 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
   if (value === "restart" || value === "retry" || state.step === "completed" || state.step === "error") return openMockInterviewChat(user);
 
   if (state.step === "choose_round") {
-    if (value === "hr") return { state: { ...state, roundType: "hr", interviewMode: "course", step: "choose_difficulty" }, messages: [{ text: "Choose your HR interview difficulty. This interview has 10 questions.", options: difficultyOptions }] };
+    if (value === "hr") return { state: { ...state, roundType: "hr", interviewMode: "course", step: "choose_difficulty" }, messages: [{ text: "Choose your HR interview difficulty.", options: difficultyOptions }] };
     if (value === "technical") return { state: { ...state, roundType: "technical", step: "choose_mode" }, messages: [{ text: "Would you like questions for a job role or one technical topic?", options: modeOptions }] };
     return { state, messages: [{ text: "Please choose an interview type.", options: roundOptions }] };
   }
@@ -157,12 +166,22 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
   if (state.step === "awaiting_role" || state.step === "awaiting_subject") {
     if (!text || text.length > 150) return { state, messages: [{ text: "Enter a name of up to 150 characters." }] };
     const next = state.step === "awaiting_role" ? { roleName: text } : { subject: text };
-    return { state: { ...state, ...next, step: "choose_difficulty" }, messages: [{ text: `Choose a difficulty for ${text}. This interview has 10 questions.`, options: difficultyOptions }] };
+    return { state: { ...state, ...next, step: "choose_difficulty" }, messages: [{ text: `Choose a difficulty for ${text}.`, options: difficultyOptions }] };
   }
 
   if (state.step === "choose_difficulty") {
-    if (value === "beginner" || value === "intermediate" || value === "advanced") return begin(state, value);
+    if (value === "beginner" || value === "intermediate" || value === "advanced") {
+      return { state: { ...state, difficulty: value, step: "choose_question_count" }, messages: [{ text: "How many questions would you like?", options: questionCountOptions }] };
+    }
     return { state, messages: [{ text: "Please choose a difficulty.", options: difficultyOptions }] };
+  }
+
+  if (state.step === "choose_question_count") {
+    if (value === "5" || value === "10" || value === "15") {
+      const questionCount = Number(value) as 5 | 10 | 15;
+      return begin({ ...state, questionCount }, state.difficulty!, questionCount);
+    }
+    return { state, messages: [{ text: "Choose 5, 10, or 15 questions.", options: questionCountOptions }] };
   }
 
   if (state.step === "in_interview" && state.interviewId && state.questionOrder) {

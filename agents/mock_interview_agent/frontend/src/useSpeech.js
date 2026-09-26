@@ -64,7 +64,7 @@ export default function useSpeech() {
     });
   }, []);
 
-  const listen = useCallback(({ onTranscript } = {}) => {
+  const listen = useCallback(({ onTranscript, onListeningStart } = {}) => {
     return new Promise((resolve, reject) => {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
@@ -119,7 +119,10 @@ export default function useSpeech() {
 
       finishListeningRef.current = complete;
 
-      recognition.onstart = () => setIsListening(true);
+      recognition.onstart = () => {
+        setIsListening(true);
+        onListeningStart?.();
+      };
       recognition.onresult = (event) => {
         if (settled) return;
 
@@ -191,6 +194,9 @@ export default function useSpeech() {
         }, 150);
       };
 
+      logClientEvent("debug", "speech_recognition_start_requested", "Speech recognition start requested", {
+        monotonic_ms: Math.round(performance.now()),
+      });
       recognition.start();
     });
   }, []);

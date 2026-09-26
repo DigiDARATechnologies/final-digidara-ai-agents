@@ -6,6 +6,7 @@ import { newChatId, nowStr, useChats } from "./hooks/useChats";
 import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
+  capstonePendingFiles,
   createInitialCapstoneState,
   initialCapstoneMessage,
   mergeCapstoneFiles,
@@ -58,6 +59,7 @@ import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
+import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
@@ -85,7 +87,14 @@ function toUser(authUser: AuthUser): User {
 
 
 
+type Theme = "dark" | "light";
+
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(() => (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("digidara_theme", theme); } catch { /* storage unavailable: theme just won't persist */ }
+  }, [theme]);
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
@@ -555,6 +564,49 @@ export default function App() {
     });
   }
 
+  async function handlePracticeWeakTopics(subjects: string[]) {
+    const chatId = currentChatId;
+    const currentState = chatId ? mockInterviewStates[chatId] : undefined;
+    const weakSubjects = subjects.map((subject) => subject.trim()).filter(Boolean);
+    if (!chatId || !currentState?.sessionToken || !currentState.roleName || !weakSubjects.length) return;
+
+    setTyping(true);
+    try {
+      const session = await startMockInterview(currentState.sessionToken, {
+        round_type: "technical",
+        interview_mode: "weak_topic_practice",
+        role_name: currentState.roleName,
+        resolved_subjects: weakSubjects,
+        subject: weakSubjects[0],
+        difficulty: currentState.difficulty ?? "intermediate",
+        num_questions: 5,
+      });
+      const nextState: MockInterviewFlowState = {
+        ...currentState,
+        step: "in_interview",
+        roundType: "technical",
+        interviewMode: "weak_topic_practice",
+        interviewId: session.interview_id,
+        question: session.question,
+        questionOrder: session.question_order,
+        realQuestionIndex: session.real_question_index ?? session.question_order,
+        totalQuestions: session.total_questions ?? 5,
+        questionCount: 5,
+        error: undefined,
+        summary: undefined,
+      };
+      setMockInterviewStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, [
+        { text: `Starting a 5-question practice interview for your weak skills: ${weakSubjects.join(", ")}.` },
+        { text: `Question ${nextState.realQuestionIndex ?? 1} of ${nextState.totalQuestions}:\n\n${session.question}`, options: [{ label: "Exit interview", value: "exit_interview", description: "Stop now; unanswered questions will not be scored." }] },
+      ]);
+    } catch (error) {
+      appendAgentMessages(chatId, [{ text: `I couldn't start weak-skill practice: ${(error as Error).message}` }]);
+    } finally {
+      setTyping(false);
+    }
+  }
+
   function scheduleReply(chatId: string) {
     window.clearTimeout(replyTimer.current);
     replyTimer.current = window.setTimeout(() => {
@@ -873,8 +925,9 @@ export default function App() {
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
     const pendingResume = agent?.kind === "job-fetch" ? jobFetchPendingFiles[chatId] : null;
+    const pendingImage = agent?.kind === "capstone" ? capstoneStates[chatId]?.imageFile : undefined;
 
-    if (!text.trim() && !pendingResume) return;
+    if (!text.trim() && !pendingResume && !pendingImage) return;
 
     if (pendingResume) {
       setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
@@ -883,7 +936,9 @@ export default function App() {
     const effectiveText = displayText ?? (
       pendingResume
         ? (text.trim() ? `📎 ${pendingResume.name}\n${text.trim()}` : `📎 ${pendingResume.name}`)
-        : text
+        : pendingImage
+          ? (text.trim() ? `📎 ${pendingImage.name}\n${text.trim()}` : `📎 ${pendingImage.name}`)
+          : text
     );
 
     const isEdit = editIndex != null && !!chat;
@@ -1268,7 +1323,7 @@ export default function App() {
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "DigiDARA Agents";
+  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "";
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1288,9 +1343,7 @@ export default function App() {
 
   const pendingFiles = isJobFetchChat && currentChat && jobFetchPendingFiles[currentChat.id]
     ? [jobFetchPendingFiles[currentChat.id]!]
-    : capstoneState
-      ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f)
-      : [];
+    : capstonePendingFiles(capstoneState);
 
   function handleRemovePendingFile(index: number) {
     if (!currentChatId) return;
@@ -1299,9 +1352,10 @@ export default function App() {
       return;
     }
     if (isCapstoneChat && capstoneState) {
-      const files = [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f);
-      const toRemove = files[index];
-      if (toRemove === capstoneState.docxFile) {
+      const toRemove = capstonePendingFiles(capstoneState)[index];
+      if (toRemove && toRemove === capstoneState.imageFile) {
+        setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], imageFile: undefined } }));
+      } else if (toRemove === capstoneState.docxFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], docxFile: undefined } }));
       } else if (toRemove === capstoneState.zipFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], zipFile: undefined } }));
@@ -1435,6 +1489,7 @@ export default function App() {
     <>
       <div className="app" id="app">
         <Sidebar
+          theme={theme}
           user={user}
           collapsed={sidebarCollapsed}
           mobileOpen={mobileOpen}
@@ -1471,6 +1526,8 @@ export default function App() {
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
+            theme={theme}
+            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
@@ -1533,7 +1590,7 @@ export default function App() {
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} />
+                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}

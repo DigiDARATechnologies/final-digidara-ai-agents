@@ -270,6 +270,20 @@ def test_mock_interview_generation_uses_longer_gateway_timeout(client, upstream,
         assert upstream.timeouts[-1] == config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
 
 
+def test_capstone_grading_and_new_viva_attempts_get_the_long_timeout_but_other_actions_do_not(client, upstream, monkeypatch):
+    monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
+    service.register(AgentRegisterRequest(**dict(PAYLOAD, agent_name="capstone_project_agent")))
+    headers = {"authorization": "Bearer " + create_access_token("learner")}
+    url = "/gateway/agents/capstone_project_agent/invoke"
+
+    assert client.post(url, files={"docx_file": ("r.docx", b"x")}, data={"action": "upload_submission"}, headers=headers).status_code == 200
+    assert upstream.timeouts[-1] == config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
+    assert client.post(url, json={"action": "start_viva_attempt", "payload": {}}, headers=headers).status_code == 200
+    assert upstream.timeouts[-1] == config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
+    assert client.post(url, json={"action": "submit_viva_answer", "payload": {}}, headers=headers).status_code == 200
+    assert upstream.timeouts[-1] == config.AGENT_CALL_TIMEOUT_SECONDS
+
+
 def test_gateway_resolves_freshest_healthy_version(client, upstream, database):
     service.register(AgentRegisterRequest(**dict(PAYLOAD, version="v2", endpoint="http://localhost:9000/api/invoke")))
     with database() as session:

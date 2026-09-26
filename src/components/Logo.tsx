@@ -9,6 +9,7 @@ export interface LogoProps {
   size?: "sm" | "md" | "lg" | number;
   className?: string;
   alt?: string;
+  src?: string;
 }
 
 export const Logo: React.FC<LogoProps> = ({
@@ -17,6 +18,7 @@ export const Logo: React.FC<LogoProps> = ({
   size = "md",
   className = "",
   alt = "DigiDARA AI Agents",
+  src: srcOverride,
 }) => {
   // The icon crop has no separate dark-background treatment -- every current
   // call site only ever uses variant="icon" against a light background.
@@ -26,6 +28,8 @@ export const Logo: React.FC<LogoProps> = ({
   } else if (theme === "dark") {
     src = logoDark;
   }
+
+  if (srcOverride) src = srcOverride;
 
   let height = 36;
   if (typeof size === "number") {
@@ -41,7 +45,7 @@ export const Logo: React.FC<LogoProps> = ({
       src={src}
       alt={alt}
       height={height}
-      style={{ height: `${height}px`, width: "auto", display: "inline-block", verticalAlign: "middle" }}
+      style={{ height: `${height}px`, maxHeight: `${height}px`, width: "auto", display: "inline-block", verticalAlign: "middle" }}
       className={`brand-logo-img ${className}`.trim()}
     />
   );

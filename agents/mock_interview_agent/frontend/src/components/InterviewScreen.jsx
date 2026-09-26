@@ -10,6 +10,7 @@ import AIQuestionPanel from "./interview/AIQuestionPanel";
 import InterviewStatusFooter from "./interview/InterviewStatusFooter";
 import ExitInterviewModal from "./interview/ExitInterviewModal";
 import CandidateAnswerPanel from "./interview/CandidateAnswerPanel";
+import { logClientEvent } from "../utils/clientLogger";
 
 const TIME_LIMIT_BY_DIFFICULTY = {
   beginner: 60,
@@ -187,6 +188,11 @@ export default function InterviewScreen({
     setError(null);
     setPhase("asking");
     await speak(text);
+    logClientEvent("debug", "voice_interview_tts_playback_ended", "TTS playback ended before answer capture", {
+      interview_id: interviewId,
+      question_order: order,
+      monotonic_ms: Math.round(performance.now()),
+    });
 
     if (exitStartedRef.current || showExitModal) return;
 

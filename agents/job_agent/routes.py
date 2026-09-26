@@ -281,7 +281,8 @@ def my_resume_upload():
 
         cursor.execute(
             """UPDATE user_job_profiles
-               SET resume_filename=%s, resume_original_name=%s, skills=%s, experience_years=%s, profile_completed=%s
+               SET resume_filename=%s, resume_original_name=%s, skills=%s, experience_years=%s,
+                   profile_completed=%s, onboarding_step='completed'
                WHERE user_id=%s""",
             (
                 f"{g.job_user_id}/{stored_name}",
@@ -447,7 +448,9 @@ def my_feed():
         # certification portal's course name) — the user's own preferred
         # titles stand in for it, so category-relatedness scoring still has
         # a real signal to work from instead of always degrading to zero.
-        preferred_titles_text = " ".join(parse_list(profile.get("preferred_titles")))
+        preferred_titles_list = parse_list(profile.get("preferred_titles"))
+        skills_list = parse_list(profile.get("skills"))
+        preferred_titles_text = " ".join(preferred_titles_list) if preferred_titles_list else " ".join(skills_list[:3])
         jobs = cursor.fetchall()
         for job in jobs:
             job["skills"] = parse_list(job.get("skills"))
@@ -456,14 +459,19 @@ def my_feed():
             job["match_reasons"] = reasons
             job.update(evaluate_job_trust(job))
 
+        cand_exp = float(profile.get("experience_years") or 0.0)
+        is_fresher = cand_exp <= 1.0
+
         def _feed_sort_key(item):
             dt = item.get("published_at") or item.get("created_at")
             if isinstance(dt, (datetime, date)):
                 dt_key = dt.isoformat()
             else:
                 dt_key = str(dt or "")
-            is_entry = 1 if item.get("seniority_tier") == "entry" else 0
-            return (is_entry, item["match_score"], dt_key)
+            if is_fresher:
+                is_entry = 1 if item.get("seniority_tier") == "entry" else 0
+                return (item["match_score"], is_entry, dt_key)
+            return (item["match_score"], dt_key)
 
         jobs.sort(key=_feed_sort_key, reverse=True)
 

@@ -41,6 +41,8 @@ test('a technical custom-topic round asks for a topic, then a difficulty, then s
 
   mocked.startMockInterview.mockResolvedValue({ interview_id: 9, question_order: 1, question: 'What is a list?', total_questions: 10 });
   result = await handleMockInterviewText(result.state, user, 'beginner');
+  expect(result.state.step).toBe('choose_question_count');
+  result = await handleMockInterviewText(result.state, user, '10');
   expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'custom_topic', subject: 'Python', difficulty: 'beginner', num_questions: 10 });
   expect(result.state).toMatchObject({ step: 'in_interview', interviewId: 9, questionOrder: 1 });
   expect(result.messages[1].text).toContain('What is a list?');
@@ -61,7 +63,8 @@ test('a technical role round sends the selected role to the backend', async () =
   result = await handleMockInterviewText(result.state, user, 'AI Engineer');
   expect(result.state.roleName).toBe('AI Engineer');
   mocked.startMockInterview.mockResolvedValue({ interview_id: 10, question_order: 1, question: 'What is retrieval?', total_questions: 10 });
-  await handleMockInterviewText(result.state, user, 'intermediate');
+  result = await handleMockInterviewText(result.state, user, 'intermediate');
+  await handleMockInterviewText(result.state, user, '10');
   expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'role', role_name: 'AI Engineer', difficulty: 'intermediate', num_questions: 10 });
 });
 
@@ -69,7 +72,8 @@ test('an HR round skips the topic step', async () => {
   const result = await handleMockInterviewText(withSession(), user, 'hr');
   expect(result.state.step).toBe('choose_difficulty');
   mocked.startMockInterview.mockResolvedValue({ interview_id: 11, question_order: 1, question: 'Tell me about yourself.', total_questions: 10 });
-  await handleMockInterviewText(result.state, user, 'advanced');
+  let next = await handleMockInterviewText(result.state, user, 'advanced');
+  await handleMockInterviewText(next.state, user, '10');
   expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'hr', interview_mode: 'course', subject: undefined, difficulty: 'advanced', num_questions: 10 });
 });
 
