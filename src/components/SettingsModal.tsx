@@ -27,7 +27,8 @@ export default function SettingsModal({ themePref = "dark", onThemeChange = () =
   const totalTokens = usage?.reduce((sum, item) => sum + (item.usage?.total_tokens ?? 0), 0) ?? 0; const totalRequests = usage?.reduce((sum, item) => sum + (item.usage?.total_requests ?? 0), 0) ?? 0;
   const monthlyLimit = 1_000_000;
   const usagePercent = Math.min(100, Math.round((totalTokens / monthlyLimit) * 100));
-  const agentChatRows = AGENTS.map((agent) => {
+  // Only agents that are actually built (they have a backend flow); the placeholder cards are not listed here.
+  const agentChatRows = AGENTS.filter((agent) => agent.kind).map((agent) => {
     const agentChats = chats.filter((chat) => chat.agentId === agent.id).sort((a, b) => b.updatedAt - a.updatedAt);
     const agentUsage = usage?.find((item) => item.id === agent.backendAgentName);
     return { agent, chats: agentChats, usage: agentUsage, requests: agentUsage?.usage?.total_requests ?? 0, lastUsed: agentChats[0]?.updatedAt ?? null };
