@@ -5,6 +5,7 @@ import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 import SearchChatsModal from "./SearchChatsModal";
+import ConfirmDialog from "./ConfirmDialog";
 import blackThemeLogo from "../assets/Black_theme_logo.png";
 import whiteThemeLogo from "../assets/White_theme_logo.png";
 
@@ -76,6 +77,7 @@ export default function Sidebar({
     if (!userMenuOpen) setHelpOpen(false);
   }, [userMenuOpen]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
@@ -282,7 +284,7 @@ export default function Sidebar({
         )}
       </div>
 
-      {openMenuChat && menuAnchor && createPortal(
+      {openMenuChat && menuAnchor && !chatToDelete && createPortal(
         <div
           className="dropdown-panel history-menu-panel open history-menu-floating"
           style={{ top: menuPosition.top, left: menuPosition.left }}
@@ -294,11 +296,21 @@ export default function Sidebar({
           <button type="button" role="menuitem" onClick={() => onTogglePinChat(openMenuChat.id)}>
             📌 {openMenuChat.pinned ? "Unpin Chat" : "Pin Chat"}
           </button>
-          <button type="button" role="menuitem" className="danger" onClick={() => onDeleteChat(openMenuChat.id)}>
+          <button type="button" role="menuitem" className="danger" onClick={() => setChatToDelete(openMenuChat)}>
             🗑️ Delete
           </button>
         </div>,
         document.body,
+      )}
+
+      {chatToDelete && (
+        <ConfirmDialog
+          title="Delete this chat?"
+          message={`"${chatToDelete.title}" and its messages will be deleted. This cannot be undone.`}
+          confirmLabel="Delete"
+          onCancel={() => setChatToDelete(null)}
+          onConfirm={() => { onDeleteChat(chatToDelete.id); setChatToDelete(null); }}
+        />
       )}
 
       <div className="sidebar-bottom">

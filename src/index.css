@@ -660,6 +660,10 @@ body.glow-off .send-btn:hover{
 .notif-item:hover{ background:var(--ov-1); }
 .notif-item b{ color:var(--tx-1); }
 .notif-ico{ font-size:16px; }
+.notif-item{ align-items:flex-start; }
+.notif-item > div{ flex:1; min-width:0; }
+.notif-dismiss{ flex:none; width:24px; height:24px; padding:0; font-size:12px; line-height:1; color:var(--tx-3, currentColor); opacity:.65; }
+.notif-dismiss:hover{ opacity:1; }
 
 .connector-wrap{ position:relative; margin-left:10px; }
 .connector-pill{

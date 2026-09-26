@@ -34,6 +34,7 @@ import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
@@ -178,6 +179,24 @@ export default function App() {
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
   const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
+
+  // Notifications the student dismissed (remembered per account in this browser).
+  const dismissedKey = `digidara_dismissed_notifs:${user?.email ?? ""}`;
+  const [dismissedNotifs, setDismissedNotifs] = useState<string[]>([]);
+  useEffect(() => {
+    try { setDismissedNotifs(JSON.parse(localStorage.getItem(dismissedKey) || "[]")); } catch { setDismissedNotifs([]); }
+  }, [dismissedKey]);
+  function dismissNotification(key: string) {
+    setDismissedNotifs((prev) => {
+      const next = [...prev.filter((k) => k !== key), key].slice(-200);
+      try { localStorage.setItem(dismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: dismissal lasts until refresh */ }
+      return next;
+    });
+  }
+
+  // A refresh must land back in the chat the student was in, not on the home page.
+  const activeChatKey = `digidara_active_chat:${user?.email ?? ""}`;
+  const chatRestored = useRef(false);
 
   // Per-agent conversation progress lives in the database, not browser storage.
   const agentState = useAgentStatePersistence(user?.email, [
@@ -950,6 +969,29 @@ export default function App() {
     routeGeneralMessage(chat.id, trimmed);
   }
 
+  // Remember which chat is open (or that none is: the home page / a new chat).
+  useEffect(() => {
+    // Before the remembered chat is restored, "no chat" is just the initial state: don't erase it.
+    if (!user || (!chatRestored.current && !currentChatId)) return;
+    try {
+      if (currentChatId) localStorage.setItem(activeChatKey, currentChatId);
+      else localStorage.removeItem(activeChatKey);
+    } catch { /* storage unavailable: a refresh will just open the home page */ }
+  }, [user, currentChatId, activeChatKey]);
+
+  // Once this account's chats have loaded after a page load, reopen the remembered one.
+  useEffect(() => {
+    if (!user || chatRestored.current || chats.length === 0) return;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(activeChatKey); } catch { saved = null; }
+    if (!saved) { chatRestored.current = true; return; }
+    if (chats.some((c) => c.id === saved)) {
+      chatRestored.current = true;
+      setCurrentChatId(saved);
+      setNewChatPending(false);
+    }
+  }, [user, chats, activeChatKey]);
+
   function openChatById(chatId: string) {
     const chat = chats.find((c) => c.id === chatId);
     if (!chat) return;
@@ -1604,6 +1646,12 @@ export default function App() {
             systemOnline={systemOnline}
             theme={theme}
             onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
+            onDismissNotification={(notification) => dismissNotification(notification.key)}
+            notifications={buildPendingNotifications({
+              chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
+              resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
+            }).filter((notification) => !dismissedNotifs.includes(notification.key))}
+            onOpenNotification={(notification) => { setOpenMenu(null); openChatById(notification.chatId); }}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
