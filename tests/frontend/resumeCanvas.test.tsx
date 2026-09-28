@@ -59,6 +59,23 @@ describe('starting a resume', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Asha Rao Resume')).toBeInTheDocument());
   });
 
+  test('pasting LinkedIn/notes text goes through the same extraction pipeline as an upload', async () => {
+    jest.mocked(api.analyzeResumeUpload).mockResolvedValue({ parsedResume: { title: 'from linkedin' }, atsAnalysis: {} });
+    jest.mocked(api.createImportDraft).mockResolvedValue({ id: 21, target_role: '' });
+    jest.mocked(api.generateImportedResume).mockResolvedValue({});
+    const { onStateChange } = renderCanvas();
+
+    fireEvent.change(screen.getByPlaceholderText(/Paste your LinkedIn/), { target: { value: 'Experienced backend engineer at Acme...' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this text' }));
+
+    await waitFor(() => expect(jest.mocked(api.analyzeResumeUpload)).toHaveBeenCalledWith('u1', expect.any(File)));
+    const uploadedFile = jest.mocked(api.analyzeResumeUpload).mock.calls[0][1] as File;
+    expect(uploadedFile.name).toBe('pasted-notes.txt');
+    const text: string = await new Promise((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(uploadedFile); });
+    expect(text).toBe('Experienced backend engineer at Acme...');
+    await waitFor(() => expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({ resumeId: 21 })));
+  });
+
   test('the 5-question interview creates a resume directly, with the signed-in contact info', async () => {
     jest.mocked(api.createResume).mockResolvedValue({ id: 11 });
     const { onStateChange } = renderCanvas();

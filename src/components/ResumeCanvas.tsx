@@ -67,6 +67,7 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
   const [starting, setStarting] = useState<"upload" | "interview" | null>(null);
   const [startError, setStartError] = useState("");
   const [interview, setInterview] = useState({ role: "", level: "fresher" as "fresher" | "experienced", lastRole: "", skills: "", achievement: "" });
+  const [pastedText, setPastedText] = useState("");
 
   // ---- Editable fields ----
   const saveTimer = useRef<number | undefined>(undefined);
@@ -175,6 +176,15 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
     }
   }
 
+  async function startFromPastedText() {
+    const text = pastedText.trim();
+    if (!text) return;
+    // Same extraction pipeline as a file upload -- LinkedIn gives no API access to
+    // auto-fetch a profile, but its "About"/experience text pastes in just as well
+    // as a resume's, and the parser doesn't care which one it came from.
+    await startFromUpload(new File([text], "pasted-notes.txt", { type: "text/plain" }));
+  }
+
   async function startFromInterview() {
     setStarting("interview");
     setStartError("");
@@ -267,6 +277,17 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
             <input type="file" accept=".pdf,.doc,.docx,.txt" style={{ display: "none" }}
               onChange={(event) => { const file = event.target.files?.[0]; if (file) void startFromUpload(file); }} />
           </label>
+          <div className="resume-start-card">
+            <span>Paste your LinkedIn or notes</span>
+            <strong>LinkedIn profile text, or any rough notes</strong>
+            <div className="resume-interview-form">
+              <textarea rows={4} placeholder="Paste your LinkedIn 'About' and experience text, or just rough notes about your background…"
+                value={pastedText} onChange={(event) => setPastedText(event.target.value)} />
+              <button type="button" className="btn btn-primary" disabled={starting === "upload" || !pastedText.trim()} onClick={() => void startFromPastedText()}>
+                {starting === "upload" ? "Reading…" : "Use this text"}
+              </button>
+            </div>
+          </div>
           <div className="resume-start-card">
             <span>Start fresh</span>
             <strong>A 5-question quick interview</strong>
