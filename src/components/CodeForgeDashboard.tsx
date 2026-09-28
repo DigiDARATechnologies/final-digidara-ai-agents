@@ -31,7 +31,7 @@ export default function CodeForgeDashboard({ user, state, onClose }: CodeForgeDa
   return (
     <aside className="agent-dashboard">
       <div className="dashboard-head">
-        <div><span>CodeForge agent</span><h2>Practice dashboard</h2></div>
+        <div><span>CodeForge Agent</span><h2>Practice Dashboard</h2></div>
         <button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button>
       </div>
 

@@ -1,4 +1,5 @@
 import type { Agent } from "../types";
+import { getDisplayRating } from "../lib/ratings";
 
 interface AgentDetailsModalProps {
   agent: Agent | null;
@@ -42,14 +43,14 @@ export default function AgentDetailsModal({ agent, onClose, onStartChat }: Agent
             <p className="agent-detail-description">{agent.desc}</p>
 
             <div className="agent-detail-stats">
-              <div><strong>★ {agent.rating ?? 4.8}</strong><span>Agent rating</span></div>
+              <div><strong>★ {getDisplayRating(agent.id, agent.rating ?? 4.8).value.toFixed(1)}</strong><span>Agent Rating</span></div>
               <div><strong>#{Math.max(1, agent.id.length - 2)}</strong><span>in {category}</span></div>
               <div><strong>{conversations}</strong><span>Conversations</span></div>
             </div>
           </header>
 
           <section className="agent-detail-section">
-            <h3>Conversation starters</h3>
+            <h3>Conversation Starters</h3>
             <div className="starter-grid">
               {starters.map((starter) => <button key={starter} onClick={() => onStartChat(agent.id)}>{starter}</button>)}
             </div>
@@ -58,9 +59,9 @@ export default function AgentDetailsModal({ agent, onClose, onStartChat }: Agent
           <section className="agent-detail-section">
             <h3>Capabilities</h3>
             <div className="capability-list">
-              <div><span>✓</span><p><strong>Specialized guidance</strong><small>Understands your request and guides you through a focused workflow.</small></p></div>
-              <div><span>✓</span><p><strong>Personalized responses</strong><small>Adapts recommendations and output to the details you provide.</small></p></div>
-              {agent.kind && <div><span>✓</span><p><strong>Connected agent workflow</strong><small>Runs the dedicated {agent.name} experience from start to finish.</small></p></div>}
+              <div><span>✓</span><p><strong>Specialized Guidance</strong><small>Understands your request and guides you through a focused workflow.</small></p></div>
+              <div><span>✓</span><p><strong>Personalized Responses</strong><small>Adapts recommendations and output to the details you provide.</small></p></div>
+              {agent.kind && <div><span>✓</span><p><strong>Connected Agent Workflow</strong><small>Runs the dedicated {agent.name} experience from start to finish.</small></p></div>}
             </div>
           </section>
 
@@ -72,7 +73,7 @@ export default function AgentDetailsModal({ agent, onClose, onStartChat }: Agent
         </div>
 
         <footer className="agent-detail-footer">
-          <button onClick={() => onStartChat(agent.id)}><span>◯</span> Start chat</button>
+          <button onClick={() => onStartChat(agent.id)}><span>◯</span> Start Chat</button>
         </footer>
       </section>
     </div>

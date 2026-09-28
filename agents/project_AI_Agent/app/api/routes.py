@@ -3,7 +3,7 @@ import hashlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Request, Response, UploadFile
@@ -374,6 +374,17 @@ async def submission_upload(
             .first()
         )
         if in_flight is not None:
+            started = in_flight.submitted_at
+            if started is not None and started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if started is not None and datetime.now(timezone.utc) - started > timedelta(minutes=config.SUBMISSION_STALE_MINUTES):
+                # Grading never takes this long: the worker that owned it died. Close it out
+                # so the student can submit again instead of being told to wait for ever.
+                in_flight.status = SubmissionStatus.error
+                in_flight.feedback_text = "Grading was interrupted. Please submit again."
+                session.commit()
+                in_flight = None
+        if in_flight is not None:
             raise HTTPException(409, "A previous submission for this project is still being graded. Please wait for that to finish before submitting again.")
         deadline = assignment.deadline_at
         if deadline is not None:
@@ -417,7 +428,10 @@ async def submission_upload(
         "submission_guide": state["submission_guide"],
     }
     try:
-        result = _run_submission(sub_state)
+        # Grading takes a minute or more. Run it on a worker thread: run inline it froze the
+        # event loop, the process manager killed the worker ("could not be reached"), and the
+        # submission was left `processing`.
+        result = await run_in_threadpool(_run_submission, sub_state)
     except HTTPException:
         # _run_submission already converts any graph failure into an
         # HTTPException -- but the Submission row created above is still
@@ -490,8 +504,8 @@ async def submission_upload(
 
     # Content grade passed -- hold the score back and run the viva before
     # revealing it. See app/viva.py.
-    questions = generate_viva_questions(
-        state["chosen_topic"], state["course_medium"], result.get("zip_code_files") or {}
+    questions = await run_in_threadpool(
+        generate_viva_questions, state["chosen_topic"], state["course_medium"], result.get("zip_code_files") or {}
     )
     session = get_session()
     try:
@@ -979,6 +993,51 @@ async def structure_screenshot(submission_id: str, image: UploadFile = File(...)
     return StructureScreenshotResponse(**result)
 
 
+async def _attachment_context(attachment) -> str | None:
+    """Text describing an image or .docx a student attached to a question (None if
+    nothing was attached). Read here, folded into that one question, never stored."""
+    if attachment is None:
+        return None
+    attachment_bytes = await attachment.read()
+    if not attachment_bytes:
+        raise HTTPException(400, "The attachment is empty.")
+    if len(attachment_bytes) > config.MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Attachment must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
+    content_type = attachment.content_type or ""
+    filename = (attachment.filename or "").lower()
+    if content_type.startswith("image/"):
+        data_url = f"data:{content_type};base64,{base64.b64encode(attachment_bytes).decode('ascii')}"
+        description = await run_in_threadpool(
+            call_text,
+            system="Describe what is shown in this image in plain language, in under 200 words. "
+            "If it is a screenshot of code, an error, a terminal, a browser or an application, read out the "
+            "text you can actually see (error messages, file names, code) exactly. If it looks like a file "
+            "explorer, archive tool, or code editor file tree, list the folder/file names you can read in it.",
+            user="Describe the attached image now.",
+            image_data_url=data_url,
+        )
+        return f"[Image attached by the student]\n{description}"
+    if filename.endswith(".docx"):
+        tmp_dir = config.UPLOAD_DIR / "qa_attachments"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"{uuid.uuid4().hex}.docx"
+        tmp_path.write_bytes(attachment_bytes)
+        try:
+            parsed = ingest_docx(str(tmp_path))
+        except DocxIngestError as exc:
+            raise HTTPException(400, str(exc))
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        sections_text = json.dumps(parsed["sections"], ensure_ascii=False)
+        if len(sections_text) > 6000:
+            sections_text = sections_text[:6000] + "... [truncated]"
+        return f"[.docx document attached by the student]\n{sections_text}"
+    if filename.endswith(".pdf"):
+        raise HTTPException(415, "PDF attachments aren't supported yet — please attach a .docx report or an image screenshot instead.")
+    raise HTTPException(415, "Unsupported attachment type — please attach a .docx report or an image screenshot.")
+
+
 @router.post("/qa/ask", response_model=QAAskResponse)
 async def qa_ask(
     thread_id: str = Form(...),
@@ -996,48 +1055,10 @@ async def qa_ask(
     if not question.strip():
         raise HTTPException(400, "Question must not be empty.")
 
-    extra_context: str | None = None
-    if attachment is not None:
-        attachment_bytes = await attachment.read()
-        if not attachment_bytes:
-            raise HTTPException(400, "The attachment is empty.")
-        if len(attachment_bytes) > config.MAX_UPLOAD_BYTES:
-            raise HTTPException(413, f"Attachment must be under {config.MAX_UPLOAD_BYTES // (1024*1024)} MB.")
-
-        content_type = attachment.content_type or ""
-        filename = (attachment.filename or "").lower()
-        if content_type.startswith("image/"):
-            data_url = f"data:{content_type};base64,{base64.b64encode(attachment_bytes).decode('ascii')}"
-            description = call_text(
-                system="Describe what is shown in this image in plain language, in under 150 words. "
-                "If it looks like a file explorer, archive tool, or code editor file tree, list the "
-                "folder/file names you can actually read in it.",
-                user="Describe the attached image now.",
-                image_data_url=data_url,
-            )
-            extra_context = f"[Image attached by the student]\n{description}"
-        elif filename.endswith(".docx"):
-            tmp_dir = config.UPLOAD_DIR / "qa_attachments"
-            tmp_dir.mkdir(parents=True, exist_ok=True)
-            tmp_path = tmp_dir / f"{uuid.uuid4().hex}.docx"
-            tmp_path.write_bytes(attachment_bytes)
-            try:
-                parsed = ingest_docx(str(tmp_path))
-            except DocxIngestError as exc:
-                raise HTTPException(400, str(exc))
-            finally:
-                tmp_path.unlink(missing_ok=True)
-            sections_text = json.dumps(parsed["sections"], ensure_ascii=False)
-            if len(sections_text) > 6000:
-                sections_text = sections_text[:6000] + "... [truncated]"
-            extra_context = f"[.docx document attached by the student]\n{sections_text}"
-        elif filename.endswith(".pdf"):
-            raise HTTPException(415, "PDF attachments aren't supported yet — please attach a .docx report or an image screenshot instead.")
-        else:
-            raise HTTPException(415, "Unsupported attachment type — please attach a .docx report or an image screenshot.")
+    extra_context = await _attachment_context(attachment)
 
     try:
-        result = ask_project_question(thread_id, question, extra_context=extra_context)
+        result = await run_in_threadpool(ask_project_question, thread_id, question, extra_context=extra_context)
     except ProjectNotFound:
         raise HTTPException(404, "Unknown or expired thread_id.")
     except LLMError as exc:
@@ -1072,8 +1093,16 @@ async def invoke(request: Request) -> JSONResponse:
     if content_type.startswith("multipart/form-data"):
         form = await request.form()
         action = str(form.get("action", ""))
+        if action == "ask_project_question":
+            question = str(form.get("question", ""))
+            attachment = form.get("attachment")
+            if not question.strip():
+                raise HTTPException(400, "Question must not be empty.")
+            if not hasattr(attachment, "read"):
+                attachment = None
+            return JSONResponse(content=jsonable_encoder(await qa_ask(thread_id=str(form.get("thread_id", "")), question=question, attachment=attachment)))
         if action != "upload_submission":
-            raise HTTPException(400, "Multipart requests only support upload_submission.")
+            raise HTTPException(400, "Multipart requests only support upload_submission and ask_project_question.")
         thread_id = str(form.get("thread_id", ""))
         docx_file = form.get("docx_file")
         zip_file = form.get("zip_file")

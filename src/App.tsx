@@ -6,6 +6,7 @@ import { newChatId, nowStr, useChats } from "./hooks/useChats";
 import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
+  capstonePendingFiles,
   createInitialCapstoneState,
   initialCapstoneMessage,
   mergeCapstoneFiles,
@@ -28,14 +29,20 @@ import {
   type CommunicationFlowState,
 } from "./lib/communicationFlow";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
+import HelpPage from "./components/HelpPage";
+import RatingPrompt from "./components/RatingPrompt";
+import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
 import CodeForgePlayground from "./components/CodeForgePlayground";
-import ProfilePage from "./components/ProfilePage";
+import ProfileView from "./components/ProfileView";
+import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
+import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
 import Toast from "./components/Toast";
 import SaveIndicator from "./components/SaveIndicator";
 import AgentDashboard from "./components/AgentDashboard";
@@ -44,7 +51,7 @@ import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
-import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
+import ResumeCanvas from "./components/ResumeCanvas";
 import JobFetchDashboard from "./components/JobFetchDashboard";
 import AdminShell from "./components/AdminShell";
 import AgentDetailsModal from "./components/AgentDetailsModal";
@@ -53,7 +60,7 @@ import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
 import { checkCommunicationHealth, getDailyChallengeToday } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
+import { createInitialResumeCanvasState, type ResumeCanvasState } from "./lib/resumeCanvasState";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
@@ -89,15 +96,33 @@ function toUser(authUser: AuthUser): User {
 type Theme = "dark" | "light";
 
 export default function App() {
-  const [theme, setTheme] = useState<Theme>(() => (document.documentElement.dataset.theme === "light" ? "light" : "dark"));
+  const [themePref, setThemePref] = useState<ThemePref>(() => {
+    try {
+      const saved = localStorage.getItem("digidara_theme");
+      return saved === "light" || saved === "dark" || saved === "system" ? saved : "dark";
+    } catch { return "dark"; }
+  });
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  const theme: Theme = themePref === "system" ? (systemDark ? "dark" : "light") : themePref;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("digidara_theme", theme); } catch { /* storage unavailable: theme just won't persist */ }
-  }, [theme]);
+    try { localStorage.setItem("digidara_theme", themePref); } catch { /* storage unavailable: theme just won't persist */ }
+  }, [theme, themePref]);
+  const [appearance, setAppearance] = useState(loadAppearance);
+  useEffect(() => {
+    applyAppearance(appearance);
+    saveAppearance(appearance);
+  }, [appearance]);
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
-  const [activeTab, setActiveTab] = useState("Top Picks");
+  const [activeTab, setActiveTab] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [newChatPending, setNewChatPending] = useState(true);
@@ -106,7 +131,7 @@ export default function App() {
   const [codeforgeStates, setCodeforgeStates] = useState<Record<string, CodeForgeFlowState>>({});
   const [aptitudeStates, setAptitudeStates] = useState<Record<string, AptitudeFlowState>>({});
   const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>({});
-  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>({});
+  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeCanvasState>>({});
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>({});
   const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
   const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>({});
@@ -124,10 +149,19 @@ export default function App() {
   const [codeBusy, setCodeBusy] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const onChange = (e: MediaQueryListEvent) => { setIsMobile(e.matches); if (!e.matches) setMobileOpen(false); };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
+  const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  const [planName, setPlanName] = useState("Free");
+  const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -145,6 +179,24 @@ export default function App() {
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
   const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
+
+  // Notifications the student dismissed (remembered per account in this browser).
+  const dismissedKey = `digidara_dismissed_notifs:${user?.email ?? ""}`;
+  const [dismissedNotifs, setDismissedNotifs] = useState<string[]>([]);
+  useEffect(() => {
+    try { setDismissedNotifs(JSON.parse(localStorage.getItem(dismissedKey) || "[]")); } catch { setDismissedNotifs([]); }
+  }, [dismissedKey]);
+  function dismissNotification(key: string) {
+    setDismissedNotifs((prev) => {
+      const next = [...prev.filter((k) => k !== key), key].slice(-200);
+      try { localStorage.setItem(dismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: dismissal lasts until refresh */ }
+      return next;
+    });
+  }
+
+  // A refresh must land back in the chat the student was in, not on the home page.
+  const activeChatKey = `digidara_active_chat:${user?.email ?? ""}`;
+  const chatRestored = useRef(false);
 
   // Per-agent conversation progress lives in the database, not browser storage.
   const agentState = useAgentStatePersistence(user?.email, [
@@ -536,6 +588,44 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const load = () => {
+      fetchBillingSummary()
+        .then((summary) => { if (!cancelled) setPlanName(summary.plan_name || "Free"); })
+        .catch(() => { /* keep the last known plan label if billing is unreachable */ });
+    };
+    load();
+    window.addEventListener("digidara:billing-updated", load);
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("digidara:billing-updated", load);
+      window.removeEventListener("focus", load);
+    };
+  }, [user, settingsOpen]);
+
+  useEffect(() => {
+    setProfilePrefs(user ? loadProfilePrefs(user.id) : {});
+  }, [user?.id]);
+
+  const displayUser: User | null = user
+    ? {
+        ...user,
+        name: profilePrefs.displayName || user.name,
+        initial: ((profilePrefs.displayName || user.name).trim()[0] || user.initial || "?").toUpperCase(),
+        avatarUrl: profilePrefs.avatar,
+        mobile: profilePrefs.mobile || user.mobile,
+      }
+    : null;
+
+  function handleSaveProfile(next: ProfilePrefs) {
+    if (!user) return;
+    setProfilePrefs(next);
+    showToast(saveProfilePrefs(user.id, next) ? "Profile updated." : "Profile updated for this session, but it could not be saved on this device.");
+  }
+
   function switchView(next: View) {
     setView(next);
     if (next === "store") {
@@ -627,7 +717,7 @@ export default function App() {
    * agent's own dedicated multi-turn flow, without losing what was already
    * said — mirrors openAgentChat's per-kind setup but appends onto the
    * current chat instead of replacing it. */
-  async function handoffToAgent(chatId: string, agent: Agent, initialText?: string) {
+  async function handoffToAgent(chatId: string, agent: Agent, _initialText?: string) {
     if (!user) return;
     appendAgentMessages(chatId, [{ text: `Connecting you to the ${agent.name}…` }]);
     setChats((prev) => {
@@ -655,20 +745,9 @@ export default function App() {
       setCommunicationStates((prev) => ({ ...prev, [chatId]: initialState }));
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "resume-builder") {
-      const { state, messages } = await openResumeBuilderChat(user);
-      appendAgentMessages(chatId, messages);
-      const initialCommand = initialText?.trim().toLowerCase() === "create a resume"
-        ? "new"
-        : initialText?.trim().toLowerCase() === "upload an existing resume"
-          ? "upload"
-          : undefined;
-      if (initialCommand) {
-        const result = await handleResumeBuilderText(state, user, initialCommand);
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: result.state }));
-        appendAgentMessages(chatId, result.messages);
-      } else {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-      }
+      // No scripted Q&A here -- the canvas itself shows the upload/interview
+      // start screen and drives everything from there.
+      setResumeBuilderStates((prev) => ({ ...prev, [chatId]: createInitialResumeCanvasState() }));
     } else if (agent.kind === "certificate") {
       const { state, messages } = await openCertificateChat(user);
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
@@ -786,18 +865,7 @@ export default function App() {
       });
     } else if (agent.kind === "resume-builder") {
       setDashboardOpen(false);
-      setTyping(true);
-      openResumeBuilderChat(user).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chat.id]: state }));
-        setChats((prev) => {
-          const next = prev.map((c) => c.id === chat.id
-            ? { ...c, messages: messages.map((m) => ({ role: "agent" as const, text: m.text, options: m.options, time: nowStr() })), updatedAt: Date.now() }
-            : c);
-          saveChats(next);
-          return next;
-        });
-        setTyping(false);
-      });
+      setResumeBuilderStates((prev) => ({ ...prev, [chat.id]: createInitialResumeCanvasState() }));
     } else if (agent.kind === "certificate") {
       setDashboardOpen(false);
       setTyping(true);
@@ -879,6 +947,29 @@ export default function App() {
     routeGeneralMessage(chat.id, trimmed);
   }
 
+  // Remember which chat is open (or that none is: the home page / a new chat).
+  useEffect(() => {
+    // Before the remembered chat is restored, "no chat" is just the initial state: don't erase it.
+    if (!user || (!chatRestored.current && !currentChatId)) return;
+    try {
+      if (currentChatId) localStorage.setItem(activeChatKey, currentChatId);
+      else localStorage.removeItem(activeChatKey);
+    } catch { /* storage unavailable: a refresh will just open the home page */ }
+  }, [user, currentChatId, activeChatKey]);
+
+  // Once this account's chats have loaded after a page load, reopen the remembered one.
+  useEffect(() => {
+    if (!user || chatRestored.current || chats.length === 0) return;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(activeChatKey); } catch { saved = null; }
+    if (!saved) { chatRestored.current = true; return; }
+    if (chats.some((c) => c.id === saved)) {
+      chatRestored.current = true;
+      setCurrentChatId(saved);
+      setNewChatPending(false);
+    }
+  }, [user, chats, activeChatKey]);
+
   function openChatById(chatId: string) {
     const chat = chats.find((c) => c.id === chatId);
     if (!chat) return;
@@ -924,8 +1015,9 @@ export default function App() {
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
     const pendingResume = agent?.kind === "job-fetch" ? jobFetchPendingFiles[chatId] : null;
+    const pendingImage = agent?.kind === "capstone" ? capstoneStates[chatId]?.imageFile : undefined;
 
-    if (!text.trim() && !pendingResume) return;
+    if (!text.trim() && !pendingResume && !pendingImage) return;
 
     if (pendingResume) {
       setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
@@ -934,7 +1026,9 @@ export default function App() {
     const effectiveText = displayText ?? (
       pendingResume
         ? (text.trim() ? `📎 ${pendingResume.name}\n${text.trim()}` : `📎 ${pendingResume.name}`)
-        : text
+        : pendingImage
+          ? (text.trim() ? `📎 ${pendingImage.name}\n${text.trim()}` : `📎 ${pendingImage.name}`)
+          : text
     );
 
     const isEdit = editIndex != null && !!chat;
@@ -1034,26 +1128,6 @@ export default function App() {
         appendAgentMessages(chatId, messages);
         setTyping(false);
       });
-      return;
-    }
-
-    if (agent?.kind === "resume-builder") {
-      // Use the state captured immediately before this user message. Using
-      // the latest React state here allowed a rapid reply or edited message
-      // to be interpreted as the previous question's answer (for example a
-      // location becoming the target role), which then corrupted the draft.
-      const flowState = (resumeSnapshot as ResumeBuilderFlowState | undefined)
-        ?? resumeBuilderStates[chatId]
-        ?? createInitialResumeBuilderState();
-      handleResumeBuilderText(flowState, user, text)
-        .then(({ state, messages }) => {
-          setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-          appendAgentMessages(chatId, messages);
-        })
-        .catch((error) => {
-          appendAgentMessages(chatId, [{ text: `Resume Builder request failed: ${(error as Error).message}` }]);
-        })
-        .finally(() => setTyping(false));
       return;
     }
 
@@ -1159,7 +1233,7 @@ export default function App() {
       return;
     }
     if (value === "action:open_billing") {
-      setSettingsInitialTab("billing");
+      setSettingsTab("billing");
       setSettingsOpen(true);
       return;
     }
@@ -1239,17 +1313,6 @@ export default function App() {
       return;
     }
 
-    if (agent?.kind === "resume-builder") {
-      const file = Array.from(files)[0];
-      if (!file) return;
-      setTyping(true);
-      importResumeBuilderFile(resumeBuilderStates[chatId] ?? createInitialResumeBuilderState(), user, file).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-        appendAgentMessages(chatId, messages);
-        setTyping(false);
-      });
-      return;
-    }
 
     if (agent?.kind === "job-fetch") {
       const file = Array.from(files)[0];
@@ -1263,6 +1326,7 @@ export default function App() {
 
   function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") {
     if (action === "settings") {
+      setSettingsTab("general");
       setSettingsOpen(true);
       return;
     }
@@ -1281,10 +1345,11 @@ export default function App() {
     showToast("This section is coming soon.");
   }
 
-  function handleUserMenuAction(action: "profile" | "settings" | "logout") {
+  function handleUserMenuAction(action: "profile" | "settings" | "upgrade" | "logout") {
     if (action === "logout") handleLogout();
-    if (action === "settings") setSettingsOpen(true);
-    if (action === "profile") setProfileOpen(true);
+    if (action === "settings") { setSettingsTab("general"); setSettingsOpen(true); }
+    if (action === "upgrade") { setSettingsTab("billing"); setSettingsOpen(true); }
+    if (action === "profile") switchView("profile");
     setOpenMenu(null);
   }
 
@@ -1313,13 +1378,14 @@ export default function App() {
         </div>
       );
     }
-    return <LoginOverlay onAuthenticate={handleAuthenticate} />;
+    return <LoginOverlay theme={theme} onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")} onAuthenticate={handleAuthenticate} />;
   }
 
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const topbarTitle = view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "";
+  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
+  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My Agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1339,9 +1405,7 @@ export default function App() {
 
   const pendingFiles = isJobFetchChat && currentChat && jobFetchPendingFiles[currentChat.id]
     ? [jobFetchPendingFiles[currentChat.id]!]
-    : capstoneState
-      ? [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f)
-      : [];
+    : capstonePendingFiles(capstoneState);
 
   function handleRemovePendingFile(index: number) {
     if (!currentChatId) return;
@@ -1350,9 +1414,10 @@ export default function App() {
       return;
     }
     if (isCapstoneChat && capstoneState) {
-      const files = [capstoneState.docxFile, capstoneState.zipFile].filter((f): f is File => !!f);
-      const toRemove = files[index];
-      if (toRemove === capstoneState.docxFile) {
+      const toRemove = capstonePendingFiles(capstoneState)[index];
+      if (toRemove && toRemove === capstoneState.imageFile) {
+        setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], imageFile: undefined } }));
+      } else if (toRemove === capstoneState.docxFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], docxFile: undefined } }));
       } else if (toRemove === capstoneState.zipFile) {
         setCapstoneStates((prev) => ({ ...prev, [currentChatId]: { ...prev[currentChatId], zipFile: undefined } }));
@@ -1487,8 +1552,10 @@ export default function App() {
       <div className="app" id="app">
         <Sidebar
           theme={theme}
-          user={user}
-          collapsed={sidebarCollapsed}
+          planName={planName}
+          user={displayUser ?? user}
+          collapsed={sidebarCollapsed && !isMobile}
+          onCloseMobile={() => setMobileOpen(false)}
           mobileOpen={mobileOpen}
           homeActive={isHome}
           chats={chats}
@@ -1500,6 +1567,7 @@ export default function App() {
           onGoHome={startNewChatLanding}
           onOpenChat={openChatById}
           onNavAction={handleNavAction}
+          onOpenHelpPage={(page) => { setOpenMenu(null); switchView(page); }}
           onToggleChatMenu={(chatId, e) => {
             e.stopPropagation();
             setOpenChatMenuId((id) => (id === chatId ? null : chatId));
@@ -1517,14 +1585,20 @@ export default function App() {
         <main className="main">
           <Topbar
             title={topbarTitle}
-            user={user}
+            user={displayUser ?? user}
             notifOpen={openMenu === "notif"}
-            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isResumeBuilderChat || isJobFetchChat) && !!currentChat}
+            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isJobFetchChat) && !!currentChat}
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
             theme={theme}
-            onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
+            onDismissNotification={(notification) => dismissNotification(notification.key)}
+            notifications={buildPendingNotifications({
+              chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
+              resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
+            }).filter((notification) => !dismissedNotifs.includes(notification.key))}
+            onOpenNotification={(notification) => { setOpenMenu(null); openChatById(notification.chatId); }}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
@@ -1542,16 +1616,50 @@ export default function App() {
             />
           )}
 
+          {view === "profile" && (
+            <ProfileView
+              user={displayUser ?? user}
+              prefs={profilePrefs}
+              onSaveProfile={handleSaveProfile}
+              chats={chats}
+              planName={planName}
+              onBack={startNewChatLanding}
+              onUpgrade={() => { setSettingsTab("billing"); setSettingsOpen(true); }}
+            />
+          )}
+
+          {(view === "help-center" || view === "release-notes" || view === "contact" || view === "bug-report") && (
+            <HelpPage
+              page={view}
+              user={user}
+              theme={theme}
+              onBack={startNewChatLanding}
+              onNavigate={(page) => switchView(page)}
+              onToast={showToast}
+            />
+          )}
+
           {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
 
           {view === "chat" && newChatPending && (
             <NewChatLanding
               onSend={startNewChatWithMessage}
+              onOpenAgent={openAgentChat}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
           )}
 
-          {view === "chat" && !newChatPending && currentChat && (
+          {view === "chat" && !newChatPending && currentChat && isResumeBuilderChat && (
+            <div className="chat-workspace">
+              <ResumeCanvas
+                user={user}
+                state={resumeBuilderState ?? createInitialResumeCanvasState()}
+                onStateChange={(next) => setResumeBuilderStates((prev) => ({ ...prev, [currentChat.id]: next }))}
+              />
+            </div>
+          )}
+
+          {view === "chat" && !newChatPending && currentChat && !isResumeBuilderChat && (
             <div className="chat-workspace">
               <ChatView
                 chat={currentChat}
@@ -1559,14 +1667,14 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
                 onEditMessage={isMockInterviewChat ? undefined : editMessage}
-                attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
-                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
+                attachEnabled={isCapstoneChat || isJobFetchChat}
+                attachAccept={isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onRemovePendingFile={handleRemovePendingFile}
@@ -1586,7 +1694,7 @@ export default function App() {
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
-                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
@@ -1622,9 +1730,6 @@ export default function App() {
               {isCommunicationChat && dashboardOpen && communicationState && (
                 <CommunicationDashboard user={user} state={communicationState} onClose={() => setDashboardOpen(false)} />
               )}
-              {isResumeBuilderChat && dashboardOpen && resumeBuilderState && (
-                <ResumeBuilderDashboard user={user} state={resumeBuilderState} onClose={() => setDashboardOpen(false)} />
-              )}
               {isJobFetchChat && dashboardOpen && jobFetchState && (
                 <JobFetchDashboard user={user} state={jobFetchState} onClose={() => setDashboardOpen(false)} />
               )}
@@ -1633,10 +1738,22 @@ export default function App() {
         </main>
       </div>
 
+      <RatingPrompt
+        agent={view === "chat" && !newChatPending && currentChat ? currentAgent : null}
+        chatId={view === "chat" && !newChatPending ? currentChatId : null}
+        userId={user.id}
+        onToast={showToast}
+      />
+
       <SettingsModal
+        themePref={themePref}
+        onThemeChange={setThemePref}
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
+        onLogout={handleLogout}
+        initialTab={settingsTab}
         open={settingsOpen}
-        initialTab={settingsInitialTab}
-        user={user}
+        user={displayUser ?? user}
         chats={chats}
         onOpenChat={(chatId) => {
           setSettingsOpen(false);
@@ -1651,7 +1768,6 @@ export default function App() {
         onDeleteAccount={handleDeleteAccount}
       />
 
-      <ProfilePage open={profileOpen} user={user} onClose={() => setProfileOpen(false)} />
 
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
 

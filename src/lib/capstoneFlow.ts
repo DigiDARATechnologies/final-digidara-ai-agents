@@ -143,6 +143,8 @@ export interface CapstoneFlowState {
   codeQualityScore?: CodeQualityScore | null;
   docxFile?: File;
   zipFile?: File;
+  /** An image the student attached to ask about; read by the agent with their next message. */
+  imageFile?: File;
   /** Post-grading viva (oral defense) — see app/viva.py on the backend. */
   vivaSubmissionId?: string | null;
   vivaQuestionId?: number | null;
@@ -304,12 +306,39 @@ function reopenIfFailed(state: CapstoneFlowState): CapstoneFlowState {
   return state;
 }
 
+const IMAGE_NAME = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const isImage = (file: File) => file.type.startsWith("image/") || IMAGE_NAME.test(file.name);
+
+/** The files waiting to be sent, in the order the chips are shown. */
+export function capstonePendingFiles(state: CapstoneFlowState | undefined): File[] {
+  return state ? [state.docxFile, state.zipFile, state.imageFile].filter((file): file is File => !!file) : [];
+}
+
+const DEFAULT_IMAGE_QUESTION = "What does this image show, and how does it relate to my project? Explain it to me.";
+
 export async function handleCapstoneText(
   state: CapstoneFlowState,
   text: string,
 ): Promise<CapstoneFlowResult> {
   const trimmed = text.trim();
   state = reopenIfFailed(state);
+
+  // An attached image is a question about that image, at any step -- it is never a viva
+  // answer or a topic request. The agent reads the image and answers from it.
+  if (state.imageFile && state.threadId) {
+    const cleared = { ...state, imageFile: undefined };
+    try {
+      const qa = await askProjectQuestion(state.threadId, trimmed || DEFAULT_IMAGE_QUESTION, state.imageFile);
+      const messages: CapstoneFlowMessage[] = [{ text: qa.answer }];
+      if (state.step === "awaiting_viva_answer" && !state.vivaRetryPending && state.vivaQuestionText) {
+        messages.push({ text: `Back to the viva — Question ${state.vivaProgress}:\n\n${state.vivaQuestionText}` });
+      }
+      return { state: cleared, messages };
+    } catch (error) {
+      // Keep the image attached so the student can just send again.
+      return { state, messages: [{ text: `I could not read that image: ${(error as Error).message}. It is still attached — send your question again, or remove it.` }] };
+    }
+  }
 
   switch (state.step) {
     case "awaiting_topic_request": {
@@ -680,6 +709,19 @@ export async function regenerateTopicsForDifficulty(
 
 export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { state: CapstoneFlowState; messages: CapstoneFlowMessage[] } {
   state = reopenIfFailed(state);
+  const images = files.filter(isImage);
+  if (images.length) {
+    if (!state.threadId) {
+      return { state, messages: [{ text: "Choose a project first — then you can attach a screenshot or image and ask me about it." }] };
+    }
+    const withImage = { ...state, imageFile: images[images.length - 1] };
+    const rest = files.filter((file) => !isImage(file));
+    if (!rest.length) {
+      return { state: withImage, messages: [{ text: "Image attached. Type your question about it and press send — I'll read the image and answer. (Send with no text and I'll explain what it shows.)" }] };
+    }
+    const merged = mergeCapstoneFiles(withImage, rest);
+    return { state: merged.state, messages: [{ text: "Image attached — ask your question about it whenever you like." }, ...merged.messages] };
+  }
   if (state.step !== "awaiting_submission") return { state, messages: [{ text: "File upload becomes available after your project timer starts." }] };
   let docxFile = state.docxFile;
   let zipFile = state.zipFile;

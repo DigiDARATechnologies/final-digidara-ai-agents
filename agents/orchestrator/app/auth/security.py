@@ -40,7 +40,17 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException:
+        # A malformed/corrupted stored hash (bad import, manual edit, truncated column) must
+        # never crash the request with a 500 -- it simply can never verify successfully.
+        # Caught broadly, not just ValueError: bcrypt's C build raises ValueError("Invalid
+        # salt"), but its Rust build instead panics with a pyo3_runtime.PanicException,
+        # which subclasses BaseException, not Exception.
+        return False
 
 
 def create_access_token(user_id: str) -> str:

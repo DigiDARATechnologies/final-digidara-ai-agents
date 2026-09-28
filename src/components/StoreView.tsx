@@ -1,4 +1,4 @@
-import { CATEGORIES, AGENTS } from "../data/agents";
+import { LIVE_AGENTS } from "../data/agents";
 import AgentCard from "./AgentCard";
 
 interface StoreViewProps {
@@ -10,17 +10,18 @@ interface StoreViewProps {
 }
 
 export default function StoreView({ activeTab, searchTerm, onTabChange, onSearchChange, onOpenAgent }: StoreViewProps) {
+  // Only agents that are live today, and only the categories they actually belong to.
+  const categories = ["All", ...Array.from(new Set(LIVE_AGENTS.flatMap((a) => a.category ?? [])))];
   const term = searchTerm.trim().toLowerCase();
   const searching = term.length > 0;
 
-  const tabOk = (agent: (typeof AGENTS)[number]) =>
-    activeTab === "Top Picks" ? agent.category!.includes("Top Picks") : agent.category!.includes(activeTab);
-  const inSearch = (agent: (typeof AGENTS)[number]) =>
+  const tabOk = (agent: (typeof LIVE_AGENTS)[number]) =>
+    activeTab === "All" || (agent.category ?? []).includes(activeTab);
+  const inSearch = (agent: (typeof LIVE_AGENTS)[number]) =>
     !term || agent.name.toLowerCase().includes(term) || agent.desc!.toLowerCase().includes(term);
 
-  const list = AGENTS.filter((a) => tabOk(a) && inSearch(a));
-  const showFeatured = !searching && activeTab === "Top Picks";
-  const allTitle = searching ? `Results for "${searchTerm}"` : activeTab === "Top Picks" ? "All agents" : `${activeTab} agents`;
+  const list = LIVE_AGENTS.filter((a) => tabOk(a) && inSearch(a));
+  const allTitle = searching ? `Results for "${searchTerm}"` : activeTab === "All" ? "All Agents" : `${activeTab} Agents`;
 
   return (
     <section className="view view-store active" id="view-store">
@@ -44,7 +45,7 @@ export default function StoreView({ activeTab, searchTerm, onTabChange, onSearch
         </div>
 
         <div className="tabs">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               className={`tab-btn${cat === activeTab ? " active" : ""}`}
@@ -57,19 +58,6 @@ export default function StoreView({ activeTab, searchTerm, onTabChange, onSearch
       </div>
 
       <div className="store-body">
-        {showFeatured && (
-          <section className="section" id="featuredSection">
-            <h2>
-              Featured <span className="muted">Curated top picks from this week</span>
-            </h2>
-            <div className="grid grid-featured">
-              {AGENTS.filter((a) => a.featured).map((a) => (
-                <AgentCard key={a.id} agent={a} onClick={onOpenAgent} />
-              ))}
-            </div>
-          </section>
-        )}
-
         <section className="section">
           <h2>{allTitle}</h2>
           <div className="grid grid-agents">

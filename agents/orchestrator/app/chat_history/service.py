@@ -1,8 +1,23 @@
 import time
 from datetime import datetime
 
+from sqlalchemy.exc import OperationalError
+
 from app.db import get_session
 from app.models import ChatHistoryState, Conversation, ConversationMessage
+
+# MySQL error codes for "Deadlock found when trying to get lock" and "Lock wait timeout
+# exceeded". Two overlapping /chats/sync requests for the same user (a debounced save
+# firing twice, two open tabs) each delete-then-insert a conversation's messages; if they
+# touch the same rows in a different order, InnoDB picks one to kill. The transaction is
+# simply retried from scratch -- neither side did anything wrong.
+_DEADLOCK_ERRNOS = {1205, 1213}
+_MAX_ATTEMPTS = 3
+
+
+def _is_retryable_deadlock(exc: OperationalError) -> bool:
+    orig_args = getattr(getattr(exc, "orig", None), "args", None)
+    return bool(orig_args) and orig_args[0] in _DEADLOCK_ERRNOS
 
 
 def _messages_by_conversation(session, user_id: str) -> dict[str, list[ConversationMessage]]:
@@ -56,8 +71,9 @@ def get_history(user_id: str) -> tuple[list[dict], bool]:
         session.close()
 
 
-def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str]) -> list[dict]:
+def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _attempt: int = 1) -> list[dict]:
     session = get_session()
+    should_retry = False
     try:
         state = session.get(ChatHistoryState, user_id)
         if state is None:
@@ -132,8 +148,16 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str]) -> lis
             ).delete(synchronize_session=False)
 
         session.commit()
+    except OperationalError as exc:
+        session.rollback()
+        if _attempt < _MAX_ATTEMPTS and _is_retryable_deadlock(exc):
+            should_retry = True
+        else:
+            raise
     finally:
         session.close()
+    if should_retry:
+        return sync_history(user_id, chats, deleted_ids, _attempt=_attempt + 1)
     return get_history(user_id)[0]
 
 

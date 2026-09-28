@@ -6,7 +6,7 @@ module.exports = {
     name: "digidara-capstone-agent",
     cwd: "/www/wwwroot/digidaraaiagents/agents/project_AI_Agent",
     script: ".venv/bin/gunicorn",
-    args: "-k uvicorn.workers.UvicornWorker -w 4 -b 127.0.0.1:8000 app.api.main:app",
+    args: "-k uvicorn.workers.UvicornWorker -w 4 --timeout 300 -b 127.0.0.1:8000 app.api.main:app",
     interpreter: "none",
     env: { PORT: 8000, ENV: "production" },
   }],

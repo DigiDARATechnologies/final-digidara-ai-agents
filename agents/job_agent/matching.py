@@ -153,11 +153,69 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
             category_match = "related"
     category_score = {"exact": 15, "related": 8, "none": 0}[category_match]
 
+    has_candidate_intent = bool(student_skills or title_preferences)
+    has_relevance = bool(declared_overlap or verified_overlap or title_score or category_match != "none")
+
+    # If the candidate has declared technical skills or preferred titles,
+    # but the job matches NONE of them (0 skills, 0 title match, unrelated category),
+    # it is not relevant to their career goals and should not be scored as a match.
+    if has_candidate_intent and not has_relevance:
+        job["matching_skills"] = []
+        job["missing_skills"] = raw_job_skills
+        job["match_score"] = 0
+        job["match_percentage"] = 0
+        job["preparation_tips"] = "This role does not align with your current technical skills or role preferences."
+        return 0, ["Unrelated to your technical skills or role preferences"]
+
     base_score = (
         verified_score + skill_score + title_score + location_score
         + mode_score + freshness_score + category_score
     )
     score = max(5, min(100, base_score + seniority_modifier))
+
+    cand_skills_list = parse_list(profile.get("skills"))
+    cand_tokens_set = {c.lower().strip() for c in cand_skills_list if c.strip()}
+    matching_skills: List[str] = []
+    missing_skills: List[str] = []
+
+    for js in raw_job_skills:
+        js_clean = js.strip()
+        if not js_clean:
+            continue
+        js_lower = js_clean.lower()
+        if js_lower in cand_tokens_set or any(c in js_lower or js_lower in c for c in cand_tokens_set):
+            if js_clean not in matching_skills:
+                matching_skills.append(js_clean)
+        else:
+            if js_clean not in missing_skills:
+                missing_skills.append(js_clean)
+
+    if not matching_skills and cand_tokens_set:
+        for cs in cand_skills_list:
+            cs_clean = cs.strip()
+            if any(cs_clean.lower() in js.lower() for js in raw_job_skills):
+                if cs_clean not in matching_skills:
+                    matching_skills.append(cs_clean)
+
+    if missing_skills:
+        missing_preview = ", ".join(missing_skills[:3])
+        if score >= 75:
+            prep_tip = f"Strengthen {missing_preview} to boost your match from {score}% to 95% before applying."
+        elif score >= 50:
+            prep_tip = f"Review practical concepts in {missing_preview} and highlight relevant projects."
+        else:
+            prep_tip = f"Learn fundamentals of {missing_preview} to align closer with this role."
+    elif matching_skills:
+        match_preview = ", ".join(matching_skills[:3])
+        prep_tip = f"Strong match! Feature your practical work with {match_preview} prominently on your resume."
+    else:
+        prep_tip = "Review the role responsibilities and align your technical project portfolio."
+
+    job["matching_skills"] = matching_skills
+    job["missing_skills"] = missing_skills
+    job["match_score"] = score
+    job["match_percentage"] = score
+    job["preparation_tips"] = prep_tip
 
     reasons = []
     if seniority == "entry" and experience <= 1.0:
@@ -173,7 +231,9 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
         reasons.append(f"Related to your preferred role category: {label}")
     if verified_overlap:
         reasons.append("Skills from your preferred roles: " + ", ".join(sorted(verified_overlap)[:4]))
-    if declared_overlap:
+    if matching_skills:
+        reasons.append("Profile skills: " + ", ".join(matching_skills[:4]))
+    elif declared_overlap:
         reasons.append("Profile skills: " + ", ".join(sorted(declared_overlap)[:4]))
     if title_score:
         reasons.append("Matches your preferred role")
@@ -197,7 +257,8 @@ def blend_job_matches(
     Blends jobs ensuring:
     - If is_fresher_candidate is True: 100% genuine entry/fresher jobs.
       Zero senior or 4+ year jobs are ever leaked to freshers!
-    - Otherwise: ~70% Entry / 30% Growth / Experienced allocation.
+    - Otherwise: allocates career-aligned growth / mid-level roles matching candidate experience.
+    - Highest matching score is ALWAYS presented first.
     """
     if not scored_jobs:
         return []
@@ -205,7 +266,7 @@ def blend_job_matches(
     entry_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "entry" and j.get("match_score", 0) > 10]
     growth_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "growth" and j.get("match_score", 0) > 10]
     senior_jobs = [j for j in scored_jobs if j.get("seniority_tier") == "senior" and j.get("match_score", 0) > 10]
-    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs]
+    other_jobs = [j for j in scored_jobs if j not in entry_jobs and j not in growth_jobs and j not in senior_jobs and j.get("match_score", 0) > 10]
 
     if is_fresher_candidate:
         # Strictly select entry/fresher jobs first
@@ -217,20 +278,19 @@ def blend_job_matches(
                     selected.append(cand)
                     if len(selected) >= limit:
                         break
-        selected.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+        selected.sort(key=lambda x: x.get("match_score", 0), reverse=True)
         return selected[:limit]
 
-    # Standard blending for experienced candidates
-    entry_target = math.ceil(limit * entry_ratio)  # e.g. 4 out of 5
-    growth_target = limit - entry_target          # e.g. 1 out of 5
+    # For experienced candidates: prioritize growth / career-matching roles first
+    growth_target = math.ceil(limit * (1.0 - min(entry_ratio, 0.3)))  # e.g. at least 70% growth/experienced
+    entry_target = limit - growth_target
 
-    selected_entry = entry_jobs[:entry_target]
     selected_growth = growth_jobs[:growth_target]
+    selected_entry = entry_jobs[:entry_target]
 
-    blended = list(selected_entry) + list(selected_growth)
+    blended = list(selected_growth) + list(selected_entry)
     if len(blended) < limit:
-        remaining_slots = limit - len(blended)
-        for pool in (growth_jobs[len(selected_growth):], entry_jobs[len(selected_entry):], other_jobs):
+        for pool in (growth_jobs[len(selected_growth):], entry_jobs[len(selected_entry):], senior_jobs, other_jobs):
             for candidate in pool:
                 if candidate not in blended:
                     blended.append(candidate)
@@ -239,6 +299,6 @@ def blend_job_matches(
             if len(blended) >= limit:
                 break
 
-    # Final sort preserving entry-first priority
-    blended.sort(key=lambda x: (x.get("seniority_tier") == "entry", x.get("match_score", 0)), reverse=True)
+    # Final sort preserving match quality (highest match score first!)
+    blended.sort(key=lambda x: x.get("match_score", 0), reverse=True)
     return blended[:limit]

@@ -25,6 +25,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 SUBMISSION_WINDOW_DAYS = _int("SUBMISSION_WINDOW_DAYS", 7)
 PASS_THRESHOLD = _int("PASS_THRESHOLD", 70)
+# A submission still `processing` after this long belongs to a dead worker; it no longer blocks a new upload.
+SUBMISSION_STALE_MINUTES = _int("SUBMISSION_STALE_MINUTES", 10)
 
 MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 50)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024

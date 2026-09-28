@@ -31,6 +31,7 @@ export interface User {
   mobile: string;
   initial: string;
   isAdmin?: boolean;
+  avatarUrl?: string;
 }
 
 export interface ChatOption {
@@ -70,4 +71,4 @@ export interface Chat {
   pinned?: boolean;
 }
 
-export type View = "store" | "chat" | "admin";
+export type View = "store" | "chat" | "admin" | "profile" | "help-center" | "release-notes" | "contact" | "bug-report";

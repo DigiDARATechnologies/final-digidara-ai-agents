@@ -13,6 +13,7 @@ import {
   adminRunSource,
   adminUpdateAutomation,
   adminUpdateJobStatus,
+  adminBulkUpdateJobStatus,
   adminUpdatePlan,
   type ApifyActor,
   type IngestionRun,
@@ -63,7 +64,7 @@ export default function JobsAdminPanel() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const [jobs, setJobs] = useState<Array<Record<string, any>>>([]);
-  const [jobStatusFilter, setJobStatusFilter] = useState("pending");
+  const [jobStatusFilter, setJobStatusFilter] = useState("active");
   const [jobCategoryFilter, setJobCategoryFilter] = useState("");
   const [jobSourceFilter, setJobSourceFilter] = useState("");
   const [jobLocationFilter, setJobLocationFilter] = useState("");
@@ -157,7 +158,8 @@ export default function JobsAdminPanel() {
   async function moderate(jobId: number, status: "active" | "rejected") {
     try {
       await adminUpdateJobStatus(jobId, status);
-      setJobs((prev) => prev.filter((job) => job.id !== jobId));
+      setJobs((prev) => prev.map((job) => job.id === jobId ? { ...job, status } : job));
+      setNotice(`Job #${jobId} status updated to ${status}.`);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -233,12 +235,12 @@ export default function JobsAdminPanel() {
   }
 
   function clearJobFilters() {
-    setJobStatusFilter("pending");
+    setJobStatusFilter("active");
     setJobCategoryFilter("");
     setJobSourceFilter("");
     setJobLocationFilter("");
     setLocationInput("");
-    loadJobs("pending", "", "");
+    loadJobs("active", "", "");
   }
 
   const activeSourceIds = new Set(
@@ -257,7 +259,7 @@ export default function JobsAdminPanel() {
   return (
     <div className="admin-panel">
       <div className="admin-panel-tabs">
-        <button className={`admin-tab${tab === "jobs" ? " active" : ""}`} onClick={() => setTab("jobs")}>Job moderation</button>
+        <button className={`admin-tab${tab === "jobs" ? " active" : ""}`} onClick={() => setTab("jobs")}>Jobs &amp; Postings</button>
         <button className={`admin-tab${tab === "sources" ? " active" : ""}`} onClick={() => setTab("sources")}>
           Sources &amp; Automation
           {automation && (
@@ -287,17 +289,17 @@ export default function JobsAdminPanel() {
             <div className="admin-filter-field">
               <label>Status</label>
               <select value={jobStatusFilter} onChange={(e) => { setJobStatusFilter(e.target.value); loadJobs(e.target.value, jobCategoryFilter, jobLocationFilter); }}>
+                <option value="active">Active (Ready for Agent)</option>
+                <option value="">All statuses</option>
                 <option value="pending">Pending</option>
-                <option value="active">Active</option>
-                <option value="rejected">Rejected</option>
+                <option value="rejected">Rejected / Inactive</option>
                 <option value="expired">Expired</option>
-                <option value="">All</option>
               </select>
             </div>
             <div className="admin-filter-field">
               <label>Source</label>
               <select value={jobSourceFilter} onChange={(e) => setJobSourceFilter(e.target.value)}>
-                <option value="">All sources</option>
+                <option value="">All Sources</option>
                 <option value="adzuna">Adzuna</option>
                 <option value="jsearch">RapidAPI (LinkedIn/Indeed)</option>
                 <option value="manual">Manual</option>
@@ -306,7 +308,7 @@ export default function JobsAdminPanel() {
             <div className="admin-filter-field">
               <label>Category</label>
               <select value={jobCategoryFilter} onChange={(e) => { setJobCategoryFilter(e.target.value); loadJobs(jobStatusFilter, e.target.value, jobLocationFilter); }}>
-                <option value="">All categories</option>
+                <option value="">All Categories</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
@@ -325,7 +327,49 @@ export default function JobsAdminPanel() {
                 <button className="btn btn-outline btn-sm" onClick={applyLocationFilter}>Apply</button>
               </div>
             </div>
-            <button className="admin-filter-clear" onClick={clearJobFilters}>Clear filters</button>
+            <button className="admin-filter-clear" onClick={clearJobFilters}>Clear Filters</button>
+          </div>
+
+          <div
+            style={{
+              padding: "10px 16px",
+              marginTop: "14px",
+              marginBottom: "14px",
+              borderRadius: "8px",
+              background: "rgba(16, 185, 129, 0.08)",
+              border: "1px solid rgba(16, 185, 129, 0.25)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+            }}
+          >
+            <div style={{ fontSize: "12.5px", color: "var(--canvas-text)", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "15px" }}>⚡</span>
+              <span>
+                <strong>Auto-Active Pipeline:</strong> All fetched jobs automatically update to <strong>Active</strong> and are instantly available for candidate matching. Manual admin approval is not required.
+              </span>
+            </div>
+            {filteredJobs.some((j) => j.status === "pending") && (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={async () => {
+                  try {
+                    setLoading(true);
+                    const res = await adminBulkUpdateJobStatus("all_pending", "active");
+                    setNotice(`${res.updated || "All"} pending job(s) successfully activated!`);
+                    loadJobs(jobStatusFilter, jobCategoryFilter, jobLocationFilter);
+                  } catch (err) {
+                    setError((err as Error).message);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              >
+                ⚡ Activate All Pending Jobs
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -362,12 +406,20 @@ export default function JobsAdminPanel() {
                         <td>{job.category || "—"}</td>
                         <td><StatusBadge status={job.status} /></td>
                         <td>
-                          {job.status === "pending" && (
-                            <div className="admin-row-actions">
-                              <button className="btn btn-primary btn-sm" onClick={() => moderate(job.id, "active")}>Approve</button>
-                              <button className="btn btn-danger btn-sm" onClick={() => moderate(job.id, "rejected")}>Reject</button>
-                            </div>
-                          )}
+                          <div className="admin-row-actions">
+                            {job.status === "active" && (
+                              <button className="btn btn-danger btn-sm" onClick={() => moderate(job.id, "rejected")}>Deactivate</button>
+                            )}
+                            {job.status === "pending" && (
+                              <>
+                                <button className="btn btn-primary btn-sm" onClick={() => moderate(job.id, "active")}>Activate</button>
+                                <button className="btn btn-danger btn-sm" onClick={() => moderate(job.id, "rejected")}>Reject</button>
+                              </>
+                            )}
+                            {(job.status === "rejected" || job.status === "expired") && (
+                              <button className="btn btn-outline btn-sm" onClick={() => moderate(job.id, "active")}>Reactivate</button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -418,7 +470,7 @@ export default function JobsAdminPanel() {
               </div>
               <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
                 When enabled, the server automatically fetches fresh entry-level &amp; fresher jobs every day at{" "}
-                <strong>9:00 AM IST</strong> across Adzuna, JSearch (RapidAPI), and Greenhouse, and prunes listings older than 30 days.
+                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), and prunes listings older than 30 days.
               </p>
               <div
                 style={{
@@ -497,10 +549,10 @@ export default function JobsAdminPanel() {
             </button>
           </div>
 
-          <h4>Configured sources</h4>
+          <h4>Configured Sources</h4>
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last run</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last Run</th><th>Actions</th></tr></thead>
               <tbody>
                 {sources.filter((s) => s.source_type !== "greenhouse").map((source) => (
                   <tr key={source.id}>
@@ -524,7 +576,7 @@ export default function JobsAdminPanel() {
           <h4>Job boards (Apify — manual only, never scheduled)</h4>
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>Platform</th><th>Status</th><th>Jobs fetched</th><th>Last run</th><th>Last error</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Platform</th><th>Status</th><th>Jobs Fetched</th><th>Last Run</th><th>Last Error</th><th>Actions</th></tr></thead>
               <tbody>
                 {apifyActors.map((actor) => (
                   <tr key={actor.platform}>
@@ -554,7 +606,7 @@ export default function JobsAdminPanel() {
             </table>
           </div>
 
-          <h4>Recent ingestion runs</h4>
+          <h4>Recent Ingestion Runs</h4>
           <div className="admin-table-card">
             <table className="admin-table">
               <thead><tr><th>Source</th><th>Status</th><th>Queued</th><th>Fetched</th><th>Inserted</th><th>Updated</th><th>Error</th></tr></thead>
@@ -581,7 +633,7 @@ export default function JobsAdminPanel() {
         <div className="admin-section">
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>User</th><th>Plan</th><th>Profile complete</th><th>Joined</th><th>Actions</th></tr></thead>
+              <thead><tr><th>User</th><th>Plan</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.user_id}>

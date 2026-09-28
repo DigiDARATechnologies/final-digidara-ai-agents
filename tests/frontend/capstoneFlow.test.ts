@@ -491,3 +491,67 @@ describe('example report and zip downloads', () => {
     expect((await handleCapstoneText(timerConfirmState, 'confirm')).messages[0].text).not.toContain('Output screenshots');
   });
 });
+
+describe('asking about an attached image', () => {
+  const png = () => new File(['x'], 'error.png', { type: 'image/png' });
+
+  test('an image can be attached at any step once a project exists, and needs no docx or zip', () => {
+    for (const base of [topicChoiceState, timerConfirmState, submissionState, vivaState]) {
+      const result = mergeCapstoneFiles(base, [png()]);
+      expect(result.state.imageFile?.name).toBe('error.png');
+      expect(result.state.docxFile).toBeUndefined();
+      expect(result.messages[0].text).toContain('Image attached');
+    }
+  });
+
+  test('before any project exists there is nothing to ask about, and the student is told', () => {
+    const fresh: CapstoneFlowState = { step: 'awaiting_topic_request', name: 'L', email: 'l@x.y', phone: '', difficulty: 'easy' };
+    const result = mergeCapstoneFiles(fresh, [png()]);
+    expect(result.state.imageFile).toBeUndefined();
+    expect(result.messages[0].text).toContain('Choose a project first');
+  });
+
+  test('an image sent together with the report and the zip keeps all three', () => {
+    const docx = new File(['d'], 'r.docx');
+    const zip = new File(['z'], 's.zip');
+    const result = mergeCapstoneFiles(submissionState, [docx, zip, png()]);
+    expect(result.state.docxFile).toBe(docx);
+    expect(result.state.zipFile).toBe(zip);
+    expect(result.state.imageFile?.name).toBe('error.png');
+    expect(result.messages.map((m) => m.text).join(' ')).toContain('validating and grading');
+  });
+
+  test('the next message is a question about the image: the agent reads it and the image is then cleared', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'That error means flask is not installed.', tools_used: [] });
+    const image = png();
+    const result = await handleCapstoneText({ ...submissionState, imageFile: image }, 'what does this error mean?');
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'what does this error mean?', image);
+    expect(result.messages[0].text).toContain('flask is not installed');
+    expect(result.state.imageFile).toBeUndefined();
+    expect(result.state.step).toBe('awaiting_submission');
+  });
+
+  test('sending with no text asks the agent to explain the image', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'It shows a terminal.', tools_used: [] });
+    const image = png();
+    await handleCapstoneText({ ...submissionState, imageFile: image }, '');
+    expect(jest.mocked(api.askProjectQuestion).mock.calls.at(-1)?.[1]).toMatch(/What does this image show/);
+  });
+
+  test('during the viva an image is a question, never the answer, and the pending question is repeated', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'That is the login form.', tools_used: [] });
+    jest.mocked(api.submitVivaAnswer).mockClear();
+    const result = await handleCapstoneText({ ...vivaState, imageFile: png() }, 'what is this screen?');
+    expect(api.submitVivaAnswer).not.toHaveBeenCalled();
+    expect(result.messages[1].text).toContain('Why did you choose localStorage?');
+    expect(result.state.vivaQuestionId).toBe(1);
+  });
+
+  test('if the image cannot be read it stays attached so the student can retry', async () => {
+    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
+    const image = png();
+    const result = await handleCapstoneText({ ...submissionState, imageFile: image }, 'help');
+    expect(result.messages[0].text).toContain('could not read that image: offline');
+    expect(result.state.imageFile).toBe(image);
+  });
+});

@@ -111,6 +111,33 @@ export function respondWriting(authToken: string, sessionId: number, answer: str
 export function endWriting(authToken: string, sessionId: number) {
   return invoke<Record<string, any>>("writing_end", { authToken, session_id: sessionId });
 }
+export async function downloadWritingReportPdf(authToken: string, sessionId: number): Promise<void> {
+  const result = await invoke<{ success: boolean; session_id: number; filename: string; pdf_base64: string }>(
+    "writing_report_pdf",
+    { authToken, session_id: sessionId, format: "json" },
+  );
+
+  if (!result?.pdf_base64) {
+    throw new Error("PDF report generation did not return data.");
+  }
+
+  const binaryString = window.atob(result.pdf_base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = result.filename || `Writing_Report_${sessionId}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
 
 export function writingChat(
   authToken: string,
@@ -129,6 +156,7 @@ export interface SpeakingTurnResult {
   total_turns?: number;
   next_question?: string;
   done?: boolean;
+  message?: string;
   feedback?: {
     scores?: Record<string, number | null>;
     explanation?: string;
@@ -160,6 +188,33 @@ export function respondSpeaking(authToken: string, sessionId: number, answer: st
 export function endSpeaking(authToken: string, sessionId: number) {
   return invoke<Record<string, any>>("speaking_end", { authToken, session_id: sessionId });
 }
+export async function downloadSpeakingReportPdf(authToken: string, sessionId: number): Promise<void> {
+  const result = await invoke<{ success: boolean; session_id: number; filename: string; pdf_base64: string }>(
+    "speaking_report_pdf",
+    { authToken, session_id: sessionId, format: "json" },
+  );
+
+  if (!result?.pdf_base64) {
+    throw new Error("PDF report generation did not return data.");
+  }
+
+  const binaryString = window.atob(result.pdf_base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = result.filename || `Speaking_Report_${sessionId}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
 
 // ── Pronunciation ──────────────────────────────────────────────────────────
 

@@ -22,6 +22,8 @@ export interface AgentUsageResult {
   icon: string;
   color: string;
   online: boolean;
+  /** false when the agent has no usage counter yet, so "not reachable" would be misleading. */
+  tracked: boolean;
   usage: UsageSummary | null;
 }
 
@@ -32,6 +34,8 @@ interface AgentUsageTarget {
   color: string;
   invokeUrl: string;
   payload?: Record<string, unknown>;
+  /** Agents whose backend does not record token usage yet. */
+  untracked?: boolean;
 }
 
 // Every platform agent with an LLM behind it exposes the same "usage_summary"
@@ -67,16 +71,48 @@ const TARGETS: AgentUsageTarget[] = [
     color: "#f43f5e",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_COMMUNICATION_AGENT_NAME, "communication_agent"),
   },
+  {
+    id: "certificate_agent",
+    label: "AI Certification Agent",
+    icon: "📜",
+    color: "#8b5cf6",
+    invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CERTIFICATE_AGENT_AGENT_NAME, "certificate_agent"),
+  },
+  {
+    id: "mock_interview_agent",
+    label: "Mock Interview Agent",
+    icon: "🎤",
+    color: "#8b5cf6",
+    invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_MOCK_INTERVIEW_AGENT_NAME, "mock_interview_agent"),
+  },
+  {
+    id: "job_agent",
+    label: "Job Fetching Agent",
+    icon: "🔎",
+    color: "#3b82f6",
+    invokeUrl: "",
+    untracked: true,
+  },
+  {
+    id: "resume_builder_agent",
+    label: "Resume Builder Agent",
+    icon: "📄",
+    color: "#0f766e",
+    invokeUrl: "",
+    untracked: true,
+  },
 ];
 
 export async function fetchAllUsageSummaries(): Promise<AgentUsageResult[]> {
   return Promise.all(
     TARGETS.map(async (target): Promise<AgentUsageResult> => {
+      const base = { id: target.id, label: target.label, icon: target.icon, color: target.color };
+      if (target.untracked) return { ...base, online: true, tracked: false, usage: null };
       try {
         const usage = await invokeAgent<UsageSummary>(target.invokeUrl, "usage_summary", target.payload);
-        return { id: target.id, label: target.label, icon: target.icon, color: target.color, online: true, usage };
+        return { ...base, online: true, tracked: true, usage };
       } catch {
-        return { id: target.id, label: target.label, icon: target.icon, color: target.color, online: false, usage: null };
+        return { ...base, online: false, tracked: true, usage: null };
       }
     }),
   );

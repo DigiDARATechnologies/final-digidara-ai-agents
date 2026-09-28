@@ -1,13 +1,17 @@
-import { useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import { Logo } from "./Logo";
+import LegalModal from "./LegalModal";
+import SearchChatsModal from "./SearchChatsModal";
+import ConfirmDialog from "./ConfirmDialog";
 import blackThemeLogo from "../assets/Black_theme_logo.png";
 import whiteThemeLogo from "../assets/White_theme_logo.png";
 
 export interface SidebarProps {
   theme: "dark" | "light";
+  planName: string;
   user: User;
   collapsed: boolean;
   mobileOpen: boolean;
@@ -17,12 +21,14 @@ export interface SidebarProps {
   userMenuOpen: boolean;
   openChatMenuId: string | null;
   onToggleCollapse: () => void;
+  onCloseMobile: () => void;
   onNewChat: () => void;
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
+  onOpenHelpPage: (page: "help-center" | "release-notes" | "contact" | "bug-report") => void;
   onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
-  onUserMenuAction: (action: "profile" | "settings" | "logout") => void;
+  onUserMenuAction: (action: "profile" | "settings" | "upgrade" | "logout") => void;
   onToggleChatMenu: (chatId: string, e: React.MouseEvent) => void;
   onRenameChat: (chatId: string, title: string) => void;
   onTogglePinChat: (chatId: string) => void;
@@ -31,6 +37,8 @@ export interface SidebarProps {
 
 export default function Sidebar({
   theme,
+  onCloseMobile,
+  planName,
   user,
   collapsed,
   mobileOpen,
@@ -44,6 +52,7 @@ export default function Sidebar({
   onGoHome,
   onOpenChat,
   onNavAction,
+  onOpenHelpPage,
   onToggleUserMenu,
   onUserMenuAction,
   onToggleChatMenu,
@@ -51,7 +60,24 @@ export default function Sidebar({
   onTogglePinChat,
   onDeleteChat,
 }: SidebarProps) {
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
+  useEffect(() => {
+    if (!userMenuOpen) setHelpOpen(false);
+  }, [userMenuOpen]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [chatToDelete, setChatToDelete] = useState<Chat | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
@@ -103,28 +129,46 @@ export default function Sidebar({
   }
 
   return (
+    <>
+    <div className={`sidebar-backdrop${mobileOpen ? " open" : ""}`} onClick={onCloseMobile} aria-hidden="true" />
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
       <div className="sidebar-top">
         <div className="brand">
           <Logo
             variant={collapsed ? "icon" : "full"}
-            size={collapsed ? 36 : 66}
+            size={collapsed ? 44 : 66}
             src={collapsed ? undefined : theme === "dark" ? blackThemeLogo : whiteThemeLogo}
           />
         </div>
-        <button className="icon-btn" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
+        <button className="icon-btn sidebar-close-mobile" onClick={onCloseMobile} aria-label="Close menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+        </button>
+        <button className="icon-btn sidebar-collapse-desktop" onClick={onToggleCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
             <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </div>
 
-      <button className="btn btn-outline btn-full new-chat-btn" onClick={onNewChat}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-        <span className="label">New chat</span>
-      </button>
+      <div className="sidebar-quickrow">
+        <button className="btn btn-outline btn-full new-chat-btn" onClick={onNewChat}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span className="label">New Chat</span>
+        </button>
+        <button
+          className="icon-btn sidebar-search-btn"
+          onClick={() => { onCloseMobile(); setSearchOpen(true); }}
+          title="Search chats (Ctrl+K)"
+          aria-label="Search chats"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
 
       <button
         className={`nav-item nav-item-primary${homeActive ? " active" : ""}`}
@@ -148,26 +192,7 @@ export default function Sidebar({
               <rect x="13.5" y="13.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
             </svg>
           </span>
-          <span className="label">My agents</span>
-        </button>
-        <button className="nav-item" onClick={() => onNavAction("workflows")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="6" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <circle cx="6" cy="18" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <circle cx="18" cy="12" r="2.4" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M6 8.4v7.2M8.4 6h3.1a3 3 0 013 3v.6M8.4 18h3.1a3 3 0 003-3v-.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-          </span>
-          <span className="label">Workflows</span>
-        </button>
-        <button className="nav-item" onClick={() => onNavAction("saved")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6.5 3.5h11a1 1 0 011 1V21l-6.5-4.4L5.5 21V4.5a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="label">Saved work</span>
+          <span className="label">My Agents</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("settings")}>
           <span className="nav-icon">
@@ -262,7 +287,7 @@ export default function Sidebar({
         )}
       </div>
 
-      {openMenuChat && menuAnchor && createPortal(
+      {openMenuChat && menuAnchor && !chatToDelete && createPortal(
         <div
           className="dropdown-panel history-menu-panel open history-menu-floating"
           style={{ top: menuPosition.top, left: menuPosition.left }}
@@ -272,21 +297,34 @@ export default function Sidebar({
             ✏️ Rename
           </button>
           <button type="button" role="menuitem" onClick={() => onTogglePinChat(openMenuChat.id)}>
-            📌 {openMenuChat.pinned ? "Unpin chat" : "Pin chat"}
+            📌 {openMenuChat.pinned ? "Unpin Chat" : "Pin Chat"}
           </button>
-          <button type="button" role="menuitem" className="danger" onClick={() => onDeleteChat(openMenuChat.id)}>
+          <button type="button" role="menuitem" className="danger" onClick={() => setChatToDelete(openMenuChat)}>
             🗑️ Delete
           </button>
         </div>,
         document.body,
       )}
 
+      {chatToDelete && (
+        <ConfirmDialog
+          title="Delete this chat?"
+          message={`"${chatToDelete.title}" and its messages will be deleted. This cannot be undone.`}
+          confirmLabel="Delete"
+          onCancel={() => setChatToDelete(null)}
+          onConfirm={() => { onDeleteChat(chatToDelete.id); setChatToDelete(null); }}
+        />
+      )}
+
       <div className="sidebar-bottom">
         <button className="user-chip" onClick={onToggleUserMenu}>
-          <span className="avatar">{user.initial}</span>
+          <span className="avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : user.initial}</span>
           <span className="user-meta label">
-            <span className="user-name">{user.name}</span>
-            <span className="user-plan">⚡ Pro Plan</span>
+            <span className="user-name-row">
+              <span className="user-name">{user.name}</span>
+              <span className={`plan-badge${planName === "Free" ? " free" : ""}`}>{planName}</span>
+            </span>
+            <span className="user-plan">{user.email}</span>
           </span>
           <svg className="label" width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -294,13 +332,19 @@ export default function Sidebar({
         </button>
         <div className={`user-menu${userMenuOpen ? " open" : ""}`}>
           <div className="user-menu-head">
-            <span className="avatar">{user.initial}</span>
+            <span className="avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : user.initial}</span>
             <span className="user-menu-id">
               <span className="user-menu-name">{user.name}</span>
-              <span className="user-menu-plan">Pro Plan</span>
+              <span className="user-menu-plan">{planName} plan</span>
             </span>
           </div>
           <div className="user-menu-sep" />
+          <button onClick={() => onUserMenuAction("upgrade")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3.5l2.2 5.3 5.3 2.2-5.3 2.2L12 18.5l-2.2-5.3L4.5 11l5.3-2.2L12 3.5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+            </svg>
+            {planName === "Free" ? "Upgrade Plan" : "Manage Plan"}
+          </button>
           <button onClick={() => onUserMenuAction("profile")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
@@ -317,14 +361,86 @@ export default function Sidebar({
             Settings
           </button>
           <div className="user-menu-sep" />
+          <div className={`user-menu-help${helpOpen ? " open" : ""}`}>
+            <button
+              type="button"
+              className="user-menu-help-trigger"
+              aria-haspopup="menu"
+              aria-expanded={helpOpen}
+              onClick={(e) => {
+                e.stopPropagation();
+                setHelpOpen((v) => !v);
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+                <circle cx="12" cy="12" r="3.6" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M5.6 5.6l3.9 3.9M14.5 14.5l3.9 3.9M18.4 5.6l-3.9 3.9M9.5 14.5l-3.9 3.9" stroke="currentColor" strokeWidth="1.7" />
+              </svg>
+              <span className="user-menu-grow">Help</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <div className="user-menu-flyout" role="menu">
+              <button type="button" role="menuitem" onClick={() => onOpenHelpPage("help-center")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+                  <path d="M9.6 9.4a2.5 2.5 0 114 2c-.9.6-1.6 1.1-1.6 2.1M12 16.9v.1" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+                Help Center
+              </button>
+              <button type="button" role="menuitem" onClick={() => onOpenHelpPage("release-notes")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 20l1.2-4.2L16.5 4.5a2 2 0 012.8 0l.2.2a2 2 0 010 2.8L8.2 18.8 4 20zM14.5 6.5l3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Release Notes
+              </button>
+              <div className="user-menu-sep" />
+              <button type="button" role="menuitem" onClick={() => onOpenHelpPage("contact")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="3.5" y="5.5" width="17" height="13" rx="2.2" stroke="currentColor" strokeWidth="1.7" />
+                  <path d="M4 7.5l8 6 8-6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Contact Support
+              </button>
+              <button type="button" role="menuitem" onClick={() => setLegalTab("terms")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M7 3.5h7l4 4V20a1 1 0 01-1 1H7a1 1 0 01-1-1V4.5a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                  <path d="M9 12h6M9 16h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+                Terms of Service
+              </button>
+              <button type="button" role="menuitem" onClick={() => setLegalTab("privacy")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 3l7.5 3v5.5c0 4.5-3.1 8.2-7.5 9.5-4.4-1.3-7.5-5-7.5-9.5V6L12 3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                </svg>
+                Privacy Policy
+              </button>
+              <div className="user-menu-sep" />
+              <button type="button" role="menuitem" onClick={() => onOpenHelpPage("bug-report")}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <rect x="8" y="8" width="8" height="11" rx="4" stroke="currentColor" strokeWidth="1.7" />
+                  <path d="M9.5 8a2.5 2.5 0 015 0M4 12h4M16 12h4M5 18l3-2M19 18l-3-2M5 6l3 2M19 6l-3 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                </svg>
+                Report a Bug
+              </button>
+            </div>
+          </div>
           <button onClick={() => onUserMenuAction("logout")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M9 4H6a2 2 0 00-2 2v12a2 2 0 002 2h3M16 8l4 4-4 4M20 12H9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            Log out
+            Log Out
           </button>
         </div>
       </div>
+      {searchOpen && createPortal(
+        <SearchChatsModal chats={chats} onOpenChat={onOpenChat} onClose={() => setSearchOpen(false)} />,
+        document.body,
+      )}
+      {legalTab && createPortal(<LegalModal key={legalTab} open initialTab={legalTab} onClose={() => setLegalTab(null)} />, document.body)}
     </aside>
+    </>
   );
 }

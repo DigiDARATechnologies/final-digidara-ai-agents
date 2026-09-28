@@ -1,4 +1,5 @@
 import type { Agent } from "../types";
+import { useAgentRating } from "../lib/ratings";
 
 interface AgentCardProps {
   agent: Agent;
@@ -6,6 +7,7 @@ interface AgentCardProps {
 }
 
 export default function AgentCard({ agent, onClick }: AgentCardProps) {
+  const rating = useAgentRating(agent.id, agent.rating);
   return (
     <article
       className="card"
@@ -19,7 +21,7 @@ export default function AgentCard({ agent, onClick }: AgentCardProps) {
         <h3>{agent.name}</h3>
         <p>{agent.desc}</p>
         <div className="card-foot">
-          <span className="rating">★ {agent.rating}</span>
+          <span className="rating" title={rating.count ? `${rating.count} rating${rating.count > 1 ? "s" : ""}` : undefined}>★ {rating.value.toFixed(1)}{rating.count > 0 && <em className="rating-count"> ({rating.count})</em>}</span>
           <span>·</span>
           <span>By {agent.author}</span>
         </div>

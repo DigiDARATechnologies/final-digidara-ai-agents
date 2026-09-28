@@ -89,14 +89,20 @@ function feedMessage(feed: JobFeedItem[], planTier: string, intro: string): JobF
     (job, index) => {
       const tierBadge = job.seniority_tier === "entry" ? "🎓 [Entry-Level]" : "🚀 [Growth]";
       const trustBadge = job.trust_badge ? ` • ${job.trust_badge}` : "";
-      const skillsText = job.skills?.length ? `\n   • 🛠️ **Skills:** ${job.skills.slice(0, 5).join(", ")}` : "";
+      const matchingSkillsText = job.matching_skills?.length
+        ? `\n   • ✅ **Matched:** ${job.matching_skills.slice(0, 4).join(", ")}`
+        : (job.skills?.length ? `\n   • 🛠️ **Skills:** ${job.skills.slice(0, 5).join(", ")}` : "");
+      const missingSkillsText = job.missing_skills?.length
+        ? `\n   • ⚠️ **To Learn:** ${job.missing_skills.slice(0, 3).join(", ")}`
+        : "";
+      const prepTipText = job.preparation_tips ? `\n   • 💡 **Prep Tip:** ${job.preparation_tips}` : "";
       const expText = (job.experience_min != null || job.experience_max != null)
         ? `\n   • ⏳ **Exp:** ${job.experience_min ?? 0}-${job.experience_max ?? 2} yrs`
         : "\n   • ⏳ **Exp:** Fresher / Entry";
       const salaryText = job.salary_text ? ` | 💰 **Salary:** ${job.salary_text}` : "";
       const safeUrl = safeJobApplyUrl(job.apply_url);
       const applyLink = safeUrl ? `\n   • 🔗 [Apply on Official Portal ↗](${safeUrl})` : "";
-      return `${index + 1}. **${job.title}** @ **${job.company}**${job.location ? ` (${job.location})` : ""}\n   • ${tierBadge} • **Match ${job.match_score}%**${trustBadge}${expText}${salaryText}${skillsText}${applyLink}`;
+      return `${index + 1}. **${job.title}** @ **${job.company}**${job.location ? ` (${job.location})` : ""}\n   • ${tierBadge} • **Match ${job.match_score}%**${trustBadge}${expText}${salaryText}${matchingSkillsText}${missingSkillsText}${prepTipText}${applyLink}`;
     },
   );
   const tierNote = planTier === "free" ? "\n\n*(Curated 70% entry-level & 30% growth verified matches across Tamil Nadu & tech hubs.)*" : "";
@@ -127,7 +133,10 @@ function jobDetailMessage(job: JobFeedItem, feed: JobFeedItem[]): JobFetchFlowMe
     trustText,
     salaryText,
     expText,
-    job.skills.length ? `🛠️ **Skills:** ${job.skills.join(", ")}` : null,
+    job.skills.length ? `🛠️ **Key Skills:** ${job.skills.join(", ")}` : null,
+    job.matching_skills?.length ? `✅ **Matching Skills:** ${job.matching_skills.join(", ")}` : null,
+    job.missing_skills?.length ? `⚠️ **Skills to Strengthen:** ${job.missing_skills.join(", ")}` : null,
+    job.preparation_tips ? `💡 **Preparation Advice:** ${job.preparation_tips}` : null,
     `🎯 **Match Score:** ${job.match_score}% — *${job.match_reasons.join("; ")}*`,
     job.description ? `\n📝 **Job Summary:**\n${job.description.slice(0, 600)}...` : null,
     safeApplyUrl ? `\n🔗 **Application URL:** [Apply on Employer Portal](${safeApplyUrl})\nApply here: ${safeApplyUrl}` : null,
@@ -220,7 +229,7 @@ export async function submitJobFetchResume(
 ): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
   try {
     const result = await uploadJobFetchResume(file);
-    const withFeed = await loadFeed({ ...state, resumeOriginalName: result.filename });
+    const withFeed = await loadFeed({ ...state, resumeOriginalName: result.filename, step: "browsing" });
     const text = `🎉 **Awesome! Resume uploaded successfully!**\n\nI've saved **"${result.filename}"** to your profile. I'll use it to match you against all verified postings from employers across Tamil Nadu, Bangalore, and Remote.\n\nTell me: what specific roles or cities (e.g. Chennai, Coimbatore, Madurai, Trichy, Bangalore) would you like to prioritize?`;
     const options: ChatOption[] = [
       { label: "💼 Show best matches", value: "What are my best matching jobs?" },
@@ -243,7 +252,7 @@ async function saveProfileAndShowFeed(state: JobFetchFlowState): Promise<{ state
       preferred_work_mode: state.preferredWorkMode || undefined,
       experience_years: state.experienceYears,
     });
-    const withFeed = await loadFeed(state);
+    const withFeed = await loadFeed({ ...state, step: "browsing" });
     return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Profile saved! Here are your matched jobs.")] };
   } catch (error) {
     return { state, messages: [{ text: `I could not save your profile: ${(error as Error).message}. Try again.` }] };
@@ -314,7 +323,8 @@ export async function handleJobFetchText(
     }
 
     case "collecting_resume": {
-      if (/^skip$/i.test(trimmed)) return saveProfileAndShowFeed(state);
+      const isProceed = Boolean(state.resumeOriginalName) || /^(skip|done|next|proceed|continue|show jobs|view jobs|best match)/i.test(trimmed);
+      if (isProceed) return saveProfileAndShowFeed(state);
       return { state, messages: [{ text: "Attach a PDF/DOCX file using the paperclip button, or type \"skip\" to continue without one." }] };
     }
   }
@@ -480,14 +490,20 @@ export async function handleJobFetchText(
       const formattedLines = topJobs.map((job, idx) => {
         const tierBadge = job.seniority_tier === "entry" ? "🎓 [Entry-Level]" : "🚀 [Growth]";
         const trustBadge = job.trust_badge ? ` • ${job.trust_badge}` : "";
-        const skillsText = job.skills?.length ? `\n   • 🛠️ **Skills:** ${job.skills.slice(0, 5).join(", ")}` : "";
+        const matchingSkillsText = job.matching_skills?.length
+          ? `\n   • ✅ **Matched:** ${job.matching_skills.slice(0, 4).join(", ")}`
+          : (job.skills?.length ? `\n   • 🛠️ **Skills:** ${job.skills.slice(0, 5).join(", ")}` : "");
+        const missingSkillsText = job.missing_skills?.length
+          ? `\n   • ⚠️ **To Learn:** ${job.missing_skills.slice(0, 3).join(", ")}`
+          : "";
+        const prepTipText = job.preparation_tips ? `\n   • 💡 **Prep Tip:** ${job.preparation_tips}` : "";
         const expText = (job.experience_min != null || job.experience_max != null)
           ? `\n   • ⏳ **Exp:** ${job.experience_min ?? 0}-${job.experience_max ?? 2} yrs`
           : "\n   • ⏳ **Exp:** Fresher / Entry";
         const salaryText = job.salary_text ? ` | 💰 **Salary:** ${job.salary_text}` : "";
         const safeUrl = safeJobApplyUrl(job.apply_url);
         const applyLink = safeUrl ? `\n   • 🔗 [Apply on Official Portal ↗](${safeUrl})` : "";
-        return `${idx + 1}. **${job.title}** @ **${job.company}**${job.location ? ` (${job.location})` : ""}\n   • ${tierBadge} • **Match ${job.match_score}%**${trustBadge}${expText}${salaryText}${skillsText}${applyLink}`;
+        return `${idx + 1}. **${job.title}** @ **${job.company}**${job.location ? ` (${job.location})` : ""}\n   • ${tierBadge} • **Match ${job.match_score}%**${trustBadge}${expText}${salaryText}${matchingSkillsText}${missingSkillsText}${prepTipText}${applyLink}`;
       }).join("\n\n");
 
       const cleanIntro = replyText.trim().replace(/:?\s*$/, "");

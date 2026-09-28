@@ -3,11 +3,14 @@ import type { ReactNode } from "react";
 /** Renders one line's inline markup: [links](https://...), **bold** and `code`.
  * Always React text nodes / elements, never raw HTML. */
 function renderInlineMessageText(text: string): ReactNode[] {
-  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+  // Order matters: **bold** must be tried before the single-* italic
+  // alternative, or "**word**" would get split into two dangling "*"s.
+  return text.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
     const markdownLink = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
     if (markdownLink) return <a key={index} href={markdownLink[2]} target="_blank" rel="noreferrer">{markdownLink[1]}</a>;
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
     if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
+    if (part.length > 2 && part.startsWith("*") && part.endsWith("*")) return <em key={index}>{part.slice(1, -1)}</em>;
     return <span key={index}>{part}</span>;
   });
 }

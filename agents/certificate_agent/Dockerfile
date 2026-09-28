@@ -6,8 +6,17 @@ WORKDIR /app
 # Pick up Debian security patches for OS packages already present in the
 # base image (e.g. gzip, libpcre2, libsqlite3, perl-base CVEs) that aren't
 # refreshed just by pulling a floating python:3.12-slim tag.
+#
+# fonts-dejavu-core / fonts-liberation: python:3.12-slim ships with NO
+# TrueType fonts at all. certificate_generator.py renders every certificate
+# field with PIL/Pillow using real .ttf files at fixed pixel sizes; without
+# these packages every font lookup silently falls back to PIL's built-in
+# bitmap default font, which ignores the requested size entirely and
+# renders all text at ~11px regardless of the 30-80px sizes the layout was
+# designed for (the tiny/misaligned certificate text bug).
 RUN apt-get update \
     && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
