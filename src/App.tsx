@@ -51,7 +51,7 @@ import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
-import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
+import ResumeCanvas from "./components/ResumeCanvas";
 import JobFetchDashboard from "./components/JobFetchDashboard";
 import AdminShell from "./components/AdminShell";
 import AgentDetailsModal from "./components/AgentDetailsModal";
@@ -60,7 +60,7 @@ import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
 import { checkCommunicationHealth, getDailyChallengeToday } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
+import { createInitialResumeCanvasState, type ResumeCanvasState } from "./lib/resumeCanvasState";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth } from "./lib/jobFetchApi";
@@ -131,7 +131,7 @@ export default function App() {
   const [codeforgeStates, setCodeforgeStates] = useState<Record<string, CodeForgeFlowState>>({});
   const [aptitudeStates, setAptitudeStates] = useState<Record<string, AptitudeFlowState>>({});
   const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>({});
-  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>({});
+  const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeCanvasState>>({});
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>({});
   const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
   const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>({});
@@ -717,7 +717,7 @@ export default function App() {
    * agent's own dedicated multi-turn flow, without losing what was already
    * said — mirrors openAgentChat's per-kind setup but appends onto the
    * current chat instead of replacing it. */
-  async function handoffToAgent(chatId: string, agent: Agent, initialText?: string) {
+  async function handoffToAgent(chatId: string, agent: Agent, _initialText?: string) {
     if (!user) return;
     appendAgentMessages(chatId, [{ text: `Connecting you to the ${agent.name}…` }]);
     setChats((prev) => {
@@ -745,20 +745,9 @@ export default function App() {
       setCommunicationStates((prev) => ({ ...prev, [chatId]: initialState }));
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "resume-builder") {
-      const { state, messages } = await openResumeBuilderChat(user);
-      appendAgentMessages(chatId, messages);
-      const initialCommand = initialText?.trim().toLowerCase() === "create a resume"
-        ? "new"
-        : initialText?.trim().toLowerCase() === "upload an existing resume"
-          ? "upload"
-          : undefined;
-      if (initialCommand) {
-        const result = await handleResumeBuilderText(state, user, initialCommand);
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: result.state }));
-        appendAgentMessages(chatId, result.messages);
-      } else {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-      }
+      // No scripted Q&A here -- the canvas itself shows the upload/interview
+      // start screen and drives everything from there.
+      setResumeBuilderStates((prev) => ({ ...prev, [chatId]: createInitialResumeCanvasState() }));
     } else if (agent.kind === "certificate") {
       const { state, messages } = await openCertificateChat(user);
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
@@ -876,18 +865,7 @@ export default function App() {
       });
     } else if (agent.kind === "resume-builder") {
       setDashboardOpen(false);
-      setTyping(true);
-      openResumeBuilderChat(user).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chat.id]: state }));
-        setChats((prev) => {
-          const next = prev.map((c) => c.id === chat.id
-            ? { ...c, messages: messages.map((m) => ({ role: "agent" as const, text: m.text, options: m.options, time: nowStr() })), updatedAt: Date.now() }
-            : c);
-          saveChats(next);
-          return next;
-        });
-        setTyping(false);
-      });
+      setResumeBuilderStates((prev) => ({ ...prev, [chat.id]: createInitialResumeCanvasState() }));
     } else if (agent.kind === "certificate") {
       setDashboardOpen(false);
       setTyping(true);
@@ -1153,26 +1131,6 @@ export default function App() {
       return;
     }
 
-    if (agent?.kind === "resume-builder") {
-      // Use the state captured immediately before this user message. Using
-      // the latest React state here allowed a rapid reply or edited message
-      // to be interpreted as the previous question's answer (for example a
-      // location becoming the target role), which then corrupted the draft.
-      const flowState = (resumeSnapshot as ResumeBuilderFlowState | undefined)
-        ?? resumeBuilderStates[chatId]
-        ?? createInitialResumeBuilderState();
-      handleResumeBuilderText(flowState, user, text)
-        .then(({ state, messages }) => {
-          setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-          appendAgentMessages(chatId, messages);
-        })
-        .catch((error) => {
-          appendAgentMessages(chatId, [{ text: `Resume Builder request failed: ${(error as Error).message}` }]);
-        })
-        .finally(() => setTyping(false));
-      return;
-    }
-
     if (agent?.kind === "certificate") {
       const flowState = certificateStates[chatId] ?? createInitialCertificateState();
       handleCertificateText(flowState, text, user)
@@ -1355,17 +1313,6 @@ export default function App() {
       return;
     }
 
-    if (agent?.kind === "resume-builder") {
-      const file = Array.from(files)[0];
-      if (!file) return;
-      setTyping(true);
-      importResumeBuilderFile(resumeBuilderStates[chatId] ?? createInitialResumeBuilderState(), user, file).then(({ state, messages }) => {
-        setResumeBuilderStates((prev) => ({ ...prev, [chatId]: state }));
-        appendAgentMessages(chatId, messages);
-        setTyping(false);
-      });
-      return;
-    }
 
     if (agent?.kind === "job-fetch") {
       const file = Array.from(files)[0];
@@ -1640,7 +1587,7 @@ export default function App() {
             title={topbarTitle}
             user={displayUser ?? user}
             notifOpen={openMenu === "notif"}
-            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isResumeBuilderChat || isJobFetchChat) && !!currentChat}
+            dashboardAvailable={(isCapstoneChat || isCodeForgeChat || isAptitudeChat || isCommunicationChat || isJobFetchChat) && !!currentChat}
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
@@ -1702,7 +1649,17 @@ export default function App() {
             />
           )}
 
-          {view === "chat" && !newChatPending && currentChat && (
+          {view === "chat" && !newChatPending && currentChat && isResumeBuilderChat && (
+            <div className="chat-workspace">
+              <ResumeCanvas
+                user={user}
+                state={resumeBuilderState ?? createInitialResumeCanvasState()}
+                onStateChange={(next) => setResumeBuilderStates((prev) => ({ ...prev, [currentChat.id]: next }))}
+              />
+            </div>
+          )}
+
+          {view === "chat" && !newChatPending && currentChat && !isResumeBuilderChat && (
             <div className="chat-workspace">
               <ChatView
                 chat={currentChat}
@@ -1710,14 +1667,14 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
-                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
+                composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
                 onEditMessage={isMockInterviewChat ? undefined : editMessage}
-                attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
-                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
+                attachEnabled={isCapstoneChat || isJobFetchChat}
+                attachAccept={isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onRemovePendingFile={handleRemovePendingFile}
@@ -1772,9 +1729,6 @@ export default function App() {
               )}
               {isCommunicationChat && dashboardOpen && communicationState && (
                 <CommunicationDashboard user={user} state={communicationState} onClose={() => setDashboardOpen(false)} />
-              )}
-              {isResumeBuilderChat && dashboardOpen && resumeBuilderState && (
-                <ResumeBuilderDashboard user={user} state={resumeBuilderState} onClose={() => setDashboardOpen(false)} />
               )}
               {isJobFetchChat && dashboardOpen && jobFetchState && (
                 <JobFetchDashboard user={user} state={jobFetchState} onClose={() => setDashboardOpen(false)} />

@@ -64,7 +64,7 @@ describe('pending notifications', () => {
     const list = buildPendingNotifications(sources({
       chats: [chat('a', 'aptitude'), chat('r', 'resume-builder'), chat('l', 'leetcode')],
       aptitude: { a: { step: 'awaiting_question', testId: 't1' } },
-      resumeBuilder: { r: { step: 'completed' } },
+      resumeBuilder: { r: { step: 'ready' } },
       codeforge: { l: { step: 'awaiting_code', problemName: 'Two Sum' } },
     }), NOW);
     expect(list.map((n) => [n.agentName, n.body])).toEqual(expect.arrayContaining([

@@ -112,8 +112,8 @@ export function buildPendingNotifications(sources: NotificationSources, now: num
       }
       case "resume-builder": {
         const state = sources.resumeBuilder[id];
-        if (state?.step === "completed") body = "Your ATS resume is ready to download.";
-        else if (state && !["choose_workflow", "error"].includes(state.step)) body = "Your resume is in progress. Continue where you left off.";
+        if (state?.step === "ready") body = "Your ATS resume is ready to download.";
+        else if (state?.step === "editing") body = "Your resume is in progress. Continue where you left off.";
         break;
       }
       case "mock-interview": {
