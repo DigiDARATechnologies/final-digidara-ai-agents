@@ -11,6 +11,11 @@ const languageOptions = ["Python", "Java", "C", "SQL"].map((value) => ({ label: 
 const optionMap = (options: Record<string, string>): ChatOption[] => Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 const isTokenInterruption = (error: unknown) => /insufficient token balance|token balance/i.test((error as Error)?.message || "");
 const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
+/** Starting a test can occasionally fail validation on the AI provider's side (a
+ * transient generation defect, not a real outage) -- retried once silently before ever
+ * bothering the student, and offered one click to retry (with the same configuration,
+ * no need to reconfigure) if it still fails. See RETRY_START_TEST below. */
+const RETRY_START_TEST = "retry_start_test";
 export const createInitialAptitudeState = (): AptitudeFlowState => ({ step: "awaiting_mode" });
 export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: `Hi ${user.name.split(" ")[0]}! What would you like to practice?`, options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] });
 
@@ -35,6 +40,27 @@ async function startTest(state: AptitudeFlowState, user?: User) {
   return { state: { ...state, step: "awaiting_question" as const, testId: created.test_id, question, totalQuestions: question.total_questions, hintsRemaining: question.hints_remaining }, messages: [questionMessage(question)] };
 }
 
+async function startTestWithRetry(state: AptitudeFlowState, user?: User) {
+  try {
+    return await startTest(state, user);
+  } catch (error) {
+    // An insufficient balance is a real, non-transient problem -- retrying changes
+    // nothing, so it's left to the caller's normal token-interruption handling.
+    if (isTokenInterruption(error)) throw error;
+    try {
+      return await startTest(state, user);
+    } catch (retryError) {
+      return {
+        state,
+        messages: [{
+          text: `I could not prepare your test: ${(retryError as Error).message}`,
+          options: [{ label: "Try again", value: RETRY_START_TEST }],
+        }],
+      };
+    }
+  }
+}
+
 export async function openAptitudeChat(user: User) {
   const state = createInitialAptitudeState();
   try { const { sessionToken } = await ensureAptitudeSession(user); localStorage.setItem(`digidara_aptitude_token_${user.email.toLowerCase()}`, sessionToken); return { state: { ...state, sessionToken }, messages: [initialAptitudeMessage(user)] }; }
@@ -44,6 +70,9 @@ export async function openAptitudeChat(user: User) {
 export async function handleAptitudeText(state: AptitudeFlowState, text: string, user?: User): Promise<{ state: AptitudeFlowState; messages: AptitudeFlowMessage[] }> {
   const value = text.trim();
   try {
+    // Reuses the already-chosen mode/category/level/language on `state` -- the student
+    // never has to reconfigure the test just because generation failed once.
+    if (value === RETRY_START_TEST) return await startTestWithRetry(state, user);
     const restartRequested = /^(?:(?:start|begin|take)\s+(?:a\s+)?(?:new|another)\s+(?:test|practice)|restart(?:\s+(?:test|practice))?|new\s+(?:test|practice))$/i.test(value);
     if (restartRequested) {
       if (state.testId && state.sessionToken && state.step !== "completed") {
@@ -81,8 +110,8 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       return mode === "category_practice" ? { state: { ...state, mode, step: "awaiting_category" as const }, messages: [{ text: "Choose a category:", options: categoryOptions }] } : { state: { ...state, mode, step: "awaiting_language" as const }, messages: [{ text: "Choose the Technical Aptitude language (Python is the default):", options: languageOptions }] };
     }
     if (state.step === "awaiting_category") { const category = categories.find((item) => item.toLowerCase() === value.toLowerCase()); if (!category) return { state, messages: [{ text: "Choose a category from the list.", options: categoryOptions }] }; return { state: { ...state, category, step: "awaiting_level" as const }, messages: [{ text: "Choose a practice level:", options: levelOptions }] }; }
-    if (state.step === "awaiting_level") { const level = (["Beginner", "Intermediate", "Advanced"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!level) return { state, messages: [{ text: "Choose Beginner, Intermediate, or Advanced.", options: levelOptions }] }; return state.category === "Technical Aptitude" ? { state: { ...state, level, step: "awaiting_language" as const }, messages: [{ text: "Choose a programming language:", options: languageOptions }] } : startTest({ ...state, level }, user); }
-    if (state.step === "awaiting_language") { const language = (["C", "Java", "Python", "SQL"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!language) return { state, messages: [{ text: "Choose C, Java, Python, or SQL.", options: languageOptions }] }; return startTest({ ...state, technicalLanguage: language }, user); }
+    if (state.step === "awaiting_level") { const level = (["Beginner", "Intermediate", "Advanced"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!level) return { state, messages: [{ text: "Choose Beginner, Intermediate, or Advanced.", options: levelOptions }] }; return state.category === "Technical Aptitude" ? { state: { ...state, level, step: "awaiting_language" as const }, messages: [{ text: "Choose a programming language:", options: languageOptions }] } : await startTestWithRetry({ ...state, level }, user); }
+    if (state.step === "awaiting_language") { const language = (["C", "Java", "Python", "SQL"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!language) return { state, messages: [{ text: "Choose C, Java, Python, or SQL.", options: languageOptions }] }; return await startTestWithRetry({ ...state, technicalLanguage: language }, user); }
     if (state.step === "awaiting_next_question") {
       if (!/retry|question|continue/i.test(value)) {
         return { state, messages: [{ text: "Your previous answer was saved. Retry loading the next question to continue.", options: [{ label: "Retry question", value: "retry question" }] }] };

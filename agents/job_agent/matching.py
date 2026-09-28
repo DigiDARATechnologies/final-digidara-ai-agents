@@ -160,6 +160,11 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
     # but the job matches NONE of them (0 skills, 0 title match, unrelated category),
     # it is not relevant to their career goals and should not be scored as a match.
     if has_candidate_intent and not has_relevance:
+        job["matching_skills"] = []
+        job["missing_skills"] = raw_job_skills
+        job["match_score"] = 0
+        job["match_percentage"] = 0
+        job["preparation_tips"] = "This role does not align with your current technical skills or role preferences."
         return 0, ["Unrelated to your technical skills or role preferences"]
 
     base_score = (
@@ -167,6 +172,50 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
         + mode_score + freshness_score + category_score
     )
     score = max(5, min(100, base_score + seniority_modifier))
+
+    cand_skills_list = parse_list(profile.get("skills"))
+    cand_tokens_set = {c.lower().strip() for c in cand_skills_list if c.strip()}
+    matching_skills: List[str] = []
+    missing_skills: List[str] = []
+
+    for js in raw_job_skills:
+        js_clean = js.strip()
+        if not js_clean:
+            continue
+        js_lower = js_clean.lower()
+        if js_lower in cand_tokens_set or any(c in js_lower or js_lower in c for c in cand_tokens_set):
+            if js_clean not in matching_skills:
+                matching_skills.append(js_clean)
+        else:
+            if js_clean not in missing_skills:
+                missing_skills.append(js_clean)
+
+    if not matching_skills and cand_tokens_set:
+        for cs in cand_skills_list:
+            cs_clean = cs.strip()
+            if any(cs_clean.lower() in js.lower() for js in raw_job_skills):
+                if cs_clean not in matching_skills:
+                    matching_skills.append(cs_clean)
+
+    if missing_skills:
+        missing_preview = ", ".join(missing_skills[:3])
+        if score >= 75:
+            prep_tip = f"Strengthen {missing_preview} to boost your match from {score}% to 95% before applying."
+        elif score >= 50:
+            prep_tip = f"Review practical concepts in {missing_preview} and highlight relevant projects."
+        else:
+            prep_tip = f"Learn fundamentals of {missing_preview} to align closer with this role."
+    elif matching_skills:
+        match_preview = ", ".join(matching_skills[:3])
+        prep_tip = f"Strong match! Feature your practical work with {match_preview} prominently on your resume."
+    else:
+        prep_tip = "Review the role responsibilities and align your technical project portfolio."
+
+    job["matching_skills"] = matching_skills
+    job["missing_skills"] = missing_skills
+    job["match_score"] = score
+    job["match_percentage"] = score
+    job["preparation_tips"] = prep_tip
 
     reasons = []
     if seniority == "entry" and experience <= 1.0:
@@ -182,7 +231,9 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
         reasons.append(f"Related to your preferred role category: {label}")
     if verified_overlap:
         reasons.append("Skills from your preferred roles: " + ", ".join(sorted(verified_overlap)[:4]))
-    if declared_overlap:
+    if matching_skills:
+        reasons.append("Profile skills: " + ", ".join(matching_skills[:4]))
+    elif declared_overlap:
         reasons.append("Profile skills: " + ", ".join(sorted(declared_overlap)[:4]))
     if title_score:
         reasons.append("Matches your preferred role")

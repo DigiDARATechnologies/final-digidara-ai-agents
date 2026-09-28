@@ -24,7 +24,7 @@ export default function CommunicationDashboard({ user, state, onClose }: Communi
   return (
     <aside className="agent-dashboard">
       <div className="dashboard-head">
-        <div><span>Communication Coach</span><h2>Practice dashboard</h2></div>
+        <div><span>Communication Coach</span><h2>Practice Dashboard</h2></div>
         <button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button>
       </div>
 
@@ -58,7 +58,7 @@ export default function CommunicationDashboard({ user, state, onClose }: Communi
 
       {state.lastScores && (
         <div className="dashboard-result pass">
-          <span>Last turn scores</span>
+          <span>Last Turn Scores</span>
           <dl>
             {Object.entries(state.lastScores).map(([key, value]) => (
               <div key={key}><dt>{key}</dt><dd>{value ?? "—"}/10</dd></div>
@@ -68,7 +68,7 @@ export default function CommunicationDashboard({ user, state, onClose }: Communi
       )}
       {state.lastFeedback && (
         <div className="dashboard-alert">
-          <strong>Coach feedback</strong>
+          <strong>Coach Feedback</strong>
           <p>{state.lastFeedback}</p>
         </div>
       )}

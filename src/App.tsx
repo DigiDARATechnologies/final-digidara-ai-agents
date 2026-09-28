@@ -30,9 +30,11 @@ import {
 } from "./lib/communicationFlow";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import HelpPage from "./components/HelpPage";
+import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
@@ -120,7 +122,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(() => loadUser());
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
-  const [activeTab, setActiveTab] = useState("Top Picks");
+  const [activeTab, setActiveTab] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [newChatPending, setNewChatPending] = useState(true);
@@ -147,7 +149,15 @@ export default function App() {
   const [codeBusy, setCodeBusy] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const onChange = (e: MediaQueryListEvent) => { setIsMobile(e.matches); if (!e.matches) setMobileOpen(false); };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
   const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
   const [planName, setPlanName] = useState("Free");
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
@@ -169,6 +179,24 @@ export default function App() {
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
   const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
+
+  // Notifications the student dismissed (remembered per account in this browser).
+  const dismissedKey = `digidara_dismissed_notifs:${user?.email ?? ""}`;
+  const [dismissedNotifs, setDismissedNotifs] = useState<string[]>([]);
+  useEffect(() => {
+    try { setDismissedNotifs(JSON.parse(localStorage.getItem(dismissedKey) || "[]")); } catch { setDismissedNotifs([]); }
+  }, [dismissedKey]);
+  function dismissNotification(key: string) {
+    setDismissedNotifs((prev) => {
+      const next = [...prev.filter((k) => k !== key), key].slice(-200);
+      try { localStorage.setItem(dismissedKey, JSON.stringify(next)); } catch { /* storage unavailable: dismissal lasts until refresh */ }
+      return next;
+    });
+  }
+
+  // A refresh must land back in the chat the student was in, not on the home page.
+  const activeChatKey = `digidara_active_chat:${user?.email ?? ""}`;
+  const chatRestored = useRef(false);
 
   // Per-agent conversation progress lives in the database, not browser storage.
   const agentState = useAgentStatePersistence(user?.email, [
@@ -588,6 +616,7 @@ export default function App() {
         name: profilePrefs.displayName || user.name,
         initial: ((profilePrefs.displayName || user.name).trim()[0] || user.initial || "?").toUpperCase(),
         avatarUrl: profilePrefs.avatar,
+        mobile: profilePrefs.mobile || user.mobile,
       }
     : null;
 
@@ -939,6 +968,29 @@ export default function App() {
     setTyping(true);
     routeGeneralMessage(chat.id, trimmed);
   }
+
+  // Remember which chat is open (or that none is: the home page / a new chat).
+  useEffect(() => {
+    // Before the remembered chat is restored, "no chat" is just the initial state: don't erase it.
+    if (!user || (!chatRestored.current && !currentChatId)) return;
+    try {
+      if (currentChatId) localStorage.setItem(activeChatKey, currentChatId);
+      else localStorage.removeItem(activeChatKey);
+    } catch { /* storage unavailable: a refresh will just open the home page */ }
+  }, [user, currentChatId, activeChatKey]);
+
+  // Once this account's chats have loaded after a page load, reopen the remembered one.
+  useEffect(() => {
+    if (!user || chatRestored.current || chats.length === 0) return;
+    let saved: string | null = null;
+    try { saved = localStorage.getItem(activeChatKey); } catch { saved = null; }
+    if (!saved) { chatRestored.current = true; return; }
+    if (chats.some((c) => c.id === saved)) {
+      chatRestored.current = true;
+      setCurrentChatId(saved);
+      setNewChatPending(false);
+    }
+  }, [user, chats, activeChatKey]);
 
   function openChatById(chatId: string) {
     const chat = chats.find((c) => c.id === chatId);
@@ -1379,14 +1431,14 @@ export default function App() {
         </div>
       );
     }
-    return <LoginOverlay onAuthenticate={handleAuthenticate} />;
+    return <LoginOverlay theme={theme} onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")} onAuthenticate={handleAuthenticate} />;
   }
 
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
   const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
-  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "");
+  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My Agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1555,7 +1607,8 @@ export default function App() {
           theme={theme}
           planName={planName}
           user={displayUser ?? user}
-          collapsed={sidebarCollapsed}
+          collapsed={sidebarCollapsed && !isMobile}
+          onCloseMobile={() => setMobileOpen(false)}
           mobileOpen={mobileOpen}
           homeActive={isHome}
           chats={chats}
@@ -1593,6 +1646,12 @@ export default function App() {
             systemOnline={systemOnline}
             theme={theme}
             onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
+            onDismissNotification={(notification) => dismissNotification(notification.key)}
+            notifications={buildPendingNotifications({
+              chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
+              resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
+            }).filter((notification) => !dismissedNotifs.includes(notification.key))}
+            onOpenNotification={(notification) => { setOpenMenu(null); openChatById(notification.chatId); }}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();
@@ -1638,6 +1697,7 @@ export default function App() {
           {view === "chat" && newChatPending && (
             <NewChatLanding
               onSend={startNewChatWithMessage}
+              onOpenAgent={openAgentChat}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
           )}
@@ -1677,7 +1737,7 @@ export default function App() {
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
-                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
@@ -1724,6 +1784,13 @@ export default function App() {
         </main>
       </div>
 
+      <RatingPrompt
+        agent={view === "chat" && !newChatPending && currentChat ? currentAgent : null}
+        chatId={view === "chat" && !newChatPending ? currentChatId : null}
+        userId={user.id}
+        onToast={showToast}
+      />
+
       <SettingsModal
         themePref={themePref}
         onThemeChange={setThemePref}
@@ -1732,7 +1799,7 @@ export default function App() {
         onLogout={handleLogout}
         initialTab={settingsTab}
         open={settingsOpen}
-        user={user}
+        user={displayUser ?? user}
         chats={chats}
         onOpenChat={(chatId) => {
           setSettingsOpen(false);

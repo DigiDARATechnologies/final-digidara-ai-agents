@@ -1012,22 +1012,25 @@ def admin_jobs_bulk_status():
     job_ids = data.get("ids")
     if status not in JOB_STATUSES:
         return jsonify({"error": "Invalid job status"}), 400
-    if not isinstance(job_ids, list) or not job_ids:
-        return jsonify({"error": "ids must be a non-empty list of job ids"}), 400
-    try:
-        job_ids = [int(job_id) for job_id in job_ids][:1000]
-    except (TypeError, ValueError):
-        return jsonify({"error": "ids must all be integers"}), 400
-
     db = get_db()
     cursor = db.cursor()
     try:
-        placeholders = ",".join(["%s"] * len(job_ids))
-        cursor.execute(
-            f"UPDATE jobs SET status=%s WHERE id IN ({placeholders})",
-            (status, *job_ids),
-        )
-        updated = cursor.rowcount
+        if job_ids in ("all_pending", "all") or (isinstance(job_ids, str) and job_ids.lower() in ("all_pending", "all")):
+            cursor.execute("UPDATE jobs SET status=%s WHERE status='pending'", (status,))
+            updated = cursor.rowcount
+        else:
+            if not isinstance(job_ids, list) or not job_ids:
+                return jsonify({"error": "ids must be a non-empty list of job ids"}), 400
+            try:
+                job_ids = [int(job_id) for job_id in job_ids][:1000]
+            except (TypeError, ValueError):
+                return jsonify({"error": "ids must all be integers"}), 400
+            placeholders = ",".join(["%s"] * len(job_ids))
+            cursor.execute(
+                f"UPDATE jobs SET status=%s WHERE id IN ({placeholders})",
+                (status, *job_ids),
+            )
+            updated = cursor.rowcount
         db.commit()
         return jsonify({"message": f"{updated} job(s) updated", "status": status, "updated": updated})
     finally:

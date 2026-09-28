@@ -43,6 +43,50 @@ const editConfirmationOptions: ChatOption[] = [
 
 function clean(value: string) { return value.trim(); }
 function isSkip(value: string) { return clean(value).toLowerCase() === "skip"; }
+
+export function isKeyboardMashOrGibberish(text: string): boolean {
+  const t = clean(text).toLowerCase();
+  if (!t) return false;
+  // 1. 3+ repeated identical characters (e.g. 'aaaa', 'zzzz')
+  if (/([a-z])\1{2,}/i.test(t)) return true;
+  // 2. 2-3 char looping sequences (e.g. 'asdasd', 'jkjkjk', 'ababab')
+  if (t.length >= 4 && /^([a-z]{2,3})\1{2,}$/i.test(t)) return true;
+  // 3. 4+ consecutive letters from QWERTY rows (forward and backward)
+  const keyboardRows = [
+    "qwertyuiop", "poiuytrewq",
+    "asdfghjkl", "lkjhgfdsa",
+    "zxcvbnm", "mnbvcxz",
+  ];
+  for (const row of keyboardRows) {
+    for (let i = 0; i <= row.length - 4; i++) {
+      const sub = row.substring(i, i + 4);
+      if (t.includes(sub)) return true;
+    }
+  }
+  // 4. 5+ consecutive consonants
+  if (/[bcdfghjklmnpqrstvwxz]{5,}/i.test(t)) return true;
+  // 5. Any word with length >= 4 having no vowels at all
+  const words = t.split(/\s+/);
+  for (const word of words) {
+    if (word.length >= 4 && !/[aeiouy]/i.test(word)) return true;
+  }
+  return false;
+}
+
+export function isValidHumanCandidateName(text: string): boolean {
+  const trimmed = clean(text);
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
+  // Reject digits, email symbols, URLs, special punctuation
+  if (/[\d@#$%^&*()_+<>{}[\]/\\~=]/.test(trimmed)) return false;
+  // Reject questions or conversational commands
+  if (/\?|^(can\s+you|what|how|why|who|help|hello|hi|hey|tell\s+me|show\s+me)\b/i.test(trimmed)) return false;
+  // Reject keyboard-mash and gibberish (e.g. 'wertyui', 'qwerty', 'asdfgh', 'aaaa')
+  if (isKeyboardMashOrGibberish(trimmed)) return false;
+  // Reject academic degrees, education phrases, or role titles mistakenly entered as name
+  const academicTerms = /\b(b\.?tech|b\.?e\.?|m\.?tech|m\.?e\.?|mca|bca|bsc|b\.?sc|bcom|b\.?com|mba|engineering|degree|diploma|college|university|school|computer\s+science|information\s+technology|data\s+science|developer|engineer|fresher|resume)\b/i;
+  if (academicTerms.test(trimmed)) return false;
+  return true;
+}
 function hasUndergraduateEducation(education: ResumeCreateInput["education"] | undefined) {
   return (education || []).some((item) => {
     const level = String(item.level || "").toUpperCase();
@@ -1045,8 +1089,16 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     return { state: updateDraft(state, { title: clean(value) }, "awaiting_name"), messages: [{ text: "What is your full name?" }] };
   }
   if (state.step === "awaiting_name") {
-    if (clean(value).length < 2) return { state, messages: [{ text: "Please enter your full name." }] };
-    return { state: updateDraft(state, { name: clean(value) }, "awaiting_email"), messages: [{ text: "What is your professional email address?" }] };
+    const candidateName = clean(value);
+    if (!isValidHumanCandidateName(candidateName)) {
+      return {
+        state,
+        messages: [{
+          text: "Please enter your real full name (for example, ‘Priya Sharma’ or ‘Arun Kumar’) rather than educational qualifications, random characters, or questions.",
+        }],
+      };
+    }
+    return { state: updateDraft(state, { name: candidateName }, "awaiting_email"), messages: [{ text: "What is your professional email address?" }] };
   }
   if (state.step === "awaiting_email") {
     const email = clean(value).toLowerCase();

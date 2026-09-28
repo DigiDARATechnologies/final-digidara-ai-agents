@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Chat, User } from "../types";
-import { AGENTS, DEFAULT_AGENT, findAgent } from "../data/agents";
+import { LIVE_AGENTS, DEFAULT_AGENT, findAgent } from "../data/agents";
 import { fetchAllUsageSummaries } from "../lib/usageApi";
 import EditProfileModal from "./EditProfileModal";
 import type { ProfilePrefs } from "../lib/profilePrefs";
@@ -104,8 +104,7 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
 
     const topAgents = [...perAgent.entries()]
       .map(([agentId, v]) => ({ agent: findAgent(agentId) ?? DEFAULT_AGENT, ...v }))
-      .sort((a, b) => b.messages - a.messages || b.chats - a.chats)
-      .slice(0, 5);
+      .sort((a, b) => b.messages - a.messages || b.chats - a.chats);
 
     // grid: WEEKS columns, Sunday-first, ending with the current week
     const gridStart = new Date(today);
@@ -182,25 +181,25 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
         <div className="pv-stats">
           <div>
             <b>{lifetimeTokens === null ? "—" : formatCount(lifetimeTokens)}</b>
-            <span>Lifetime tokens</span>
+            <span>Lifetime Tokens</span>
           </div>
           <div>
             <b>{stats.totalChats}</b>
-            <span>Total chats</span>
+            <span>Total Chats</span>
           </div>
           <div>
             <b>{plural(stats.current, "day")}</b>
-            <span>Current streak</span>
+            <span>Current Streak</span>
           </div>
           <div>
             <b>{plural(stats.longest, "day")}</b>
-            <span>Longest streak</span>
+            <span>Longest Streak</span>
           </div>
         </div>
 
         <section className="pv-section">
           <div className="pv-section-head">
-            <h2>Chat activity</h2>
+            <h2>Chat Activity</h2>
             <div className="pv-range" role="tablist">
               {(["daily", "weekly", "cumulative"] as Range[]).map((r) => (
                 <button key={r} type="button" className={range === r ? "active" : ""} onClick={() => setRange(r)}>
@@ -265,19 +264,19 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
 
         <div className="pv-two">
           <section className="pv-section">
-            <h2>Activity insights</h2>
+            <h2>Activity Insights</h2>
             <dl className="pv-insights">
-              <div><dt>Most used agent</dt><dd>{stats.topAgents[0]?.agent.name ?? "None yet"}</dd></div>
-              <div><dt>Messages sent</dt><dd>{stats.totalMessages}</dd></div>
-              <div><dt>Active days</dt><dd>{stats.activeDays}</dd></div>
-              <div><dt>Busiest day</dt><dd>{busiestLabel}</dd></div>
-              <div><dt>Agents available</dt><dd>{AGENTS.length}</dd></div>
-              <div><dt>Total chats</dt><dd>{stats.totalChats}</dd></div>
+              <div><dt>Most Used Agent</dt><dd>{stats.topAgents[0]?.agent.name ?? "None yet"}</dd></div>
+              <div><dt>Messages Sent</dt><dd>{stats.totalMessages}</dd></div>
+              <div><dt>Active Days</dt><dd>{stats.activeDays}</dd></div>
+              <div><dt>Busiest Day</dt><dd>{busiestLabel}</dd></div>
+              <div><dt>Agents Available</dt><dd>{LIVE_AGENTS.length}</dd></div>
+              <div><dt>Total Chats</dt><dd>{stats.totalChats}</dd></div>
             </dl>
           </section>
 
           <section className="pv-section">
-            <h2>Most used agents</h2>
+            <h2>Most Used Agents</h2>
             {stats.topAgents.length === 0 ? (
               <div className="pv-empty">No agents used yet. Start a chat to see your favourites here.</div>
             ) : (
@@ -313,6 +312,7 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
         <EditProfileModal
           initialName={user.name}
           initialUsername={handle}
+          initialMobile={user.mobile}
           initialAvatar={user.avatarUrl}
           initial={user.initial}
           onCancel={() => setEditing(false)}

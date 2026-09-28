@@ -49,7 +49,7 @@ export default function AdminChangePassword() {
   if (!open) {
     return (
       <button className="admin-change-password-toggle" onClick={() => setOpen(true)}>
-        Change password
+        Change Password
       </button>
     );
   }
@@ -57,7 +57,7 @@ export default function AdminChangePassword() {
   return (
     <form className="admin-change-password" onSubmit={submit}>
       <div className="admin-change-password-head">
-        <strong>Change password</strong>
+        <strong>Change Password</strong>
         <button type="button" className="icon-btn" onClick={() => setOpen(false)} aria-label="Close">x</button>
       </div>
       <input
@@ -84,7 +84,7 @@ export default function AdminChangePassword() {
       {error && <div className="admin-error">{error}</div>}
       {success && <div className="admin-success">{success}</div>}
       <button type="submit" className="btn btn-primary btn-sm btn-full" disabled={saving}>
-        {saving ? "Saving…" : "Update password"}
+        {saving ? "Saving…" : "Update Password"}
       </button>
     </form>
   );

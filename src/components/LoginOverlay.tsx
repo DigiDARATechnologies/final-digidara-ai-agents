@@ -3,8 +3,11 @@ import { googleAuthUrl } from "../lib/authApi";
 import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 import blackThemeLogo from "../assets/Black_theme_logo.png";
+import whiteThemeLogo from "../assets/White_theme_logo.png";
 
 interface LoginOverlayProps {
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
   onAuthenticate: (
     mode: "login" | "signup",
     details: { name: string; email: string; mobile: string; password: string; consent: boolean },
@@ -83,7 +86,7 @@ function BrandPanel() {
   );
 }
 
-export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
+export default function LoginOverlay({ theme, onToggleTheme, onAuthenticate }: LoginOverlayProps) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -132,13 +135,31 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
 
   return (
     <div className="login-overlay" id="loginOverlay">
+      <button
+        type="button"
+        className="login-theme-toggle"
+        onClick={onToggleTheme}
+        aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+        title={theme === "dark" ? "Light theme" : "Dark theme"}
+      >
+        {theme === "dark" ? (
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
       <div className="login-shell">
         <BrandPanel />
 
         <div className="login-form-panel">
           <div className="login-card">
             <div className="login-logo login-logo--mobile-only">
-              <Logo src={blackThemeLogo} size={80} />
+              <Logo src={theme === "dark" ? blackThemeLogo : whiteThemeLogo} size={80} />
             </div>
 
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
@@ -162,12 +183,12 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
             <form onSubmit={handleSubmit}>
               {mode === "signup" && (
                 <label className="field">
-                  <span>Full name</span>
+                  <span>Full Name</span>
                   <input type="text" placeholder="e.g. Priya Sharma" required autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} />
                 </label>
               )}
               <label className="field">
-                <span>Email address</span>
+                <span>Email Address</span>
                 <input
                   type="email"
                   placeholder="you@company.com"
@@ -179,7 +200,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               </label>
               {mode === "signup" && (
                 <label className="field">
-                  <span>Mobile number</span>
+                  <span>Mobile Number</span>
                   <input type="tel" placeholder="e.g. +91 98765 43210" required autoComplete="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} />
                 </label>
               )}
@@ -207,7 +228,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
               </label>
               {mode === "signup" && (
                 <label className="field">
-                  <span>Re-enter password</span>
+                  <span>Re-Enter Password</span>
                   <div className="password-field">
                     <input
                       type={showConfirmPassword ? "text" : "password"}
@@ -253,7 +274,7 @@ export default function LoginOverlay({ onAuthenticate }: LoginOverlayProps) {
 
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>
-                {submitting ? "Please wait…" : mode === "signup" ? "Create account" : "Log in"}
+                {submitting ? "Please wait…" : mode === "signup" ? "Create Account" : "Log In"}
               </button>
             </form>
 

@@ -24,6 +24,17 @@ class InvokeAdapterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["agent_name"], "mock_interview_agent")
 
+    def test_usage_summary_reports_platform_totals_without_a_session(self):
+        totals = {"total_requests": 3, "total_tokens": 900, "prompt_tokens": 600, "completion_tokens": 300}
+        by_type = [{"request_type": "answer_evaluation", "request_count": 2}, {"request_type": "role_decomposition", "request_count": 1}]
+        with patch.object(db, "query", side_effect=[(totals, None), (by_type, None)]):
+            response = self.invoke("usage_summary")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["agent_name"], "mock_interview_agent")
+        self.assertEqual(body["total_tokens"], 900)
+        self.assertEqual(body["by_request_type"], {"answer_evaluation": 2, "role_decomposition": 1})
+
     def test_ensure_session_requires_verified_identity(self):
         response = self.invoke("ensure_session", {"user_id": "u1", "email": "a@b.com"})
         self.assertEqual(response.status_code, 401)

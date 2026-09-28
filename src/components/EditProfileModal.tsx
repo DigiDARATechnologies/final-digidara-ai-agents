@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { fileToAvatar, USERNAME_RE, type ProfilePrefs } from "../lib/profilePrefs";
+import { fileToAvatar, normalizeMobile, USERNAME_RE, type ProfilePrefs } from "../lib/profilePrefs";
 
 interface Props {
   initialName: string;
   initialUsername: string;
   initialAvatar?: string;
+  initialMobile?: string;
   initial: string;
   onCancel: () => void;
   onSave: (prefs: ProfilePrefs) => void;
 }
 
-export default function EditProfileModal({ initialName, initialUsername, initialAvatar, initial, onCancel, onSave }: Props) {
+export default function EditProfileModal({ initialName, initialUsername, initialAvatar, initialMobile, initial, onCancel, onSave }: Props) {
   const [name, setName] = useState(initialName);
   const [username, setUsername] = useState(initialUsername);
+  const [mobile, setMobile] = useState(initialMobile ?? "");
   const [avatar, setAvatar] = useState<string | undefined>(initialAvatar);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -40,13 +42,15 @@ export default function EditProfileModal({ initialName, initialUsername, initial
     if (!cleanName) return setError("Display name can't be empty.");
     if (cleanName.length > 60) return setError("Display name is too long (60 characters max).");
     if (!USERNAME_RE.test(cleanUser)) return setError("Username must be 3 to 30 characters: letters, numbers, dot, dash or underscore.");
-    onSave({ displayName: cleanName, username: cleanUser, avatar });
+    const cleanMobile = normalizeMobile(mobile);
+    if (!cleanMobile) return setError("Enter a valid mobile number, e.g. +91 98765 43210.");
+    onSave({ displayName: cleanName, username: cleanUser, avatar, mobile: cleanMobile });
   }
 
   return (
     <div className="pv-modal-overlay" onClick={(e) => e.target === e.currentTarget && onCancel()}>
       <form className="pv-modal" onSubmit={submit} role="dialog" aria-modal="true" aria-label="Edit profile">
-        <h2>Edit profile</h2>
+        <h2>Edit Profile</h2>
 
         <div className="pv-modal-avatar">
           <span className="pv-avatar pv-avatar-lg">{avatar ? <img src={avatar} alt="Your profile" /> : initial}</span>
@@ -60,17 +64,21 @@ export default function EditProfileModal({ initialName, initialUsername, initial
         </div>
         {avatar && (
           <button type="button" className="pv-remove-photo" onClick={() => setAvatar(undefined)}>
-            Remove photo
+            Remove Photo
           </button>
         )}
 
         <label className="pv-field">
-          <span>Display name</span>
+          <span>Display Name</span>
           <input value={name} maxLength={60} autoFocus onChange={(e) => { setName(e.target.value); setError(""); }} />
         </label>
         <label className="pv-field">
           <span>Username</span>
           <input value={username} maxLength={30} onChange={(e) => { setUsername(e.target.value); setError(""); }} />
+        </label>
+        <label className="pv-field">
+          <span>Mobile Number</span>
+          <input type="tel" inputMode="tel" value={mobile} maxLength={20} placeholder="e.g. +91 98765 43210" onChange={(e) => { setMobile(e.target.value); setError(""); }} />
         </label>
         {error && <p className="pv-error" role="alert">{error}</p>}
         <p className="pv-modal-note">Profile changes are saved on this device.</p>

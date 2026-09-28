@@ -102,7 +102,7 @@ export default function AttachMenu({
           }}
         >
           <span className="attach-menu-ico">🖼️</span>
-          <span>Upload photo</span>
+          <span>Upload Photo</span>
         </button>
         <button
           type="button"
@@ -113,7 +113,7 @@ export default function AttachMenu({
           }}
         >
           <span className="attach-menu-ico">📄</span>
-          <span>Upload document</span>
+          <span>Upload Document</span>
         </button>
       </div>
     </div>

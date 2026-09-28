@@ -161,3 +161,99 @@ export const RELEASES: ReleaseNote[] = [
     ],
   },
 ];
+
+export interface WorkflowStep { title: string; body: string }
+export interface AgentWorkflow { summary: string; steps: WorkflowStep[]; tips: string[] }
+
+/** Step-by-step "how it works" for each live agent, keyed by agent id. */
+export const AGENT_WORKFLOWS: Record<string, AgentWorkflow> = {
+  aptitude: {
+    summary: "Timed practice for quantitative aptitude, logical reasoning and verbal ability.",
+    steps: [
+      { title: "Pick a topic and level", body: "Choose the section you want to drill (quantitative, logical or verbal) and how hard the set should be." },
+      { title: "Start a timed set", body: "Questions appear one at a time in the chat with a running timer, like a real placement test." },
+      { title: "Answer and move around", body: "Select an option for each question. You can jump between questions and change an answer before you submit." },
+      { title: "Submit and review", body: "Get your score, see which answers were right or wrong, and read the explanation for each one." },
+      { title: "Repeat on weak areas", body: "Start another set on the topics you missed until your accuracy improves." },
+    ],
+    tips: ["Try to answer within the time limit, because speed is part of aptitude tests.", "Review the explanations even for questions you got right."],
+  },
+  "certificate-agent": {
+    summary: "Generates a certification exam, assesses you in chat, and issues a PDF certificate when you pass.",
+    steps: [
+      { title: "Choose a certification", body: "Pick the subject or skill you want to be certified in." },
+      { title: "Take the exam", body: "The agent generates a fresh exam and asks the questions in an interactive chat assessment." },
+      { title: "Get scored", body: "Your answers are graded as soon as you finish, with a pass or fail result." },
+      { title: "Download your certificate", body: "If you pass, a PDF certificate is issued that you can download and share." },
+      { title: "Check the leaderboard", body: "See how your score ranks against other learners." },
+    ],
+    tips: ["Find past attempts and certificates under My Certificates in your history.", "You can retake an exam to improve your score."],
+  },
+  leetcode: {
+    summary: "Practice real coding problems with a sandboxed runner and an AI tutor.",
+    steps: [
+      { title: "Choose a course and topic", body: "Pick a language or subject, then a topic such as SQL, JavaScript or CSS." },
+      { title: "Open a problem", body: "Read the problem statement, examples and constraints. Coding and multiple-choice problems are both supported." },
+      { title: "Write and run your code", body: "Run your solution against sample tests in a safe sandbox and see the output or errors straight away." },
+      { title: "Submit for grading", body: "Submit to run the full set of tests and see which ones pass." },
+      { title: "Ask the AI tutor", body: "If you are stuck, ask for a hint or an explanation without being handed the whole answer." },
+    ],
+    tips: ["Run often: small steps make bugs easier to find.", "Use the tutor for hints first, then the full explanation."],
+  },
+  "communication-coach": {
+    summary: "Coaches pronunciation, speaking and writing with AI-scored practice.",
+    steps: [
+      { title: "Pick a skill", body: "Choose Pronunciation, Speaking or Writing practice." },
+      { title: "Do a practice round", body: "Read, speak or write to the prompt. Use the mic button to record your voice." },
+      { title: "Get AI scoring", body: "Your attempt is scored and you get specific feedback on what to improve." },
+      { title: "Repeat the loop", body: "Try again with the feedback in mind. Each attempt is saved." },
+      { title: "Track your progress", body: "Open the dashboard to see your scores, daily challenges and progress over time." },
+    ],
+    tips: ["Allow microphone access in your browser for speaking practice.", "A short daily session beats one long one."],
+  },
+  "job-fetch": {
+    summary: "Finds job openings that match your profile and ranks them by how well they fit you.",
+    steps: [
+      { title: "Tell it about you", body: "Share your role, skills, experience and preferred location in a short onboarding chat." },
+      { title: "Search job boards", body: "The agent scans job boards for roles that match what you asked for." },
+      { title: "See a fit score", body: "Each job is ranked with an explainable fit score, so you know why it matched." },
+      { title: "Refine your search", body: "Ask for a different location, seniority or skill and the list updates." },
+      { title: "Apply", body: "Open the listings you like and apply from the original posting." },
+    ],
+    tips: ["The more specific your skills, the better the matches.", "Ask why a job scored low to see what is missing."],
+  },
+  "mock-interview": {
+    summary: "AI-driven technical and HR mock interviews with scores and feedback.",
+    steps: [
+      { title: "Set up the interview", body: "Choose the role and whether you want a technical or HR interview." },
+      { title: "Answer the questions", body: "Questions are asked one at a time. Type your answer or use the mic button." },
+      { title: "Get feedback on each answer", body: "Every answer is scored, with notes on strengths and what to improve." },
+      { title: "See your report", body: "At the end you get a full report with overall scores you can review later." },
+      { title: "Practise again", body: "Retake the interview and compare against your previous attempt." },
+    ],
+    tips: ["Answer out loud first, then type it. It builds fluency.", "Use the report to pick what to work on next."],
+  },
+  "capstone-project": {
+    summary: "Runs your capstone project end to end, from topic selection to a graded review.",
+    steps: [
+      { title: "Eligibility check", body: "The agent confirms you are eligible to start a capstone project." },
+      { title: "Pick your topic", body: "Choose a project topic and confirm the requirements." },
+      { title: "Build within the timer", body: "You get a 7-day window to build the project and prepare your files." },
+      { title: "Submit your work", body: "Upload your report and files, including the required screenshots, in the chat." },
+      { title: "Review and viva", body: "Your submission is reviewed and graded, with a viva Q&A. If it is not accepted, you get clear revision notes and can resubmit." },
+      { title: "Get certified", body: "On passing, you receive your capstone certificate." },
+    ],
+    tips: ["Read the example files the agent shares before you start.", "Keep your screenshots clear, because they are checked during review."],
+  },
+  "resume-builder": {
+    summary: "Create, import, analyse, improve and export ATS-friendly resumes.",
+    steps: [
+      { title: "Create or import", body: "Start a new resume from scratch, or upload your existing one." },
+      { title: "Analyse it", body: "The agent checks structure, wording and ATS compatibility and points out gaps." },
+      { title: "Improve the content", body: "Accept suggested rewrites for summaries, bullet points and skills." },
+      { title: "Preview", body: "See exactly how the finished resume will look before you save it." },
+      { title: "Export", body: "Download the final, ATS-friendly resume ready to send." },
+    ],
+    tips: ["Tailor the resume to each job by pasting the job description.", "Keep bullet points short and results-focused."],
+  },
+};

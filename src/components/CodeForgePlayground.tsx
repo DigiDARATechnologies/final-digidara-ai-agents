@@ -84,7 +84,7 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
               <select
                 value={languageId ?? ""}
                 onChange={(event) => handleLanguageChange(Number(event.target.value))}
-                style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--border)" }}
+                style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid var(--canvas-border)" }}
               >
                 {languages.map((lang) => (
                   <option key={lang.id} value={lang.id}>
@@ -102,7 +102,7 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
               onChange={(event) => setSourceCode(event.target.value)}
               rows={12}
               spellCheck={false}
-              style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid var(--border)", resize: "vertical" }}
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid var(--canvas-border)", resize: "vertical" }}
             />
           </div>
 
@@ -113,7 +113,7 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
               onChange={(event) => setStdin(event.target.value)}
               rows={3}
               spellCheck={false}
-              style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid var(--border)", resize: "vertical" }}
+              style={{ width: "100%", fontFamily: "monospace", fontSize: 13, padding: 10, borderRadius: 8, border: "1px solid var(--canvas-border)", resize: "vertical" }}
             />
           </div>
 
@@ -122,7 +122,7 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
           </button>
 
           {result && (
-            <div style={{ background: "var(--bg-soft)", border: "1px solid var(--border)", borderRadius: 8, padding: 14 }}>
+            <div style={{ background: "var(--canvas-bg-soft)", color: "var(--canvas-text)", border: "1px solid var(--canvas-border)", borderRadius: 8, padding: 14 }}>
               <div style={{ fontWeight: 600, marginBottom: 8 }}>{result.status.description}</div>
               {result.stdout && (
                 <>

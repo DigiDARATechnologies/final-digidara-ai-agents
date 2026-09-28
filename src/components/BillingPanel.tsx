@@ -87,22 +87,22 @@ export default function BillingPanel({ open, user, onToast }: Props) {
       <h2>Billing</h2>
       <div className="current-plan">
         <div>
-          <small>Current plan</small>
+          <small>Current Plan</small>
           <strong>{hasPlan ? `DigiDARA ${billing?.plan_name}` : "DigiDARA Free"}</strong>
           <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more tokens, or pay any amount you like."}</span>
         </div>
         <span className="plan-badge">{hasPlan ? "Active" : "Free"}</span>
       </div>
 
-      <h3 className="settings-title">Token balance</h3>
-      <div className="current-plan"><div><small>Available tokens</small><strong>{tokenBalance === null ? "-" : tokens(tokenBalance)}</strong><span>Each agent request costs a small number of tokens. Tokens never expire.</span></div></div>
+      <h3 className="settings-title">Token Balance</h3>
+      <div className="current-plan"><div><small>Available Tokens</small><strong>{tokenBalance === null ? "-" : tokens(tokenBalance)}</strong><span>Each agent request costs a small number of tokens. Tokens never expire.</span></div></div>
 
-      <h3 className="settings-title">Choose a plan</h3>
+      <h3 className="settings-title">Choose a Plan</h3>
       {!catalog ? <p>Loading plans...</p> : (
         <div className="plan-grid">
           {catalog.plans.map((plan) => (
             <article key={plan.id} className={plan.popular ? "recommended" : undefined} data-plan={plan.id}>
-              {plan.popular && <span>Most popular</span>}
+              {plan.popular && <span>Most Popular</span>}
               <h3>{plan.name}</h3>
               <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
               <p>{plan.description}</p>
@@ -125,7 +125,7 @@ export default function BillingPanel({ open, user, onToast }: Props) {
         </div>
       )}
 
-      <h3 className="settings-title">Transaction history</h3>
+      <h3 className="settings-title">Transaction History</h3>
       <div className="transaction-list with-invoice">
         {billing?.payments.length ? billing.payments.map((payment) => (
           <div key={payment.id}>

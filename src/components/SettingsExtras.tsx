@@ -42,7 +42,7 @@ export function AppearanceSettings({ themePref, onThemeChange, appearance, onApp
 
         <div className="setting-row set-stack">
           <div>
-            <b>Accent colour</b>
+            <b>Accent Colour</b>
             <p>Used for buttons, highlights and links across the app.</p>
           </div>
           <div className="set-swatches" role="radiogroup" aria-label="Accent colour">
@@ -64,7 +64,7 @@ export function AppearanceSettings({ themePref, onThemeChange, appearance, onApp
 
         <div className="setting-row">
           <div>
-            <b>Reduce motion</b>
+            <b>Reduce Motion</b>
             <p>Turns off moving effects such as the scrolling agent strip and the animated message-box border.</p>
           </div>
           <label className="switch">
@@ -75,7 +75,7 @@ export function AppearanceSettings({ themePref, onThemeChange, appearance, onApp
 
         <div className="setting-row">
           <div>
-            <b>Glow effects</b>
+            <b>Glow Effects</b>
             <p>Soft glow on cards and buttons.</p>
           </div>
           <label className="switch">
@@ -127,32 +127,32 @@ export function SecuritySettings({ user, onToast, onLogout }: SecurityProps) {
       <h2>Security</h2>
       <p className="settings-subtitle">Keep your DigiDARA account safe.</p>
 
-      <h3 className="settings-title">Change password</h3>
+      <h3 className="settings-title">Change Password</h3>
       <form className="set-form" onSubmit={submit}>
         <label className="field">
-          <span>Current password</span>
+          <span>Current Password</span>
           <input type="password" autoComplete="current-password" placeholder="Leave blank if you only sign in with Google" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </label>
         <label className="field">
-          <span>New password</span>
+          <span>New Password</span>
           <input type="password" autoComplete="new-password" minLength={8} placeholder="At least 8 characters" value={next} onChange={(e) => setNext(e.target.value)} />
         </label>
         <label className="field">
-          <span>Re-enter new password</span>
+          <span>Re-Enter New Password</span>
           <input type="password" autoComplete="new-password" minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </label>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button type="submit" className="btn btn-primary" disabled={busy || !next || !confirm}>{busy ? "Updating…" : "Update password"}</button>
+        <button type="submit" className="btn btn-primary" disabled={busy || !next || !confirm}>{busy ? "Updating…" : "Update Password"}</button>
       </form>
 
-      <h3 className="settings-title">This device</h3>
+      <h3 className="settings-title">This Device</h3>
       <div className="settings-section">
         <div className="setting-row">
           <div>
             <b>Signed in as</b>
             <p>{user.email}</p>
           </div>
-          {onLogout && <button type="button" className="btn btn-outline" onClick={onLogout}>Log out</button>}
+          {onLogout && <button type="button" className="btn btn-outline" onClick={onLogout}>Log Out</button>}
         </div>
       </div>
     </>

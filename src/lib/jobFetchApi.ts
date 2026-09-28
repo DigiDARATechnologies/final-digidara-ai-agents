@@ -46,6 +46,9 @@ export interface JobFeedItem {
   salary_text?: string | null;
   experience_min?: number | null;
   experience_max?: number | null;
+  matching_skills?: string[];
+  missing_skills?: string[];
+  preparation_tips?: string;
 }
 
 export interface SavedJobItem {
@@ -242,6 +245,10 @@ export function adminListCategories() {
 
 export function adminUpdateJobStatus(jobId: number, status: "pending" | "active" | "rejected" | "expired") {
   return invoke<{ message: string; status: string }>("admin_update_job_status", { job_id: jobId, status });
+}
+
+export function adminBulkUpdateJobStatus(jobIds: number[] | "all_pending", status: "pending" | "active" | "rejected" | "expired") {
+  return invoke<{ message: string; status: string; updated: number }>("admin_bulk_update_job_status", { ids: jobIds, status });
 }
 
 export function adminListSources(page: { limit?: number; offset?: number } = {}) {

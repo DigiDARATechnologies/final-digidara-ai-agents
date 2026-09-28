@@ -168,7 +168,7 @@ normalize_job(raw, company, board_id)
 service.process_run()          -- the EXISTING dedup/upsert logic (content
                                    hash + (source_id, external_id) unique
                                    keys), unchanged. New jobs land as
-                                   status='pending' for admin moderation,
+                                   status='active' automatically for candidate matching,
                                    same as every other source type. Also
                                    updates the source's lifecycle status,
                                    error_category, last_attempted_at, and
