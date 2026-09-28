@@ -17,6 +17,7 @@ import {
   type ResumeEditProposal,
   type ResumeTemplate,
 } from "../lib/resumeBuilderApi";
+import { parseLinkedInExport } from "../lib/linkedinExport";
 
 interface ResumeCanvasProps {
   user: User;
@@ -64,7 +65,7 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
   const [loadError, setLoadError] = useState("");
 
   // ---- Stage 1: start ----
-  const [starting, setStarting] = useState<"upload" | "interview" | null>(null);
+  const [starting, setStarting] = useState<"upload" | "interview" | "linkedin" | null>(null);
   const [startError, setStartError] = useState("");
   const [interview, setInterview] = useState({ role: "", level: "fresher" as "fresher" | "experienced", lastRole: "", skills: "", achievement: "" });
   const [pastedText, setPastedText] = useState("");
@@ -185,6 +186,34 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
     await startFromUpload(new File([text], "pasted-notes.txt", { type: "text/plain" }));
   }
 
+  async function startFromLinkedInExport(file: File) {
+    setStarting("linkedin");
+    setStartError("");
+    try {
+      const { input, counts } = await parseLinkedInExport(file);
+      if (!counts.experience && !counts.education && !counts.skills && !counts.certifications && !input.summary) {
+        throw new Error("That didn't look like a LinkedIn data export -- it's the ZIP from Settings > Data privacy > Get a copy of your data.");
+      }
+      const created = await createResume(user.id, {
+        title: input.title || "My Resume",
+        target_role: input.target_role || "",
+        experience_level: "experienced",
+        summary: input.summary || "",
+        personal_info: { name: user.name, email: user.email, phone: user.mobile },
+        skills: input.skills || [],
+        experience: input.experience || [],
+        education: input.education || [],
+        projects: [],
+        certifications: input.certifications || [],
+      });
+      setResumeId(Number(created.id));
+    } catch (error) {
+      setStartError((error as Error).message || "Could not read that LinkedIn export.");
+    } finally {
+      setStarting(null);
+    }
+  }
+
   async function startFromInterview() {
     setStarting("interview");
     setStartError("");
@@ -288,6 +317,13 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
               </button>
             </div>
           </div>
+          <label className="resume-start-card">
+            <span>Import your LinkedIn export</span>
+            <strong>The ZIP from LinkedIn's own "Get a copy of your data"</strong>
+            <small className="muted">Settings &amp; Privacy → Data privacy → Get a copy of your data. Your own data, from LinkedIn itself -- no login sharing, no scraping.</small>
+            <input type="file" accept=".zip" style={{ display: "none" }}
+              onChange={(event) => { const file = event.target.files?.[0]; if (file) void startFromLinkedInExport(file); }} />
+          </label>
           <div className="resume-start-card">
             <span>Start fresh</span>
             <strong>A 5-question quick interview</strong>
@@ -307,6 +343,7 @@ export default function ResumeCanvas({ user, state, onStateChange }: ResumeCanva
           </div>
         </div>
         {starting === "upload" && <p className="muted">Reading your resume…</p>}
+        {starting === "linkedin" && <p className="muted">Reading your LinkedIn export…</p>}
         {startError && <p className="form-error" role="alert">{startError}</p>}
       </div>
     );

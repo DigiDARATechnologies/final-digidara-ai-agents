@@ -2346,8 +2346,8 @@ a{ color:var(--accent3); }
 .resume-canvas{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;height:100%;min-height:0;overflow:hidden;padding:16px;}
 .resume-canvas-editor,.resume-canvas-copilot{overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:14px;}
 .resume-canvas .field textarea,.resume-canvas .field select{border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;font-size:14px;color:var(--text);background:var(--bg-soft);font-family:inherit;}
-.resume-canvas-start{max-width:900px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:14px;}
-.resume-start-options{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+.resume-canvas-start{max-width:760px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:14px;}
+.resume-start-options{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
 .resume-start-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--border);border-radius:var(--radius-md);background:#fff;cursor:pointer;}
 .resume-start-card>span{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);}
 .resume-start-card>strong{font-size:15px;}
