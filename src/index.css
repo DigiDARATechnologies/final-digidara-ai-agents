@@ -2346,29 +2346,3 @@ a{ color:var(--accent3); }
 .recent-agent-chats>button i.pending{ background:rgba(242,167,27,.18); color:var(--gold-text, var(--gold)); }
 
 :root[data-theme="light"] .immersive-speaking .speaking-stage-copy>span{ color:#0e7490; }
-
-/* Resume Builder: canvas (live resume + copilot), replaces the old step-by-step chat. */
-.resume-canvas{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;height:100%;min-height:0;overflow:hidden;padding:16px;}
-.resume-canvas-editor,.resume-canvas-copilot{overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:14px;}
-.resume-canvas .field textarea,.resume-canvas .field select{border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 13px;font-size:14px;color:var(--text);background:var(--bg-soft);font-family:inherit;}
-.resume-canvas-start{max-width:760px;margin:0 auto;padding:32px 16px;display:flex;flex-direction:column;gap:14px;}
-.resume-start-options{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
-.resume-start-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--border);border-radius:var(--radius-md);background:#fff;cursor:pointer;}
-.resume-start-card>span{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);}
-.resume-start-card>strong{font-size:15px;}
-.resume-interview-form{display:flex;flex-direction:column;gap:8px;cursor:auto;}
-.resume-interview-form input,.resume-interview-form select{border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 11px;font-size:13.5px;}
-.resume-section-list h4{margin:14px 0 8px;font-size:13px;}
-.resume-entry-card{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;font-size:13.5px;}
-.resume-preview-pane{margin-top:10px;}
-.resume-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:10px;}
-.resume-preview-frame{width:100%;aspect-ratio:210/297;min-height:420px;border:1px solid var(--border);border-radius:10px;background:#fff;}
-.resume-score-panel{border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;text-align:center;}
-.resume-score-value{font-size:32px;font-weight:800;}
-.resume-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;justify-content:center;}
-.resume-copilot-chat,.resume-tailor{border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;display:flex;flex-direction:column;gap:8px;}
-.resume-copilot-chat textarea,.resume-tailor textarea{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-size:13.5px;font-family:inherit;}
-.resume-proposal{margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-soft);}
-.resume-proposal ul{margin:8px 0;padding-left:18px;font-size:13px;}
-.resume-proposal-actions{display:flex;gap:8px;margin-top:8px;}
-@media (max-width:900px){.resume-canvas{grid-template-columns:1fr;}.resume-start-options{grid-template-columns:1fr;}}
