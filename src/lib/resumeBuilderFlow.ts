@@ -216,7 +216,13 @@ Type Skip if you do not want to add experience.
 You can add or edit experience later from your resume editor.`;
 
 function parseDuration(text: string) {
-  const cleanText = clean(text);
+  // Only the "Company:/Role:/Duration:" structured branch of parseSingleExperience
+  // strips a "Duration:" label before calling this -- the looser concise-format
+  // fallbacks pass a raw line straight through, so a label left on the line (e.g.
+  // "Duration: Feb 2026 - Present") used to end up baked into startDate itself,
+  // and the backend then rejected it as an invalid date. Stripped here once so
+  // every call site is covered, not just the one that already did it.
+  const cleanText = clean(text).replace(/^(?:Duration|Dates?|Period|Tenure)\s*:\s*/i, "");
   if (!cleanText) return { startDate: "", endDate: "", isCurrent: false };
 
   const rangeMatch = cleanText.match(/(.+?)\s*(?:–|—|-|\bto\b|\buntil\b)\s*(.+)/i);

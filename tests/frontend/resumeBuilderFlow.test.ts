@@ -621,6 +621,37 @@ Worked on Power BI dashboards, SQL queries, data cleaning and reporting.`;
       expect(parsed[0].raw_input).toContain("Worked on Power BI dashboards");
     });
 
+    test("a 'Duration:' label left on the concise-format date line is stripped, not sent as the date itself", () => {
+      // The live bug: the third line kept its own "Duration:" label (unlike the
+      // structured Company:/Role:/Duration: format, which strips it), and the label
+      // ended up baked into start_date -- the backend then rejected "duration : feb 2026"
+      // as an invalid date.
+      const input = `DigiDARA Technologies
+AI Engineer
+Duration : Feb 2026 - Present
+
+Built AI agents and automation systems.`;
+      const parsed = parseExperienceInput(input);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].company).toBe("DigiDARA Technologies");
+      expect(parsed[0].role).toBe("AI Engineer");
+      expect(parsed[0].start_date).toBe("Feb 2026");
+      expect(parsed[0].start_date).not.toMatch(/duration/i);
+      expect(parsed[0].end_date).toBe("Present");
+      expect(parsed[0].is_current).toBe(true);
+    });
+
+    test("a 'Dates:'/'Period:'/'Tenure:' label is stripped the same way, with no range", () => {
+      const input = `Acme Corp
+Backend Engineer
+Dates: March 2023
+
+Maintained the payments service.`;
+      const parsed = parseExperienceInput(input);
+      expect(parsed[0].start_date).toBe("March 2023");
+      expect(parsed[0].start_date).not.toMatch(/dates/i);
+    });
+
     test("Supports Achievements: and Responsibilities & Achievements: headings", () => {
       const input = `Company: ABC Technologies
 Role: Python Developer
