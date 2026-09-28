@@ -413,7 +413,11 @@ export default function ChatView({
                   <>
                     {hasContextPanel && contextPanel}
                     <div className="bubble">{renderMessageText(m.text)}</div>
-                    {!!visibleOptions?.length && (
+                    {/* When the rich context panel (e.g. Aptitude's mode/category/
+                        level/language picker) is already showing this message's
+                        choices as its own buttons, skip the plain chat-options
+                        row too -- otherwise the same choice is offered twice. */}
+                    {!hasContextPanel && !!visibleOptions?.length && (
                       <div className="chat-options">
                         {visibleOptions.map((option) => option.href ? (
                           <a key={option.value} className="chat-option-link" href={option.href} download={option.download ?? ""}>

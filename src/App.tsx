@@ -1438,7 +1438,7 @@ export default function App() {
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
   const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
-  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My agents" : !isHome && currentChat ? currentAgent.name : "");
+  const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My Agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
   const isAptitudeChat = currentAgent.kind === "aptitude";
@@ -1737,7 +1737,7 @@ export default function App() {
                 connectorStatus={connectorStatus}
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
-                contextPanel={isAptitudeChat && aptitudeState ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
