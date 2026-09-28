@@ -84,7 +84,9 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
             item = by_id[int(row["id"])]
             unanswered = bool(row.get("timed_out") or row.get("processing_status") == "skipped")
             if unanswered and item.get("verdict") is not None:
-                raise ValueError("Batch evaluation returned a verdict for an unanswered question.")
+                logger.warning("Ignoring provider verdict for unanswered question %s", row["id"])
+                item["verdict"] = None
+                item["reason"] = None
             if not unanswered and item.get("verdict") not in {"correct", "partial", "wrong"}:
                 raise ValueError("Batch evaluation omitted a valid verdict for an answered question.")
             if unanswered and not item.get("ideal_answer"):

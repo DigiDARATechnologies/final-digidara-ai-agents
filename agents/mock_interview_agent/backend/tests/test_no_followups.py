@@ -133,8 +133,8 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         rows[3]["answer"] = "Answer 4"
         rows[4]["answer"] = "Answer 5"
         evaluations = [
-            {"question_id": 1, "verdict": None, "ideal_answer": "Ideal 1"},
-            {"question_id": 2, "verdict": None, "ideal_answer": "Ideal 2"},
+            {"question_id": 1, "verdict": "wrong", "reason": "Ignore", "ideal_answer": "Ideal 1"},
+            {"question_id": 2, "verdict": "correct", "reason": "Ignore", "ideal_answer": "Ideal 2"},
             {"question_id": 3, "verdict": "correct", "reason": "Good", "ideal_answer": "Ideal 3"},
             {"question_id": 4, "verdict": "wrong", "reason": "Review", "ideal_answer": "Ideal 4"},
             {"question_id": 5, "verdict": "partial", "reason": "Partial", "ideal_answer": "Ideal 5"},
@@ -153,6 +153,8 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(len(payload), 5)
         self.assertEqual([item.get("unanswered", False) for item in payload], [True, True, False, False, False])
         self.assertEqual(result[0]["ideal_answer"], "Ideal 1")
+        self.assertIsNone(result[0]["verdict"])
+        self.assertIsNone(result[1]["verdict"])
 
 
 if __name__ == "__main__":

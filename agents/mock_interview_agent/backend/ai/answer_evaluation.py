@@ -431,10 +431,7 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     for item, pair in zip(evaluations, qa_pairs):
         if item.get("question_id") is None:
             raise ValueError("The AI returned an invalid batch verdict.")
-        if pair.get("unanswered"):
-            if item.get("verdict") is not None:
-                raise ValueError("The AI returned a verdict for an unanswered question.")
-        elif item.get("verdict") not in {"correct", "partial", "wrong"}:
+        if not pair.get("unanswered") and item.get("verdict") not in {"correct", "partial", "wrong"}:
             raise ValueError("The AI returned an invalid batch verdict.")
     return evaluations
 

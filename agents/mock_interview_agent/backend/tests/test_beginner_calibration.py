@@ -221,6 +221,19 @@ class BeginnerCalibrationTests(unittest.TestCase):
         )
         self.assertIsNone(result[0].get("ideal_answer"))
 
+    def test_batch_evaluation_ignores_unanswered_verdict(self):
+        pairs = [{"question_id": 1, "question": "What is a list?", "answer": "", "unanswered": True}]
+        result = evaluate_answers_batch(
+            "technical", "Python", "beginner", pairs,
+            chat_fn=lambda *_args, **_kwargs: json.dumps({"evaluations": [{
+                "question_id": 1, "verdict": "wrong", "reason": "Ignore this.",
+                "ideal_answer": "A list stores ordered values.",
+            }]}),
+        )
+        # The raw provider shape is tolerated; the route's unanswered branch
+        # persists only ideal_answer and never persists this verdict/reason.
+        self.assertEqual(result[0]["verdict"], "wrong")
+
     def test_single_answer_and_summary_use_beginner_standard_only(self):
         prompts = []
 
