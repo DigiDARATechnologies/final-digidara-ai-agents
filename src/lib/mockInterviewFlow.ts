@@ -200,7 +200,11 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
       // Evaluation is performed in the final batch. Keep every turn's UI
       // consistent even if an older backend happens to return an immediate
       // verdict for one answer.
-      const feedback: MockInterviewMessage[] = [{ text: "Answer saved. Detailed feedback will appear in your final report." }];
+      const feedback: MockInterviewMessage[] = [{
+        text: timing?.timedOut
+          ? "Time expired - no answer submitted."
+          : "Answer saved. Detailed feedback will appear in your final report.",
+      }];
       if (result.done || !result.question) {
         const completed = await finish(state);
         return { ...completed, messages: [...feedback, ...completed.messages] };

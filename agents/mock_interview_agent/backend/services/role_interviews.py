@@ -108,6 +108,8 @@ def subject_breakdown(rows):
         if not topic_area:
             continue
         verdict = row.get("verdict")
+        if verdict is None or row.get("timed_out") or row.get("processing_status") == "skipped":
+            continue
         score = {"correct": 1, "partial": 0.5, "wrong": 0}.get(verdict, 0)
         grouped.setdefault(topic_area, []).append(score)
     strong, weak, details = [], [], []

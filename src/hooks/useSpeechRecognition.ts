@@ -21,6 +21,7 @@ interface SpeechRecognitionLike {
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -105,8 +106,10 @@ export default function useSpeechRecognition(locale = "en-US") {
         onResult(latestText, false);
       };
       recognition.onerror = (event) => {
+        setListening(false);
         setError(ERROR_MESSAGES[event.error] || "Speech recognition stopped unexpectedly.");
       };
+      recognition.onstart = () => setListening(true);
       recognition.onend = () => {
         vadCleanupRef.current?.();
         vadCleanupRef.current = null;
@@ -116,7 +119,6 @@ export default function useSpeechRecognition(locale = "en-US") {
       };
 
       recognitionRef.current = recognition;
-      setListening(true);
       recognition.start();
 
       if (options.autoStopOnSilence && navigator.mediaDevices?.getUserMedia && window.AudioContext) {

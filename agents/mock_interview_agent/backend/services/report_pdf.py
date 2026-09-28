@@ -151,7 +151,11 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
         story.append(CondPageBreak(90*mm))
         header = Table([[
             Paragraph(f"Question {item['question_number']}", style["question_title"]),
-            Paragraph(_html(item.get("verdict") or "Unrated").title(), style["verdict"]),
+            Paragraph(_html(
+                "Not answered (time expired)" if item.get("status") == "timed_out"
+                else "Skipped" if item.get("status") == "skipped"
+                else item.get("verdict") or "Unrated"
+            ).title(), style["verdict"]),
         ]], colWidths=[123*mm, 53*mm], hAlign="LEFT")
         header.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), PURPLE), ("BOX", (0, 0), (-1, -1), .6, PURPLE),

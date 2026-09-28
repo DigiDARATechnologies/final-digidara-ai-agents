@@ -106,6 +106,18 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(scorecard[0]["followup"]["question"], "Old follow-up?")
         self.assertEqual(scorecard[0]["verdict"], "correct")
 
+    def test_timed_out_question_is_zero_marked_without_a_verdict(self):
+        rows = [{
+            "question": "What is a list?", "answer": None,
+            "is_followup": False, "verdict": None,
+            "verdict_reason": "No answer was submitted before the time limit.",
+            "ideal_answer": None, "timed_out": True,
+        }]
+        scorecard, marks, maximum = build_scorecard(rows)
+        self.assertEqual((marks, maximum), (0, 1))
+        self.assertEqual(scorecard[0]["status"], "timed_out")
+        self.assertIsNone(scorecard[0]["verdict"])
+
 
 if __name__ == "__main__":
     unittest.main()

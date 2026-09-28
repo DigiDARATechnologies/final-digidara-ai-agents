@@ -512,7 +512,13 @@ def end_interview():
     ):
         # New interviews contain only main questions. Keep this filter for
         # historical interviews that already have follow-up rows.
-        pending_rows = [row for row in rows if not row.get("is_followup")]
+        pending_rows = [
+            row for row in rows
+            if not row.get("is_followup")
+            and row.get("answer") is not None
+            and not row.get("timed_out")
+            and row.get("verdict") is None
+        ]
         evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending_rows)
         if evaluation_error:
             return jsonify({
@@ -605,6 +611,9 @@ def end_interview():
             "timed_out": bool(row["timed_out"]),
         }
         for row in rows
+        if not row.get("is_followup")
+        and row.get("answer") is not None
+        and not row.get("timed_out")
     ]
     try:
         with track_ai_usage(
