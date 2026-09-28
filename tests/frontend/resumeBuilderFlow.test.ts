@@ -1,4 +1,4 @@
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT } from "../../src/lib/resumeBuilderFlow";
+import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName } from "../../src/lib/resumeBuilderFlow";
 
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
   ensureResumeProfile: jest.fn().mockResolvedValue({ user_id: "test-user" }),
@@ -696,6 +696,46 @@ Responsibilities:
       expect(parsed[0].end_date).toBe("Present");
       expect(parsed[0].is_current).toBe(true);
       expect(parsed[0].raw_input).toContain("Built Power BI dashboards");
+    });
+  });
+
+  describe("Candidate Name Validation & Keyboard Mash Rejection", () => {
+    test("rejects keyboard mash sequences like wertyui, qwerty, asdfgh", () => {
+      expect(isValidHumanCandidateName("wertyui")).toBe(false);
+      expect(isValidHumanCandidateName("qwerty")).toBe(false);
+      expect(isValidHumanCandidateName("asdfgh")).toBe(false);
+      expect(isValidHumanCandidateName("zxcvbn")).toBe(false);
+      expect(isValidHumanCandidateName("poiuyt")).toBe(false);
+    });
+
+    test("rejects character repetitions and consonant-only gibberish", () => {
+      expect(isValidHumanCandidateName("aaaaa")).toBe(false);
+      expect(isValidHumanCandidateName("zzzzz")).toBe(false);
+      expect(isValidHumanCandidateName("bcdfgh")).toBe(false);
+      expect(isValidHumanCandidateName("dfgh")).toBe(false);
+    });
+
+    test("rejects academic qualifications and questions", () => {
+      expect(isValidHumanCandidateName("B.Tech Computer Science")).toBe(false);
+      expect(isValidHumanCandidateName("Master of Engineering")).toBe(false);
+      expect(isValidHumanCandidateName("Can you help me?")).toBe(false);
+    });
+
+    test("accepts valid human candidate names", () => {
+      expect(isValidHumanCandidateName("Priya Sharma")).toBe(true);
+      expect(isValidHumanCandidateName("Arun Kumar")).toBe(true);
+      expect(isValidHumanCandidateName("Rajesh K")).toBe(true);
+    });
+
+    test("awaiting_name rejects wertyui and returns helpful prompt", async () => {
+      const result = await handleResumeBuilderText(
+        { step: "awaiting_name", draft: { title: "Python Resume" } },
+        { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+        "wertyui",
+      );
+      expect(result.state.step).toBe("awaiting_name");
+      expect(result.messages[0].text).toContain("Please enter your real full name");
+      expect(result.messages[0].text).toContain("random characters");
     });
   });
 });

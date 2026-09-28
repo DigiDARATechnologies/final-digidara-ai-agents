@@ -128,20 +128,29 @@ def _get_user_profile_and_missing(cursor, user_id: str) -> Tuple[Dict[str, Any],
     profile["resume_original_name"] = (profile.get("resume_original_name") or "").strip()
     profile["profile_completed"] = int(profile.get("profile_completed") or 0)
 
-    # Determine onboarding step
-    if profile["profile_completed"] == 1:
+    # 1. Sanitize persisted full_name: if stored name is invalid or keyboard-mash (e.g. leftover from old test runs),
+    # immediately purge it and force onboarding_step back to full_name!
+    if profile.get("full_name") and not _is_valid_human_name(profile["full_name"]):
+        try:
+            cursor.execute("UPDATE user_job_profiles SET full_name='', onboarding_step='full_name' WHERE user_id=%s", (user_id,))
+        except Exception:
+            pass
+        profile["full_name"] = ""
+        profile["onboarding_step"] = "full_name"
+
+    # 2. Determine onboarding step
+    if profile["profile_completed"] == 1 and profile.get("full_name") and _is_valid_human_name(profile["full_name"]):
         profile["onboarding_step"] = "completed"
-    elif not profile.get("onboarding_step") or profile.get("onboarding_step") == "full_name":
-        if not profile["full_name"] or not _is_valid_human_name(profile["full_name"]):
-            profile["onboarding_step"] = "full_name"
-        elif not profile["skills"]:
-            profile["onboarding_step"] = "skills"
-        elif not profile["preferred_titles"]:
-            profile["onboarding_step"] = "preferred_titles"
-        elif not profile["preferred_locations"]:
-            profile["onboarding_step"] = "preferred_locations"
-        else:
-            profile["onboarding_step"] = "resume"
+    elif not profile["full_name"] or not _is_valid_human_name(profile["full_name"]):
+        profile["onboarding_step"] = "full_name"
+    elif not profile["skills"]:
+        profile["onboarding_step"] = "skills"
+    elif not profile["preferred_titles"]:
+        profile["onboarding_step"] = "preferred_titles"
+    elif not profile["preferred_locations"]:
+        profile["onboarding_step"] = "preferred_locations"
+    else:
+        profile["onboarding_step"] = "resume"
 
     missing = []
     if not profile["full_name"]:
@@ -179,17 +188,49 @@ def _get_job_by_id(cursor, job_id: int) -> Optional[Dict[str, Any]]:
     return job
 
 
+def _matches_location_filter(job_loc: str, work_mode: str, target_locations: List[str]) -> bool:
+    """Checks if a job location strictly matches requested target locations or is Remote."""
+    if not target_locations:
+        return True
+    target_lower = [t.lower().strip() for t in target_locations if t.strip()]
+    if not target_lower:
+        return True
+
+    loc_lower = (job_loc or "").lower().strip()
+    wm_lower = (work_mode or "").lower().strip()
+
+    # Remote jobs are universally available across candidate locations
+    if wm_lower == "remote" or "remote" in loc_lower or "work from home" in loc_lower:
+        return True
+
+    for target in target_lower:
+        aliases = [target]
+        for canon, alias_list in TN_DISTRICTS.items():
+            if canon.lower() == target or target in [a.lower() for a in alias_list]:
+                aliases = [a.lower() for a in alias_list] + [canon.lower()]
+                break
+
+        for alias in aliases:
+            if re.search(rf"\b{re.escape(alias)}\b", loc_lower):
+                return True
+
+    return False
+
+
 def _get_top_matched_jobs(
     cursor,
     profile: Dict[str, Any],
     user_id: Optional[str] = None,
     limit: int = 5,
+    location_filter: Optional[List[str] | str] = None,
+    strict_location: bool = False,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     """
     Selects, scores, and blends jobs ensuring:
     - Exclusion of jobs already applied to by this user (unapplied priority)
     - 70% Entry / Fresher & 30% Growth / Next-step allocation
     - Trust score and verification badges computed for every job
+    - Strict location boundaries when a specific city is requested
     Returns: (blended_jobs, is_unapplied_backfill_active)
     """
     where = ["j.status='active'", "(j.expires_at IS NULL OR j.expires_at >= NOW())"]
@@ -236,6 +277,28 @@ def _get_top_matched_jobs(
         scored_jobs.append(job)
 
     scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
+
+    # Location Filtering & Partitioning
+    target_locs: List[str] = []
+    if location_filter:
+        if isinstance(location_filter, str):
+            target_locs = [location_filter]
+        else:
+            target_locs = list(location_filter)
+    elif profile.get("preferred_locations"):
+        target_locs = list(profile["preferred_locations"])
+
+    if target_locs:
+        location_matched = [
+            j for j in scored_jobs
+            if _matches_location_filter(j.get("location") or "", j.get("work_mode") or "", target_locs)
+        ]
+        if strict_location:
+            # Strict mode: ONLY jobs in the requested location (or Remote) are allowed. Never leak other cities.
+            scored_jobs = location_matched
+        else:
+            other_jobs = [j for j in scored_jobs if j not in location_matched]
+            scored_jobs = location_matched + other_jobs
 
     cand_exp = float(profile.get("experience_years") or 0.0)
     is_fresher = cand_exp <= 1.0
@@ -535,7 +598,7 @@ def format_job_listings_markdown(jobs: List[Dict[str, Any]], intro: str = "") ->
 
         trust_badge = j.get("trust_badge") or "✅ Genuine Opportunity"
         trust_score = j.get("trust_score", 90)
-        match_score = j.get("match_score", 80)
+        match_score = j.get("match_percentage") or j.get("match_score", 80)
 
         salary = j.get("salary_text")
         salary_str = salary if salary else "Undisclosed by employer"
@@ -561,10 +624,20 @@ def format_job_listings_markdown(jobs: List[Dict[str, Any]], intro: str = "") ->
         apply_url = j.get("apply_url") or ""
         apply_link = f"[Apply on Official Portal ↗]({apply_url})" if apply_url else ""
 
+        matching_skills = j.get("matching_skills") or []
+        missing_skills = j.get("missing_skills") or []
+        prep_tip = j.get("preparation_tips") or ""
+        matching_str = ", ".join(matching_skills[:4]) if matching_skills else skills_str
+        missing_str = ", ".join(missing_skills[:3]) if missing_skills else ""
+
         lines.append(f"{idx}. **{title}** @ **{company}** ({location})")
         lines.append(f"   • {tier_tag} • **Match {match_score}%** • {trust_badge} ({trust_score}% Trust)")
         lines.append(f"   • ⏳ **Exp:** {exp_str} | 💰 **Salary:** {salary_str}")
-        lines.append(f"   • 🛠️ **Key Skills:** {skills_str}")
+        lines.append(f"   • ✅ **Matched Skills:** {matching_str}")
+        if missing_str:
+            lines.append(f"   • ⚠️ **Missing Skills:** {missing_str}")
+        if prep_tip:
+            lines.append(f"   • 💡 **Prep Tip:** {prep_tip}")
         if apply_link:
             lines.append(f"   • 🔗 {apply_link}")
         lines.append("")
@@ -671,8 +744,8 @@ def _detect_message_profile_updates(message: str) -> Dict[str, Any]:
     name_match = re.search(r"(?:my name is|i am|i'm)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)", message, re.IGNORECASE)
     if name_match:
         cand_name = name_match.group(1).strip()
-        if cand_name.lower() not in {"fresher", "experienced", "interested", "looking", "a", "an", "the", "ready", "open"}:
-            updates["full_name"] = cand_name
+        if _is_valid_human_name(cand_name):
+            updates["full_name"] = cand_name.title()
 
     return updates
 
@@ -970,9 +1043,9 @@ def extract_education_from_text(text: str) -> Optional[str]:
 
     degree_patterns = [
         (r"\b(?:b\.?\s*tech|bachelor\s+of\s+technology)\b", "B.Tech"),
-        (r"\b(?:b\.?\s*e\.?|bachelor\s+of\s+engineering)\b", "B.E"),
+        (r"\b(?:b\.e\.|b\.e\b|bachelor\s+of\s+engineering|b\.e\s+(?:degree|grad|in|cse|ece|eee|mech|civil))\b", "B.E"),
         (r"\b(?:m\.?\s*tech|master\s+of\s+technology)\b", "M.Tech"),
-        (r"\b(?:m\.?\s*e\.?|master\s+of\s+engineering)\b", "M.E"),
+        (r"\b(?:m\.e\.|m\.e\b|master\s+of\s+engineering|m\.e\s+(?:degree|grad|in|cse|ece|eee|mech|civil))\b", "M.E"),
         (r"\b(?:mca|master\s+of\s+computer\s+applications)\b", "MCA"),
         (r"\b(?:bca|bachelor\s+of\s+computer\s+applications)\b", "BCA"),
         (r"\b(?:b\.?\s*sc|bachelor\s+of\s+science)\b", "B.Sc"),
@@ -987,14 +1060,14 @@ def extract_education_from_text(text: str) -> Optional[str]:
     branch_patterns = [
         (r"(?:ai\s*&?\s*ds|artificial\s*intelligence\s*(?:&|and)?\s*data\s*science|ai\s*(?:&|and)\s*ds|ai/ds)", "AI & Data Science"),
         (r"(?:computer\s*science(?:\s*(?:&|and)?\s*engineering)?|\bcse\b|\bcs\b)", "Computer Science"),
-        (r"(?:information\s*technology|\bit\b)", "Information Technology"),
+        (r"(?:information\s*technology|info\s*tech|b\.?\s*tech\s*it|b\.?\s*sc\s*it)", "Information Technology"),
         (r"(?:electronics\s*(?:&|and)?\s*communication(?:\s*engineering)?|\bece\b)", "Electronics & Communication"),
         (r"(?:electrical\s*(?:&|and)?\s*electronics(?:\s*engineering)?|\beee\b)", "Electrical & Electronics"),
         (r"(?:mechanical(?:\s*engineering)?|\bmech\b)", "Mechanical"),
         (r"(?:civil(?:\s*engineering)?)", "Civil"),
         (r"(?:data\s*science)", "Data Science"),
         (r"(?:cyber\s*security)", "Cyber Security"),
-        (r"(?:artificial\s*intelligence|\bai\b)", "Artificial Intelligence"),
+        (r"(?:artificial\s*intelligence)", "Artificial Intelligence"),
     ]
 
     matched_degree = None
@@ -1002,6 +1075,15 @@ def extract_education_from_text(text: str) -> Optional[str]:
         if re.search(pattern, t_lower):
             matched_degree = deg_name
             break
+
+    # Case-sensitive uppercase checks for B.E and M.E with degree context to avoid matching words 'be' and 'me'
+    if not matched_degree:
+        if re.search(r"\b(?:B\.E\.|B\.E|BE)\s+(?:in|degree|graduate|grad|cse|ece|eee|mech|civil)\b", t):
+            matched_degree = "B.E"
+        elif re.search(r"\b(?:M\.E\.|M\.E|ME)\s+(?:in|degree|graduate|grad|cse|ece|eee|mech|civil)\b", t):
+            matched_degree = "M.E"
+        elif re.search(r"\b(?:B\.E\.|M\.E\.)\b", t):
+            matched_degree = "B.E" if "B.E" in t else "M.E"
 
     matched_branch = None
     for pattern, branch_name in branch_patterns:
@@ -1099,6 +1181,38 @@ def extract_target_titles_from_text(text: str) -> List[str]:
     return detected
 
 
+def _is_keyboard_mash_or_gibberish(text: str) -> bool:
+    """Detects keyboard walk sequences, character spam, or unpronounceable consonant clusters."""
+    t = text.lower().strip()
+    if not t:
+        return False
+    # 1. 3+ repeated identical characters (e.g. 'aaaa', 'zzzz')
+    if re.search(r"([a-z])\1{2,}", t):
+        return True
+    # 2. 2-3 char looping sequences (e.g. 'asdasd', 'jkjkjk', 'ababab')
+    if len(t) >= 4 and re.match(r"^([a-z]{2,3})\1{2,}$", t):
+        return True
+    # 3. 4+ consecutive letters matching horizontal QWERTY rows (forward or reverse)
+    keyboard_rows = [
+        "qwertyuiop", "poiuytrewq",
+        "asdfghjkl", "lkjhgfdsa",
+        "zxcvbnm", "mnbvcxz",
+    ]
+    for row in keyboard_rows:
+        for i in range(len(row) - 3):
+            sub = row[i:i + 4]
+            if sub in t:
+                return True
+    # 4. 5+ consecutive consonants (treating 'y' as a vowel)
+    if re.search(r"[bcdfghjklmnpqrstvwxz]{5,}", t):
+        return True
+    # 5. Any word of length >= 4 with zero vowels
+    for word in t.split():
+        if len(word) >= 4 and not re.search(r"[aeiouy]", word):
+            return True
+    return False
+
+
 def _is_valid_human_name(text: str) -> bool:
     """Returns True if text appears to be a plausible candidate full name."""
     s = text.strip().strip(".!?,")
@@ -1108,12 +1222,21 @@ def _is_valid_human_name(text: str) -> bool:
     # Reject punctuation or symbols
     if re.search(r"[\d?!=@#$%^&*()_+<>{}\[\]/\\~]", s):
         return False
-    # Reject conversational noise, commands, questions, locations, tech terms
+    # Reject conversational questions or command phrases
+    if re.search(r"\b(can\s+you|tell\s+me|show\s+me|help\s+me|what\s+is|who\s+are|how\s+to)\b", s.lower()):
+        return False
+    # Reject keyboard-mash and gibberish (e.g. 'wertyui', 'qwerty', 'asdfgh', 'aaaa')
+    if _is_keyboard_mash_or_gibberish(s):
+        return False
+    # Reject conversational noise, commands, questions, locations, academic qualifications, tech terms
     invalid_keywords = {
         "location", "locations", "preferred", "native", "place", "city", "bangalore", "bengaluru",
         "chennai", "coimbatore", "thanjavur", "trichy", "madurai", "remote", "hybrid", "onsite",
         "skills", "skill", "tech", "python", "java", "react", "sql", "html", "css",
-        "btech", "b.tech", "degree", "college", "school", "complete", "completed",
+        "btech", "b.tech", "be", "b.e", "mtech", "m.tech", "me", "m.e", "mca", "bca", "bsc", "b.sc",
+        "bcom", "b.com", "mba", "bba", "engineering", "bachelor", "master", "diploma", "computer",
+        "science", "technology", "information", "mechanical", "electrical", "civil", "ece", "eee", "cse", "it",
+        "degree", "college", "school", "complete", "completed", "student", "department",
         "experience", "experienced", "fresher", "years", "year", "job", "jobs", "role",
         "roles", "title", "titles", "send", "show", "give", "find", "get", "view",
         "temple", "movie", "movies", "cinema", "song", "songs", "food", "weather",
@@ -1212,6 +1335,16 @@ def _handle_onboarding_step(
                 detected_exp_years = float(m_any_num.group(1))
 
     # Cross-save any detected information into the database immediately:
+    # Guard: if in full_name step and user entered a question, job request, or greeting:
+    # do NOT cross-save unintended fragments or mistake questions for profile data!
+    is_inquiry_or_question = bool(re.search(r"(\?|\b(who|what|how|why|where|when|can\s+you|tell\s+me|show\s+me|help|hello|hi|hey)\b)", msg_lower))
+    if step == "full_name" and (is_inquiry_or_question or is_send_jobs_intent):
+        detected_locations = []
+        detected_education = None
+        detected_skills = []
+        detected_titles = []
+        detected_exp_years = None
+
     cross_saved = []
     if detected_education:
         current_edu = profile.get("education") or ""
@@ -1301,6 +1434,21 @@ def _handle_onboarding_step(
                 "updated_profile": _build_profile_response_dict(profile, ["full name"]),
             }
 
+        # If user asked a question or general inquiry instead of entering their name:
+        if is_inquiry_or_question or is_send_jobs_intent:
+            first_name = (profile.get("full_name") or "").strip()
+            if first_name and _is_valid_human_name(first_name):
+                greeting = f"👋 Hi {first_name}! I'm your **Job Agent**."
+            else:
+                greeting = "👋 Hi there! I'm your **Job Agent**."
+            return {
+                "reply": f"{greeting} I help college students and tech talent find tailored tech jobs.\n\nTo set up your personalized profile, please enter your **full name**.",
+                "show_jobs": False,
+                "suggested_actions": [],
+                "matched_jobs": [],
+                "updated_profile": _build_profile_response_dict(profile, []),
+            }
+
         # User did not provide a valid name! Check if they gave another detail out of order:
         if detected_locations:
             loc_str = ", ".join(detected_locations)
@@ -1338,6 +1486,15 @@ def _handle_onboarding_step(
                 "suggested_actions": [],
                 "matched_jobs": [],
                 "updated_profile": _build_profile_response_dict(profile, ["experience"]),
+            }
+
+        if _is_keyboard_mash_or_gibberish(msg_trimmed):
+            return {
+                "reply": "Please enter your real full name (for example, **Priya Sharma** or **Arun Kumar**) rather than random characters to set up your job search profile.",
+                "show_jobs": False,
+                "suggested_actions": [],
+                "matched_jobs": [],
+                "updated_profile": _build_profile_response_dict(profile, []),
             }
 
         # Conversational greeting, request for jobs, or off-topic chitchat during full_name step
@@ -1674,8 +1831,21 @@ def chat_with_job_agent(
         if msg_updates:
             profile, changed_fields = _apply_profile_updates(db, cursor, user_id, profile, msg_updates)
 
+        explicit_locs = extract_locations_from_text(message)
+        is_explicit_location_query = bool(explicit_locs) and any(
+            kw in message.lower()
+            for kw in ["job", "jobs", "opening", "openings", "role", "roles", "show", "find", "in ", "near ", "for "]
+        )
+
         # 2. Query top matched jobs against active profile (now reflecting new skills)
-        matched_jobs, is_unapplied_backfill = _get_top_matched_jobs(cursor, profile, user_id=user_id, limit=6)
+        matched_jobs, is_unapplied_backfill = _get_top_matched_jobs(
+            cursor,
+            profile,
+            user_id=user_id,
+            limit=6,
+            location_filter=explicit_locs if is_explicit_location_query else None,
+            strict_location=is_explicit_location_query,
+        )
 
         # Detect active job being discussed
         focused_job = _detect_focused_job(cursor, message, history or [], matched_jobs, selected_job_id=selected_job_id)
@@ -1732,7 +1902,14 @@ def chat_with_job_agent(
             profile, llm_changed = _apply_profile_updates(db, cursor, user_id, profile, profile_updates)
             if llm_changed:
                 changed_fields.extend(llm_changed)
-                matched_jobs, _ = _get_top_matched_jobs(cursor, profile, user_id=user_id, limit=6)
+                matched_jobs, _ = _get_top_matched_jobs(
+                    cursor,
+                    profile,
+                    user_id=user_id,
+                    limit=6,
+                    location_filter=explicit_locs if is_explicit_location_query else None,
+                    strict_location=is_explicit_location_query,
+                )
 
         # Determine whether to display job cards
         user_explicit_job_query = any(

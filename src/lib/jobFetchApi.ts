@@ -46,6 +46,9 @@ export interface JobFeedItem {
   salary_text?: string | null;
   experience_min?: number | null;
   experience_max?: number | null;
+  matching_skills?: string[];
+  missing_skills?: string[];
+  preparation_tips?: string;
 }
 
 export interface SavedJobItem {
