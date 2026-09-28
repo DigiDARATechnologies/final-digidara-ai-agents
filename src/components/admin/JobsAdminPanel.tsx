@@ -470,7 +470,7 @@ export default function JobsAdminPanel() {
               </div>
               <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
                 When enabled, the server automatically fetches fresh entry-level &amp; fresher jobs every day at{" "}
-                <strong>9:00 AM IST</strong> across Adzuna, JSearch (RapidAPI), and Greenhouse, and prunes listings older than 30 days.
+                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), and prunes listings older than 30 days.
               </p>
               <div
                 style={{

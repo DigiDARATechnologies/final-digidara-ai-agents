@@ -2,7 +2,8 @@
 
 Analyzes job listings for college students to ensure postings are genuine, verified,
 and free of fraudulent schemes (e.g. upfront training fees, security deposits,
-untraceable contacts).
+untraceable contacts). Transparently identifies listing source (Adzuna API,
+RapidAPI JSearch, or Direct Employer Portal).
 """
 from __future__ import annotations
 
@@ -10,26 +11,19 @@ import re
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-# Trusted ATS / Career Portal domains that indicate verified corporate listings
-TRUSTED_ATS_DOMAINS = {
-    "greenhouse.io",
-    "boards.greenhouse.io",
-    "lever.co",
-    "jobs.lever.co",
-    "myworkdayjobs.com",
-    "smartrecruiters.com",
-    "ashbyhq.com",
-    "icims.com",
-    "taleo.net",
-    "bamboohr.com",
-    "workable.com",
-    "jobvite.com",
-    "adzuna.in",
-    "adzuna.com",
+# Aggregator domains
+ADZUNA_DOMAINS = {"adzuna.in", "adzuna.com"}
+RAPIDAPI_DOMAINS = {"rapidapi.com", "jsearch"}
+
+# Other known external job board domains
+JOB_BOARD_DOMAINS = {
     "linkedin.com",
     "indeed.com",
     "glassdoor.com",
     "naukri.com",
+    "shine.com",
+    "foundit.in",
+    "internshala.com",
 }
 
 # Red flags / suspicious scam signals
@@ -49,13 +43,14 @@ SUSPICIOUS_PHRASES = [
 
 def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Evaluates authenticity and safety score for a job posting.
+    Evaluates authenticity, safety, and source transparency for a job posting.
     Returns:
     {
         "trust_score": int (0-100),
         "is_verified": bool,
         "trust_badge": str,
-        "trust_level": str ("verified" | "trusted" | "standard" | "caution"),
+        "trust_level": str ("direct_employer" | "aggregator" | "trusted" | "standard" | "caution"),
+        "source_label": str,
         "signals": list[str]
     }
     """
@@ -66,9 +61,11 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     company = str(job.get("company") or "").strip()
     desc = str(job.get("description") or "").strip()
     apply_url = str(job.get("apply_url") or "").strip()
+    source_type = str(job.get("source") or "").lower().strip()
+    external_id = str(job.get("external_id") or "").lower().strip()
     combined_text = f"{title} {company} {desc}".lower()
 
-    # 1. Domain & ATS Evaluation
+    # 1. Domain & Source Transparency
     parsed_domain = ""
     if apply_url:
         try:
@@ -77,13 +74,41 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             parsed_domain = ""
 
-    is_ats = any(trusted in parsed_domain for trusted in TRUSTED_ATS_DOMAINS)
-    if is_ats:
-        score += 15
-        signals.append("Verified enterprise ATS / official job portal")
-    elif parsed_domain and ("careers" in parsed_domain or "jobs" in parsed_domain):
+    is_adzuna = (
+        source_type == "adzuna"
+        or "adzuna" in external_id
+        or any(d in parsed_domain for d in ADZUNA_DOMAINS)
+    )
+    is_jsearch = (
+        source_type == "jsearch"
+        or "jsearch" in external_id
+        or any(d in parsed_domain for d in RAPIDAPI_DOMAINS)
+    )
+    is_direct_career_page = (
+        bool(parsed_domain)
+        and ("careers." in parsed_domain or "/careers" in apply_url.lower() or "/jobs" in apply_url.lower())
+        and not is_adzuna
+        and not is_jsearch
+        and not any(d in parsed_domain for d in JOB_BOARD_DOMAINS)
+    )
+
+    if is_adzuna:
+        source_label = "Adzuna Job API"
         score += 10
+        signals.append("Verified listing via Adzuna API")
+    elif is_jsearch:
+        source_label = "RapidAPI JSearch"
+        score += 10
+        signals.append("Verified listing via RapidAPI JSearch")
+    elif is_direct_career_page:
+        source_label = "Direct Company Portal"
+        score += 15
         signals.append("Direct corporate careers portal")
+    elif parsed_domain:
+        source_label = parsed_domain
+        signals.append(f"Application hosted on {parsed_domain}")
+    else:
+        source_label = "Standard Tech Feed"
 
     # 2. Company Authenticity
     if company and company.lower() not in {"unknown", "confidential", "leading mnc"}:
@@ -120,11 +145,21 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
 
     # Clamp score
     final_score = max(20, min(99, score))
-    is_verified = final_score >= 85 and not scam_found
+    is_verified = final_score >= 80 and not scam_found
 
-    if final_score >= 90:
-        trust_badge = "🛡️ Verified Corporate Posting"
-        trust_level = "verified"
+    # Transparent Badge Assignment (Never misrepresent aggregator as corporate posting)
+    if scam_found:
+        trust_badge = "⚠️ Review With Caution"
+        trust_level = "caution"
+    elif is_direct_career_page and final_score >= 85:
+        trust_badge = "🏢 Direct Employer Career Page"
+        trust_level = "direct_employer"
+    elif is_adzuna:
+        trust_badge = "📋 Aggregator Listing (via Adzuna)"
+        trust_level = "aggregator"
+    elif is_jsearch:
+        trust_badge = "📋 Aggregator Listing (via RapidAPI JSearch)"
+        trust_level = "aggregator"
     elif final_score >= 75:
         trust_badge = "✅ Genuine Opportunity"
         trust_level = "trusted"
@@ -140,5 +175,6 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         "is_verified": is_verified,
         "trust_badge": trust_badge,
         "trust_level": trust_level,
+        "source_label": source_label,
         "signals": signals[:3],
     }
