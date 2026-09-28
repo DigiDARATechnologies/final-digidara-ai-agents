@@ -187,13 +187,24 @@ def _protect_code_in_text(text: str) -> str:
 def _validate_question(q: dict, source: str = '') -> bool:
     """Return True if the question is structurally sound and safe to ship.
 
-    For MCQ questions (non-empty options list), correct_answer must appear
-    verbatim in the options list.  Logs a WARNING for every failure so we
-    can monitor LLM quality drift over time.
+    Every question produced by this generator is meant to be a 4-option MCQ
+    (both prompts require "exactly 4 distinct options"), but a mangled LLM
+    response that only survives via _repair_json_string / regex recovery can
+    come out with an options array truncated to 1-3 items. Require exactly 4
+    non-empty, distinct options, and correct_answer must appear verbatim
+    among them. Logs a WARNING for every failure so we can monitor LLM
+    quality drift over time; the caller's backfill loop regenerates whatever
+    gets discarded here.
     """
-    opts = q.get('options', [])
+    opts = [str(o).strip() for o in q.get('options', [])]
     ca = str(q.get('correct_answer', '')).strip()
-    if opts and ca not in [str(o).strip() for o in opts]:
+    if len(opts) != 4 or any(not o for o in opts) or len(set(opts)) != len(opts):
+        logger.warning(
+            f"[QValidation] {source} expected exactly 4 distinct non-empty options, got "
+            f"{opts!r} — discarding: {str(q.get('question', ''))[:80]!r}"
+        )
+        return False
+    if ca not in opts:
         logger.warning(
             f"[QValidation] {source} correct_answer {ca!r} not in options "
             f"{opts!r} — discarding: {str(q.get('question', ''))[:80]!r}"

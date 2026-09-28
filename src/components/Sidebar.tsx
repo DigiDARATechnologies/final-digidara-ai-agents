@@ -150,22 +150,25 @@ export default function Sidebar({
         </button>
       </div>
 
-      <button className="btn btn-outline btn-full new-chat-btn" onClick={onNewChat}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-        <span className="label">New Chat</span>
-      </button>
-
-      <button className="nav-item" onClick={() => { onCloseMobile(); setSearchOpen(true); }} title="Search chats (Ctrl+K)">
-        <span className="nav-icon">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <div className="sidebar-quickrow">
+        <button className="btn btn-outline btn-full new-chat-btn" onClick={onNewChat}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span className="label">New Chat</span>
+        </button>
+        <button
+          className="icon-btn sidebar-search-btn"
+          onClick={() => { onCloseMobile(); setSearchOpen(true); }}
+          title="Search chats (Ctrl+K)"
+          aria-label="Search chats"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.7" />
             <path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
           </svg>
-        </span>
-        <span className="label">Search Chats</span>
-      </button>
+        </button>
+      </div>
 
       <button
         className={`nav-item nav-item-primary${homeActive ? " active" : ""}`}
