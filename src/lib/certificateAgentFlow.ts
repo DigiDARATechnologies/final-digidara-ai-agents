@@ -93,7 +93,6 @@ export const initialCertificateMessage = (user: User): CertificateFlowMessage =>
   options: [
     { label: "Take Certification Exam", value: "start_exam" },
     { label: "My Certificates", value: "my_certificates" },
-    { label: "Leaderboard", value: "leaderboard" },
   ],
 });
 

@@ -417,12 +417,16 @@ body.glow-off .send-btn:hover{
 .sidebar .nav-item{ color:var(--sidebar-text-dim); }
 .sidebar .nav-item:hover{ background:var(--sidebar-hover); color:var(--sidebar-text); }
 .sidebar .nav-item.active-tab{ background:var(--sidebar-active); color:var(--sidebar-text); box-shadow:inset 3px 0 0 var(--accent1); }
-.sidebar .nav-item-primary{
-  background:linear-gradient(90deg, var(--ov-2), var(--ov-1));
-  border:1px solid var(--sidebar-border);
-  color:#fff;
+.sidebar .nav-item-primary{ color:#fff; }
+/* Match .nav-item.active-tab's treatment above (proper brand-blue tint +
+   accent bar) instead of the flat, near-invisible --ov-1/--ov-2 gray this
+   used to have -- that's what made the active Home row look dull/broken
+   instead of a clean highlighted box. */
+.sidebar .nav-item-primary.active{
+  background:var(--sidebar-active);
+  color:var(--sidebar-text);
+  box-shadow:inset 3px 0 0 var(--accent1);
 }
-.sidebar .nav-item-primary.active{ color:var(--sidebar-text); }
 .sidebar .icon-btn{ color:var(--sidebar-text-dim); }
 .sidebar .icon-btn:hover{ background:var(--sidebar-hover); color:var(--sidebar-text); border-color:var(--sidebar-border); }
 .sidebar .sidebar-divider{ color:var(--sidebar-text-faint); }
@@ -467,11 +471,20 @@ body.glow-off .send-btn:hover{
 .sidebar.collapsed .user-meta{ display:none; }
 .sidebar.collapsed .history-list{ display:none; }
 
-.sidebar-top{display:flex;align-items:center;justify-content:space-between;padding:0 2px 18px;}
+.sidebar-top{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 2px 18px;}
 .brand{ display:flex; align-items:center; gap:9px; overflow:hidden; }
 
 .new-chat-btn{margin-bottom:12px;border:0;color:#fff;padding:11px 14px;background:var(--accent-grad);box-shadow:0 8px 20px rgba(40,81,216,.3), inset 0 1px 0 rgba(255,255,255,.25);}
 .new-chat-btn:hover{color:#fff;background:var(--accent-grad);box-shadow:0 10px 26px rgba(40,81,216,.45), inset 0 1px 0 rgba(255,255,255,.3);transform:translateY(-1px);}
+
+/* New Chat + search icon share a row, instead of the search icon competing
+   with the (wide, graphical) logo for space in .sidebar-top -- that caused
+   the logo image to get clipped by .brand's overflow:hidden. */
+.sidebar-quickrow{ display:flex; align-items:center; gap:8px; }
+.sidebar-quickrow .new-chat-btn{ flex:1; min-width:0; margin-bottom:0; }
+.sidebar-quickrow .sidebar-search-btn{ flex:0 0 auto; margin-bottom:12px; }
+.sidebar.collapsed .sidebar-quickrow{ margin-bottom:0; }
+.sidebar.collapsed .sidebar-quickrow .sidebar-search-btn{ display:none; }
 
 .nav-item{
   display:flex; align-items:center; gap:10px;
@@ -484,13 +497,19 @@ body.glow-off .send-btn:hover{
 .nav-item:hover{background:#fff;color:var(--text);}
 .nav-item .nav-icon{ font-size:16px; width:20px; text-align:center; flex:0 0 auto; }
 .nav-item-primary{
-  background:linear-gradient(90deg, var(--accent-soft), #fff);
-  border:1px solid #e2f4fd;
   color:var(--accent1);
   margin-bottom:14px;
 }
-.nav-item-primary.active{ color:var(--accent1); }
-.nav-item-primary::after{
+/* Pill highlight only when Home is the current page -- matches how every
+   other nav row (Search Chats, My Agents, Settings...) stays plain until
+   active/hovered, instead of permanently looking like a differently-sized
+   box next to its plain siblings. */
+.nav-item-primary.active{
+  background:linear-gradient(90deg, var(--accent-soft), #fff);
+  border:1px solid #e2f4fd;
+  color:var(--accent1);
+}
+.nav-item-primary.active::after{
   content:''; position:absolute; inset:-1px; border-radius:inherit; padding:1px;
   background:var(--accent-grad);
   -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

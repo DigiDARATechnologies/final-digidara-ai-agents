@@ -1,6 +1,15 @@
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Must run before importing anything below that reads AGENT_SHARED_SECRET /
+# ORCHESTRATOR_URL / etc. via os.environ at module import time (registry_client,
+# agent_signing) -- pydantic-settings' env_file in config.py only populates the
+# Settings object, it never writes into os.environ.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles

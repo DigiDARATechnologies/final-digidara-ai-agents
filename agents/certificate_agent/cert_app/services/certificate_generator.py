@@ -51,17 +51,28 @@ _COL_RED    = (200, 30,  30)    # ISO Stamp Red
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_font(size: int, bold: bool = False, italic: bool = False, serif: bool = True) -> ImageFont.FreeTypeFont:
+    # Windows font names are tried first (nice fonts for local dev, where
+    # C:/Windows/Fonts has them), then the DejaVu/Liberation filenames that
+    # actually ship in the production container (see Dockerfile) as real
+    # TrueType fallbacks -- never rely on reaching PIL's bitmap default font
+    # below, since that ignores `size` entirely and renders everything tiny.
     if serif:
         candidates = (
-            ["palab.ttf", "georgiab.ttf", "cambriab.ttf", "constanb.ttf"] if bold
-            else ["palai.ttf", "georgiai.ttf", "cambriai.ttf", "constani.ttf"] if italic
-            else ["pala.ttf", "georgia.ttf", "cambria.ttf", "constan.ttf"]
+            ["palab.ttf", "georgiab.ttf", "cambriab.ttf", "constanb.ttf",
+             "LiberationSerif-Bold.ttf", "DejaVuSerif-Bold.ttf"] if bold
+            else ["palai.ttf", "georgiai.ttf", "cambriai.ttf", "constani.ttf",
+                  "LiberationSerif-Italic.ttf", "DejaVuSerif-Italic.ttf"] if italic
+            else ["pala.ttf", "georgia.ttf", "cambria.ttf", "constan.ttf",
+                  "LiberationSerif-Regular.ttf", "DejaVuSerif.ttf"]
         )
     else:
         candidates = (
-            ["segoeuib.ttf", "arialbd.ttf", "DejaVuSans-Bold.ttf"] if bold
-            else ["segoeuii.ttf", "ariali.ttf", "DejaVuSans-Oblique.ttf"] if italic
-            else ["segoeui.ttf", "arial.ttf", "DejaVuSans.ttf"]
+            ["segoeuib.ttf", "arialbd.ttf",
+             "LiberationSans-Bold.ttf", "DejaVuSans-Bold.ttf"] if bold
+            else ["segoeuii.ttf", "ariali.ttf",
+                  "LiberationSans-Italic.ttf", "DejaVuSans-Oblique.ttf"] if italic
+            else ["segoeui.ttf", "arial.ttf",
+                  "LiberationSans-Regular.ttf", "DejaVuSans.ttf"]
         )
     for font_dir in _FONT_DIRS:
         for name in candidates:
@@ -71,7 +82,12 @@ def _load_font(size: int, bold: bool = False, italic: bool = False, serif: bool 
                     return ImageFont.truetype(str(path), size)
                 except Exception:
                     continue
-    return ImageFont.load_default()
+    logger.warning("no TrueType font found for size=%s bold=%s italic=%s serif=%s; "
+                    "falling back to PIL's bitmap default font", size, bold, italic, serif)
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 def _centered_text(draw: ImageDraw.Draw, y: int, text: str,
                    font: ImageFont.FreeTypeFont, color: tuple, img_w: int) -> None:
