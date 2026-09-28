@@ -645,6 +645,9 @@ def end_interview():
         ] or ["Continue building confidence across the role subjects."])
         result["weaknesses"] = json.dumps([
             f"Weak: {subject}" for subject in role_breakdown["weak_subjects"]
+        ] + [
+            f"Not assessed: {subject}"
+            for subject in role_breakdown.get("not_assessed_subjects", [])
         ] or ["No weak role subjects were identified in this session."])
 
     integrity = finalize_open_focus_events(interview_id)

@@ -103,12 +103,18 @@ def subject_breakdown(rows):
     retest.  Old rows without ``topic_area`` retain their subject-tag fallback.
     """
     grouped = {}
+    unscored_topics = []
     for row in rows:
         topic_area = row.get("topic_area") or row.get("subject_tag")
         if not topic_area:
             continue
         verdict = row.get("verdict")
         if verdict is None or row.get("timed_out") or row.get("processing_status") == "skipped":
+            # A topic with no scored answers must not be classified as weak.
+            # Keep it visible so reports can distinguish "not assessed" from
+            # a genuinely incorrect answer.
+            if topic_area not in unscored_topics:
+                unscored_topics.append(topic_area)
             continue
         score = {"correct": 1, "partial": 0.5, "wrong": 0}.get(verdict, 0)
         grouped.setdefault(topic_area, []).append(score)
@@ -118,9 +124,20 @@ def subject_breakdown(rows):
         status = "Strong" if average >= 0.6 else "Weak"
         (strong if status == "Strong" else weak).append(subject)
         details.append({"subject": subject, "status": status, "score": round(average, 2)})
+    # A mixed topic (some answered, some timed out) is assessed from its
+    # scored answers. Only topics with no scored answer at all are unassessed.
+    not_assessed = [subject for subject in unscored_topics if subject not in grouped]
     logger.info(
         "Computed role weak areas from question topic_area values: %s",
         details,
         extra={"event": "role_topic_area_breakdown"},
     )
-    return {"strong_subjects": strong, "weak_subjects": weak, "subjects": details}
+    return {
+        "strong_subjects": strong,
+        "weak_subjects": weak,
+        "not_assessed_subjects": not_assessed,
+        "subjects": details + [
+            {"subject": subject, "status": "Not assessed", "score": None}
+            for subject in not_assessed
+        ],
+    }
