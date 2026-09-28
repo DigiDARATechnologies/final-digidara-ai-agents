@@ -178,10 +178,10 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       {summary.feedback && <p className="mock-interview-report-feedback">{compactFeedback(summary.feedback)}</p>}
       {(summary.strengths || summary.weaknesses) && <div className="mock-interview-feedback-grid">
         <div className="mock-interview-strengths"><strong>Strengths</strong>{feedbackPoints(summary.strengths).map((point, index) => <p key={index}>{point}</p>)}</div>
-        <div className="mock-interview-weaknesses"><strong>Areas to improve</strong>{feedbackPoints(summary.weaknesses).map((point, index) => <p key={index}>{point}</p>)}</div>
+        <div className="mock-interview-weaknesses"><strong>Areas to Improve</strong>{feedbackPoints(summary.weaknesses).map((point, index) => <p key={index}>{point}</p>)}</div>
       </div>}
       <div className="mock-interview-report-actions">
-        {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice weak skills</button>}
+        {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice Weak Skills</button>}
         <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF..." : "Download PDF report"}</button>
       </div>
       {downloadError && <p className="mock-interview-error" role="alert">{downloadError}</p>}
