@@ -81,6 +81,8 @@ interface ChatViewProps {
   /** Extra panel rendered above the message list ... used by the Aptitude
    * Trainer Agent to show its practice controls alongside the chat. */
   contextPanel?: ReactNode;
+  /** Suppress the text copy when a live panel renders that content itself. */
+  hideLatestContextMessage?: boolean;
 }
 
 export default function ChatView({
@@ -123,6 +125,7 @@ export default function ChatView({
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
+  hideLatestContextMessage = false,
 }: ChatViewProps) {
   const [input, setInput] = useState("");
   const [code, setCode] = useState(codeSeed);
@@ -377,6 +380,7 @@ export default function ChatView({
           const optionsActive = m.role === "agent" && !!visibleOptions?.length && i === chat.messages.length - 1 && !typing;
           const isEditing = editingIndex === i;
           const hasContextPanel = m.role === "agent" && i === chat.messages.length - 1 && !!contextPanel;
+          const hideContextMessage = hideLatestContextMessage && hasContextPanel;
           return (
             <div className={`msg ${m.role === "user" ? "user" : "agent"}${agent.kind === "mock-interview" ? " mock-interview-msg" : ""}`} key={i}>
               <span
@@ -412,7 +416,7 @@ export default function ChatView({
                 ) : (
                   <>
                     {hasContextPanel && contextPanel}
-                    <div className="bubble">{renderMessageText(m.text)}</div>
+                    {!hideContextMessage && <div className="bubble">{renderMessageText(m.text)}</div>}
                     {/* When the rich context panel (e.g. Aptitude's mode/category/
                         level/language picker) is already showing this message's
                         choices as its own buttons, skip the plain chat-options
@@ -432,7 +436,7 @@ export default function ChatView({
                         ))}
                       </div>
                     )}
-                    <div className="msg-footer">
+                    {!hideContextMessage && <div className="msg-footer">
                       <div className="msg-time">{m.time}</div>
                       <div className="msg-actions">
                         <button type="button" className="msg-action-btn" title="Copy" onClick={() => handleCopy(i, m.text)}>
@@ -444,7 +448,7 @@ export default function ChatView({
                           </button>
                         )}
                       </div>
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>

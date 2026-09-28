@@ -95,8 +95,9 @@ test('answers advance with their timing and finish with the four scores and scor
 
 test('an expired unanswered question is submitted as a timeout', async () => {
   mocked.submitMockInterviewAnswer.mockResolvedValue({ done: false, question: 'Next?', question_order: 2, total_questions: 10 });
-  await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 1 }), user, '', { timeTakenSec: 60, timedOut: true });
+  const result = await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 1 }), user, '', { timeTakenSec: 60, timedOut: true });
   expect(mocked.submitMockInterviewAnswer).toHaveBeenCalledWith('token', 9, 1, '', 60, true);
+  expect(result.messages[0].text).toBe('Time expired - no answer submitted.');
 });
 
 test('exiting calls the agent and ends the flow', async () => {

@@ -417,17 +417,21 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
         f"Evaluate all Q&A pairs for a {round_type} interview at {difficulty} difficulty. "
         f"{BEGINNER_TECHNICAL_RUBRIC if round_type == 'technical' and difficulty == 'beginner' else ''}"
         f"{(TECHNICAL_LEVEL_SCORING if round_type == 'technical' else HR_LEVEL_SCORING).get(difficulty, '')}"
-        "Return one result per pair in the same order. Use verdict correct, partial, or wrong; "
-        "include question_id, a concise reason, and recommended ideal_answer. Return ONLY JSON in this shape: "
-        '{"evaluations":[{"question_id":1,"verdict":"correct|partial|wrong","reason":"...","ideal_answer":"..."}]}\n'
+        "Return one result per pair in the same order. For answered pairs, use verdict correct, partial, or wrong; "
+        "include question_id, a concise reason, and recommended ideal_answer. For pairs marked unanswered=true, "
+        "return only question_id, verdict null, and ideal_answer; do not include feedback or assess the student. "
+        "Return ONLY JSON in this shape: "
+        '{"evaluations":[{"question_id":1,"verdict":"correct|partial|wrong|null","reason":"...","ideal_answer":"..."}]}\n'
         f"Pairs: {json.dumps(qa_pairs, ensure_ascii=False)}"
     )
     value = _json_object(chat_fn([{"role": "system", "content": prompt}], json_mode=True))
     evaluations = value.get("evaluations")
     if not isinstance(evaluations, list) or len(evaluations) != len(qa_pairs):
         raise ValueError("The AI returned an invalid batch evaluation.")
-    for item in evaluations:
-        if item.get("question_id") is None or item.get("verdict") not in {"correct", "partial", "wrong"}:
+    for item, pair in zip(evaluations, qa_pairs):
+        if item.get("question_id") is None:
+            raise ValueError("The AI returned an invalid batch verdict.")
+        if not pair.get("unanswered") and item.get("verdict") not in {"correct", "partial", "wrong"}:
             raise ValueError("The AI returned an invalid batch verdict.")
     return evaluations
 

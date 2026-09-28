@@ -85,6 +85,7 @@
 /* Treat the active controls and question as one message section. */
 .msg-content{min-width:0}
 .aptitude-question-section{width:min(680px,70vw)}
+.aptitude-live-context{width:100%}
 .aptitude-question-section .aptitude-practice-panel{position:static;width:100%;max-width:none;margin:0 0 8px;padding:14px 15px;box-shadow:none;background:linear-gradient(135deg,var(--surf-1) 0%,var(--surf-2) 100%)}
 .aptitude-question-section>.bubble{width:100%}
 .aptitude-live-details{min-width:0;flex:1}
@@ -95,6 +96,7 @@
 .aptitude-hint-button:not(:disabled):hover{border-color:var(--cy);background:rgba(108,195,232,.14);transform:translateY(-1px)}
 .aptitude-hint-button:disabled{cursor:not-allowed;opacity:.58}
 .aptitude-question-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:14px}.aptitude-question-nav>span{width:100%;color:var(--tx-2);font-size:11px;font-weight:750}.aptitude-question-number{width:30px;height:30px;border:1px solid var(--line-1);border-radius:8px;background:var(--surf-2);color:var(--tx-2);font-size:12px;font-weight:750;cursor:pointer}.aptitude-question-number.answered{border-color:#43ad72;background:#43ad72;color:#fff}.aptitude-question-number.current{outline:3px solid rgba(108,195,232,.3);border-color:var(--cy)}.aptitude-question-number.timed_out{border-color:#d95c67;background:rgba(239,68,68,.18);color:var(--err)}.aptitude-question-legend{display:block;margin-top:8px;color:var(--tx-3);font-size:10px}
+.aptitude-answer-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}.aptitude-answer-options button{display:flex;align-items:flex-start;gap:8px;width:100%;border:1px solid var(--line-1);border-radius:10px;background:var(--surf-2);color:var(--tx-1);padding:10px 11px;text-align:left;cursor:pointer;font-size:12px;line-height:1.4}.aptitude-answer-options button:hover{border-color:var(--cy);background:rgba(108,195,232,.1)}.aptitude-answer-options b{color:var(--cy);flex:0 0 auto}.aptitude-answer-options span{min-width:0;overflow-wrap:anywhere}
 .aptitude-hint-text{display:flex;gap:8px;margin-top:10px;border-radius:10px;background:rgba(108,195,232,.14);padding:9px 11px;color:var(--tx-2);font-size:12px;line-height:1.45}
 .aptitude-hint-text b{flex:0 0 auto;margin:0;color:var(--cy);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 @media(max-width:720px){.aptitude-question-section{width:calc(100vw - 92px)}.aptitude-live-actions{width:100%;flex-wrap:wrap}.aptitude-countdown,.aptitude-hint-button{flex:1;min-width:135px}}
@@ -122,16 +124,19 @@
 .aptitude-active-panel .aptitude-question-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(56px,1fr));gap:8px;margin-top:0;justify-items:center}
 .aptitude-active-panel .aptitude-question-nav>span{grid-column:1/-1;justify-self:start}
 .aptitude-active-panel .aptitude-question-legend{margin-top:6px}
-.aptitude-active-panel .aptitude-hint-text{min-width:0;margin-top:0;overflow-wrap:anywhere}
-.aptitude-active-panel .aptitude-live-actions{grid-column:2;align-self:start;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}
+.aptitude-active-panel .aptitude-hint-text{grid-column:1/-1;min-width:0;margin-top:0;overflow-wrap:anywhere}
+.aptitude-active-panel .aptitude-live-actions{grid-column:1/-1;justify-self:end;align-self:start;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:min(100%,250px);gap:8px}
+.aptitude-question-content{width:100%;padding:10px 2px 2px}
+.aptitude-live-question{display:flex;gap:8px;align-items:flex-start;color:var(--tx-1);font-size:14px;line-height:1.5}.aptitude-live-question b{color:var(--cy);font-size:16px;flex:0 0 auto}.aptitude-question-content .aptitude-answer-options{margin-top:12px}
 .aptitude-active-panel .aptitude-hint-button{min-width:0}
 @media(max-width:640px){
   .aptitude-active-panel{grid-template-columns:minmax(0,1fr);gap:10px}
   .aptitude-live-timer{justify-self:start}
   .aptitude-active-panel .aptitude-question-nav{grid-template-columns:repeat(auto-fit,minmax(48px,1fr));gap:7px}
-  .aptitude-active-panel .aptitude-live-actions{grid-column:1;max-width:420px}
+  .aptitude-active-panel .aptitude-live-actions{grid-column:1;justify-self:stretch;width:100%;max-width:420px}
 }
 @media(max-width:380px){.aptitude-active-panel .aptitude-live-actions{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:520px){.aptitude-answer-options{grid-template-columns:minmax(0,1fr)}}
 
 *{box-sizing:border-box;}
 html,body,#root{height:100%;}
