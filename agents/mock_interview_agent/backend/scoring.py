@@ -50,10 +50,15 @@ def build_scorecard(rows):
         if status in {"timed_out", "skipped"}:
             marks = 0
 
+        display_answer = (
+            "Not answered (time expired)" if status == "timed_out" else
+            "Skipped" if status == "skipped" else row["answer"]
+        )
+
         scorecard.append({
             "question_number": len(scorecard) + 1,
             "question": row["question"],
-            "answer": row["answer"],
+            "answer": display_answer,
             "answer_audio_path": row.get("answer_audio_path"),
             "followup": ({
                 "question": followup["question"],
