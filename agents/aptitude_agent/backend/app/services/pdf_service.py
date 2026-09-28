@@ -112,7 +112,15 @@ def _completed_at(test, fallback_timezone=None):
     value=test.completed_at
     if not value:
         return ""
-    timezone_name=valid_timezone(getattr(test,"timezone",None)) or valid_timezone(fallback_timezone)
+    # Aptitude reports are learner-facing and the application is operated in
+    # India.  Older attempts may not have a saved timezone, so do not fall
+    # back to UTC (which makes the PDF appear 5:30 hours behind local time).
+    # A valid per-attempt/browser timezone still takes precedence.
+    timezone_name=(
+        valid_timezone(getattr(test,"timezone",None))
+        or valid_timezone(fallback_timezone)
+        or "Asia/Kolkata"
+    )
     return format_local_datetime(value,timezone_name)
 
 

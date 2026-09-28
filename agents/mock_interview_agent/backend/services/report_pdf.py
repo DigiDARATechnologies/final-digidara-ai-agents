@@ -2,7 +2,9 @@
 
 from io import BytesIO
 from pathlib import Path
+from datetime import datetime, timezone
 from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -52,6 +54,22 @@ def _display_choice(value):
     """Render enum-like report values in readable title case."""
     text = str(value if value is not None else "").strip()
     return text.replace("_", " ").title()
+
+
+def _completed_at(value):
+    """Format database UTC timestamps as the learner-facing IST time."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(ZoneInfo("Asia/Kolkata")).strftime(
+        "%d %b %Y, %I:%M:%S %p IST"
+    )
 
 
 def _styles():
@@ -113,7 +131,7 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
         ("Round", _display_choice(interview.get("round_type"))),
         ("Difficulty", _display_choice(interview.get("difficulty"))),
         ("Questions", str(max_marks)),
-        ("Completed", interview.get("ended_at") or interview.get("created_at")),
+        ("Completed", _completed_at(interview.get("ended_at") or interview.get("created_at"))),
     ]
     detail_table = Table(
         [[Paragraph(label, style["label"]), Paragraph(_html(value) or "-", style["value"])] for label, value in metadata],

@@ -119,6 +119,28 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertIsNone(scorecard[0]["verdict"])
         self.assertEqual(scorecard[0]["answer"], "Not answered (time expired)")
 
+    def test_unanswered_questions_cannot_inflate_final_quality_scores(self):
+        from routes.interviews import _apply_unanswered_score_adjustment
+
+        result = {
+            "overall_score": 10,
+            "technical_accuracy": 10,
+            "communication_clarity": 10,
+            "confidence": 10,
+        }
+        rows = [
+            {"is_followup": False, "answer": "A", "timed_out": False, "processing_status": "evaluated"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+        ]
+        _apply_unanswered_score_adjustment(result, rows)
+        self.assertEqual(result["overall_score"], 2.0)
+        self.assertEqual(result["technical_accuracy"], 2.0)
+        self.assertEqual(result["communication_clarity"], 2.0)
+        self.assertEqual(result["confidence"], 2.0)
+
     def test_batch_payload_includes_unanswered_items_once(self):
         from routes.interviews import _batch_evaluations_or_error
 

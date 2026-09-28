@@ -56,6 +56,37 @@ interviews_bp = Blueprint("interviews", __name__)
 logger = logging.getLogger(__name__)
 
 
+def _apply_unanswered_score_adjustment(result, rows):
+    """Ensure unanswered main questions receive no share of interview scores.
+
+    The final evaluator receives answered pairs only, so its 0-10 quality
+    scores describe the answered subset.  Scale those dimensions by the
+    answered fraction of the planned main questions before persisting them.
+    This keeps the scorecard's explicit ``1 / N`` marks and leaves historical
+    follow-up rows out of the denominator.
+    """
+    main_rows = [row for row in rows if not row.get("is_followup")]
+    total = len(main_rows)
+    answered = sum(
+        1 for row in main_rows
+        if row.get("answer") is not None
+        and not row.get("timed_out")
+        and row.get("processing_status") != "skipped"
+    )
+    if not total or answered >= total:
+        return result
+    factor = answered / total
+    for field in ("overall_score", "technical_accuracy", "communication_clarity", "confidence"):
+        value = result.get(field)
+        if value is not None:
+            result[field] = round(float(value) * factor, 1)
+    logger.info(
+        "Scaled interview scores for unanswered questions: answered=%s total=%s factor=%.3f",
+        answered, total, factor,
+    )
+    return result
+
+
 def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
     """Run and validate the single batch evaluator without leaking 500s."""
     try:
@@ -656,6 +687,7 @@ def end_interview():
             "retryable": True,
         }), 503
 
+    _apply_unanswered_score_adjustment(result, rows)
     avg_time = int(sum(r["time_taken_sec"] or 0 for r in rows) / max(len(rows), 1))
 
     if role_breakdown:
