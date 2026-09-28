@@ -8,20 +8,37 @@ Test suite validating the 4 specific QA issues and enhancements:
 
 from unittest.mock import MagicMock
 import pytest
-from agents.job_agent.chat_service import (
-    extract_education_from_text,
-    _detect_name_from_message,
-    _is_valid_human_name,
-    _matches_location_filter,
-    _get_top_matched_jobs,
-    format_job_listings_markdown,
-)
-from agents.job_agent.trust import (
-    evaluate_job_trust,
-    ADZUNA_DOMAINS,
-    RAPIDAPI_DOMAINS,
-)
-from agents.job_agent.matching import score_job
+
+try:
+    from job_agent.chat_service import (
+        extract_education_from_text,
+        _detect_name_from_message,
+        _is_valid_human_name,
+        _matches_location_filter,
+        _get_top_matched_jobs,
+        format_job_listings_markdown,
+    )
+    from job_agent.trust import (
+        evaluate_job_trust,
+        ADZUNA_DOMAINS,
+        RAPIDAPI_DOMAINS,
+    )
+    from job_agent.matching import score_job
+except ModuleNotFoundError:
+    from agents.job_agent.chat_service import (
+        extract_education_from_text,
+        _detect_name_from_message,
+        _is_valid_human_name,
+        _matches_location_filter,
+        _get_top_matched_jobs,
+        format_job_listings_markdown,
+    )
+    from agents.job_agent.trust import (
+        evaluate_job_trust,
+        ADZUNA_DOMAINS,
+        RAPIDAPI_DOMAINS,
+    )
+    from agents.job_agent.matching import score_job
 
 
 # ==============================================================================
@@ -146,7 +163,10 @@ def test_trust_corporate_careers_vs_aggregators():
 
 
 def test_greenhouse_lever_workday_completely_cleared():
-    import agents.job_agent.trust as trust_module
+    try:
+        import job_agent.trust as trust_module
+    except ModuleNotFoundError:
+        import agents.job_agent.trust as trust_module
 
     # Confirm Greenhouse, Lever, Workday are completely removed from trust module attributes
     assert not hasattr(trust_module, "CORPORATE_ATS_HOSTS")
