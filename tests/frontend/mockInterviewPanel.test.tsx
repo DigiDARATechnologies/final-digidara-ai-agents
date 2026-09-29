@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MockInterviewPanel from '../../src/components/MockInterviewPanel';
-import { downloadMockInterviewReport, transcribeMockInterviewAudio } from '../../src/lib/mockInterviewApi';
+import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from '../../src/lib/mockInterviewApi';
 import type { MockInterviewFlowState } from '../../src/lib/mockInterviewFlow';
 
 const mockSpeechStart = jest.fn();
@@ -14,6 +14,7 @@ jest.mock('../../src/hooks/useSpeechRecognition', () => ({
 jest.mock('../../src/lib/mockInterviewApi', () => ({
   downloadMockInterviewReport: jest.fn(),
   transcribeMockInterviewAudio: jest.fn(),
+  transcribeMockInterviewPreview: jest.fn(),
 }));
 
 const live: MockInterviewFlowState = {
@@ -265,5 +266,134 @@ describe('on a phone', () => {
     render(<MockInterviewPanel state={live} busy={false} onAnswer={jest.fn()} onExit={jest.fn()} />);
     await waitFor(() => expect(screen.getByText(/Microphone permission was denied/)).toBeInTheDocument());
     expect(screen.getByText(/You can also type your answer below/)).toBeInTheDocument();
+  });
+});
+
+describe('silence handling and live text on a phone', () => {
+  const realUserAgent = navigator.userAgent;
+  let micLevel = 0;
+
+  class FakeAudioContext {
+    state = 'running';
+    resume() { return Promise.resolve(); }
+    close() { this.state = 'closed'; return Promise.resolve(); }
+    createMediaStreamSource() { return { connect: () => undefined }; }
+    createAnalyser() {
+      return {
+        fftSize: 1024,
+        getByteTimeDomainData(samples: Uint8Array) {
+          const amplitude = Math.round(micLevel * 128);
+          samples.forEach((_, index) => { samples[index] = 128 + (index % 2 ? amplitude : -amplitude); });
+        },
+      };
+    }
+  }
+
+  class ChunkingRecorder {
+    static isTypeSupported = () => true;
+    state: RecordingState = 'inactive';
+    mimeType = 'audio/mp4';
+    private listeners = new Map<string, Array<(event: { data: Blob }) => void>>();
+    private timer: number | undefined;
+    constructor(_stream: MediaStream, _options?: MediaRecorderOptions) {}
+    addEventListener(name: string, callback: (event: { data: Blob }) => void) {
+      this.listeners.set(name, [...(this.listeners.get(name) || []), callback]);
+    }
+    private emit(name: string, data = new Blob()) {
+      this.listeners.get(name)?.forEach((callback) => callback({ data }));
+    }
+    start() {
+      this.state = 'recording';
+      this.emit('start');
+      this.timer = window.setInterval(() => this.emit('dataavailable', new Blob(['voice'], { type: 'audio/mp4' })), 250);
+    }
+    stop() {
+      window.clearInterval(this.timer);
+      this.emit('dataavailable', new Blob(['voice'], { type: 'audio/mp4' }));
+      this.state = 'inactive';
+      this.emit('stop');
+    }
+    pause() { this.state = 'paused'; }
+    resume() { this.state = 'recording'; }
+  }
+
+  async function advance(ms: number) {
+    await act(async () => { jest.advanceTimersByTime(ms); });
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    micLevel = 0;
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (Linux; Android 14) Chrome/128.0 Mobile Safari/537.36' });
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: jest.fn() }] }) },
+    });
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: ChunkingRecorder });
+    Object.defineProperty(global, 'MediaRecorder', { configurable: true, value: ChunkingRecorder });
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: FakeAudioContext });
+    (transcribeMockInterviewPreview as jest.Mock).mockReset().mockResolvedValue({ transcript: 'A view function handles a route' });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => realUserAgent });
+    delete (window as { AudioContext?: unknown }).AudioContext;
+  });
+
+  async function startRecording(onAnswer = jest.fn(), onExit = jest.fn()) {
+    render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={onExit} />);
+    await advance(0);
+    await waitFor(() => expect(screen.getByText(/Recording your answer/)).toBeInTheDocument());
+    return { onAnswer, onExit };
+  }
+
+  test('the answer appears in the box while speaking, and a 5 second pause submits it', async () => {
+    (transcribeMockInterviewAudio as jest.Mock).mockResolvedValue({ transcript: 'A view function handles a route and returns a response.' });
+    const { onAnswer } = await startRecording();
+    micLevel = 0.2;
+    await advance(1_000);
+    expect(transcribeMockInterviewPreview).toHaveBeenCalledWith('session', 42, 1, expect.any(Blob));
+    await waitFor(() => expect(screen.getByDisplayValue('A view function handles a route')).toBeInTheDocument());
+    expect(onAnswer).not.toHaveBeenCalled();
+
+    micLevel = 0;
+    await advance(3_000);
+    expect(screen.getByText(/Pause detected - submitting your answer in/)).toBeInTheDocument();
+    expect(onAnswer).not.toHaveBeenCalled();
+    await advance(2_500);
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith('A view function handles a route and returns a response.', expect.objectContaining({ timedOut: false })));
+  });
+
+  test('without speech, "Hey, are you there?" is asked at 30s and the interview ends 15s later', async () => {
+    const { onAnswer, onExit } = await startRecording();
+    await advance(29_000);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await advance(1_500);
+    expect(screen.getByRole('alert')).toHaveTextContent('Hey, are you there?');
+    await advance(14_000);
+    expect(onExit).not.toHaveBeenCalled();
+    await advance(1_500);
+    expect(onExit).toHaveBeenCalledWith('inactive');
+    expect(onAnswer).not.toHaveBeenCalled();
+  });
+
+  test('speaking after the prompt clears it and the answer carries on normally', async () => {
+    const { onExit } = await startRecording();
+    await advance(30_500);
+    expect(screen.getByRole('alert')).toHaveTextContent('Hey, are you there?');
+    micLevel = 0.2;
+    await advance(500);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await advance(20_000);
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  test('typing an answer turns the automatic rules off', async () => {
+    const { onAnswer, onExit } = await startRecording();
+    fireEvent.change(screen.getByLabelText(/your answer/i), { target: { value: 'I am typing it' } });
+    await advance(50_000);
+    expect(onExit).not.toHaveBeenCalled();
+    expect(onAnswer).not.toHaveBeenCalled();
   });
 });

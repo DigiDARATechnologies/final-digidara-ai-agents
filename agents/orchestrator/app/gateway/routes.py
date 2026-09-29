@@ -84,6 +84,11 @@ FREE_ACTIONS = {
     # question cost tokens. Actions that do call an LLM (create_test, hint,
     # results, start_interview, submit_answer, end_interview) stay billable.
     "dashboard", "history", "history_detail", "profile", "analytics",
+    # Mock Interview's live answer preview on phones: re-transcribes the answer
+    # so far every few seconds while the candidate speaks. Charging each one
+    # as a call would bill a single answer many times over; the answer of
+    # record (transcribe_audio, on submit) stays billable.
+    "transcribe_preview",
     "mixed_test_config", "save_mixed_test_config", "daily_usage",
     "active_interview", "status", "download_report", "record_focus_event",
     # State changes with no LLM call: questions are served from the batch
