@@ -434,3 +434,94 @@ def test_upload_response_has_no_syntax_errors_field_content_when_the_code_parses
         "status": "needs_revision", "revision_notes": "Report: add more detail.", "syntax_report": {"errors": [], "has_errors": False}})
     body = upload(client).json()
     assert body["syntax_errors"] is None and body["revision_notes"] == "Report: add more detail."
+
+def test_topic_generation_avoids_titles_offered_to_other_students_and_records_its_own(state, database, monkeypatch):
+    from app.db.models import OfferedTopic
+    with database() as session:
+        # Another student asking about Python was shown this and chose nothing.
+        session.add(OfferedTopic(focus_key="python", title="Unchosen idea", normalized_title="unchosen idea"))
+        session.commit()
+    provider = Mock(return_value={"options": [{"id": "A", "title": "Fresh one", "summary": "s"}, {"id": "B", "title": "Fresh two", "summary": "s"}]})
+    monkeypatch.setattr(nodes, "call_json", provider)
+    nodes.topic_generator_node({**state, "topic_focus_key": "Python", "exclude_titles": ["Shown earlier in chat"]})
+    system = provider.call_args.kwargs["system"]
+    assert "Unchosen idea" in system
+    assert "Shown earlier in chat" in system
+    with database() as session:
+        titles = {t.title for t in session.query(OfferedTopic).filter_by(focus_key="python")}
+    assert titles == {"Unchosen idea", "Fresh one", "Fresh two"}
+
+
+@pytest.mark.parametrize("repeat", ["Weather Alert Chatbot API", "weather alert chatbot api!", "Weather Alerts Chatbot API"])
+def test_a_title_any_student_was_already_offered_is_regenerated_not_shown(state, database, monkeypatch, repeat):
+    from app.db.models import OfferedTopic
+    with database() as session:
+        # Exact repeats are caught whatever language they were offered for.
+        session.add(OfferedTopic(focus_key="java", title="Weather Alert Chatbot API", normalized_title="weather alert chatbot api"))
+        session.commit()
+    focus = "java" if repeat == "Weather Alerts Chatbot API" else "python"
+    provider = Mock(side_effect=[
+        {"options": [{"id": "A", "title": repeat}, {"id": "B", "title": "Java File Organizer"}]},
+        {"options": [{"id": "A", "title": "Clinic Queue Board"}, {"id": "B", "title": "Java File Organizer"}]},
+    ])
+    monkeypatch.setattr(nodes, "call_json", provider)
+    options = nodes.topic_generator_node({**state, "topic_focus_key": focus})["topic_options"]
+    assert [o["title"] for o in options] == ["Clinic Queue Board", "Java File Organizer"]
+    assert provider.call_count == 2
+    assert repeat in provider.call_args_list[1].kwargs["system"]
+
+
+def test_two_students_asking_the_same_thing_never_see_the_same_topic(state, database, monkeypatch):
+    shown = iter([
+        {"options": [{"id": "A", "title": "Java File Organizer"}, {"id": "B", "title": "Weather Alert Chatbot API"}]},
+        # The model repeats the first student's pair for the second student...
+        {"options": [{"id": "A", "title": "Java File Organizer"}, {"id": "B", "title": "Weather Alert Chatbot API"}]},
+        # ...so it is asked again.
+        {"options": [{"id": "A", "title": "Parking Slot Tracker"}, {"id": "B", "title": "Gym Class Scheduler"}]},
+    ])
+    monkeypatch.setattr(nodes, "call_json", Mock(side_effect=lambda **kwargs: next(shown)))
+    first = nodes.topic_generator_node({**state, "topic_focus_key": "java"})["topic_options"]
+    second = nodes.topic_generator_node({**state, "topic_focus_key": "java"})["topic_options"]
+    assert not {o["title"] for o in first} & {o["title"] for o in second}
+
+
+def test_same_topic_key_shares_one_past_topics_pool(client, database, monkeypatch):
+    from app.db.models import Course
+    monkeypatch.setattr(routes, "_invoke_graph", Mock(return_value={"topic_options": []}))
+    for course_name in ("Java — Web development", "Java — web development (a clinic)"):
+        payload = {"name": "L", "email": "l@example.test", "course_name": course_name, "topic_key": "Java|Web  development"}
+        assert client.post("/api/invoke", json={"action": "check_eligibility_free", "payload": payload}).status_code == 200
+    with database() as session:
+        assert [c.name for c in session.query(Course).filter(Course.name.like("java%")).all()] == ["java|web development"]
+        assert session.query(ProjectAssignment).filter(ProjectAssignment.course_id != "course").count() == 2
+
+
+def intake_turn(client, **payload):
+    body = {"message": "x", "memory": {"focus": "Python"}, **payload}
+    return client.post("/api/invoke", json={"action": "topic_intake_turn", "payload": body})
+
+
+def test_intake_edit_replaces_the_field_and_asks_the_next_question(client, database, monkeypatch):
+    provider = Mock(return_value={"intent": "update", "memory": {"focus": "java", "project_type": None},
+                                  "ready": True, "next_question": "What type of project with Java?", "reply": "Switched to Java."})
+    monkeypatch.setattr(routes, "call_json", provider)
+    body = intake_turn(client, message="i need to update language python to java", pending_question="project_type").json()
+    assert body["intent"] == "update"
+    assert body["memory"]["focus"] == "java"
+    # "ready" needs both fields, whatever the model claims.
+    assert body["ready"] is False
+    assert body["next_question"] == "What type of project with Java?"
+    assert '"focus": "Python"' in provider.call_args.kwargs["system"]
+    assert provider.call_args.kwargs["user"] == "i need to update language python to java"
+
+
+def test_intake_never_lets_a_non_update_change_memory_or_pick_a_missing_option(client, database, monkeypatch):
+    monkeypatch.setattr(routes, "call_json", Mock(return_value={"intent": "choose", "choice": "C", "memory": {"focus": "Rust"}}))
+    body = intake_turn(client, shown_topics=[{"id": "A", "title": "One"}, {"id": "B", "title": "Two"}]).json()
+    assert body["intent"] == "question" and body["choice"] is None
+    assert body["memory"]["focus"] == "Python"
+
+
+def test_intake_regenerate_without_options_on_screen_is_not_a_regenerate(client, database, monkeypatch):
+    monkeypatch.setattr(routes, "call_json", Mock(return_value={"intent": "regenerate", "memory": {}}))
+    assert intake_turn(client).json()["intent"] == "update"

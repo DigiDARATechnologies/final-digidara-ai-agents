@@ -50,3 +50,21 @@ test('the overall timer can expire while Exit confirmation is open', () => {
   expect(onExpire).toHaveBeenCalledTimes(1);
   expect(onChoose).not.toHaveBeenCalled();
 });
+
+test('technical code is formatted in the live question before answering', () => {
+  const state = activeState('mixed', 10);
+  const code = 'def add(left, right):\n    return left + right';
+  state.question = {
+    ...state.question!,
+    category: 'Technical Aptitude',
+    question: `What does this function return?\n\n\`\`\`python\n${code}\n\`\`\``,
+  };
+
+  const { container } = render(
+    <AptitudePracticePanel state={state} onChoose={jest.fn()} onExpire={jest.fn()} />
+  );
+
+  const renderedCode = container.querySelector('.aptitude-live-question pre.message-code');
+  expect(renderedCode).not.toBeNull();
+  expect(renderedCode?.textContent).toBe(code);
+});

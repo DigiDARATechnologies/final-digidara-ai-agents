@@ -252,6 +252,11 @@ def skip(test_id):
     target=(AptitudeTestQuestion.query.filter_by(test_id=test.id).filter(AptitudeTestQuestion.sequence_no>current.sequence_no, AptitudeTestQuestion.answer==None).order_by(AptitudeTestQuestion.sequence_no).first() or AptitudeTestQuestion.query.filter_by(test_id=test.id).filter(AptitudeTestQuestion.answer==None).order_by(AptitudeTestQuestion.sequence_no).first())
     if target:
         test.current_sequence=target.sequence_no
+        # The skip response displays the target question directly, without a
+        # separate GET /question request. Mark it as served just as the GET
+        # endpoint does; otherwise the answer and hint endpoints reject the
+        # visible question as question_not_started.
+        target.visited=True
     test.last_activity_at=utcnow();record_event("question_skipped",g.student.id,test.id,{"sequence":current.sequence_no})
     db.session.commit()
     return public_question(target or current,test)

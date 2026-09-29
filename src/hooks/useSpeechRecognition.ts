@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
 
-/** Minimal ambient typing for the Web Speech API */
+/** Minimal ambient typing for the Web Speech API — not in TS's default DOM
+ * lib, and only Chrome/Edge/Safari expose it (Firefox does not), always
+ * under the `webkit`-prefixed name in Safari/Chromium. */
 interface SpeechRecognitionResultLike {
   isFinal: boolean;
   0: { transcript: string; confidence: number };
@@ -37,12 +40,13 @@ declare global {
   }
 }
 
-const SpeechRecognitionAPI: SpeechRecognitionCtor | undefined =
-  typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined;
-
 export const isMobileDevice =
   typeof navigator !== "undefined" &&
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "");
+
+function getSpeechRecognitionAPI(): SpeechRecognitionCtor | undefined {
+  return typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined;
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   "no-speech": "No speech was detected. Try again or type your message.",
@@ -52,10 +56,18 @@ const ERROR_MESSAGES: Record<string, string> = {
   aborted: "Listening stopped.",
 };
 
+function speechDebugEnabled(): boolean {
+  try {
+    return window.localStorage.getItem("digidara_speech_debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Robustly merge cumulative speech transcripts.
  * Fixes Android Chrome's cumulative transcription bug where each isFinal event
- * repeats the entire prefix of the utterance (e.g. "MNC" -> "MNC anything" -> "MNC anything can you").
+ * repeats the entire prefix of the utterance.
  */
 export function mergeCumulativeText(existing: string, incoming: string): string {
   const a = existing.trim();
@@ -63,18 +75,12 @@ export function mergeCumulativeText(existing: string, incoming: string): string 
   if (!a) return b;
   if (!b) return a;
   if (a === b) return a;
-
-  // If incoming already starts with existing, incoming is the fuller accumulated sentence
   if (b.toLowerCase().startsWith(a.toLowerCase())) return b;
-
-  // If existing already ends with incoming, no need to append
   if (a.toLowerCase().endsWith(b.toLowerCase())) return a;
 
-  // Check for word-level overlap at the boundary
   const aWords = a.split(/\s+/);
   const bWords = b.split(/\s+/);
   const maxCheck = Math.min(aWords.length, bWords.length);
-
   for (let len = maxCheck; len >= 1; len--) {
     const aSuffix = aWords.slice(aWords.length - len).join(" ").toLowerCase();
     const bPrefix = bWords.slice(0, len).join(" ").toLowerCase();
@@ -83,31 +89,23 @@ export function mergeCumulativeText(existing: string, incoming: string): string 
     }
   }
 
-  return `${a} ${b}`.trim();
+  return joinSpeechSegments([existing, incoming]);
 }
 
-/**
- * Mobile-resilient browser speech-to-text hook.
- * Handles mobile Android/iOS keep-alive, audio lock contention, and cumulative deduplication.
- */
+/** Browser-only speech-to-text for the chat composer: dictate into the
+ * text input instead of typing. Purely client-side (Web Speech API) — the
+ * recognized text is sent through the exact same `onSend(text)` path as
+ * anything typed, so no backend agent needs to know the difference. */
 export default function useSpeechRecognition(locale = "en-US") {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const keepListeningRef = useRef(false);
   const vadCleanupRef = useRef<(() => void) | null>(null);
-  const activeSessionRef = useRef(false);
-  const reconnectTimerRef = useRef<number | undefined>(undefined);
-  const sessionDataRef = useRef<{
-    onResult: (text: string, final: boolean) => void;
-    options: VoiceCaptureOptions;
-    finalText: string;
-    latestText: string;
-  } | null>(null);
+  const retryCountRef = useRef(0);
 
   const stop = useCallback(() => {
-    activeSessionRef.current = false;
-    window.clearTimeout(reconnectTimerRef.current);
-    sessionDataRef.current = null;
+    keepListeningRef.current = false;
     vadCleanupRef.current?.();
     vadCleanupRef.current = null;
     try {
@@ -115,142 +113,147 @@ export default function useSpeechRecognition(locale = "en-US") {
     } catch {
       // Already stopped — ignore.
     }
-    setListening(false);
   }, []);
 
   useEffect(() => stop, [stop]);
 
-  const launchRecognition = useCallback(() => {
-    if (!activeSessionRef.current || !sessionDataRef.current || !SpeechRecognitionAPI) return;
-
-    try {
-      recognitionRef.current?.abort();
-    } catch {
-      // Ignore
-    }
-
-    const currentSession = sessionDataRef.current;
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = locale;
-    recognition.interimResults = true;
-    recognition.continuous = true;
-
-    recognition.onresult = (event) => {
-      if (!sessionDataRef.current) return;
-
-      // Extract fresh finals and interims from this event batch
-      let batchFinal = "";
-      let batchInterim = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
-        const text = result[0]?.transcript || "";
-        if (result.isFinal) {
-          batchFinal = mergeCumulativeText(batchFinal, text);
-        } else {
-          batchInterim = text;
-        }
-      }
-
-      if (batchFinal) {
-        sessionDataRef.current.finalText = mergeCumulativeText(sessionDataRef.current.finalText, batchFinal);
-      }
-
-      const composite = `${sessionDataRef.current.finalText} ${batchInterim}`.trim();
-      sessionDataRef.current.latestText = composite;
-      currentSession.onResult(composite, false);
-
-      // On mobile where getUserMedia is bypassed, animate voice level on transcript activity
-      if (isMobileDevice && composite) {
-        currentSession.options.onAudioLevel?.(0.75);
-        window.setTimeout(() => currentSession.options.onAudioLevel?.(0.15), 180);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      if (!activeSessionRef.current) return;
-      if (event.error === "aborted") return;
-
-      // Auto-recover from transient errors without killing the session or showing red errors
-      if (
-        event.error === "network" ||
-        event.error === "no-speech" ||
-        (isMobileDevice && (event.error === "audio-capture" || event.error === "bad-grammar"))
-      ) {
-        window.clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = window.setTimeout(() => {
-          if (activeSessionRef.current) {
-            launchRecognition();
-          }
-        }, 300);
-        return;
-      }
-
-      // Explicit permission denials
-      if (event.error === "not-allowed") {
-        activeSessionRef.current = false;
-        setListening(false);
-        setError(ERROR_MESSAGES["not-allowed"]);
-      }
-    };
-
-    recognition.onstart = () => {
-      setListening(true);
-      setError("");
-    };
-
-    recognition.onend = () => {
-      // Mobile Keep-Alive: If session is still active, mobile Chrome killed the session after a brief silence.
-      // Re-arm immediately so the microphone NEVER turns OFF during speaking practice!
-      if (activeSessionRef.current) {
-        window.clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = window.setTimeout(() => {
-          if (activeSessionRef.current) {
-            launchRecognition();
-          }
-        }, isMobileDevice ? 150 : 250);
-        return;
-      }
-
-      // Session ended intentionally
-      vadCleanupRef.current?.();
-      vadCleanupRef.current = null;
-      setListening(false);
-      recognitionRef.current = null;
-      const data = sessionDataRef.current;
-      if (data) {
-        currentSession.onResult((data.finalText.trim() || data.latestText).trim(), true);
-      }
-    };
-
-    recognitionRef.current = recognition;
-    try {
-      recognition.start();
-    } catch {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = window.setTimeout(() => {
-        if (activeSessionRef.current) launchRecognition();
-      }, 250);
-    }
-  }, [locale]);
-
+  /** Starts listening. `onResult` is called with the running transcript
+   * (accumulated final text + the current interim guess) on every update,
+   * and once more with `final: true` when recognition ends. */
   const start = useCallback(
     (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
+      const SpeechRecognitionAPI = getSpeechRecognitionAPI();
       if (!SpeechRecognitionAPI) {
         setError("Voice input isn't supported in this browser — try Chrome or Edge.");
         return false;
       }
+      keepListeningRef.current = false;
+      retryCountRef.current = 0;
+      const previousRecognition = recognitionRef.current;
+      recognitionRef.current = null;
+      try {
+        previousRecognition?.abort();
+      } catch {
+        // Ignore.
+      }
 
-      activeSessionRef.current = true;
-      sessionDataRef.current = {
-        onResult,
-        options,
-        finalText: "",
-        latestText: "",
+      const recognition = new SpeechRecognitionAPI();
+      recognition.lang = locale;
+      recognition.interimResults = true;
+      recognition.continuous = true;
+
+      let finalText = "";
+      let latestText = "";
+      let completedSessionsText = "";
+      const resultSlots = new Map<number, SpeechResultSnapshot>();
+
+      recognition.onresult = (event) => {
+        retryCountRef.current = 0;
+        const assembled = updateSpeechResultSlots(resultSlots, event);
+        finalText = assembled.finalText;
+        latestText = assembled.displayText;
+        const runningText = joinSpeechSegments([completedSessionsText, latestText]);
+        if (speechDebugEnabled()) {
+          console.debug("[DigiDARA speech result]", {
+            resultIndex: event.resultIndex,
+            results: Array.from(event.results, (result, index) => ({
+              index,
+              isFinal: result.isFinal,
+              transcript: result[0]?.transcript || "",
+            })),
+            finalText: joinSpeechSegments([completedSessionsText, finalText]),
+            interimText: assembled.interimText,
+            displayText: runningText,
+          });
+        }
+        onResult(runningText, false);
+
+        // On mobile where getUserMedia is bypassed to prevent hardware mic locking,
+        // animate the orb on speech transcript updates:
+        if (isMobileDevice && runningText) {
+          options.onAudioLevel?.(0.75);
+          window.setTimeout(() => options.onAudioLevel?.(0.15), 180);
+        }
       };
 
-      launchRecognition();
+      recognition.onerror = (event) => {
+        if (recognitionRef.current !== recognition) return;
+
+        // Browsers commonly emit no-speech or network hiccups before ending a session.
+        // Auto-recover seamlessly while keepListeningRef is active:
+        if (
+          (event.error === "no-speech" || event.error === "network") &&
+          keepListeningRef.current &&
+          retryCountRef.current < 5
+        ) {
+          retryCountRef.current += 1;
+          return;
+        }
+
+        keepListeningRef.current = false;
+        setListening(false);
+        setError(ERROR_MESSAGES[event.error] || "Speech recognition stopped unexpectedly.");
+      };
+
+      recognition.onstart = () => {
+        setListening(true);
+        setError("");
+        if (speechDebugEnabled()) console.debug("[DigiDARA speech start]", { monotonicMs: Math.round(performance.now()) });
+      };
+
+      recognition.onend = () => {
+        if (recognitionRef.current !== recognition) return;
+
+        completedSessionsText = joinSpeechSegments([
+          completedSessionsText,
+          latestText || finalText,
+        ]);
+        finalText = "";
+        latestText = "";
+        resultSlots.clear();
+        if (speechDebugEnabled()) {
+          console.debug("[DigiDARA speech end]", {
+            completedText: completedSessionsText,
+            restarting: keepListeningRef.current,
+          });
+        }
+
+        // Mobile Keep-Alive: If active, mobile Chrome killed the session after a short pause.
+        // Re-arm immediately so the microphone stays ON during speaking practice!
+        if (keepListeningRef.current) {
+          window.setTimeout(() => {
+            if (!keepListeningRef.current || recognitionRef.current !== recognition) return;
+            try {
+              recognition.start();
+            } catch {
+              window.setTimeout(() => {
+                if (keepListeningRef.current && recognitionRef.current === recognition) {
+                  try {
+                    recognition.start();
+                  } catch {
+                    keepListeningRef.current = false;
+                    recognitionRef.current = null;
+                    setListening(false);
+                    setError("Speech recognition stopped unexpectedly. Restart the microphone or type your answer.");
+                  }
+                }
+              }, 250);
+            }
+          }, 150);
+          return;
+        }
+
+        setListening(false);
+        vadCleanupRef.current?.();
+        vadCleanupRef.current = null;
+        recognitionRef.current = null;
+        onResult(completedSessionsText.trim(), true);
+      };
+
+      recognitionRef.current = recognition;
+      keepListeningRef.current = true;
+      recognition.start();
 
       // Desktop-only VAD: On mobile, simultaneous getUserMedia locks/crashes mobile Web Speech API.
       // On desktop, it runs cleanly to provide orb mic-energy level feedback.
@@ -307,6 +310,7 @@ export default function useSpeechRecognition(locale = "en-US") {
               }
             } else if (speechDetected) {
               if (!quietSince) quietSince = now;
+              // 12-second silence allowance before VAD stops, coordinating with 6.5s auto-submit:
               if (now - quietSince >= 12000) {
                 cleanupVad();
                 try {
@@ -326,8 +330,8 @@ export default function useSpeechRecognition(locale = "en-US") {
       }
       return true;
     },
-    [launchRecognition],
+    [locale],
   );
 
-  return { supported: Boolean(SpeechRecognitionAPI), listening, error, start, stop };
+  return { supported: Boolean(getSpeechRecognitionAPI()), listening, error, start, stop };
 }

@@ -37,6 +37,8 @@ from app.api.schemas import (
     TopicChooseResponse,
     TopicClarifyRequest,
     TopicClarifyResponse,
+    TopicIntakeRequest,
+    TopicIntakeResponse,
     UsageSummaryResponse,
     VivaAnswerRequest,
     VivaQuestionOut,
@@ -214,6 +216,62 @@ def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
     )
 
 
+_INTAKE_INTENTS = {"update", "regenerate", "choose", "question", "chitchat"}
+
+
+def _clean_slot(value) -> str | None:
+    if not isinstance(value, str):
+        return None
+    value = " ".join(value.split())[:120]
+    return value or None
+
+
+@router.post("/topic/intake", response_model=TopicIntakeResponse)
+def topic_intake(req: TopicIntakeRequest) -> TopicIntakeResponse:
+    """One conversational turn before a project is locked in -- stateless
+    like /topic/clarify: the frontend owns the intake memory and sends it
+    back every turn. The model's answer is only trusted as far as it is
+    well-formed: an unknown intent, a choice that isn't on screen, or a
+    "ready" without both slots filled is corrected here, not passed on."""
+    logger.info("=== POST /api/topic/intake pending=%s options=%d", req.pending_question, len(req.shown_topics))
+    memory = req.memory.model_dump()
+    result = call_json(
+        system=prompts.topic_intake_prompt(
+            memory, req.pending_question, req.shown_topics, [turn.model_dump() for turn in req.history],
+        ),
+        user=req.message,
+        temperature=0.2,
+    )
+
+    intent = result.get("intent") if result.get("intent") in _INTAKE_INTENTS else "question"
+    raw_memory = result.get("memory") if isinstance(result.get("memory"), dict) else {}
+    merged = {
+        "focus": _clean_slot(raw_memory.get("focus", memory["focus"])),
+        "project_type": _clean_slot(raw_memory.get("project_type", memory["project_type"])),
+        "details": _clean_slot(raw_memory.get("details", memory["details"])),
+        "difficulty": raw_memory.get("difficulty") if raw_memory.get("difficulty") in {"easy", "medium", "hard"} else memory["difficulty"],
+    }
+    # Only an update is allowed to change what the student told us.
+    if intent != "update":
+        merged = memory
+
+    shown_ids = {str(topic.get("id")).upper() for topic in req.shown_topics}
+    choice = str(result.get("choice") or "").strip().upper() or None
+    if intent == "choose" and choice not in shown_ids:
+        intent, choice = "question", None
+    if intent != "choose":
+        choice = None
+    if intent == "regenerate" and not req.shown_topics:
+        intent = "update"
+
+    ready = bool(merged["focus"] and merged["project_type"])
+    next_question = None if ready else _clean_slot(result.get("next_question"))
+    reply = result.get("reply") if isinstance(result.get("reply"), str) and result.get("reply").strip() else None
+    return TopicIntakeResponse(
+        intent=intent, memory=merged, choice=choice, ready=ready, next_question=next_question, reply=reply,
+    )
+
+
 @router.post("/eligibility/free", response_model=EligibilityCheckResponse)
 def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
     """Generate project topics for any language, role, or topic the student
@@ -252,7 +310,7 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
         # state["course_name"] below — truncating *that* would silently
         # drop real content (e.g. the second half of a clarification-answer
         # combination) for no benefit.
-        course_db_name = req.course_name[:255]
+        course_db_name = (" ".join(req.topic_key.lower().split()) if req.topic_key else req.course_name)[:255]
         course = session.query(Course).filter_by(name=course_db_name).first()
         if course is None:
             course = Course(name=course_db_name, medium=CourseMedium.local)
@@ -279,6 +337,11 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
             "course_medium": course.medium.value,
             "free_topic_request": True,
             "difficulty": req.difficulty,
+            "exclude_titles": req.exclude_titles,
+            # The language/role half of "<focus>|<project type>": topics are
+            # kept unique across every student asking about the same focus,
+            # whatever project type they picked.
+            "topic_focus_key": (req.topic_key or req.course_name).split("|")[0],
         }
     finally:
         session.close()
@@ -1122,6 +1185,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = {"status": "ok", "agent_name": "capstone_project_agent"}
     elif action == "clarify_topic_request":
         result = await run_in_threadpool(topic_clarify, TopicClarifyRequest(**payload))
+    elif action == "topic_intake_turn":
+        result = await run_in_threadpool(topic_intake, TopicIntakeRequest(**payload))
     elif action == "check_eligibility_free":
         result = await run_in_threadpool(eligibility_check_free, FreeTopicRequest(**payload))
     elif action == "choose_topic":
