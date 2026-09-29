@@ -26,14 +26,19 @@ TRANSCRIPTION_PROMPTS = {
     "hr": "This is a spoken HR or behavioral interview answer.",
 }
 TECHNICAL_TRANSCRIPTION_TERMS = {
-    "python": "Python, tuple, list, dictionary, decorator, generator, docstring, exception",
-    "javascript": "JavaScript, closure, promise, async, await, prototype, event loop, DOM",
-    "react": "React, component, props, state, hook, useEffect, context, virtual DOM",
+    "python": "Python, tuple, list, dictionary, decorator, generator, docstring, exception, endpoint, URL, URI, REST API, JSON",
+    "javascript": "JavaScript, JSX, HTML, CSS, closure, promise, async, await, prototype, event loop, DOM",
+    "react": "React, JavaScript, JSX, HTML, component, props, state, hook, useEffect, lifecycle, context, virtual DOM",
     "mysql": "MySQL, query, index, join, transaction, normalization, InnoDB, foreign key",
     "flask": "Flask, route, blueprint, request, response, decorator, WSGI, SQLAlchemy",
     "data science": "data science, DataFrame, NumPy, pandas, feature, distribution, correlation",
     "machine learning": "machine learning, model, training, inference, feature, overfitting, validation",
 }
+
+GENERAL_TECHNICAL_TRANSCRIPTION_TERMS = (
+    "API, REST API, endpoint, URL, URI, HTTP, HTTPS, JSON, JavaScript, JSX, "
+    "HTML, CSS, frontend, backend, database"
+)
 
 
 def validate_configured_models():
@@ -97,6 +102,7 @@ def build_transcription_prompt(round_type, subject=None, question=None):
     if question_text:
         parts.append(f"The candidate is answering: {question_text}")
     parts.append("Transcribe every spoken word, including the first word. Use the correct spelling of technical terminology where applicable.")
+    parts.append(f"Common technical terminology includes: {GENERAL_TECHNICAL_TRANSCRIPTION_TERMS}.")
     terms = TECHNICAL_TRANSCRIPTION_TERMS.get(subject_text.casefold())
     if terms:
         parts.append(f"Relevant terminology includes: {terms}.")

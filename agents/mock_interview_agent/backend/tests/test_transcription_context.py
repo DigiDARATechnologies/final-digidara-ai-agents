@@ -67,6 +67,15 @@ class TranscriptionContextTests(unittest.TestCase):
         self.assertIn("reconciliation loop", prompt)
         self.assertLess(len(prompt.split()), 120)
 
+    def test_technical_prompt_contains_terms_misheard_in_real_reports(self):
+        prompt = chat_client.build_transcription_prompt(
+            "technical",
+            "React",
+            "Explain the component lifecycle and an API endpoint URL.",
+        )
+        for term in ("endpoint", "URL", "JSON", "JavaScript", "JSX", "HTML", "lifecycle"):
+            self.assertIn(term, prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
