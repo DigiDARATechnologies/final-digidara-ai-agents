@@ -49,6 +49,10 @@ export type AudioTranscriber = (audio: Blob) => Promise<string>;
 
 /** Longest single recording on a phone, so an uploaded answer stays small. */
 const MAX_RECORDING_MS = 3 * 60 * 1000;
+/** Recording mode live text: how often the answer so far is re-transcribed,
+ * and at most how many times per recording (about two minutes of speech). */
+const PREVIEW_INTERVAL_MS = 3_000;
+const MAX_PREVIEWS = 40;
 const DEFAULT_SILENCE_MS = 7000;
 
 declare global {
@@ -87,8 +91,11 @@ function speechDebugEnabled(): boolean {
  *   live Web Speech recognition, words appearing as they are spoken.
  * - Phones, when `transcribe` is given: record the answer on a single
  *   microphone stream and have the server transcribe it when recording
- *   stops. Live recognition is unreliable on phones -- see voiceCapture.ts. */
-export default function useSpeechRecognition(locale = "en-US", transcribe?: AudioTranscriber) {
+ *   stops. Live recognition is unreliable on phones -- see voiceCapture.ts.
+ *   With `preview` as well, the recording so far is re-transcribed about
+ *   every 3 seconds and reported (not final) so the text appears as the
+ *   student speaks; the text reported as final is still `transcribe`'s. */
+export default function useSpeechRecognition(locale = "en-US", transcribe?: AudioTranscriber, preview?: AudioTranscriber) {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +104,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
   const vadCleanupRef = useRef<(() => void) | null>(null);
   const transcribeRef = useRef(transcribe);
   transcribeRef.current = transcribe;
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   const recordingMode = Boolean(transcribe) && isMobileVoiceDevice() && audioRecordingSupported();
   // Recording mode: every start() is a new session; finishing an older one is ignored.
   const recordSessionRef = useRef(0);
@@ -176,6 +185,11 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         const resumeOnTouch = () => { void audioContext?.resume?.(); };
         document.addEventListener("pointerdown", resumeOnTouch);
         document.addEventListener("touchstart", resumeOnTouch);
+        // Shared by the level meter and the live preview below.
+        let speechDetected = false;
+        let quietSince = 0;
+        const meterRunning = () => audioContext?.state === "running";
+        let previewTimer: number | undefined;
         let lastCountdown: number | null = null;
         const reportCountdown = (seconds: number | null) => {
           if (seconds === lastCountdown) return;
@@ -183,6 +197,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           options.onSilenceCountdown?.(seconds);
         };
         const cleanup = () => {
+          window.clearInterval(previewTimer);
           document.removeEventListener("pointerdown", resumeOnTouch);
           document.removeEventListener("touchstart", resumeOnTouch);
           reportCountdown(null);
@@ -247,8 +262,6 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
             audioContext.createMediaStreamSource(stream).connect(analyser);
             const samples = new Uint8Array(analyser.fftSize);
             const silenceMs = options.silenceMs ?? DEFAULT_SILENCE_MS;
-            let speechDetected = false;
-            let quietSince = 0;
             const measure = () => {
               if (finished) return;
               analyser.getByteTimeDomainData(samples);
@@ -283,6 +296,46 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           }
         }
         recorder.start(250);
+
+        // Live text: re-transcribe the recording so far while the student is
+        // speaking. When the meter is not measuring (a phone can keep it
+        // suspended), do not wait for it to hear speech, and let new words in
+        // a preview stand in for it so a pause is still noticed.
+        const previewTranscribe = previewRef.current;
+        if (previewTranscribe) {
+          let lastPreviewAt = 0;
+          let previewChunks = 0;
+          let previewCount = 0;
+          let inFlight = false;
+          let lastText = "";
+          previewTimer = window.setInterval(() => {
+            if (finished || inFlight || previewCount >= MAX_PREVIEWS) return;
+            if (!speechDetected && meterRunning()) return;
+            if (Date.now() - lastPreviewAt < PREVIEW_INTERVAL_MS || chunks.length <= previewChunks) return;
+            inFlight = true;
+            previewCount += 1;
+            previewChunks = chunks.length;
+            lastPreviewAt = Date.now();
+            const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+            previewTranscribe(audio)
+              .then((text) => {
+                if (finished || session !== recordSessionRef.current) return;
+                const trimmed = text.trim();
+                if (!trimmed || trimmed === lastText) return;
+                lastText = trimmed;
+                if (!meterRunning()) {
+                  speechDetected = true;
+                  quietSince = performance.now();
+                }
+                onResult(trimmed, false);
+              })
+              .catch(() => {
+                // A missed preview only delays the live text; the whole
+                // recording is still transcribed when it stops.
+              })
+              .finally(() => { inFlight = false; });
+          }, 250);
+        }
       }).catch((microphoneError) => {
         if (session !== recordSessionRef.current) return;
         setListening(false);

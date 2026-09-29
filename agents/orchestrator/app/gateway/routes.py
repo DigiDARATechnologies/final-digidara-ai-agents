@@ -89,6 +89,8 @@ FREE_ACTIONS = {
     # as a call would bill a single answer many times over; the answer of
     # record (transcribe_audio, on submit) stays billable.
     "transcribe_preview",
+    # The same live preview for the Communication Coach's spoken answers.
+    "speaking_transcribe_preview",
     "mixed_test_config", "save_mixed_test_config", "daily_usage",
     "active_interview", "status", "download_report", "record_focus_event",
     # State changes with no LLM call: questions are served from the batch

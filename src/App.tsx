@@ -58,7 +58,7 @@ import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
-import { checkCommunicationHealth, getDailyChallengeToday, transcribeCommunicationAudio } from "./lib/communicationApi";
+import { checkCommunicationHealth, getDailyChallengeToday, previewCommunicationAudio, transcribeCommunicationAudio } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
 import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
@@ -1729,6 +1729,9 @@ export default function App() {
                 onSubmitCode={handleSubmitCode}
                 transcribeAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
+                  : undefined}
+                previewAudio={isCommunicationChat && communicationState?.authToken
+                  ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
                   : undefined}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."

@@ -158,10 +158,12 @@ def _stringify(value):
     return value
 
 
-def _transcribe(payload):
+def _transcribe(payload, path="/api/speaking/transcribe"):
     """Phones record the spoken answer instead of using the browser's live
     speech recognition (unreliable there -- see src/lib/voiceCapture.ts in
-    the platform), and send it here to be transcribed."""
+    the platform), and send it here to be transcribed. `path` is
+    /api/speaking/transcribe-preview for the live text shown while the
+    student is still speaking."""
     token = payload.get("authToken")
     if not token:
         return _error("Authentication is required.", "unauthenticated", 401)
@@ -180,7 +182,7 @@ def _transcribe(payload):
         return _error("The recording could not be read.", "INVALID_AUDIO")
 
     upstream = current_app.test_client().post(
-        "/api/speaking/transcribe",
+        path,
         headers={"Authorization": f"Bearer {token}"},
         data={"audio": (io.BytesIO(audio_bytes), f"speaking-answer.{extension}", audio_type)},
         content_type="multipart/form-data",
@@ -235,6 +237,8 @@ def invoke():
         return jsonify(get_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
     if action == "speaking_transcribe":
         return _transcribe(payload)
+    if action == "speaking_transcribe_preview":
+        return _transcribe(payload, "/api/speaking/transcribe-preview")
     if action not in ACTION_MAP:
         return _error(f"Unknown action: {action!r}", "unknown_action")
     return _forward(action, payload)

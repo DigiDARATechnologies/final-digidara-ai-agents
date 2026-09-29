@@ -69,6 +69,9 @@ interface ChatViewProps {
    * record the answer and send it here instead of using the browser's live
    * speech recognition, which is unreliable on phones. */
   transcribeAudio?: AudioTranscriber;
+  /** With transcribeAudio: transcribes the recording so far, so the text
+   * appears in the input box while the student is still speaking. */
+  previewAudio?: AudioTranscriber;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -132,6 +135,7 @@ export default function ChatView({
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
   transcribeAudio,
+  previewAudio,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -147,7 +151,7 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition("en-US", transcribeAudio);
+  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);
@@ -332,9 +336,14 @@ export default function ChatView({
           if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
         },
       });
-      silenceCheck = window.setInterval(() => {
-        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 4000) submitSpokenTurn();
-      }, 200);
+      // Desktop: live recognition text that stops changing for 4s is a pause.
+      // Not on a phone: there the text is a preview that lags the voice, and
+      // the recording itself ends after the pause and sends the final text.
+      if (!speech.recordingMode) {
+        silenceCheck = window.setInterval(() => {
+          if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 4000) submitSpokenTurn();
+        }, 200);
+      }
     };
 
     playCoachSpeech(activeSpeakingPrompt, {

@@ -266,6 +266,18 @@ export function endPronunciationSession(authToken: string, sessionId: number) {
 /** Transcribes a recorded spoken answer on the server (Whisper). Used on
  * phones, where the browser's own live speech recognition is unreliable —
  * see src/lib/voiceCapture.ts. */
+/** The answer so far, while the student is still speaking on a phone (shown
+ * live in the input box). Free at the gateway; the answer that is sent is
+ * still transcribeCommunicationAudio's, once the recording stops. */
+export async function previewCommunicationAudio(authToken: string, audio: Blob): Promise<string> {
+  const result = await invokeAgent<{ transcript?: string }>(INVOKE_URL, "speaking_transcribe_preview", {
+    authToken,
+    audio_data: await audioBlobToBase64(audio),
+    audio_type: baseAudioType(audio),
+  }, 0, 30_000);
+  return (result.transcript ?? "").trim();
+}
+
 export async function transcribeCommunicationAudio(authToken: string, audio: Blob): Promise<string> {
   const result = await invokeAgent<{ transcript?: string }>(INVOKE_URL, "speaking_transcribe", {
     authToken,
