@@ -126,6 +126,7 @@ def transcribe():
                 round_type,
                 subject=subject,
                 question=question,
+                content_type=audio_type,
             )
     except Exception:
         log(

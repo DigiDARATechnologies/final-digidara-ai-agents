@@ -44,6 +44,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const [downloadError, setDownloadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [hasCapturedAudio, setHasCapturedAudio] = useState(false);
   const submittedRef = useRef(false);
   const spokenRef = useRef("");
   const typedRef = useRef("");
@@ -51,7 +53,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const captureIncompleteRef = useRef(false);
+  const capturedAudioRef = useRef<Blob | null>(null);
   const deadlineRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const onAnswerRef = useRef(onAnswer);
@@ -63,6 +65,9 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const isLive = state.step === "in_interview" && Boolean(state.question && state.interviewId && state.questionOrder);
   const questionKey = isLive ? `${state.interviewId}:${state.questionOrder}` : "";
   const timeLimit = TIME_LIMIT_SECONDS[state.difficulty ?? "intermediate"];
+  const recordingSupported = typeof window !== "undefined"
+    && "MediaRecorder" in window
+    && Boolean(navigator.mediaDevices?.getUserMedia);
 
   function acceptVoiceTranscript(text: string) {
     if (!text || submittedRef.current) return;
@@ -80,14 +85,25 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   }
 
   async function beginAudioCapture(): Promise<boolean> {
-    if (!("MediaRecorder" in window) || !navigator.mediaDevices?.getUserMedia) return false;
+    if (!recordingSupported) return false;
     closeAudioStream();
     audioChunksRef.current = [];
+    capturedAudioRef.current = null;
+    setHasCapturedAudio(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const appleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const candidateTypes = appleMobile
+        ? ["audio/mp4", "audio/mp4;codecs=mp4a.40.2", "audio/webm;codecs=opus", "audio/webm"]
+        : ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4", "audio/mp4;codecs=mp4a.40.2"];
       const preferredType = typeof MediaRecorder.isTypeSupported === "function"
-        ? ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"]
-          .find((type) => MediaRecorder.isTypeSupported(type))
+        ? candidateTypes.find((type) => MediaRecorder.isTypeSupported(type))
         : undefined;
       const recorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream);
       mediaStreamRef.current = stream;
@@ -100,9 +116,11 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
         recorder.addEventListener("error", () => reject(new Error("Audio recording could not start.")), { once: true });
         recorder.start(250);
       });
+      setRecording(true);
       return true;
     } catch {
       mediaRecorderRef.current = null;
+      setRecording(false);
       closeAudioStream();
       return false;
     }
@@ -112,7 +130,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     const recorder = mediaRecorderRef.current;
     if (!recorder) {
       closeAudioStream();
-      return null;
+      return capturedAudioRef.current;
     }
     if (recorder.state !== "inactive") {
       await new Promise<void>((resolve) => {
@@ -124,6 +142,11 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     const blob = audioChunksRef.current.length ? new Blob(audioChunksRef.current, { type }) : null;
     mediaRecorderRef.current = null;
     closeAudioStream();
+    setRecording(false);
+    if (blob?.size) {
+      capturedAudioRef.current = blob;
+      setHasCapturedAudio(true);
+    }
     return blob;
   }
 
@@ -132,6 +155,9 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     if (recorder && recorder.state !== "inactive") recorder.stop();
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
+    capturedAudioRef.current = null;
+    setRecording(false);
+    setHasCapturedAudio(false);
     closeAudioStream();
   }
 
@@ -143,7 +169,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     spokenRef.current = "";
     typedRef.current = "";
     typedEditedRef.current = false;
-    captureIncompleteRef.current = false;
+    capturedAudioRef.current = null;
+    setHasCapturedAudio(false);
     const storageKey = `digidara_mock_interview_deadline_${questionKey}`;
     const existingDeadline = Number(sessionStorage.getItem(storageKey));
 
@@ -158,19 +185,27 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       deadlineRef.current = deadline;
       startedAtRef.current = deadline - timeLimit * 1000;
       setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
-      setVoiceStatus(speech.supported ? "Starting microphone..." : "Type your answer below");
-      if (speech.supported && deadline > Date.now()) {
+      setVoiceStatus(recordingSupported || speech.supported ? "Starting microphone..." : "Type your answer below");
+      if (deadline > Date.now()) {
         const recordingStarted = await beginAudioCapture();
         if (!active || submittedRef.current) {
           discardAudioCapture();
           return;
         }
-        const startedListening = speech.start((text) => {
-          if (active) acceptVoiceTranscript(text);
-        });
-        setVoiceStatus(startedListening
-          ? (recordingStarted ? "Listening - microphone is on" : "Listening with browser transcription")
-          : "Type your answer below");
+        const startedListening = speech.supported
+          ? speech.start((text) => {
+            if (active) acceptVoiceTranscript(text);
+          })
+          : false;
+        if (recordingStarted) {
+          setVoiceStatus(startedListening
+            ? "Listening - microphone is on"
+            : "Recording - OpenAI will transcribe when you submit");
+        } else {
+          setVoiceStatus(startedListening
+            ? "Listening with browser transcription"
+            : "Microphone is unavailable. Type your answer below.");
+        }
       }
     }
     beginAnswerRef.current = () => { void startAnswering(); };
@@ -206,7 +241,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   async function submitAnswer(answer: string, timedOut = false) {
     if (!isLive || busy || transcribing || submittedRef.current) return;
     const initialAnswer = answer.trim();
-    if (!initialAnswer && !timedOut) {
+    const hasAudio = recording || hasCapturedAudio || Boolean(mediaRecorderRef.current) || Boolean(capturedAudioRef.current?.size);
+    if (!initialAnswer && !timedOut && !hasAudio) {
       setVoiceStatus("Speak or type an answer before submitting.");
       return;
     }
@@ -214,12 +250,11 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     speech.stop();
     const recordedAudio = await finishAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
     const elapsed = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0;
     let finalAnswer = initialAnswer;
-    if (!typedEditedRef.current && !captureIncompleteRef.current && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
+    if (!typedEditedRef.current && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
       setTranscribing(true);
-      setVoiceStatus("Improving transcription...");
+      setVoiceStatus("Transcribing your recording with OpenAI...");
       try {
         const result = await transcribeMockInterviewAudio(state.sessionToken, state.interviewId, state.questionOrder, recordedAudio);
         if (result.transcript?.trim()) {
@@ -230,11 +265,18 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
           setTypedAnswer(finalAnswer);
         }
       } catch {
-        setVoiceStatus("Using the live transcript because enhanced transcription was unavailable.");
+        setVoiceStatus(initialAnswer
+          ? "OpenAI transcription was unavailable. Using the live transcript."
+          : "OpenAI could not transcribe this recording. Please start the microphone and try again.");
       } finally {
         setTranscribing(false);
       }
     }
+    if (!finalAnswer && !timedOut) {
+      submittedRef.current = false;
+      return;
+    }
+    sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
     onAnswerRef.current(finalAnswer, { timeTakenSec: Math.max(0, Math.min(timeLimit, elapsed)), timedOut: timedOut && !finalAnswer });
   }
 
@@ -293,6 +335,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
 
   if (!isLive) return null;
   const activeAnswer = typedAnswer.trim() || spokenAnswer.trim();
+  const canSubmit = Boolean(activeAnswer) || recording || hasCapturedAudio;
   const currentQuestion = state.realQuestionIndex ?? state.questionOrder ?? 1;
   const totalQuestions = state.totalQuestions ?? 10;
   const progressPercent = Math.min(100, Math.max(0, (currentQuestion / totalQuestions) * 100));
@@ -302,32 +345,40 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       <div className={`mock-interview-timer${secondsLeft !== null && secondsLeft <= 15 ? " warning" : ""}`} role="timer"><span>Time left</span><strong>{secondsLeft === null ? "-" : `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`}</strong></div>
     </div>
     <div className="mock-interview-question"><span className="mock-interview-question-number" aria-hidden="true">{currentQuestion}.</span><span>{state.question}</span></div>
-    <div className={`mock-interview-voice${speech.listening ? " listening" : ""}`}>
+    <div className={`mock-interview-voice${speech.listening || recording ? " listening" : ""}`}>
       <span className="mock-interview-voice-status" aria-live="polite"><i aria-hidden="true" />{voiceStatus}{speech.listening ? " Â· Microphone on" : ""}</span>
       <div>
         {secondsLeft === null && <button type="button" className="btn btn-outline" onClick={() => { if ("speechSynthesis" in window) window.speechSynthesis.cancel(); beginAnswerRef.current(); }}>Start answering now</button>}
-        {speech.supported && <button type="button" className="btn btn-outline" disabled={busy || transcribing || secondsLeft === null} onClick={() => {
-          if (speech.listening) {
+        {(speech.supported || recordingSupported) && <button type="button" className="btn btn-outline" disabled={busy || transcribing || secondsLeft === null} onClick={() => {
+          if (recording || speech.listening) {
             speech.stop();
-            captureIncompleteRef.current = true;
-            void finishAudioCapture();
-            setVoiceStatus("Microphone paused - restart it or type below.");
+            void finishAudioCapture().then((audio) => {
+              setVoiceStatus(audio?.size
+                ? "Recording captured - submit it for OpenAI transcription or record again."
+                : "Microphone stopped. Start it again or type below.");
+            });
           }
           else {
             setVoiceStatus("Starting microphone...");
             void beginAudioCapture().then((recordingStarted) => {
-              const startedListening = speech.start(acceptVoiceTranscript);
-              setVoiceStatus(startedListening
-                ? (recordingStarted ? "Listening - microphone is on" : "Listening with browser transcription")
-                : "Type your answer below");
+              const startedListening = speech.supported ? speech.start(acceptVoiceTranscript) : false;
+              if (recordingStarted) {
+                setVoiceStatus(startedListening
+                  ? "Listening - microphone is on"
+                  : "Recording - OpenAI will transcribe when you submit");
+              } else {
+                setVoiceStatus(startedListening
+                  ? "Listening with browser transcription"
+                  : "Microphone is unavailable. Type your answer below.");
+              }
             });
           }
-        }}>{speech.listening ? "Pause microphone" : "Start microphone"}</button>}
+        }}>{recording || speech.listening ? "Stop microphone" : "Start microphone"}</button>}
       </div>
     </div>
     {speech.error && <p className="mock-interview-error" role="alert">{speech.error} You can type your answer below.</p>}
     <label className="mock-interview-answer-label" htmlFor="mock-interview-answer">Your answer (voice transcription appears here)</label>
     <textarea id="mock-interview-answer" value={typedAnswer} onChange={(event) => { typedEditedRef.current = true; typedRef.current = event.target.value; setTypedAnswer(event.target.value); }} placeholder="Your answer..." disabled={busy || transcribing} rows={4} />
-    <div className="mock-interview-actions"><button type="button" className="btn btn-primary" disabled={busy || transcribing || !activeAnswer || secondsLeft === null} onClick={() => { void submitAnswer(activeAnswer); }}>{transcribing ? "Improving transcript..." : busy ? "Saving..." : "Submit answer"}</button><button type="button" className="btn btn-outline" disabled={busy || transcribing} onClick={() => { if (window.confirm("Exit this interview? Unanswered questions will not be scored.")) onExit(); }}>Exit interview</button></div>
+    <div className="mock-interview-actions"><button type="button" className="btn btn-primary" disabled={busy || transcribing || !canSubmit || secondsLeft === null} onClick={() => { void submitAnswer(activeAnswer); }}>{transcribing ? "Transcribing with OpenAI..." : busy ? "Saving..." : "Submit answer"}</button><button type="button" className="btn btn-outline" disabled={busy || transcribing} onClick={() => { if (window.confirm("Exit this interview? Unanswered questions will not be scored.")) onExit(); }}>Exit interview</button></div>
   </section>;
 }
