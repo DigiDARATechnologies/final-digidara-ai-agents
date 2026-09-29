@@ -35,6 +35,9 @@ class UserDataLifecycleTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["profile"]["skills"], ["Python"])
         self.assertEqual(response.get_json()["job_actions"][0]["job_id"], 7)
+        self.assertIn("conversations", response.get_json())
+        self.assertIn("conversation_messages", response.get_json())
+        self.assertIn("memories", response.get_json())
 
     @patch("job_agent.routes.get_db")
     def test_delete_removes_database_profile_and_resume(self, get_db):
@@ -183,6 +186,26 @@ class UserDataLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn("Invalid resume URL", response.get_json()["error"])
+
+    @patch("job_agent.routes.get_db")
+    def test_profile_rejects_implausible_experience_instead_of_clamping(self, get_db):
+        get_db.return_value = MagicMock()
+        response = self.client.post(
+            "/api/invoke",
+            json={
+                "action": "update_profile",
+                "payload": {
+                    "full_name": "Test Learner",
+                    "skills": ["Python"],
+                    "preferred_titles": ["Data Analyst"],
+                    "preferred_locations": ["Tiruchirappalli"],
+                    "experience_years": 100,
+                },
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("between 0 and 50", response.get_json()["error"])
 
 
 if __name__ == "__main__":

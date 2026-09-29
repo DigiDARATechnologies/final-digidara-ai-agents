@@ -40,6 +40,13 @@ ACTION_ROUTE_MAP = {
     "delete_user_data": ("DELETE", "/api/jobs/me/data"),
     "download_resume": ("GET", "/api/jobs/me/resume"),
     "chat": ("POST", "/api/jobs/me/chat"),
+    "list_conversations": ("GET", "/api/jobs/me/conversations"),
+    "create_conversation": ("POST", "/api/jobs/me/conversations"),
+    "clear_conversations": ("DELETE", "/api/jobs/me/conversations"),
+    "get_conversation": ("GET", "/api/jobs/me/conversations/{conversation_id}"),
+    "delete_conversation": ("DELETE", "/api/jobs/me/conversations/{conversation_id}"),
+    "list_memories": ("GET", "/api/jobs/me/memories"),
+    "forget_memory": ("DELETE", "/api/jobs/me/memories/{memory_id}"),
 
     "admin_list_users": ("GET", "/api/jobs/admin/users"),
 
@@ -78,7 +85,7 @@ ACTION_ROUTE_MAP = {
 
 # Path/query parameter names ACTION_ROUTE_MAP templates pull out of the
 # payload rather than passing through as the JSON body.
-_PATH_PARAMS = {"job_id", "source_id", "user_id"}
+_PATH_PARAMS = {"job_id", "source_id", "user_id", "conversation_id", "memory_id"}
 _QUERY_KEYS = {"q", "work_mode", "category", "location", "saved", "status", "published_at", "limit", "offset"}
 
 
@@ -170,7 +177,8 @@ def invoke():
         return jsonify({"error": f"Unknown action: {action}"}), 404
     method, path_template = route
 
-    path_kwargs = {key: payload[key] for key in _PATH_PARAMS if key in payload}
+    used_path_params = {key for key in _PATH_PARAMS if f"{{{key}}}" in path_template}
+    path_kwargs = {key: payload[key] for key in used_path_params if key in payload}
     try:
         path = path_template.format(**path_kwargs)
     except KeyError as exc:
@@ -186,6 +194,6 @@ def invoke():
             path = f"{path}?{urlencode(query, doseq=True)}"
         upstream = current_app.test_client().open(path, method=method, headers=identity_headers)
     else:
-        body_payload = {k: v for k, v in payload.items() if k not in _PATH_PARAMS}
+        body_payload = {k: v for k, v in payload.items() if k not in used_path_params}
         upstream = current_app.test_client().open(path, method=method, json=body_payload, headers=identity_headers)
     return _passthrough(upstream)

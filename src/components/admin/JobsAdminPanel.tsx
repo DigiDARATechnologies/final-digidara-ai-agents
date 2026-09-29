@@ -50,11 +50,12 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`admin-badge ${STATUS_BADGE_CLASS[status] || "badge-expired"}`}>{status.replace(/_/g, " ")}</span>;
 }
 
-function getJobSourceBadge(externalId: string = "") {
-  if (externalId.startsWith("adzuna:")) return { label: "Adzuna", color: "#0369a1", bg: "#e0f2fe" };
-  if (externalId.startsWith("jsearch:")) return { label: "JSearch (LinkedIn/Indeed)", color: "#047857", bg: "#d1fae5" };
+function getJobSourceBadge(externalId: string = "", sourceType?: string | null) {
+  const source = (sourceType || "").toLowerCase();
+  if (source === "adzuna" || (!source && externalId.startsWith("adzuna:"))) return { label: "Adzuna", color: "#0369a1", bg: "#e0f2fe" };
+  if (source === "jsearch" || (!source && externalId.startsWith("jsearch:"))) return { label: "RapidAPI JSearch", color: "#047857", bg: "#d1fae5" };
   if (externalId.startsWith("manual")) return { label: "Manual", color: "#4b5563", bg: "#f3f4f6" };
-  return { label: "Direct", color: "#6b7280", bg: "#f3f4f6" };
+  return { label: source === "greenhouse" ? "Greenhouse" : source === "apify" ? "Apify" : "Other source", color: "#6b7280", bg: "#f3f4f6" };
 }
 
 export default function JobsAdminPanel() {
@@ -250,8 +251,9 @@ export default function JobsAdminPanel() {
   const filteredJobs = jobs.filter((job) => {
     if (!jobSourceFilter) return true;
     const extId = (job.external_id || "").toLowerCase();
-    if (jobSourceFilter === "adzuna") return extId.startsWith("adzuna:");
-    if (jobSourceFilter === "jsearch") return extId.startsWith("jsearch:");
+    const source = (job.source_type || "").toLowerCase();
+    if (jobSourceFilter === "adzuna") return source === "adzuna" || (!source && extId.startsWith("adzuna:"));
+    if (jobSourceFilter === "jsearch") return source === "jsearch" || (!source && extId.startsWith("jsearch:"));
     if (jobSourceFilter === "manual") return extId.startsWith("manual");
     return true;
   });
@@ -301,7 +303,7 @@ export default function JobsAdminPanel() {
               <select value={jobSourceFilter} onChange={(e) => setJobSourceFilter(e.target.value)}>
                 <option value="">All Sources</option>
                 <option value="adzuna">Adzuna</option>
-                <option value="jsearch">RapidAPI (LinkedIn/Indeed)</option>
+                <option value="jsearch">RapidAPI JSearch</option>
                 <option value="manual">Manual</option>
               </select>
             </div>
@@ -380,7 +382,7 @@ export default function JobsAdminPanel() {
                 <thead><tr><th>Title</th><th>Company</th><th>Source</th><th>Location</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filteredJobs.map((job) => {
-                    const badge = getJobSourceBadge(job.external_id);
+                    const badge = getJobSourceBadge(job.external_id, job.source_type);
                     return (
                       <tr key={job.id}>
                         <td className="admin-table-primary">{job.title}</td>

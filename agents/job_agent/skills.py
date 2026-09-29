@@ -51,6 +51,15 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "bash": "Bash",
     "shell": "Shell Scripting",
 
+    # Quantitative foundations used by analytics, data science, and AI roles
+    "math": "Mathematics",
+    "maths": "Mathematics",
+    "mathematics": "Mathematics",
+    "statistics": "Statistics",
+    "statistical analysis": "Statistics",
+    "probability": "Probability",
+    "linear algebra": "Linear Algebra",
+
     # Frontend Frameworks & Libraries
     "react": "React",
     "react.js": "React",
@@ -83,6 +92,8 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "django": "Django",
     "flask": "Flask",
     "fastapi": "FastAPI",
+    "fast api": "FastAPI",
+    "fast-api": "FastAPI",
     "spring": "Spring Boot",
     "spring boot": "Spring Boot",
     "springboot": "Spring Boot",
@@ -143,7 +154,10 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "deep learning": "Deep Learning",
     "generative ai": "Generative AI",
     "gen ai": "Generative AI",
+    "ml ops": "MLOps",
+    "mlops": "MLOps",
     "ai agents": "AI Agents",
+    "a agents": "AI Agents",
     "agentic ai": "AI Agents",
     "voice ai": "Voice AI",
     "llm": "LLM",
@@ -152,6 +166,7 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "nlp": "NLP",
     "natural language processing": "NLP",
     "computer vision": "Computer Vision",
+    "cnn": "CNN",
     "data science": "Data Science",
     "data analysis": "Data Analysis",
     "pandas": "Pandas",
@@ -181,6 +196,19 @@ SKILL_TAXONOMY: Dict[str, str] = {
     "ui/ux": "UI/UX",
     "ui design": "UI Design",
     "ux design": "UX Design",
+
+    # Digital Marketing
+    "digital marketing": "Digital Marketing",
+    "search engine optimization": "SEO",
+    "seo": "SEO",
+    "search engine marketing": "SEM",
+    "sem": "SEM",
+    "pay per click": "PPC",
+    "ppc": "PPC",
+    "social media marketing": "Social Media Marketing",
+    "content marketing": "Content Marketing",
+    "google ads": "Google Ads",
+    "meta ads": "Meta Ads",
 }
 
 # Ambiguous short tokens that require strict whole-word uppercase or explicit tech context
@@ -202,6 +230,15 @@ COMPILED_SKILL_PATTERNS = [
 ]
 
 
+def normalize_skill_name(value: str) -> str:
+    """Canonicalize a recognized skill alias while retaining unknown legitimate names."""
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    canonical = extract_skills_from_text(raw)
+    return canonical[0] if len(canonical) == 1 else raw
+
+
 def extract_skills_from_text(text: str) -> List[str]:
     """
     Scans free text (job description, resume, or message) and extracts all
@@ -210,13 +247,10 @@ def extract_skills_from_text(text: str) -> List[str]:
     if not text or not isinstance(text, str):
         return []
 
-    found_skills: List[str] = []
+    matches: List[tuple[int, int, str]] = []
     seen: Set[str] = set()
 
     for alias, canonical, pattern in COMPILED_SKILL_PATTERNS:
-        if canonical in seen:
-            continue
-
         # Ambiguous 1-2 char tokens like 'r', 'go', 'ai', 'c' require careful matching
         if alias in SHORT_AMBIGUOUS_TOKENS:
             # Check for uppercase or accompanied by other tech words
@@ -232,10 +266,15 @@ def extract_skills_from_text(text: str) -> List[str]:
                 if not (matched_str == "Go" or re.search(r"\bgolang\b", text, re.I)):
                     continue
 
-        if pattern.search(text):
+        match = pattern.search(text)
+        if match:
+            matches.append((match.start(), -len(alias), canonical))
+
+    found_skills: List[str] = []
+    for _, _, canonical in sorted(matches):
+        if canonical not in seen:
             found_skills.append(canonical)
             seen.add(canonical)
-
     return found_skills
 
 

@@ -32,7 +32,7 @@ class ChatServiceUnitTests(unittest.TestCase):
         profile, missing = _get_user_profile_and_missing(cursor, "test_user_1")
         self.assertEqual(profile["full_name"], "Karthik")
         self.assertIn("skills", missing)
-        self.assertTrue(any("locations" in m for m in missing))
+        self.assertTrue(any("preferred city" in m for m in missing))
         self.assertTrue(any("resume" in m for m in missing))
 
     def test_apply_profile_updates_merges_new_skills_and_locations(self):
@@ -112,7 +112,7 @@ class ChatServiceUnitTests(unittest.TestCase):
         )
         self.assertIn("Capco", res_salary["reply"])
         self.assertIn("₹8,00,000", res_salary["reply"])
-        self.assertIn("[Apply on Employer Portal](https://example.com/apply/capco)", res_salary["reply"])
+        self.assertIn("[Open application page](https://example.com/apply/capco)", res_salary["reply"])
 
         # Test experience inquiry
         res_exp = _rule_based_fallback(
@@ -120,7 +120,7 @@ class ChatServiceUnitTests(unittest.TestCase):
         )
         self.assertIn("5.1-7 years", res_exp["reply"])
         self.assertIn("Capco", res_exp["reply"])
-        self.assertIn("[Apply on Employer Portal](https://example.com/apply/capco)", res_exp["reply"])
+        self.assertIn("[Open application page](https://example.com/apply/capco)", res_exp["reply"])
 
     def test_rule_based_fallback_answers_trust_and_authenticity(self):
         profile = {"full_name": "Dhanush", "skills": ["React"], "experience_years": 0}
@@ -137,7 +137,8 @@ class ChatServiceUnitTests(unittest.TestCase):
         res = _rule_based_fallback("is this job genuine and trusted?", profile, [], [], focused_job=focused_job)
         self.assertIn("🛡️ Verified Corporate Posting", res["reply"])
         self.assertIn("96%", res["reply"])
-        self.assertIn("[Apply on Employer Portal]", res["reply"])
+        self.assertIn("[Open application page]", res["reply"])
+        self.assertIn("not a guarantee", res["reply"])
 
     def test_off_topic_guardrails_blocks_unrelated_queries(self):
         # 1. Direct query helper test
@@ -251,7 +252,7 @@ class ChatServiceUnitTests(unittest.TestCase):
         # Step 4: User provides titles -> Agent advances to locations
         res6 = _handle_onboarding_step(db, cursor, "u1", profile, "Python Developer, Backend Engineer")
         self.assertEqual(profile["onboarding_step"], "preferred_locations")
-        self.assertIn("locations", res6["reply"])
+        self.assertIn("Which city", res6["reply"])
         self.assertFalse(res6["show_jobs"])
 
         # Step 5: User provides locations -> Agent advances to resume
@@ -293,7 +294,7 @@ class ChatServiceUnitTests(unittest.TestCase):
 
         # 2. User gives location instead of name: "I preferred location is bangalore"
         r2 = _handle_onboarding_step(db, cursor, "u2", profile, "I preferred location is bangalore")
-        self.assertIn("Bangalore", profile["preferred_locations"])
+        self.assertIn("Bengaluru", profile["preferred_locations"])
         self.assertNotEqual(profile["full_name"], "I preferred location is bangalore")
         self.assertIn("enter your **full name**", r2["reply"])
         self.assertEqual(profile["onboarding_step"], "full_name")
@@ -375,7 +376,7 @@ class ChatServiceUnitTests(unittest.TestCase):
 
         # 1. Location given before name
         r1 = _handle_onboarding_step(db, cursor, "u_dhanush", profile, "my preferred location is bangalore and hydrabad")
-        self.assertIn("Bangalore", profile["preferred_locations"])
+        self.assertIn("Bengaluru", profile["preferred_locations"])
         self.assertEqual(profile["onboarding_step"], "full_name")
         self.assertIn("full name", r1["reply"].lower())
 
@@ -501,8 +502,10 @@ class ChatEndpointIntegrationTests(unittest.TestCase):
         self.client = create_app(testing=True).test_client()
         self.headers = {"X-Digidara-User-Id": "test_learner"}
 
+    @patch("job_agent.routes.check_and_record_chat_usage")
+    @patch("job_agent.routes.get_db")
     @patch("job_agent.chat_service.get_db")
-    def test_invoke_chat_returns_reply_and_profile(self, get_db):
+    def test_invoke_chat_returns_reply_and_profile(self, get_db, route_get_db, usage):
         db = MagicMock()
         cursor = MagicMock()
         db.cursor.return_value = cursor
@@ -534,6 +537,13 @@ class ChatEndpointIntegrationTests(unittest.TestCase):
             }
         ]
         get_db.return_value = db
+        route_get_db.return_value = db
+        usage.return_value = {
+            "insufficient_tokens": False,
+            "free_turns_remaining": 9,
+            "total_turns_today": 1,
+            "tokens_charged": 0,
+        }
 
         response = self.client.post(
             "/api/invoke",

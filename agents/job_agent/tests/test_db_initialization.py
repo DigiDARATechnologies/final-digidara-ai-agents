@@ -59,6 +59,11 @@ def test_schema_initialization_uses_and_releases_advisory_lock(monkeypatch):
         (db_module._SCHEMA_LOCK_NAME,),
     )
     assert connection.commits == 1
+    schema_sql = "\n".join(statement for statement, _ in cursor.calls)
+    assert "CREATE TABLE IF NOT EXISTS job_conversations" in schema_sql
+    assert "CREATE TABLE IF NOT EXISTS job_conversation_messages" in schema_sql
+    assert "CREATE TABLE IF NOT EXISTS user_job_memories" in schema_sql
+    assert "experience_provided" in schema_sql
     assert cursor.closed
     assert connection.closed
 

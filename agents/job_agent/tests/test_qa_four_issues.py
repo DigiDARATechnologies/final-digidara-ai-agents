@@ -134,7 +134,9 @@ def test_trust_aggregators_transparent_badges():
     })
     assert adzuna_eval["trust_badge"] == "📋 Aggregator Listing (via Adzuna)"
     assert adzuna_eval["trust_level"] == "aggregator"
-    assert adzuna_eval["is_verified"] is True  # Verified via API, but clearly badged as aggregator
+    assert adzuna_eval["is_verified"] is False
+    assert adzuna_eval["trust_score"] <= 79
+    assert adzuna_eval["application_label"] == "Open listing source"
 
     # RapidAPI JSearch listings get transparent aggregator badge
     jsearch_eval = evaluate_job_trust({
@@ -265,9 +267,10 @@ def test_format_job_listings_markdown_renders_rich_match_metadata():
 def test_matches_location_filter_logic():
     # Direct match
     assert _matches_location_filter("Chennai, Tamil Nadu", "onsite", ["Chennai"])
-    # Remote match
-    assert _matches_location_filter("Coimbatore, Tamil Nadu", "remote", ["Chennai"])
-    assert _matches_location_filter("Remote, India", "onsite", ["Chennai"])
+    # Remote must not leak into a physical-city search
+    assert not _matches_location_filter("Coimbatore, Tamil Nadu", "remote", ["Chennai"])
+    assert _matches_location_filter("All India", "remote", ["Remote"])
+    assert not _matches_location_filter("Remote, India", "onsite", ["Chennai"])
 
     # Strict physical mismatch
     assert not _matches_location_filter("Coimbatore, Tamil Nadu", "onsite", ["Chennai"])
@@ -342,6 +345,6 @@ def test_get_top_matched_jobs_strict_location_excludes_coimbatore():
 
     matched_ids = [j["id"] for j in matched]
     assert 101 in matched_ids
-    assert 103 in matched_ids
+    assert 103 not in matched_ids
     # Coimbatore MUST NOT be in results
     assert 102 not in matched_ids

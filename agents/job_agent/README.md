@@ -25,6 +25,8 @@ wiring detail (dispatcher shape, identity, action map).
 - `auth.py` — reads the orchestrator gateway's verified
   `X-Digidara-User-Id` / `X-Digidara-Is-Admin` headers; no local login.
 - `db.py` — this agent's own, independent database schema.
+- `memory.py` — user-isolated, database-backed conversation history,
+  idempotent turns, retention, and confirmed structured profile memory.
 - `matching.py` — explainable profile/job scoring.
 - `categories.py` / `categories.yaml` — keyword-based job/course
   categorization, with category-relatedness (e.g. a Python-track user also
@@ -41,6 +43,13 @@ wiring detail (dispatcher shape, identity, action map).
   LinkedIn has a dedicated Apify normalizer; the remaining Apify platforms
   require live actor-output verification). See
   [providers/README.md](providers/README.md).
+
+Conversation history is owned by the server rather than trusted from the
+browser. Only confirmed structured profile fields become long-term memory;
+assistant prose is never promoted to a user fact. Authenticated users can list
+or delete conversations and inspect or forget individual memories through the
+conversation and memory invoke actions. Account deletion cascades through
+these tables, and user data export includes them.
 
 ## Run the service
 
@@ -128,3 +137,46 @@ Example `html_cards` parser configuration:
 
 Configuration variables — see [.env.example](.env.example) for the full
 list, including Strategy F registration and database settings.
+
+### Candidate search context
+
+Explicit requests such as `send the machine learning jobs in Madurai` perform
+an active, unexpired portal catalogue search, including during onboarding.
+Approved role-family aliases are title filters, not inferred user skills.
+Current filters override saved preferences for this search only; no profile
+facts are changed. Catalogue results retain their actual experience requirements
+and personal match scores rather than being silently removed by the personalized
+recommendation blend. Empty results are portal-specific, not claims about the
+entire job market.
+
+Completed search filters and displayed job IDs are stored in existing response
+metadata, scoped by user and conversation. Bounded recent server history supports
+`what about Chennai?`, related/other-location/remote actions, and non-repeating
+more-results retrieval. Client-provided history cannot supply structured search
+metadata. Candidate cards/details omit ingestion-provider names while retaining
+safety warnings, match scores and real application links. Admin source metadata
+and ingestion configuration are unchanged. No additional schema is required.
+
+Profile clarification runs before search or field extraction. Purpose questions
+(for example, `why do you need my name?`) explain the relevant profile section;
+completion questions list missing required facts rather than assuming completion
+or interpreting unanswered experience as fresher. A refusal does not populate
+fields or advance onboarding. A nickname is accepted for the name section, a
+resume remains optional, and explicit role/city searches still work without a
+completed profile. Clarification responses include read-only `profile_status`
+metadata; they do not use a model to invent saved facts.
+
+Short greetings and check-ins during onboarding are acknowledged without
+being stored as names, skills, roles, or experience. The reply gives a gentle
+reminder of the next missing field; a pending role confirmation remains
+answerable afterward. Mixed messages containing real profile facts continue
+through normal extraction. Completed profiles are not reopened by greetings.
+
+During incomplete onboarding, unanswered career questions use a bounded
+question-answer path. Profile edits and portal searches remain deterministic
+and execute before that path. Common explanations and unrelated requests get
+safe local replies; other career questions may use the configured language
+model with a strict JSON response, a short timeout, and server-supplied profile
+context. The model cannot save profile fields, supply job cards, or claim a
+portal search. If it is unavailable, the agent says it cannot answer reliably
+instead of repeating the onboarding question or inventing facts.

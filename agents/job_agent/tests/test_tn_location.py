@@ -31,8 +31,9 @@ class DistrictClassificationTests(unittest.TestCase):
     def test_hosur_resolves_as_its_own_district(self):
         self.assertEqual(classify_district("Hosur, Tamil Nadu"), "Hosur")
 
-    def test_all_32_tn_districts_are_present(self):
-        self.assertEqual(len(ALL_TN_DISTRICTS), 32)
+    def test_all_supported_tn_locations_are_present(self):
+        # All 38 districts plus Hosur, retained as a first-class business hub.
+        self.assertEqual(len(ALL_TN_DISTRICTS), 39)
         for expected in (
             "Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Tiruppur",
             "Erode", "Vellore", "Tirunelveli", "Thoothukudi", "Thanjavur", "Dindigul",
