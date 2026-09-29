@@ -331,6 +331,12 @@ def _summary_payload(session):
         "answered_turns": session.answered_turns,
         "total_turns": session.total_turns,
         "ended_by_user": session.ended_by_user,
+        "executive_scorecard": getattr(session, "_executive_scorecard", None) or {
+            "you_did_well": "You actively engaged in the conversation and expressed your thoughts.",
+            "key_improvement_area": "Sentence structure and grammatical precision.",
+            "golden_rewrite": None,
+            "scores_breakdown": None,
+        },
     }
 
 
@@ -376,8 +382,15 @@ def _finalize_session(session, ended_by_user=False):
     session.common_mistakes_json = json.dumps(summary.get("common_mistakes", []))
     session.recommendation = summary.get("recommendation")
     session.next_practice_suggestion = summary.get("next_practice_suggestion")
-    session._summary_strengths = summary["strengths"]
-    session._summary_areas = summary["areas_to_improve"]
+    session._summary_strengths = summary.get("strengths", [])
+    session._summary_areas = summary.get("areas_to_improve", [])
+    session._executive_scorecard = {
+        "you_did_well": summary.get("you_did_well"),
+        "key_improvement_area": summary.get("key_improvement_area"),
+        "golden_rewrite": summary.get("golden_rewrite"),
+        "scores_breakdown": summary.get("scores_breakdown"),
+        "recommended_next_step": summary.get("recommended_next_step"),
+    }
     return summary
 
 
@@ -1468,4 +1481,33 @@ def download_speaking_report_pdf(session_id):
         as_attachment=True,
         download_name=f"Speaking_Report_{session.id}.pdf",
     )
+
+
+@speaking_bp.post("/synthesize")
+@jwt_required()
+def synthesize_speech():
+    """Phase 2: Stream studio-quality Neural TTS audio for coach prompts."""
+    from io import BytesIO
+    from flask import send_file
+    from ..services.neural_tts import synthesize_neural_speech
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    voice = (data.get("voice") or "nova").strip().lower()
+    speed = float(data.get("speed") or 0.92)
+
+    if not text:
+        return _api_error("text is required for speech synthesis.", "MISSING_TEXT", 400)
+
+    audio_bytes, mime_type = synthesize_neural_speech(text, voice=voice, speed=speed)
+    if not audio_bytes:
+        return _api_error("Neural voice synthesis unavailable.", "SYNTHESIS_FAILED", 503)
+
+    return send_file(
+        BytesIO(audio_bytes),
+        mimetype=mime_type or "audio/mpeg",
+        as_attachment=False,
+        download_name="coach_speech.mp3",
+    )
+
 

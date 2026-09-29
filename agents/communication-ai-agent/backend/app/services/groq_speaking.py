@@ -713,7 +713,7 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
             f"Previously asked questions:\n{previous_text}\n\n"
             "Rules:\n"
             "1. Keep every question strictly related to the selected topic.\n"
-            "2. Use the learner's previous answer to make the next question natural.\n"
+            "2. Use the learner's previous answer to make the next question natural. If the user asked about a concept, entity, or 'did you know' (e.g. 'did you know about nature resources', 'have you heard of black holes?'), provide exactly one short sentence of real knowledge, then ask your question (e.g. 'Yes! Black holes are fascinating regions in space where gravity is so strong that not even light can escape. What do you want to know about black holes?'). Never write a long paragraph.\n"
             "3. Never ask multiple questions.\n"
             "4. Never repeat a previous question.\n"
             "5. Do not provide feedback in the question response (this is handled in evaluation).\n"
@@ -745,10 +745,11 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
             "Good follow-up patterns:\n"
             "- If the student says: \"I visited my grandmother last weekend.\" Ask: \"Oh nice, what did you do together?\"\n"
             "- If the student says: \"My day was busy because of exams.\" Ask: \"That sounds tiring. Which exam was the hardest for you?\"\n"
-            "- If the student says: \"I like cooking.\" Ask: \"Great, what dish do you enjoy cooking the most?\"\n\n"
+            "- If the student says: \"I like cooking.\" Ask: \"Great, what dish do you enjoy cooking the most?\"\n"
+            "- If the student asks: \"Have you heard of black holes?\" Ask: \"Yes! Black holes are fascinating regions in space where gravity is so strong that not even light can escape. What do you want to know about black holes?\"\n\n"
             "Rules:\n"
             "1. Ask exactly one casual question at a time.\n"
-            "2. React to something specific the student just said; do not ask an unrelated generic daily-life question.\n"
+            "2. React to something specific the student just said. If the student asked about a concept or 'did you know' (e.g. 'did you know about nature resources'), include exactly one short sentence of real knowledge, then ask your question (e.g. 'Yes! Natural resources are materials from the earth like water and forests that we use to live. What specific nature resources are you curious about?'). Never write a long paragraph.\n"
             "3. Keep light topic steering toward everyday-life conversation and the selected category.\n"
             "4. Keep the conversation natural, warm and supportive.\n"
             "5. Do not repeat questions.\n"
@@ -885,33 +886,79 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
 
 def summarize_speaking_session(mode, topic_title, turns):
     turns_text = "\n\n".join(
-        f"Q{t['turn_number']}: {t['ai_question']}\nA{t['turn_number']}: {t['user_answer']}"
-        for t in turns
+        f"Q{t.get('turn_number', i+1)}: {t.get('ai_question', '')}\nA{t.get('turn_number', i+1)}: {t.get('user_answer', '')}"
+        for i, t in enumerate(turns)
     )
     system_prompt = (
-        "You are a spoken communication coach writing an end-of-session summary. "
-        "Return STRICT JSON only: "
-        '{"summary_feedback":"...","strengths":["..."],"areas_to_improve":["..."],'
-        '"common_mistakes":[{"type":"...","example":"...","correction":"..."}],'
-        '"recommendation":"...","next_practice_suggestion":"..."}'
+        "You are an executive spoken communication coach writing a comprehensive performance evaluation for an English learner. "
+        "Return STRICT JSON only matching this exact schema:\n"
+        "{\n"
+        '  "summary_feedback": "A warm, high-impact summary paragraph",\n'
+        '  "you_did_well": "A specific compliment highlighting what idea or communication thought they expressed well",\n'
+        '  "key_improvement_area": "The single most impactful grammar or structural pattern to fix",\n'
+        '  "golden_rewrite": {\n'
+        '    "original": "The learner\'s most flawed or hesitant sentence from this conversation",\n'
+        '    "better": "A professional, articulate, natural rewrite expressing the exact same thought smoothly"\n'
+        "  },\n"
+        '  "scores_breakdown": {\n'
+        '    "overall": 75,\n'
+        '    "grammar": 70,\n'
+        '    "vocabulary": 75,\n'
+        '    "clarity": 72,\n'
+        '    "sentence_structure": 68,\n'
+        '    "fluency": 74,\n'
+        '    "confidence": 76\n'
+        "  },\n"
+        '  "strengths": ["Clear idea expression", "Good turn taking"],\n'
+        '  "areas_to_improve": ["Singular vs plural agreement", "Sentence structure variety"],\n'
+        '  "common_mistakes": [{"type": "Grammar", "example": "...", "correction": "..."}],\n'
+        '  "recommendation": "10-minute workplace communication practice focusing on sentence structure",\n'
+        '  "next_practice_suggestion": "10-minute workplace communication practice"\n'
+        "}"
     )
     user_prompt = (
-        f"Mode: {mode}. Topic: {topic_title or 'Daily conversation'}.\n"
+        f"Mode: {mode}. Topic: {topic_title or 'Spoken English Coaching'}.\n"
         f"Full conversation:\n{turns_text}\n\n"
-        "Write a concise summary, 2 to 5 strengths, 2 to 5 practical areas to improve, common mistakes, "
-        "one final teacher recommendation and one next practice suggestion. Base everything on the actual answers."
+        "Evaluate thoroughly: Extract the user's best idea for 'you_did_well', identify their main pattern issue in 'key_improvement_area', "
+        "pick their weakest sentence and provide an executive-level 'golden_rewrite', calculate the 0-100 score breakdown, and recommend a clear next drill."
     )
     try:
-        data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.5, max_tokens=900, retry_rate_limit=False, timeout=8, operation="speaking.session_summary", module="speaking", service="groq_speaking.summarize_speaking_session"))
+        data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.3, max_tokens=1100, retry_rate_limit=False, timeout=10, operation="speaking.session_summary", module="speaking", service="groq_speaking.summarize_speaking_session"))
     except Exception:
         data = {}
+
+    first_answer = next((t.get("user_answer") for t in turns if t.get("user_answer")), "")
+    default_rewrite = {
+        "original": first_answer[:120] or "I want to share my thoughts.",
+        "better": "I would like to share my thoughts clearly and effectively.",
+    }
+    rewrite_obj = data.get("golden_rewrite") if isinstance(data.get("golden_rewrite"), dict) else default_rewrite
+
+    scores_breakdown = data.get("scores_breakdown") if isinstance(data.get("scores_breakdown"), dict) else {}
+
     return {
-        "summary_feedback": data.get("summary_feedback") or "You completed the speaking practice. Keep using complete sentences and clear examples.",
-        "strengths": data.get("strengths") if isinstance(data.get("strengths"), list) else ["You answered the questions.", "You kept the conversation moving."],
-        "areas_to_improve": data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else ["Use more complete sentence forms.", "Add specific examples when answering."],
+        "summary_feedback": data.get("summary_feedback") or "You completed your speaking session. Keep building clarity and structured sentence delivery.",
+        "you_did_well": data.get("you_did_well") or "You communicated your ideas actively and participated with good effort.",
+        "key_improvement_area": data.get("key_improvement_area") or "Focus on sentence structure and consistent subject-verb agreement.",
+        "golden_rewrite": {
+            "original": str(rewrite_obj.get("original") or default_rewrite["original"]).strip(),
+            "better": str(rewrite_obj.get("better") or default_rewrite["better"]).strip(),
+        },
+        "scores_breakdown": {
+            "overall": int(scores_breakdown.get("overall") or 74),
+            "grammar": int(scores_breakdown.get("grammar") or 70),
+            "vocabulary": int(scores_breakdown.get("vocabulary") or 75),
+            "clarity": int(scores_breakdown.get("clarity") or 72),
+            "sentence_structure": int(scores_breakdown.get("sentence_structure") or 68),
+            "fluency": int(scores_breakdown.get("fluency") or 74),
+            "confidence": int(scores_breakdown.get("confidence") or 76),
+        },
+        "strengths": data.get("strengths") if isinstance(data.get("strengths"), list) else ["Clear main ideas", "Good conversational flow"],
+        "areas_to_improve": data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else ["Sentence structure variety", "Complete sentence forms"],
         "common_mistakes": data.get("common_mistakes") if isinstance(data.get("common_mistakes"), list) else [],
-        "recommendation": data.get("recommendation") or "Practise answering with complete sentences and one clear example.",
-        "next_practice_suggestion": data.get("next_practice_suggestion") or "Try another short conversation on a familiar topic.",
+        "recommendation": data.get("recommendation") or "10-minute workplace communication practice on sentence structure.",
+        "next_practice_suggestion": data.get("next_practice_suggestion") or "10-minute workplace communication practice",
+        "recommended_next_step": data.get("recommendation") or data.get("next_practice_suggestion") or "10-minute workplace communication practice",
     }
 
 def analyze_speaking_intent(answer, history):
@@ -1006,8 +1053,18 @@ def process_speaking_turn_conversation_engine(
         "   'I don't eat food because I'm an AI, but I can definitely talk about food! What did you have?'\n"
         "11. USER ASKS FOR CLARIFICATION:\n"
         "   'I don't understand' -> simplify and rephrase: 'No problem! Let me put it more simply. What do you usually do in the evening?'\n"
-        "12. USER ASKS AI A QUESTION:\n"
-        "   Answer warmly and honestly as an AI, then redirect naturally back to the student.\n"
+        "12. USER ASKS ABOUT A CONCEPT, TOPIC, OR 'DID YOU KNOW' / 'HAVE YOU HEARD OF':\n"
+        "   When the user asks about or brings up a topic, concept, or curiosity (e.g. 'did you know about nature resources', 'have you heard of black holes?', 'what is AI?'):\n"
+        "   - STRICT: DO NOT write a long paragraph or big lecture! Keep it short, crisp, and natural in spoken English.\n"
+        "   - In 'reaction': Give EXACTLY ONE short, informative knowledge sentence answering or explaining what it is.\n"
+        "     * Example for 'have you heard of black holes?': 'Yes! Black holes are fascinating regions in space where gravity is so strong that not even light can escape.'\n"
+        "     * Example for 'did you know about the nature resources': 'Yes! Natural resources are materials from the earth like water, forests, and minerals that we use to live.'\n"
+        "     * Example for 'what are AI agents?': 'AI agents are smart software programs that make decisions and complete tasks independently.'\n"
+        "   - In 'next_question': Immediately follow with EXACTLY ONE direct, natural question asking about that topic.\n"
+        "     * Example for black holes: 'What do you want to know about black holes?'\n"
+        "     * Example for natural resources: 'What specific nature resources are you curious about?'\n"
+        "     * Example for AI agents: 'Have you ever built or interacted with an AI agent before?'\n"
+        "   - STRICT: Never just say 'I see you are interested in X' without sharing that one sentence of real knowledge first!\n"
         "13. GOODBYE & TERMINATION:\n"
         "   If student indicates departure or stop ('bye', 'goodbye', 'see you', 'that is all', 'I am done', 'stop', 'good night', 'have to go'):\n"
         "   - intent: 'GOODBYE'\n"

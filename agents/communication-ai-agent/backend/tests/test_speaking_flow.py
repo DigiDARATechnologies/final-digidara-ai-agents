@@ -611,3 +611,74 @@ def test_retry_correction_updates_existing_turn_without_duplicate_question(clien
     assert SpeakingTurn.query.filter_by(session_id=started["session_id"]).count() == before_count
     turn = db.session.get(SpeakingTurn, turn_id)
     assert turn.corrected_answer == "This morning, I brought some coffee."
+
+
+def test_speaking_session_summary_returns_executive_scorecard(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(
+        speaking.groq_service,
+        "generate_speaking_question",
+        lambda *args, **kwargs: "What are your thoughts on agentic AI workflows?",
+    )
+    monkeypatch.setattr(
+        speaking.groq_service,
+        "evaluate_speaking_answer",
+        lambda *args, **kwargs: {
+            "appreciation": "Well articulated.",
+            "status": "Good",
+            "original_answer": "Human doesn't have to wait to perform multi tasking.",
+            "has_errors": True,
+            "transcript_clear": True,
+            "unclear_phrases": [],
+            "correction_available": True,
+            "corrected_answer": "Humans don't have to wait to perform multitasking.",
+            "better_natural_answer": "Humans don't have to wait for individual tasks to finish. AI agents can perform multiple actions independently.",
+            "explanation": "Subject-verb agreement.",
+            "mistakes": [],
+            "vocabulary_suggestions": [],
+            "rules_applied": [],
+            "short_feedback": "Good point.",
+            "source": "groq",
+            "feedback_source": "groq",
+            "fallback_reason": None,
+            "scores_verified": True,
+            "scores": {"confidence": 75, "fluency": 72, "grammar": 68, "knowledge": 80, "overall": 74},
+        },
+    )
+
+    start_resp = client.post(
+        "/api/speaking/start",
+        json={
+            "mode": "topic",
+            "difficulty": "medium",
+            "topic_title": "Agentic AI",
+            "topic_description": "Discuss agentic AI and workflow automation.",
+        },
+        headers=auth_headers,
+    )
+    assert start_resp.status_code == 201
+    session_id = start_resp.get_json()["session_id"]
+
+    respond_resp = client.post(
+        "/api/speaking/respond",
+        json={"session_id": session_id, "answer": "Human doesn't have to wait to perform multi tasking."},
+        headers=auth_headers,
+    )
+    assert respond_resp.status_code == 200
+
+    end_resp = client.post(
+        "/api/speaking/end",
+        json={"session_id": session_id},
+        headers=auth_headers,
+    )
+    assert end_resp.status_code == 200
+    data = end_resp.get_json()
+    summary = data.get("summary", {})
+    scorecard = summary.get("executive_scorecard")
+    assert scorecard is not None
+    assert "you_did_well" in scorecard
+    assert "key_improvement_area" in scorecard
+    assert "golden_rewrite" in scorecard
+    assert "scores_breakdown" in scorecard
+    assert "recommended_next_step" in scorecard
+
+

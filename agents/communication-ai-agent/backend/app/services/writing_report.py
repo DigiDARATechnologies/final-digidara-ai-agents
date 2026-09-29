@@ -15,7 +15,7 @@ from reportlab.platypus import (
     HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
     TableStyle,
 )
-
+#below are the color definitions used in the PDF report
 TEAL = colors.HexColor("#0E90B4")
 INK = colors.HexColor("#1A202C")
 MUTED = colors.HexColor("#5A6A80")

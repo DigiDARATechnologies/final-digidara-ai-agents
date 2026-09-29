@@ -13,6 +13,7 @@ from ..services import groq_service
 from ..services.daily_challenges import PRONUNCIATION_DAILY, activity_status, backfill_today_from_completed_sessions, complete_daily_activity, mark_activity_started, today_challenge_date
 from ..services.groq_pronunciation import DAILY_CHALLENGE_SCHEMA_VERSION, generate_phonetic_hints
 from ..services.pronunciation_assessment import assess_pronunciation
+from ..services.cefr_adaptation import calculate_adaptive_difficulty, score_to_cefr
 from ..utils.score_utils import to_score10
 
 pronunciation_bp = Blueprint("pronunciation", __name__)
@@ -78,6 +79,8 @@ def _pronunciation_session_summary_payload(session, summary=None):
     strengths = summary.get("strengths", []) if summary else json.loads(session.strengths_json or "[]")
     areas_to_improve = summary.get("areas_to_improve", []) if summary else json.loads(session.weaknesses_json or "[]")
 
+    cefr_data = score_to_cefr(to_score10(session.average_score) if session.average_score is not None else average_overall)
+
     return {
         "success": True,
         "done": True,
@@ -100,6 +103,9 @@ def _pronunciation_session_summary_payload(session, summary=None):
         "difficulty": session.difficulty,
         "type": "pronunciation",
         "topic_title": f"{session.mode.capitalize()} Practice",
+        "cefr_level": cefr_data.get("cefr_level"),
+        "cefr_name": cefr_data.get("cefr_name"),
+        "adaptive_difficulty_recommendation": cefr_data.get("recommended_difficulty"),
         "created_at": session.created_at.isoformat() if session.created_at else None,
     }
 
@@ -1109,3 +1115,23 @@ def get_streak():
         "streak_count": streak_count,
         "last_completed_date": user.last_completed_date.isoformat() if hasattr(user, 'last_completed_date') and user.last_completed_date else None
     })
+
+
+@pronunciation_bp.get("/adaptive-level")
+@jwt_required()
+def get_adaptive_level():
+    """Retrieve learner's dynamic CEFR ability placement based on rolling historical scores."""
+    user_id = int(get_jwt_identity())
+    sessions = (
+        PronunciationSession.query.filter_by(user_id=user_id, status="completed")
+        .order_by(PronunciationSession.completed_at.desc())
+        .limit(10)
+        .all()
+    )
+    scores = [s.average_score for s in reversed(sessions) if s.average_score is not None]
+    adaptive_profile = calculate_adaptive_difficulty(scores, current_difficulty="medium")
+    return jsonify({
+        "success": True,
+        **adaptive_profile,
+    })
+

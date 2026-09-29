@@ -80,6 +80,7 @@ ACTION_MAP = {
     "speaking_session": ("GET", "/api/speaking/session/{session_id}"),
     "speaking_progress": ("GET", "/api/speaking/progress"),
     "speaking_report_pdf": ("GET", "/api/speaking/report/{session_id}/pdf"),
+    "speaking_synthesize": ("POST", "/api/speaking/synthesize"),
     "pronunciation_item": ("GET", "/api/pronunciation/item"),
     "pronunciation_generate": ("POST", "/api/pronunciation/generate"),
     "pronunciation_daily_challenge": ("GET", "/api/pronunciation/daily-challenge"),

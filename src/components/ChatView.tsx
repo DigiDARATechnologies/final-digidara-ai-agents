@@ -6,6 +6,7 @@ import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
+import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
 
 interface ChatViewProps {
   chat: Chat;
@@ -149,10 +150,8 @@ export default function ChatView({
   const orbRef = useRef<HTMLButtonElement | null>(null);
 
   function handleMicClick() {
-    if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-      window.speechSynthesis.cancel();
-      setAgentSpeaking(false);
-    }
+    stopCoachAudio();
+    setAgentSpeaking(false);
     if (speech.listening) {
       voiceSessionRef.current += 1;
       speech.stop();
@@ -298,22 +297,18 @@ export default function ChatView({
       }, 200);
     };
 
-    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-      const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[...]/g, " "));
-      utterance.rate = 0.85;
-      utterance.pitch = 1;
-      utterance.onstart = () => setAgentSpeaking(true);
-      utterance.onend = beginListening;
-      utterance.onerror = beginListening;
-      window.speechSynthesis.speak(utterance);
-    } else {
-      beginListening();
-    }
+    playCoachSpeech(activeSpeakingPrompt, {
+      rate: 0.92,
+      voiceName: "nova",
+      onStart: () => setAgentSpeaking(true),
+      onEnd: beginListening,
+      onError: beginListening,
+    });
 
     return () => {
       submitted = true;
       window.clearInterval(silenceCheck);
-      window.speechSynthesis?.cancel();
+      stopCoachAudio();
       setAgentSpeaking(false);
       if (voiceSessionRef.current === session) voiceSessionRef.current += 1;
       speech.stop();
