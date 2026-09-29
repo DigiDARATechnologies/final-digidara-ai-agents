@@ -35,16 +35,24 @@ function compactFeedback(value?: string): string {
   return `${sentences.slice(0, 277).trimEnd()}...`;
 }
 
+function isQuestionEcho(answer: string, question?: string): boolean {
+  const normalize = (value: string) => value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  const normalizedAnswer = normalize(answer);
+  return Boolean(normalizedAnswer && question && normalizedAnswer === normalize(question));
+}
+
 export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPracticeWeakTopics }: Props) {
   const speech = useSpeechRecognition();
   const [spokenAnswer, setSpokenAnswer] = useState("");
   const [typedAnswer, setTypedAnswer] = useState("");
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [timerEpoch, setTimerEpoch] = useState(0);
   const [voiceStatus, setVoiceStatus] = useState("");
   const [downloadError, setDownloadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const submittedRef = useRef(false);
+  const timerIntervalRef = useRef<number | null>(null);
   const spokenRef = useRef("");
   const typedRef = useRef("");
   const typedEditedRef = useRef(false);
@@ -65,6 +73,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
 
   function acceptVoiceTranscript(text: string) {
     if (!text || submittedRef.current) return;
+    if (isQuestionEcho(text, state.question)) return;
     spokenRef.current = text;
     setSpokenAnswer(text);
     if (!typedEditedRef.current) {
@@ -150,6 +159,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     spokenRef.current = "";
     typedRef.current = "";
     typedEditedRef.current = false;
+    setSpokenAnswer("");
+    setTypedAnswer("");
     const storageKey = `digidara_mock_interview_deadline_${questionKey}`;
     const existingDeadline = Number(sessionStorage.getItem(storageKey));
 
@@ -212,11 +223,23 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   async function submitAnswer(answer: string, timedOut = false) {
     if (!isLive || busy || transcribing || submittedRef.current) return;
     const initialAnswer = answer.trim();
+    if (!typedEditedRef.current && isQuestionEcho(initialAnswer, state.question)) {
+      spokenRef.current = "";
+      typedRef.current = "";
+      setSpokenAnswer("");
+      setTypedAnswer("");
+      setVoiceStatus("That was the interview question, not an answer. Please speak or type your answer.");
+      return;
+    }
     if (!initialAnswer && !timedOut) {
       setVoiceStatus("Speak or type an answer before submitting.");
       return;
     }
     submittedRef.current = true;
+    if (timerIntervalRef.current !== null) {
+      window.clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     speech.stop();
     const shouldImproveTranscript = !typedEditedRef.current
       && Boolean(mediaRecorderRef.current)
@@ -227,14 +250,13 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     }
     const recordedAudio = await finishAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
     const elapsed = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0;
     let finalAnswer = initialAnswer;
     if (shouldImproveTranscript && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
       try {
         const result = await transcribeMockInterviewAudio(state.sessionToken, state.interviewId, state.questionOrder, recordedAudio);
         if (result.transcript?.trim()) {
-          finalAnswer = result.transcript.trim();
+          finalAnswer = isQuestionEcho(result.transcript.trim(), state.question) ? "" : result.transcript.trim();
           spokenRef.current = finalAnswer;
           typedRef.current = finalAnswer;
           setSpokenAnswer(finalAnswer);
@@ -249,23 +271,47 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       setVoiceStatus("Using the live transcript because no complete audio recording was available.");
       setTranscribing(false);
     }
+    if (!finalAnswer && !timedOut) {
+      // Empty room audio can be hallucinated as the prompt question because
+      // the transcription request includes that question for technical-term
+      // context. Do not grade the prompt as the candidate's response.
+      submittedRef.current = false;
+      setTimerEpoch((epoch) => epoch + 1);
+      if (speech.supported) {
+        const recordingStarted = await beginAudioCapture();
+        const startedListening = speech.start(acceptVoiceTranscript);
+        setVoiceStatus(startedListening
+          ? (recordingStarted ? "No answer detected. Listening again - please answer the question." : "No answer detected. Please type your answer.")
+          : "No answer detected. Please type your answer.");
+      } else {
+        setVoiceStatus("No answer detected. Please type your answer.");
+      }
+      return;
+    }
+    sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
     onAnswerRef.current(finalAnswer, { timeTakenSec: Math.max(0, Math.min(timeLimit, elapsed)), timedOut: timedOut && !finalAnswer });
   }
 
   useEffect(() => {
     if (!isLive || secondsLeft === null || submittedRef.current) return;
     const updateTimer = () => {
+      if (submittedRef.current) return;
       const remaining = Math.max(0, Math.ceil(((deadlineRef.current ?? Date.now()) - Date.now()) / 1000));
       setSecondsLeft(remaining);
       if (remaining === 0) void submitAnswer(typedRef.current || spokenRef.current, true);
     };
     const timer = window.setInterval(updateTimer, 250);
+    timerIntervalRef.current = timer;
     const onVisibilityChange = () => { if (!document.hidden) updateTimer(); };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisibilityChange); };
+    return () => {
+      window.clearInterval(timer);
+      if (timerIntervalRef.current === timer) timerIntervalRef.current = null;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
     // The deadline is stable for the mounted question.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionKey, secondsLeft !== null, busy]);
+  }, [questionKey, secondsLeft !== null, busy, timerEpoch]);
 
   async function downloadReport() {
     if (!state.sessionToken || !state.interviewId || downloading) return;
