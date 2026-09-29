@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_MOCK_INTERVIEW_AGENT_NAME, "mock_interview_agent");
 const TIMEOUT_MS = Number(import.meta.env.VITE_MOCK_INTERVIEW_TIMEOUT_MS || 190000);
@@ -91,16 +92,6 @@ export function submitMockInterviewAnswer(sessionToken: string, interviewId: num
   });
 }
 
-async function audioBlobToBase64(blob: Blob): Promise<string> {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
-  }
-  return btoa(binary);
-}
-
 export async function transcribeMockInterviewAudio(
   sessionToken: string,
   interviewId: number,
@@ -112,7 +103,7 @@ export async function transcribeMockInterviewAudio(
     interview_id: interviewId,
     question_order: questionOrder,
     audio_data: await audioBlobToBase64(audio),
-    audio_type: (audio.type || "audio/webm").split(";", 1)[0].toLowerCase(),
+    audio_type: baseAudioType(audio),
   });
 }
 

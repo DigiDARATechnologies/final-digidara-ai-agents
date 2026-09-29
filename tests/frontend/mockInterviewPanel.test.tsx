@@ -207,3 +207,63 @@ test('completed technical report offers weak-skill practice for reported weak su
   fireEvent.click(screen.getByRole('button', { name: 'Practice Weak Skills' }));
   expect(onPracticeWeakTopics).toHaveBeenCalledWith(['SQL and relational databases']);
 });
+
+describe('on a phone', () => {
+  const realUserAgent = navigator.userAgent;
+  class FakePhoneRecorder {
+    static isTypeSupported = () => true;
+    state: RecordingState = 'inactive';
+    mimeType = 'audio/mp4';
+    private listeners = new Map<string, Array<(event: { data: Blob }) => void>>();
+    constructor(_stream: MediaStream, _options?: MediaRecorderOptions) {}
+    addEventListener(name: string, callback: (event: { data: Blob }) => void) {
+      this.listeners.set(name, [...(this.listeners.get(name) || []), callback]);
+    }
+    start() {
+      this.state = 'recording';
+      this.listeners.get('start')?.forEach((callback) => callback({ data: new Blob() }));
+    }
+    stop() {
+      this.listeners.get('dataavailable')?.forEach((callback) => callback({ data: new Blob(['phone voice'], { type: 'audio/mp4' }) }));
+      this.state = 'inactive';
+      this.listeners.get('stop')?.forEach((callback) => callback({ data: new Blob() }));
+    }
+  }
+
+  beforeEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (Linux; Android 14) Chrome/128.0 Mobile Safari/537.36' });
+    Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakePhoneRecorder });
+    Object.defineProperty(global, 'MediaRecorder', { configurable: true, value: FakePhoneRecorder });
+    mockSpeechSupported = true;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => realUserAgent });
+  });
+
+  test('only the recorder uses the microphone, and the recording is transcribed on submit', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: jest.fn() }] }) },
+    });
+    (transcribeMockInterviewAudio as jest.Mock).mockResolvedValue({ transcript: 'A list is a mutable sequence.' });
+    const onAnswer = jest.fn();
+    render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText(/Recording your answer - press Submit when you finish/)).toBeInTheDocument());
+    // The browser recognizer would compete with the recorder for the microphone.
+    expect(mockSpeechStart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith('A list is a mutable sequence.', expect.objectContaining({ timedOut: false })));
+  });
+
+  test('a blocked microphone says why, not just "unavailable"', async () => {
+    mockSpeechSupported = false;
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia: jest.fn().mockRejectedValue(Object.assign(new Error('denied'), { name: 'NotAllowedError' })) },
+    });
+    render(<MockInterviewPanel state={live} busy={false} onAnswer={jest.fn()} onExit={jest.fn()} />);
+    await waitFor(() => expect(screen.getByText(/Microphone permission was denied/)).toBeInTheDocument());
+    expect(screen.getByText(/You can also type your answer below/)).toBeInTheDocument();
+  });
+});
