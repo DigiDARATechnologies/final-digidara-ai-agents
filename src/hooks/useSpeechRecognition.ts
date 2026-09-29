@@ -39,6 +39,9 @@ type VoiceCaptureOptions = {
   onAudioLevel?: (level: number) => void;
   /** How long a pause (after some speech) ends the recording. Default 7s. */
   silenceMs?: number;
+  /** Recording mode: whole seconds left before a pause ends the recording
+   * (only in its last 3 seconds), or null once speech resumes. */
+  onSilenceCountdown?: (seconds: number | null) => void;
 };
 
 /** Sends a recorded answer to the server and resolves with its transcript. */
@@ -167,7 +170,22 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         let audioContext: AudioContext | null = null;
         let finished = false;
         const maxTimer = window.setTimeout(() => finish(true), MAX_RECORDING_MS);
+        // A phone can create the level meter suspended when recording did not
+        // start from a tap (speaking practice starts after the coach speaks);
+        // it then reads only silence and a pause would never be noticed.
+        const resumeOnTouch = () => { void audioContext?.resume?.(); };
+        document.addEventListener("pointerdown", resumeOnTouch);
+        document.addEventListener("touchstart", resumeOnTouch);
+        let lastCountdown: number | null = null;
+        const reportCountdown = (seconds: number | null) => {
+          if (seconds === lastCountdown) return;
+          lastCountdown = seconds;
+          options.onSilenceCountdown?.(seconds);
+        };
         const cleanup = () => {
+          document.removeEventListener("pointerdown", resumeOnTouch);
+          document.removeEventListener("touchstart", resumeOnTouch);
+          reportCountdown(null);
           window.clearTimeout(maxTimer);
           if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
           options.onAudioLevel?.(0);
@@ -245,13 +263,16 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
               if (rms >= 0.015) {
                 speechDetected = true;
                 quietSince = 0;
+                reportCountdown(null);
                 if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
               } else if (speechDetected && options.autoStopOnSilence) {
                 if (!quietSince) quietSince = now;
-                if (now - quietSince >= silenceMs) {
+                const remaining = silenceMs - (now - quietSince);
+                if (remaining <= 0) {
                   finish(true);
                   return;
                 }
+                reportCountdown(remaining <= 3000 ? Math.ceil(remaining / 1000) : null);
               }
               animationFrame = window.requestAnimationFrame(measure);
             };
