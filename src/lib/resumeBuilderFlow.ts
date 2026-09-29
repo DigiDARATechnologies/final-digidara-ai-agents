@@ -103,6 +103,42 @@ function hasUndergraduateEducation(education: ResumeCreateInput["education"] | u
 function updateDraft(state: ResumeBuilderFlowState, draft: Partial<ResumeDraft>, step: ResumeBuilderStep): ResumeBuilderFlowState {
   return { ...state, step, draft: { ...state.draft, ...draft } };
 }
+function draftFromSavedResume(resume: Record<string, unknown>, fallback: ResumeDraft = {}): ResumeDraft {
+  const personalInfo = resume.personal_info && typeof resume.personal_info === "object"
+    ? resume.personal_info as Record<string, unknown>
+    : {};
+  const skills = Array.isArray(resume.skills)
+    ? resume.skills.map((item) => typeof item === "string" ? item : String((item as { skill_name?: unknown }).skill_name || "")).filter(Boolean)
+    : fallback.skills;
+  return {
+    ...fallback,
+    title: String(resume.title || fallback.title || ""),
+    name: String(personalInfo.name || fallback.name || ""),
+    email: String(personalInfo.email || fallback.email || ""),
+    phone: String(personalInfo.phone || fallback.phone || ""),
+    location: String(personalInfo.location || fallback.location || ""),
+    targetRole: String(resume.target_role || fallback.targetRole || ""),
+    experienceLevel: (resume.experience_level === "fresher" || resume.experience_level === "experienced")
+      ? resume.experience_level
+      : fallback.experienceLevel,
+    summary: String(resume.summary || fallback.summary || ""),
+    skills,
+    experience: Array.isArray(resume.experience) ? resume.experience as ResumeCreateInput["experience"] : fallback.experience,
+    education: Array.isArray(resume.education) ? resume.education as ResumeCreateInput["education"] : fallback.education,
+    projects: Array.isArray(resume.projects) ? resume.projects as ResumeCreateInput["projects"] : fallback.projects,
+    certifications: Array.isArray(resume.certifications) ? resume.certifications as NonNullable<ResumeCreateInput["certifications"]> : fallback.certifications,
+    achievements: Array.isArray(resume.achievements) ? resume.achievements as NonNullable<ResumeCreateInput["achievements"]> : fallback.achievements,
+    links: Array.isArray(personalInfo.links) ? personalInfo.links.filter((item): item is string => typeof item === "string") : fallback.links,
+  };
+}
+function missingRequiredDraftField(draft: ResumeDraft | undefined): { step: ResumeBuilderStep; message: string } | undefined {
+  if (!draft?.title) return { step: "awaiting_title", message: "Your resume title is missing. What should we call this resume? For example: Data Analyst Resume." };
+  if (!draft.name) return { step: "awaiting_name", message: "Your full name is missing. What name should appear on the resume?" };
+  if (!draft.email) return { step: "awaiting_email", message: "Your email address is missing. What professional email should appear on the resume?" };
+  if (!draft.targetRole) return { step: "awaiting_role", message: "Your target role is missing. What role are you applying for?" };
+  if (!draft.experienceLevel) return { step: "awaiting_experience_level", message: "Your career level is missing. Please choose Fresher / student or Experienced professional." };
+  return undefined;
+}
 function splitFields(value: string, expected: number) {
   const fields = value.split("|").map(clean);
   return fields.length >= expected && fields.slice(0, expected).every(Boolean) ? fields : null;
@@ -442,7 +478,7 @@ function draftFieldPrompt(field: string, draft: ResumeDraft = {}) {
     skills: "List skills separated by commas. For example: Python, Flask, SQL, React.",
     experience: EXPERIENCE_PROMPT_TEXT,
     education: "Add education in a short format, for example: PG: MCA, KSR College, Computer Applications, 2023-2025, CGPA: 8.5. You can add UG and PG entries separated by semicolons. Type Skip to omit it.",
-    project: "Add a project: Project title | What you built and its outcome. Type Skip to omit it.",
+    project: "Add a project using normal text, for example: Sales Dashboard, built a Power BI dashboard that reduced reporting time. Type Skip to omit it.",
     certifications: "Add certifications one per line. Example: Microsoft Power BI Data Analyst Associate - Microsoft - 2025. Type Skip to omit them.",
     achievements: "Add achievements one per line. Example: Hackathon Winner - First place in a college hackathon - 2025. Type Skip to omit them.",
     linkedin: "Please provide your LinkedIn profile URL, or type Skip.",
@@ -669,11 +705,14 @@ function reviewMessage(draft: ResumeDraft): ResumeBuilderMessage {
 }
 
 async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promise<ResumeBuilderFlowResult> {
-  const draft = state.draft;
-  if (!draft?.title || !draft.name || !draft.email || !draft.targetRole || !draft.experienceLevel) {
-    return { state: { ...state, step: "error", error: "Your required resume details are incomplete." }, messages: [{ text: "Your required details are incomplete. Please choose Start over and complete the required fields.", options: restartOption }] };
+  const candidateDraft = state.draft;
+  const missing = missingRequiredDraftField(candidateDraft);
+  if (missing) {
+    return { state: { ...state, step: missing.step, error: undefined }, messages: [{ text: `${missing.message} Your other resume details are still saved.` }] };
   }
-  if (!hasUndergraduateEducation(draft.education)) {
+  const draft = candidateDraft as ResumeDraft & { title: string; name: string; email: string; targetRole: string; experienceLevel: "fresher" | "experienced" };
+
+  if (draft.experienceLevel === "fresher" && !hasUndergraduateEducation(draft.education)) {
     return {
       state: { ...state, step: "awaiting_education", pendingField: "education.ug" },
       messages: [{ text: "Undergraduate education is required to generate your resume. Add at least your UG degree and college; postgraduate education remains optional.", options: skipOption }],
@@ -686,7 +725,7 @@ async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promi
     };
   }
   try {
-    const resume = await createResume(user.id, {
+    const resumeInput: ResumeCreateInput = {
       title: draft.title,
       target_role: draft.targetRole,
       experience_level: draft.experienceLevel,
@@ -700,9 +739,12 @@ async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promi
       projects: draft.projects || [],
       certifications: draft.certifications || [],
       achievements: draft.achievements || [],
-    });
+    };
+    const resume = state.resumeId
+      ? await updateResume(user.id, state.resumeId, { ...(await getResume(user.id, state.resumeId)), ...resumeInput })
+      : await createResume(user.id, resumeInput);
     const id = Number(resume.id);
-    return { state: { ...state, step: "reviewing", resumeId: id, resumeTitle: String(resume.title || draft.title) }, messages: [{ text: "Your resume has been saved from the details you verified. You can edit it in plain language, then choose Generate final wording to create the complete target-role-focused version.", options: reviewOptions }] };
+    return { state: { ...state, step: "reviewing", resumeId: id, resumeTitle: String(resume.title || draft.title) }, messages: [{ text: state.resumeId ? "Your enriched details were saved to the existing resume. You can continue editing or generate final wording." : "Your resume has been saved from the details you verified. You can edit it in plain language, then choose Generate final wording to create the complete target-role-focused version.", options: reviewOptions }] };
   } catch (error) {
     return { state: { ...state, step: "confirming", error: (error as Error).message }, messages: [{ text: `I couldn’t create the resume: ${(error as Error).message}. Your details are still saved in this chat.`, options: [{ label: "Try creating again", value: "create_now" }, ...restartOption] }] };
   }
@@ -880,7 +922,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     };
   }
 
-  if (isCreateResumeIntent(value)) {
+  if (isCreateResumeIntent(value) && (state.step === "choose_workflow" || state.step === "error" || state.step === "awaiting_experience_level")) {
     if (state.step === "awaiting_experience_level") {
       return { state, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: [{ label: "Fresher / student", value: "fresher", description: "A concise, one-page resume focused on education, projects, skills, and internships." }, { label: "Experienced professional", value: "experienced", description: "A resume designed for up to two pages, with room for career impact and achievements." }] }] };
     }
@@ -1035,9 +1077,17 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
   }
 
   if (state.step === "reviewing" && (value === "enrich_ats" || command === "enrich" || command.includes("enrich"))) {
+    let draft = state.draft || {};
+    if (state.resumeId) {
+      try {
+        draft = draftFromSavedResume(await getResume(user.id, state.resumeId), draft);
+      } catch (error) {
+        return { state, messages: [{ text: `I could not load your saved resume for enrichment: ${(error as Error).message}. Please try again.` }] };
+      }
+    }
     return {
-      state: { ...state, step: "awaiting_enrichment_choice" },
-      messages: [enrichmentChoiceMessage(state.draft || {})],
+      state: { ...state, step: "awaiting_enrichment_choice", draft },
+      messages: [enrichmentChoiceMessage(draft)],
     };
   }
 
@@ -1219,7 +1269,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
       if (state.pendingField === "education.ug") {
         return { state, messages: [{ text: "UG education is required for a fresher resume. Please add at least your degree and college. Your other resume details are still saved.", options: skipOption }] };
       }
-      return { state: updateDraft(state, {}, "awaiting_project"), messages: [{ text: "Add one relevant project in this format: Project title | What you built and its outcome. Short details such as 'sales dashboard power bi' are also welcome. Type Skip to omit it.", options: skipOption }] };
+      return { state: updateDraft(state, {}, "awaiting_project"), messages: [{ text: "Add one relevant project using normal text, for example: Sales Dashboard, built a Power BI dashboard for weekly reporting. Type Skip to omit it.", options: skipOption }] };
     }
     const education = parseEducationInput(value);
     if (!Array.isArray(education)) return { state, messages: [{ text: education.error, options: skipOption }] };
@@ -1256,7 +1306,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
         const next = updateDraft(state, {}, "confirming");
         return { state: next, messages: [reviewMessage(next.draft || {})] };
       }
-      return { state: updateDraft(state, {}, "awaiting_project"), messages: [{ text: "Add one relevant project in this format: Project title | What you built and its outcome. Short details such as 'sales dashboard power bi' are also welcome. Type Skip to omit it.", options: skipOption }] };
+      return { state: updateDraft(state, {}, "awaiting_project"), messages: [{ text: "Add one relevant project using normal text, for example: Sales Dashboard, built a Power BI dashboard for weekly reporting. Type Skip to omit it.", options: skipOption }] };
     }
     const parsed = parseEducationInput(value);
     if (Array.isArray(parsed) && parsed.length) {
@@ -1289,6 +1339,8 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     if (isSkip(value)) return { state: updateDraft(state, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
+      const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);
+      if (commaFields) return { title: clean(commaFields[1]), description: clean(commaFields[2]) };
       if (projectFields) return { title: projectFields[0], description: projectFields.slice(1).join(" | ") };
       return raw.length >= 3
         ? { title: raw.split(/\s+(?:using|with)\s+/i)[0].replace(/\b\w/g, (letter) => letter.toUpperCase()), description: raw }
@@ -1314,7 +1366,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
       return {
         state: { ...state, step: "awaiting_project" },
         messages: [{
-          text: "Add another project in this format: Project title | What you built and its outcome. Short details are also welcome.",
+          text: "Add another project using normal text, for example: Customer Churn Model, built an XGBoost model with 91% accuracy. Short details are also welcome.",
           options: [{ label: "Go to next section (Links)", value: "next_section" }, ...skipOption],
         }],
       };
@@ -1328,6 +1380,8 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     }
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
+      const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);
+      if (commaFields) return { title: clean(commaFields[1]), description: clean(commaFields[2]) };
       if (projectFields) return { title: projectFields[0], description: projectFields.slice(1).join(" | ") };
       return raw.length >= 3
         ? { title: raw.split(/\s+(?:using|with)\s+/i)[0].replace(/\b\w/g, (letter) => letter.toUpperCase()), description: raw }
@@ -1589,7 +1643,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
       return {
         state: { ...state, step: "awaiting_project" },
         messages: [{
-          text: "Add another project in this format: Project title | What you built and its outcome. Adding 2+ projects significantly improves your ATS score.",
+          text: "Add another project using normal text, for example: Sales Dashboard, built a Power BI dashboard that improved weekly reporting. Adding 2+ projects significantly improves your ATS score.",
           options: [{ label: "Back to Review", value: "back_to_review" }, ...skipOption],
         }],
       };
