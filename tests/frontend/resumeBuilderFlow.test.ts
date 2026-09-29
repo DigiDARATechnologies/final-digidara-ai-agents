@@ -59,6 +59,7 @@ jest.mock("../../src/lib/resumeBuilderApi", () => ({
     { id: "steady-form", name: "Steady Form", description: "Clean corporate style" },
     { id: "modern-minimal", name: "Modern Minimal", description: "Contemporary style" },
   ]),
+  resumeChatTurn: jest.fn(),
 }));
 
 describe("Resume Builder workflow", () => {
@@ -176,7 +177,8 @@ describe("Resume Builder workflow", () => {
 
     expect(result.state.step).toBe("awaiting_education");
     expect(result.state.pendingField).toBe("education.ug");
-    expect(result.messages[0].text).toContain("Undergraduate education is required");
+    expect(result.messages[0].text).toContain("A fresher resume needs your undergraduate (UG) degree");
+    expect(result.messages[0].options?.map((option) => option.value)).toEqual(["waive_ug"]);
   });
 
   test("correcting required UG merges education and preserves the complete draft", async () => {
@@ -209,8 +211,11 @@ describe("Resume Builder workflow", () => {
   test("skipping a required UG keeps the complete draft and stays on UG", async () => {
     const state = { step: "awaiting_education" as const, pendingField: "education.ug" as const, draft: { projects: [{ title: "Project", description: "Description" }], links: ["LinkedIn: https://linkedin.com/in/test"], education: [{ level: "PG", degree: "MCA", school: "KSR College" }] } };
     const result = await handleResumeBuilderText(state, { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" }, "skip");
-    expect(result.state).toEqual(state);
-    expect(result.messages[0].text).toContain("other resume details are still saved");
+    expect(result.state).toEqual({ ...state, history: expect.any(Array) });
+    // No Skip button that leads straight back here: the saved PG is named, the
+    // format is shown, and there is a way on for someone with no UG degree.
+    expect(result.messages[0].text).toContain("I have saved: MCA at KSR College, but no UG degree");
+    expect(result.messages[0].options?.map((option) => option.value)).toEqual(["waive_ug"]);
   });
 
   test("hides a declaration without deleting its saved content", async () => {
@@ -263,7 +268,7 @@ describe("Resume Builder workflow", () => {
       "not a url",
     );
 
-    expect(result.state).toEqual(state);
+    expect(result.state).toEqual({ ...state, history: expect.any(Array) });
     expect(result.messages[0].text).toMatch(/valid URL/i);
   });
 
@@ -891,4 +896,115 @@ Responsibilities:
   });
 });
 
+describe("education, typed edits and the assistant (with memory)", () => {
+  const user = { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" };
+  const api = jest.requireMock("../../src/lib/resumeBuilderApi") as Record<string, jest.Mock>;
+  const baseDraft = {
+    title: "Analyst Resume", name: "Test User", email: "test@example.com", targetRole: "Data Analyst",
+    experienceLevel: "fresher" as const, projects: [{ title: "Dashboard", description: "Power BI dashboard" }],
+  };
 
+  beforeEach(() => {
+    api.resumeChatTurn.mockReset();
+    api.createResume.mockClear();
+  });
+
+  test.each([
+    ["UG - B.Com Nandha College 2019-2022; PG - M.Com KSR College 2022-2024", [["B.Com", "UG", "Nandha College", "2022"], ["M.Com", "PG", "KSR College", "2024"]]],
+    ["UG: BCA from Nandha College, 2022\nPG: MCA at KSR College, 2024", [["BCA", "UG", "Nandha College", "2022"], ["MCA", "PG", "KSR College", "2024"]]],
+    ["UG B.E. CSE, PSG College of Technology, 2018-2022", [["B.E. CSE", "UG", "PSG College of Technology", "2022"]]],
+  ])("UG and PG written as %p are both understood", (input, expected) => {
+    const parsed = parseEducationInput(input);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect((parsed as Array<Record<string, string>>).map((entry) => [entry.degree, entry.level, entry.school, entry.end_date])).toEqual(expected);
+  });
+
+  test("an entry that still can't be read says exactly what was found", () => {
+    const parsed = parseEducationInput("B.Com 2019-2022");
+    expect(parsed).toEqual({ error: expect.stringContaining('I found the degree "B.Com 2019-2022" but not the college') });
+  });
+
+  test("a B.Com counts as the required UG degree", async () => {
+    const result = await handleResumeBuilderText(
+      { step: "confirming", draft: { ...baseDraft, education: [{ degree: "B.Com", school: "Nandha College" }] } }, user, "create_now",
+    );
+    expect(api.createResume).toHaveBeenCalled();
+    expect(result.state.step).toBe("reviewing");
+  });
+
+  test("a candidate with no UG degree can continue instead of looping on Skip", async () => {
+    const asked = await handleResumeBuilderText({ step: "confirming", draft: baseDraft }, user, "create_now");
+    expect(asked.state.pendingField).toBe("education.ug");
+    const waived = await handleResumeBuilderText(asked.state, user, "waive_ug");
+    expect(waived.state.step).toBe("confirming");
+    const created = await handleResumeBuilderText(waived.state, user, "create_now");
+    expect(api.createResume).toHaveBeenCalled();
+    expect(created.state.step).toBe("reviewing");
+  });
+
+  test("education the parser can't read is read by the assistant", async () => {
+    api.resumeChatTurn.mockResolvedValue({
+      intent: "answer",
+      updates: { education: [{ degree: "B.Com (CA)", level: "UG", school: "Kongu Arts and Science", end_date: "2022" }] },
+      reply: "Added your B.Com (CA).",
+    });
+    const result = await handleResumeBuilderText(
+      { step: "awaiting_education", pendingField: "education.ug", draft: baseDraft }, user,
+      "completed my bcom computer applications 2022 kongu arts and science",
+    );
+    expect(api.resumeChatTurn).toHaveBeenCalledWith("test-user", expect.objectContaining({ step: "awaiting_education", draft: baseDraft }));
+    expect(result.state.step).toBe("confirming");
+    expect(result.state.draft?.education).toEqual([expect.objectContaining({ degree: "B.Com (CA)", school: "Kongu Arts and Science" })]);
+  });
+
+  test("a typed correction after a failed create is applied, with the recent chat sent along", async () => {
+    api.createResume.mockRejectedValueOnce(new Error("The start date for Infosys 'sometime' isn't a date I can read."));
+    const draft = { ...baseDraft, education: [{ degree: "BCA", level: "UG", school: "Nandha College" }], experience: [{ company: "Infosys", role: "Intern", start_date: "sometime" }] };
+    const failed = await handleResumeBuilderText({ step: "confirming", draft }, user, "create_now");
+    expect(failed.messages[0].text).toContain("Type the correction here");
+
+    api.resumeChatTurn.mockResolvedValue({
+      intent: "edit",
+      updates: { experience: [{ company: "Infosys", role: "Intern", start_date: "Jan 2022" }] },
+      reply: "Fixed the start date for Infosys to Jan 2022.",
+    });
+    const fixed = await handleResumeBuilderText(failed.state, user, "the start date for Infosys is jan 2022");
+    const sent = api.resumeChatTurn.mock.calls[0][1];
+    expect(sent.history.map((turn: { role: string }) => turn.role)).toEqual(["student", "agent"]);
+    expect(sent.asked).toContain("isn't a date I can read");
+    expect(fixed.state.draft?.experience?.[0].start_date).toBe("Jan 2022");
+    expect(fixed.state.error).toBeUndefined();
+    expect(fixed.messages[0].text).toBe("Fixed the start date for Infosys to Jan 2022.");
+    expect(fixed.messages[1].options?.map((option) => option.value)).toContain("create_now");
+  });
+
+  test("an answer that merely starts like an edit still moves the chat on", async () => {
+    api.resumeChatTurn.mockResolvedValue({ intent: "answer", updates: { summary: "I want to change how teams use data." }, reply: "" });
+    const result = await handleResumeBuilderText({ step: "awaiting_summary", draft: baseDraft }, user, "I want to change how teams use data.");
+    expect(result.state.step).not.toBe("awaiting_summary");
+    expect(result.state.draft?.summary).toBe("I want to change how teams use data.");
+  });
+
+  test("ordinary project text never goes to the assistant", async () => {
+    await handleResumeBuilderText({ step: "awaiting_project", draft: baseDraft }, user, "Payment app, fixed bugs in the checkout module");
+    expect(api.resumeChatTurn).not.toHaveBeenCalled();
+  });
+
+  test("'change my name to ...' is applied, while a bare 'change my education' still opens that section", async () => {
+    api.resumeChatTurn.mockResolvedValue({ intent: "edit", updates: { name: "Prem Kumar" }, reply: "Changed your name to Prem Kumar." });
+    const renamed = await handleResumeBuilderText({ step: "confirming", draft: baseDraft }, user, "change my name to Prem Kumar");
+    expect(renamed.state.draft?.name).toBe("Prem Kumar");
+    api.resumeChatTurn.mockClear();
+    const opened = await handleResumeBuilderText({ step: "confirming", draft: baseDraft }, user, "change my education");
+    expect(api.resumeChatTurn).not.toHaveBeenCalled();
+    expect(opened.state.step).toBe("awaiting_education");
+  });
+
+  test("if the assistant is unreachable, the candidate is told and nothing is lost", async () => {
+    api.resumeChatTurn.mockRejectedValue(new Error("The resume chat turn request timed out. Please try again."));
+    const state = { step: "confirming" as const, draft: baseDraft };
+    const result = await handleResumeBuilderText(state, user, "change my name to Prem Kumar");
+    expect(result.state.draft).toEqual(baseDraft);
+    expect(result.messages[0].text).toContain("I couldn't apply that change right now");
+  });
+});

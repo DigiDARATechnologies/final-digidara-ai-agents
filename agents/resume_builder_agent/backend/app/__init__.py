@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from app.errors import database_error_response
 from app.extensions import db
 from app.routes.ai import ai_bp
+from app.routes.chat_turn import chat_turn_bp
 from app.routes.health import health_bp
 from app.routes.invoke import invoke_bp
 from app.routes.resumes import resumes_bp
@@ -210,6 +211,7 @@ def create_app(config_object: str | None = None) -> Flask:
     app.register_blueprint(session_bp, url_prefix="/api")
     app.register_blueprint(resumes_bp, url_prefix="/api")
     app.register_blueprint(ai_bp, url_prefix="/api")
+    app.register_blueprint(chat_turn_bp, url_prefix="/api")
     app.before_request(verify_csrf)
 
     @app.after_request
