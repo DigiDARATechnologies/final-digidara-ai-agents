@@ -127,7 +127,7 @@
 .aptitude-active-panel .aptitude-hint-text{grid-column:1/-1;min-width:0;margin-top:0;overflow-wrap:anywhere}
 .aptitude-active-panel .aptitude-live-actions{grid-column:1/-1;justify-self:end;align-self:start;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:min(100%,250px);gap:8px}
 .aptitude-question-content{width:100%;padding:10px 2px 2px}
-.aptitude-live-question{display:flex;gap:8px;align-items:flex-start;color:var(--tx-1);font-size:14px;line-height:1.5}.aptitude-live-question b{color:var(--cy);font-size:16px;flex:0 0 auto}.aptitude-question-content .aptitude-answer-options{margin-top:12px}
+.aptitude-live-question{display:flex;gap:8px;align-items:flex-start;color:var(--tx-1);font-size:14px;line-height:1.5}.aptitude-live-question>b{color:var(--cy);font-size:16px;flex:0 0 auto}.aptitude-live-question-content{flex:1;min-width:0}.aptitude-live-question-content .message-code{margin:8px 0 0}.aptitude-question-content .aptitude-answer-options{margin-top:12px}
 .aptitude-active-panel .aptitude-hint-button{min-width:0}
 @media(max-width:640px){
   .aptitude-active-panel{grid-template-columns:minmax(0,1fr);gap:10px}

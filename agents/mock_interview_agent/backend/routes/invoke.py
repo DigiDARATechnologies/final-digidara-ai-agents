@@ -14,13 +14,16 @@ or history by passing a different id in the payload.
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
+from io import BytesIO
 
 from flask import Blueprint, current_app, jsonify, request
 
 import db
 import privacy
 from session_auth import InvalidSessionToken, issue_session_token, student_id_from_token
+from settings import ALLOWED_AUDIO_TYPES, MAX_AUDIO_UPLOAD_BYTES
 
 bp = Blueprint("invoke", __name__)
 logger = logging.getLogger("mock_interview.invoke")
@@ -51,7 +54,7 @@ GENERAL_ROUTES = {
 
 INTERVIEW_SCOPED_ACTIONS = {
     "submit_answer", "end_interview", "exit_interview",
-    "history_detail", "record_focus_event", "download_report",
+    "history_detail", "record_focus_event", "download_report", "transcribe_audio",
 }
 
 
@@ -172,6 +175,35 @@ def _dispatch(action: str, payload: dict):
         if pdf.status_code != 200:
             return pdf
         return jsonify(content_type="application/pdf", filename="interview-report.pdf", data=base64.b64encode(pdf.data).decode("ascii"))
+
+    if action == "transcribe_audio":
+        audio_type = str(payload.get("audio_type") or "audio/webm").split(";", 1)[0].lower()
+        if audio_type not in ALLOWED_AUDIO_TYPES:
+            return _error("Use a WebM, OGG, M4A, MP3, or WAV recording.", "invalid_audio_type", 400)
+        encoded_audio = payload.get("audio_data")
+        if not isinstance(encoded_audio, str) or not encoded_audio:
+            return _error("audio_data is required", "audio_required", 400)
+        # Reject oversized data before allocating its decoded representation.
+        if len(encoded_audio) > ((MAX_AUDIO_UPLOAD_BYTES + 2) // 3) * 4:
+            return _error("The uploaded recording is too large.", "audio_too_large", 413)
+        try:
+            audio_bytes = base64.b64decode(encoded_audio, validate=True)
+        except (binascii.Error, ValueError):
+            return _error("The audio recording is invalid.", "invalid_audio", 400)
+        if not audio_bytes:
+            return _error("The uploaded recording is empty.", "empty_audio", 400)
+        if len(audio_bytes) > MAX_AUDIO_UPLOAD_BYTES:
+            return _error("The uploaded recording is too large.", "audio_too_large", 413)
+        extension = ALLOWED_AUDIO_TYPES[audio_type]
+        return client.post(
+            "/api/transcribe",
+            data={
+                "interview_id": str(payload.get("interview_id") or ""),
+                "question_order": str(payload.get("question_order") or ""),
+                "audio": (BytesIO(audio_bytes), f"answer{extension}", audio_type),
+            },
+            content_type="multipart/form-data",
+        )
 
     if action in GENERAL_ROUTES:
         method, path = GENERAL_ROUTES[action]

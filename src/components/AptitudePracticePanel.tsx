@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { AptitudeFlowState } from "../lib/aptitudeFlow";
 import { getMixedTestConfig, saveMixedTestConfig, type MixedTestCategory, type MixedTestConfig } from "../lib/aptitudeApi";
+import { renderMessageText } from "../lib/messageText";
 
 const CATEGORY_DETAILS: Record<string, string> = {
   "Quantitative Aptitude": "Numerical and mathematical problem-solving.",
@@ -131,7 +132,7 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
       {status === "unanswered" && <div className="aptitude-live-actions"><button type="button" className="aptitude-hint-button" onClick={() => onChoose("skip question")} disabled={seconds <= 0}>Skip Question</button><button type="button" className="aptitude-hint-button" onClick={() => onChoose("hint")} disabled={hintPending || seconds <= 0 || state.hintsRemaining === 0 || !!state.hintText}>{state.hintText ? "Hint shown" : hintPending ? "Generating hint…" : `✦ Get a hint (${state.hintsRemaining ?? state.question.hints_remaining} left)`}</button></div>}
       </section>
       <section className="aptitude-question-content" aria-label={`Question ${state.question.sequence}`}>
-        <div className="aptitude-live-question"><b>{state.question.sequence}.</b><span>{state.question.question}</span></div>
+        <div className="aptitude-live-question"><b>{state.question.sequence}.</b><div className="aptitude-live-question-content">{renderMessageText(state.question.question)}</div></div>
         {status === "unanswered" && <div className="aptitude-answer-options" aria-label="Answer options">
           {Object.entries(state.question.options).map(([value, label]) => (
             <button type="button" key={value} onClick={() => onChoose(value)}>
