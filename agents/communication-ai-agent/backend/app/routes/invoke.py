@@ -23,6 +23,9 @@ through `/api/auth/register` or `/api/auth/login` — both require a password
 DigiDARA's dev-mode login never collects.
 """
 
+import base64
+import binascii
+import io
 import re
 from uuid import uuid4
 
@@ -98,6 +101,22 @@ ACTION_MAP = {
 
 _PATH_PARAM = re.compile(r"{(\w+)}")
 
+# Recorded spoken answers arrive base64-encoded inside the JSON payload (the
+# gateway forwards JSON), and are re-sent to /api/speaking/transcribe as the
+# multipart upload that route expects.
+_MAX_AUDIO_BYTES = 15 * 1024 * 1024
+_AUDIO_EXTENSIONS = {
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/m4a": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/aac": "aac",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+}
+
 
 def _error(message, error_code, status=400):
     return jsonify({"message": message, "error_code": error_code}), status
@@ -137,6 +156,36 @@ def _stringify(value):
     if isinstance(value, bool):
         return "true" if value else "false"
     return value
+
+
+def _transcribe(payload):
+    """Phones record the spoken answer instead of using the browser's live
+    speech recognition (unreliable there -- see src/lib/voiceCapture.ts in
+    the platform), and send it here to be transcribed."""
+    token = payload.get("authToken")
+    if not token:
+        return _error("Authentication is required.", "unauthenticated", 401)
+    audio_type = str(payload.get("audio_type") or "audio/webm").split(";", 1)[0].strip().lower()
+    extension = _AUDIO_EXTENSIONS.get(audio_type)
+    if not extension:
+        return _error(f"Unsupported audio format: {audio_type}.", "INVALID_AUDIO")
+    encoded = payload.get("audio_data")
+    if not isinstance(encoded, str) or not encoded:
+        return _error("No audio was received.", "AUDIO_MISSING")
+    if len(encoded) > _MAX_AUDIO_BYTES * 4 // 3 + 4:
+        return _error("The recording is too long. Please keep your answer under a few minutes.", "AUDIO_TOO_LARGE", 413)
+    try:
+        audio_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return _error("The recording could not be read.", "INVALID_AUDIO")
+
+    upstream = current_app.test_client().post(
+        "/api/speaking/transcribe",
+        headers={"Authorization": f"Bearer {token}"},
+        data={"audio": (io.BytesIO(audio_bytes), f"speaking-answer.{extension}", audio_type)},
+        content_type="multipart/form-data",
+    )
+    return current_app.response_class(upstream.data, status=upstream.status_code, content_type=upstream.content_type)
 
 
 def _forward(action, payload):
@@ -184,6 +233,8 @@ def invoke():
         # capstone_project_agent/codeforge_agent's own usage_summary actions.
         from ..services.groq_usage import get_usage_summary
         return jsonify(get_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
+    if action == "speaking_transcribe":
+        return _transcribe(payload)
     if action not in ACTION_MAP:
         return _error(f"Unknown action: {action!r}", "unknown_action")
     return _forward(action, payload)

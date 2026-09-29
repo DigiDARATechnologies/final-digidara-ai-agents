@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { isMobileVoiceDevice, microphoneErrorMessage } from "../lib/voiceCapture";
 import { downloadMockInterviewReport, transcribeMockInterviewAudio } from "../lib/mockInterviewApi";
 import { speakBrowserText } from "../lib/browserSpeech";
 import type { MockInterviewAnswerTiming, MockInterviewFlowState } from "../lib/mockInterviewFlow";
@@ -76,6 +77,30 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const recordingSupported = typeof window !== "undefined"
     && "MediaRecorder" in window
     && Boolean(navigator.mediaDevices?.getUserMedia);
+  const mobileVoice = isMobileVoiceDevice();
+  // Why the recorder could not start, shown instead of a bare "unavailable".
+  const micErrorRef = useRef("");
+
+  /** Starts the browser's live transcript next to the recording -- except on
+   * a phone that is already recording: there the two compete for the
+   * microphone and the recording (transcribed by OpenAI at submit) is the
+   * reliable one. */
+  function startLiveTranscript(recordingStarted: boolean, onText: (text: string) => void = acceptVoiceTranscript): boolean {
+    if (!speech.supported || (mobileVoice && recordingStarted)) return false;
+    return speech.start(onText);
+  }
+
+  function microphoneStatus(recordingStarted: boolean, startedListening: boolean, retry = false): string {
+    if (recordingStarted) {
+      if (startedListening) return retry ? "No answer detected. Listening again - please answer the question." : "Listening - microphone is on";
+      if (mobileVoice) return `${retry ? "No answer detected. " : ""}Recording your answer - press Submit when you finish and it will be turned into text.`;
+      return retry ? "No answer detected. Recording again for OpenAI transcription." : "Recording - OpenAI will transcribe when you submit";
+    }
+    if (startedListening) return retry ? "No answer detected. Listening again - please answer the question." : "Listening with browser transcription";
+    return micErrorRef.current
+      ? `${micErrorRef.current} You can also type your answer below.`
+      : retry ? "No answer detected. Please type your answer." : "Microphone is unavailable. Type your answer below.";
+  }
 
   function acceptVoiceTranscript(text: string) {
     if (!text || submittedRef.current) return;
@@ -108,6 +133,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     audioChunksRef.current = [];
     capturedAudioRef.current = null;
     setHasCapturedAudio(false);
+    micErrorRef.current = "";
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -136,7 +162,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       });
       setRecording(true);
       return true;
-    } catch {
+    } catch (error) {
+      micErrorRef.current = microphoneErrorMessage(error);
       mediaRecorderRef.current = null;
       setRecording(false);
       closeAudioStream();
@@ -212,20 +239,10 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
           discardAudioCapture();
           return;
         }
-        const startedListening = speech.supported
-          ? speech.start((text) => {
-            if (active) acceptVoiceTranscript(text);
-          })
-          : false;
-        if (recordingStarted) {
-          setVoiceStatus(startedListening
-            ? "Listening - microphone is on"
-            : "Recording - OpenAI will transcribe when you submit");
-        } else {
-          setVoiceStatus(startedListening
-            ? "Listening with browser transcription"
-            : "Microphone is unavailable. Type your answer below.");
-        }
+        const startedListening = startLiveTranscript(recordingStarted, (text) => {
+          if (active) acceptVoiceTranscript(text);
+        });
+        setVoiceStatus(microphoneStatus(recordingStarted, startedListening));
       }
     }
     beginAnswerRef.current = () => { void startAnswering(); };
@@ -322,16 +339,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       submittedRef.current = false;
       setTimerEpoch((epoch) => epoch + 1);
       const recordingStarted = recordingSupported ? await beginAudioCapture() : false;
-      const startedListening = speech.supported ? speech.start(acceptVoiceTranscript) : false;
-      if (recordingStarted) {
-        setVoiceStatus(startedListening
-          ? "No answer detected. Listening again - please answer the question."
-          : "No answer detected. Recording again for OpenAI transcription.");
-      } else if (startedListening) {
-        setVoiceStatus("No answer detected. Listening again - please answer the question.");
-      } else {
-        setVoiceStatus("No answer detected. Please type your answer.");
-      }
+      const startedListening = startLiveTranscript(recordingStarted);
+      setVoiceStatus(microphoneStatus(recordingStarted, startedListening, true));
       return;
     }
     sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
@@ -425,16 +434,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
           else {
             setVoiceStatus("Starting microphone...");
             void beginAudioCapture().then((recordingStarted) => {
-              const startedListening = speech.supported ? speech.start(acceptVoiceTranscript) : false;
-              if (recordingStarted) {
-                setVoiceStatus(startedListening
-                  ? "Listening - microphone is on"
-                  : "Recording - OpenAI will transcribe when you submit");
-              } else {
-                setVoiceStatus(startedListening
-                  ? "Listening with browser transcription"
-                  : "Microphone is unavailable. Type your answer below.");
-              }
+              setVoiceStatus(microphoneStatus(recordingStarted, startLiveTranscript(recordingStarted)));
             });
           }
         }}>{recording || speech.listening ? "Pause microphone" : "Start microphone"}</button>}

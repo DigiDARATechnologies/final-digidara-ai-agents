@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_COMMUNICATION_AGENT_NAME, "communication_agent");
 
@@ -260,4 +261,16 @@ export function submitPronunciation(
 
 export function endPronunciationSession(authToken: string, sessionId: number) {
   return invoke<Record<string, any>>("pronunciation_session_end", { authToken, session_id: sessionId });
+}
+
+/** Transcribes a recorded spoken answer on the server (Whisper). Used on
+ * phones, where the browser's own live speech recognition is unreliable —
+ * see src/lib/voiceCapture.ts. */
+export async function transcribeCommunicationAudio(authToken: string, audio: Blob): Promise<string> {
+  const result = await invokeAgent<{ transcript?: string }>(INVOKE_URL, "speaking_transcribe", {
+    authToken,
+    audio_data: await audioBlobToBase64(audio),
+    audio_type: baseAudioType(audio),
+  }, 1, 90_000);
+  return (result.transcript ?? "").trim();
 }
