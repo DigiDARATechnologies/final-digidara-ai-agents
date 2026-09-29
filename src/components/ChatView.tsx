@@ -242,6 +242,7 @@ export default function ChatView({
   }, [input]);
 
   const activeSpeakingPrompt = [...chat.messages].reverse().find((message) => message.role === "agent")?.text || "Speak when you are ready.";
+  const learnerFirstName = user?.name ? user.name.trim().split(/\s+/)[0] : "";
 
   useEffect(() => {
     window.clearTimeout(silenceTimerRef.current);
@@ -256,6 +257,9 @@ export default function ChatView({
     let observedTranscript = "";
     let lastSpeechAt = 0;
     let submitted = false;
+    let promptFinishedAt = 0;
+    let silenceNudgeCount = 0;
+    let isNudging = false;
     let silenceCheck: number | undefined;
     const session = ++voiceSessionRef.current;
 
@@ -269,40 +273,120 @@ export default function ChatView({
       setInput("");
     };
 
-    const beginListening = () => {
+    const startListening = () => {
       if (submitted || voiceSessionRef.current !== session) return;
       setAgentSpeaking(false);
       setInput("");
-      speech.start((text) => {
-        if (voiceSessionRef.current !== session || submitted) return;
-        if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-          window.speechSynthesis.cancel();
-          setAgentSpeaking(false);
-        }
-        const next = text.trim();
-        latestTranscript = next;
-        setInput(text);
-        if (next && next !== observedTranscript) {
-          observedTranscript = next;
-          lastSpeechAt = Date.now();
-        }
-      }, {
-        autoStopOnSilence: true,
-        onAudioLevel: (lvl) => {
-          if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+      speech.start(
+        (text) => {
+          if (voiceSessionRef.current !== session || submitted) return;
+          if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+            window.speechSynthesis.cancel();
+            setAgentSpeaking(false);
+          }
+          const next = text.trim();
+          latestTranscript = next;
+          setInput(text);
+          if (next && next !== observedTranscript) {
+            observedTranscript = next;
+            lastSpeechAt = Date.now();
+          }
         },
-      });
+        {
+          autoStopOnSilence: true,
+          onAudioLevel: (lvl) => {
+            if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+          },
+        },
+      );
+    };
+
+    const beginListening = () => {
+      if (submitted || voiceSessionRef.current !== session) return;
+      promptFinishedAt = Date.now();
+      silenceNudgeCount = 0;
+      isNudging = false;
+      startListening();
+
       silenceCheck = window.setInterval(() => {
-        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 4000) submitSpokenTurn();
-      }, 200);
+        if (submitted || voiceSessionRef.current !== session || isNudging) return;
+
+        // 1. Spoken answer detected: auto-submit after natural 6.5s pause
+        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 6500) {
+          submitSpokenTurn();
+          return;
+        }
+
+        // 2. Silence watchdog: user has not spoken yet
+        if (!latestTranscript && promptFinishedAt > 0) {
+          const silenceElapsed = Date.now() - promptFinishedAt;
+
+          // First silence nudge (after 9 seconds of complete silence)
+          if (silenceNudgeCount === 0 && silenceElapsed >= 9000) {
+            silenceNudgeCount = 1;
+            isNudging = true;
+            speech.stop();
+            const nudge = learnerFirstName
+              ? `${learnerFirstName}, are you here? Take your time, whenever you are ready.`
+              : "Are you here? Take your time, whenever you are ready.";
+            playCoachSpeech(nudge, {
+              rate: 0.95,
+              voiceName: "nova",
+              onStart: () => setAgentSpeaking(true),
+              onEnd: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+              onError: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+            });
+            return;
+          }
+
+          // Second silence nudge (after another 11 seconds of silence)
+          if (silenceNudgeCount === 1 && silenceElapsed >= 11000) {
+            silenceNudgeCount = 2;
+            isNudging = true;
+            speech.stop();
+            const nudge = learnerFirstName
+              ? `${learnerFirstName}, would you like me to repeat the question or simplify it for you?`
+              : "Would you like me to repeat the question or simplify it for you?";
+            playCoachSpeech(nudge, {
+              rate: 0.95,
+              voiceName: "nova",
+              onStart: () => setAgentSpeaking(true),
+              onEnd: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+              onError: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+            });
+            return;
+          }
+        }
+      }, 250);
+    };
+
+    const handleCoachDone = () => {
+      if (submitted || voiceSessionRef.current !== session) return;
+      window.setTimeout(beginListening, 300);
     };
 
     playCoachSpeech(activeSpeakingPrompt, {
       rate: 0.92,
       voiceName: "nova",
       onStart: () => setAgentSpeaking(true),
-      onEnd: beginListening,
-      onError: beginListening,
+      onEnd: handleCoachDone,
+      onError: handleCoachDone,
     });
 
     return () => {
@@ -315,7 +399,7 @@ export default function ChatView({
     };
     // A new coach prompt is spoken, then hands control back to recognition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [immersiveSpeaking, typing, activeSpeakingPrompt]);
+  }, [immersiveSpeaking, typing, activeSpeakingPrompt, learnerFirstName]);
 
   return (
     <section className={`view view-chat active${immersiveSpeaking ? " immersive-speaking" : ""}`} id="view-chat">
