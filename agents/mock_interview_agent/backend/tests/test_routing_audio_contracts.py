@@ -169,6 +169,50 @@ class AudioPersistenceContracts(unittest.TestCase):
                 content_type="audio/webm",
             )
 
+    def test_a_live_preview_transcribes_without_saving_anything(self):
+        fake_pil = types.ModuleType("PIL")
+        fake_pil.Image = types.SimpleNamespace(
+            DecompressionBombError=RuntimeError,
+            Resampling=types.SimpleNamespace(LANCZOS=1),
+        )
+        fake_pil.ImageOps = types.SimpleNamespace()
+        fake_pil.UnidentifiedImageError = ValueError
+        with patch.dict(sys.modules, {"PIL": fake_pil}):
+            import app as app_module
+            import routes.answers as answers_module
+
+        detail = {
+            "id": 81,
+            "answer_audio_path": "/api/uploads/audio/earlier.webm",
+            "round_type": "technical",
+            "subject": "Python",
+            "question": "What is a tuple in Python?",
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            upload_dir = Path(temporary_directory).resolve()
+            with (
+                patch.object(answers_module, "AUDIO_UPLOAD_DIR", upload_dir),
+                patch.object(answers_module.db, "query", side_effect=[(detail, None)]) as query,
+                patch.object(answers_module, "delete_managed_audio") as delete_audio,
+                patch.object(answers_module.groq_client, "transcribe_audio", return_value="A tuple is"),
+            ):
+                response = app_module.app.test_client().post(
+                    "/api/transcribe",
+                    data={
+                        "interview_id": "7",
+                        "question_order": "2",
+                        "preview": "1",
+                        "audio": (BytesIO(b"partial-recording"), "answer.webm", "audio/webm"),
+                    },
+                    content_type="multipart/form-data",
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json(), {"transcript": "A tuple is", "audio_path": None})
+            self.assertEqual(list(upload_dir.iterdir()), [])
+            self.assertEqual(query.call_count, 1)
+            delete_audio.assert_not_called()
+
 
 class BlueprintRegressionTests(unittest.TestCase):
     def test_evaluated_answer_retry_calls_usage_date_without_shadowing(self):

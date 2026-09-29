@@ -107,6 +107,15 @@ test('exiting calls the agent and ends the flow', async () => {
   expect(result.state.step).toBe('completed');
 });
 
+test('an interview ended for silence exits the same way and says why', async () => {
+  mocked.exitMockInterview.mockResolvedValue({});
+  const result = await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 3 }), user, 'exit_interview_inactive');
+  expect(mocked.exitMockInterview).toHaveBeenCalledWith('token', 9, 3);
+  expect(result.state.step).toBe('completed');
+  expect(result.messages[0].text).toContain('no answer was heard');
+  expect(result.messages[0].text).toContain('Hey, are you there?');
+});
+
 test('without a session token the flow reopens instead of calling the agent blindly', async () => {
   mocked.ensureMockInterviewSession.mockResolvedValue({ sessionToken: 'fresh', student_id: 1 });
   mocked.getActiveMockInterview.mockResolvedValue({ active: false });

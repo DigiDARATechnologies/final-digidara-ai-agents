@@ -107,6 +107,25 @@ export async function transcribeMockInterviewAudio(
   });
 }
 
+/** The answer so far, transcribed while the candidate is still speaking (a
+ * phone shows it live in the answer box). Nothing is saved server-side and
+ * the gateway does not bill it; the answer of record is still the full
+ * transcribeMockInterviewAudio call made on submit. */
+export async function transcribeMockInterviewPreview(
+  sessionToken: string,
+  interviewId: number,
+  questionOrder: number,
+  audio: Blob,
+) {
+  return invoke<{ transcript: string }>("transcribe_preview", {
+    sessionToken,
+    interview_id: interviewId,
+    question_order: questionOrder,
+    audio_data: await audioBlobToBase64(audio),
+    audio_type: baseAudioType(audio),
+  });
+}
+
 export function endMockInterview(sessionToken: string, interviewId: number) {
   return invoke<MockInterviewSummary>("end_interview", { sessionToken, interview_id: interviewId });
 }

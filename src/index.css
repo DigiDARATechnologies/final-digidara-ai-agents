@@ -2358,3 +2358,5 @@ a{ color:var(--accent3); }
 .recent-agent-chats>button i.pending{ background:rgba(242,167,27,.18); color:var(--gold-text, var(--gold)); }
 
 :root[data-theme="light"] .immersive-speaking .speaking-stage-copy>span{ color:#0e7490; }
+.mock-interview-away{margin:12px 0 0;padding:11px 13px;border-radius:11px;border:1px solid var(--err);background:rgba(248,113,113,.12);color:var(--canvas-text);font-size:13px;line-height:1.5}.mock-interview-away strong{display:block;font-size:15px;margin-bottom:2px}
+.mock-interview-silence-hint{margin:10px 0 0;font-size:12px;font-weight:700;color:var(--canvas-text-dim)}

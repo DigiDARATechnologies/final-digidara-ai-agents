@@ -118,6 +118,24 @@ class InvokeAdapterTests(unittest.TestCase):
         uploaded = call.kwargs["data"]["audio"]
         self.assertEqual(uploaded[0].read(), audio)
         self.assertEqual(uploaded[2], "audio/webm")
+        self.assertEqual(call.kwargs["data"]["preview"], "0")
+
+    def test_a_live_preview_is_forwarded_with_the_preview_flag(self):
+        token = issue_session_token(42)
+        internal = MagicMock()
+        internal.post.return_value = MagicMock(status_code=200)
+        with patch.object(app, "test_client", return_value=internal),                 patch.object(db, "query", return_value=({"student_id": 42}, None)):
+            response = self.invoke("transcribe_preview", {
+                "sessionToken": token,
+                "interview_id": 5,
+                "question_order": 2,
+                "audio_type": "audio/mp4",
+                "audio_data": base64.b64encode(b"partial").decode("ascii"),
+            })
+        self.assertEqual(response.status_code, 200)
+        data = internal.post.call_args.kwargs["data"]
+        self.assertEqual(data["preview"], "1")
+        self.assertEqual(data["audio"][2], "audio/mp4")
 
     def test_unknown_action(self):
         token = issue_session_token(42)
