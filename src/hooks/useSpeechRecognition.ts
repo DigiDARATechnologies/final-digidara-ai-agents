@@ -7,9 +7,7 @@ import {
   preferredRecordingType,
 } from "../lib/voiceCapture";
 
-/** Minimal ambient typing for the Web Speech API — not in TS's default DOM
- * lib, and only Chrome/Edge/Safari expose it (Firefox does not), always
- * under the `webkit`-prefixed name in Safari/Chromium. */
+/** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
   isFinal: boolean;
   0: { transcript: string; confidence: number };
@@ -62,6 +60,10 @@ declare global {
   }
 }
 
+export const isMobileDevice =
+  typeof navigator !== "undefined" &&
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || "");
+
 function getSpeechRecognitionAPI(): SpeechRecognitionCtor | undefined {
   return typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined;
 }
@@ -80,6 +82,34 @@ function speechDebugEnabled(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Robustly merge cumulative speech transcripts.
+ * Fixes Android Chrome's cumulative transcription bug where each isFinal event
+ * repeats the entire prefix of the utterance.
+ */
+export function mergeCumulativeText(existing: string, incoming: string): string {
+  const a = existing.trim();
+  const b = incoming.trim();
+  if (!a) return b;
+  if (!b) return a;
+  if (a === b) return a;
+  if (b.toLowerCase().startsWith(a.toLowerCase())) return b;
+  if (a.toLowerCase().endsWith(b.toLowerCase())) return a;
+
+  const aWords = a.split(/\s+/);
+  const bWords = b.split(/\s+/);
+  const maxCheck = Math.min(aWords.length, bWords.length);
+  for (let len = maxCheck; len >= 1; len--) {
+    const aSuffix = aWords.slice(aWords.length - len).join(" ").toLowerCase();
+    const bPrefix = bWords.slice(0, len).join(" ").toLowerCase();
+    if (aSuffix === bPrefix) {
+      return `${aWords.slice(0, aWords.length - len).join(" ")} ${b}`.trim();
+    }
+  }
+
+  return joinSpeechSegments([existing, incoming]);
 }
 
 /** Speech-to-text for the chat composer: dictate into the text input
@@ -102,6 +132,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const keepListeningRef = useRef(false);
   const vadCleanupRef = useRef<(() => void) | null>(null);
+  const retryCountRef = useRef(0);
   const transcribeRef = useRef(transcribe);
   transcribeRef.current = transcribe;
   const previewRef = useRef(preview);
@@ -346,9 +377,9 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
     [endRecording],
   );
 
-  /** Starts listening. `onResult` is called with the running transcript
+  /** Starts listening. onResult is called with the running transcript
    * (accumulated final text + the current interim guess) on every update,
-   * and once more with `final: true` when recognition ends. */
+   * and once more with final: true when recognition ends. */
   const start = useCallback(
     (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
@@ -359,6 +390,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         return false;
       }
       keepListeningRef.current = false;
+      retryCountRef.current = 0;
       const previousRecognition = recognitionRef.current;
       recognitionRef.current = null;
       try {
@@ -373,19 +405,16 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
       recognition.continuous = true;
 
       let finalText = "";
-      // Short utterances can remain interim when recording ends. Keep the
-      // latest text so stopping does not clear a usable one-word result.
       let latestText = "";
       let completedSessionsText = "";
       const resultSlots = new Map<number, SpeechResultSnapshot>();
+
       recognition.onresult = (event) => {
+        retryCountRef.current = 0;
         const assembled = updateSpeechResultSlots(resultSlots, event);
         finalText = assembled.finalText;
         latestText = assembled.displayText;
         const runningText = joinSpeechSegments([completedSessionsText, latestText]);
-        // Raw Web Speech result diagnostics are opt-in because transcripts
-        // may contain personal information. Enable on a test device with:
-        // localStorage.setItem("digidara_speech_debug", "1")
         if (speechDebugEnabled()) {
           console.debug("[DigiDARA speech result]", {
             resultIndex: event.resultIndex,
@@ -400,20 +429,40 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           });
         }
         onResult(runningText, false);
+
+        // On mobile where getUserMedia is bypassed to prevent hardware mic locking,
+        // animate the orb on speech transcript updates:
+        if (isMobileDevice && runningText) {
+          options.onAudioLevel?.(0.75);
+          window.setTimeout(() => options.onAudioLevel?.(0.15), 180);
+        }
       };
+
       recognition.onerror = (event) => {
         if (recognitionRef.current !== recognition) return;
-        // Browsers commonly emit no-speech before ending a recognition
-        // session. onend restarts that session while the question timer runs.
-        if (event.error === "no-speech") return;
+
+        // Browsers commonly emit no-speech or network hiccups before ending a session.
+        // Auto-recover seamlessly while keepListeningRef is active:
+        if (
+          (event.error === "no-speech" || event.error === "network") &&
+          keepListeningRef.current &&
+          retryCountRef.current < 5
+        ) {
+          retryCountRef.current += 1;
+          return;
+        }
+
         keepListeningRef.current = false;
         setListening(false);
         setError(ERROR_MESSAGES[event.error] || "Speech recognition stopped unexpectedly.");
       };
+
       recognition.onstart = () => {
         setListening(true);
+        setError("");
         if (speechDebugEnabled()) console.debug("[DigiDARA speech start]", { monotonicMs: Math.round(performance.now()) });
       };
+
       recognition.onend = () => {
         if (recognitionRef.current !== recognition) return;
 
@@ -424,21 +473,33 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         finalText = "";
         latestText = "";
         resultSlots.clear();
-        if (speechDebugEnabled()) console.debug("[DigiDARA speech end]", {
-          completedText: completedSessionsText,
-          restarting: keepListeningRef.current,
-        });
+        if (speechDebugEnabled()) {
+          console.debug("[DigiDARA speech end]", {
+            completedText: completedSessionsText,
+            restarting: keepListeningRef.current,
+          });
+        }
 
+        // Mobile Keep-Alive: If active, mobile Chrome killed the session after a short pause.
+        // Re-arm immediately so the microphone stays ON during speaking practice!
         if (keepListeningRef.current) {
           window.setTimeout(() => {
             if (!keepListeningRef.current || recognitionRef.current !== recognition) return;
             try {
               recognition.start();
             } catch {
-              keepListeningRef.current = false;
-              recognitionRef.current = null;
-              setListening(false);
-              setError("Speech recognition stopped unexpectedly. Restart the microphone or type your answer.");
+              window.setTimeout(() => {
+                if (keepListeningRef.current && recognitionRef.current === recognition) {
+                  try {
+                    recognition.start();
+                  } catch {
+                    keepListeningRef.current = false;
+                    recognitionRef.current = null;
+                    setListening(false);
+                    setError("Speech recognition stopped unexpectedly. Restart the microphone or type your answer.");
+                  }
+                }
+              }, 250);
             }
           }, 150);
           return;
@@ -455,7 +516,9 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
       keepListeningRef.current = true;
       recognition.start();
 
-      if (options.autoStopOnSilence && navigator.mediaDevices?.getUserMedia && window.AudioContext) {
+      // Desktop-only VAD: On mobile, simultaneous getUserMedia locks/crashes mobile Web Speech API.
+      // On desktop, it runs cleanly to provide orb mic-energy level feedback.
+      if (!isMobileDevice && options.autoStopOnSilence && navigator.mediaDevices?.getUserMedia && window.AudioContext) {
         let disposed = false;
         let stream: MediaStream | null = null;
         let audioContext: AudioContext | null = null;
@@ -471,9 +534,6 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         };
         vadCleanupRef.current = cleanupVad;
 
-        // Web Speech provides transcription, but it does not expose voice
-        // activity. Measure microphone energy separately so a short word can
-        // be captured and the recording ends naturally after silence.
         void navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         }).then((mediaStream) => {
@@ -511,7 +571,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
               }
             } else if (speechDetected) {
               if (!quietSince) quietSince = now;
-              if (now - quietSince >= (options.silenceMs ?? DEFAULT_SILENCE_MS)) {
+              // Silence allowance before VAD stops, coordinating with auto-submit:
+              if (now - quietSince >= (options.silenceMs ?? 12000)) {
                 cleanupVad();
                 try {
                   recognitionRef.current?.stop();
@@ -525,8 +586,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           };
           measure();
         }).catch(() => {
-          // Keep browser ASR usable when audio analysis is unavailable; the
-          // learner can still stop recording manually.
+          // Keep browser ASR usable when audio analysis is unavailable
         });
       }
       return true;
