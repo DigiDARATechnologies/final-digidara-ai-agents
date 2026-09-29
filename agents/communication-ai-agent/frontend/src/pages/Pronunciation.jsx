@@ -224,7 +224,37 @@ export default function Pronunciation() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(referenceText);
     utterance.lang = "en-US";
-    utterance.rate = 0.95;
+    utterance.rate = 0.90;
+    utterance.pitch = 1.02;
+
+    const availableVoices = window.speechSynthesis.getVoices() || [];
+    const femalePatterns = [
+      /Jenny.*Natural/i,
+      /Aria.*Natural/i,
+      /Microsoft Jenny/i,
+      /Microsoft Aria/i,
+      /Google US English/i,
+      /Google UK English Female/i,
+      /Samantha/i,
+      /Victoria/i,
+      /Karen/i,
+      /Zira/i,
+      /Natural.*English/i,
+      /en-US.*female/i,
+    ];
+    let matchedVoice = null;
+    for (const pattern of femalePatterns) {
+      matchedVoice = availableVoices.find((v) => pattern.test(v.name) && v.lang?.startsWith("en"));
+      if (matchedVoice) break;
+    }
+    if (!matchedVoice) {
+      matchedVoice = availableVoices.find((v) => v.lang === "en-US" || v.lang?.startsWith("en"));
+    }
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+      utterance.lang = matchedVoice.lang || "en-US";
+    }
+
     window.speechSynthesis.speak(utterance);
   };
 

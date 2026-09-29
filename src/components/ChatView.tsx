@@ -6,6 +6,7 @@ import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
+import { createCoachUtterance } from "../lib/coachVoice";
 
 interface ChatViewProps {
   chat: Chat;
@@ -296,12 +297,13 @@ export default function ChatView({
     };
 
     if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-      const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[...]/g, " "));
-      utterance.rate = 0.85;
-      utterance.pitch = 1;
-      utterance.onstart = () => setAgentSpeaking(true);
-      utterance.onend = beginListening;
-      utterance.onerror = beginListening;
+      const utterance = createCoachUtterance(activeSpeakingPrompt, {
+        rate: 0.90,
+        pitch: 1.02,
+        onStart: () => setAgentSpeaking(true),
+        onEnd: beginListening,
+        onError: beginListening,
+      });
       window.speechSynthesis.speak(utterance);
     } else {
       beginListening();

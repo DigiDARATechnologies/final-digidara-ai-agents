@@ -585,8 +585,55 @@ export default function Speaking() {
     }
     window.speechSynthesis.cancel();
     setAiSpeaking(false);
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.98;
+
+    // Natural conversation pause formatting
+    let formattedText = (text || "").trim();
+    formattedText = formattedText.replace(
+      /^(Good\s+(?:morning|afternoon|evening)|Hello|Hi|Hey)\s+([A-Z][a-zA-Z]+)(?=[,\s.!?]|$)/i,
+      "$1, $2."
+    );
+    formattedText = formattedText.replace(/([.!?])\s*([A-Z])/g, "$1 $2");
+    if (/^(what|how|why|when|where|who|which|can|could|would|are|is|do|did|have|has)\b/i.test(formattedText) && !/[.!?]$/.test(formattedText)) {
+      formattedText = `${formattedText}?`;
+    } else if (!/[.!?]$/.test(formattedText)) {
+      formattedText = `${formattedText}.`;
+    }
+    formattedText = formattedText.replace(/\.{2,}/g, ", ").replace(/[—–]/g, ", ");
+
+    const utterance = new SpeechSynthesisUtterance(formattedText);
+    utterance.rate = 0.90;
+    utterance.pitch = 1.02;
+    utterance.lang = "en-US";
+
+    // Select warm natural female coach voice
+    const availableVoices = window.speechSynthesis.getVoices() || [];
+    const femalePatterns = [
+      /Jenny.*Natural/i,
+      /Aria.*Natural/i,
+      /Microsoft Jenny/i,
+      /Microsoft Aria/i,
+      /Google US English/i,
+      /Google UK English Female/i,
+      /Samantha/i,
+      /Victoria/i,
+      /Karen/i,
+      /Zira/i,
+      /Natural.*English/i,
+      /en-US.*female/i,
+    ];
+    let matchedVoice = null;
+    for (const pattern of femalePatterns) {
+      matchedVoice = availableVoices.find((v) => pattern.test(v.name) && v.lang?.startsWith("en"));
+      if (matchedVoice) break;
+    }
+    if (!matchedVoice) {
+      matchedVoice = availableVoices.find((v) => v.lang === "en-US" || v.lang?.startsWith("en"));
+    }
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+      utterance.lang = matchedVoice.lang || "en-US";
+    }
+
     utterance.onstart = () => setAiSpeaking(true);
     utterance.onend = () => {
       setAiSpeaking(false);
