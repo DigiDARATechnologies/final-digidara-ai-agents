@@ -24,6 +24,12 @@ class ProjectAgentState(TypedDict, total=False):
     # random generic angle_hint that's meant to add variety to an otherwise-
     # underspecified real course, not override an already-specific request.
     free_topic_request: bool
+    # Titles already shown to this student in the current chat (a regenerate
+    # request) -- topic_generator_prompt must not offer them again.
+    exclude_titles: list[str]
+    # The language/role the request is for -- keys the offered_topics pool
+    # that keeps every student's topics unique (see topic_generator_node).
+    topic_focus_key: str
 
     topic_options: list[dict[str, Any]]  # [{id, title, summary, medium, skills_applied}]
     chosen_topic: dict[str, Any]

@@ -2,7 +2,7 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   askProjectQuestion: jest.fn(),
   checkEligibilityFree: jest.fn(),
   chooseTopic: jest.fn(),
-  clarifyTopicRequest: jest.fn(),
+  topicIntakeTurn: jest.fn(),
   confirmTimer: jest.fn(),
   getThreadStatus: jest.fn(),
   submitVivaAnswer: jest.fn(),
