@@ -124,6 +124,23 @@ class ProjectAssignment(Base):
     submissions: Mapped[list["Submission"]] = relationship(back_populates="assignment")
 
 
+class OfferedTopic(Base):
+    """Every project topic ever shown to any student, chosen or not, so no
+    student is offered a topic another student (or they themselves) already
+    saw. Only the generated title and the language/role it was for are kept:
+    no student or assignment link, so this holds no personal data and a
+    student's erasure request leaves it untouched."""
+    __tablename__ = "offered_topics"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    # Normalized language/role/topic the request was for ("python", "java").
+    focus_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Lowercase alphanumerics only -- the exact-repeat lookup key.
+    normalized_title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Submission(Base):
     __tablename__ = "submissions"
 
