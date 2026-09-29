@@ -28,3 +28,30 @@ def test_database_isolation_and_codegen_feature_setting(tmp_path):
 def test_single_agent_configuration_does_not_start_other_agents(tmp_path):
     config = runner.compose_config(tmp_path / "init.sql", [runner.AGENTS[0]])
     assert set(config['services']) == {'mysql', 'orchestrator'}
+
+
+def test_mysql_pull_is_retried_after_a_registry_timeout(monkeypatch):
+    calls, waits = [], []
+
+    def flaky_run(command, **kwargs):
+        calls.append(command)
+        if len(calls) < 3:
+            raise runner.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(runner.subprocess, "run", flaky_run)
+    runner.pull_with_retry("mysql:8", sleep=waits.append)
+    assert calls == [["docker", "pull", "mysql:8"]] * 3
+    assert waits == [10, 20]
+
+
+def test_mysql_pull_gives_up_after_the_last_attempt(monkeypatch):
+    import pytest
+
+    def always_fails(command, **kwargs):
+        raise runner.subprocess.TimeoutExpired(command, 600)
+
+    monkeypatch.setattr(runner.subprocess, "run", always_fails)
+    waits = []
+    with pytest.raises(runner.subprocess.TimeoutExpired):
+        runner.pull_with_retry("mysql:8", attempts=4, sleep=waits.append)
+    assert waits == [10, 20, 40]
