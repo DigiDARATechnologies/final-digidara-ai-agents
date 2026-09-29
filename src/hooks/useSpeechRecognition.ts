@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
 
-/** Minimal ambient typing for the Web Speech API — not in TS's default DOM
- * lib, and only Chrome/Edge/Safari expose it (Firefox does not), always
- * under the `webkit`-prefixed name in Safari/Chromium. */
+/** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
   isFinal: boolean;
   0: { transcript: string; confidence: number };
@@ -94,7 +92,7 @@ export function mergeCumulativeText(existing: string, incoming: string): string 
 
 /** Browser-only speech-to-text for the chat composer: dictate into the
  * text input instead of typing. Purely client-side (Web Speech API) — the
- * recognized text is sent through the exact same `onSend(text)` path as
+ * recognized text is sent through the exact same onSend(text) path as
  * anything typed, so no backend agent needs to know the difference. */
 export default function useSpeechRecognition(locale = "en-US") {
   const [listening, setListening] = useState(false);
@@ -117,9 +115,9 @@ export default function useSpeechRecognition(locale = "en-US") {
 
   useEffect(() => stop, [stop]);
 
-  /** Starts listening. `onResult` is called with the running transcript
+  /** Starts listening. onResult is called with the running transcript
    * (accumulated final text + the current interim guess) on every update,
-   * and once more with `final: true` when recognition ends. */
+   * and once more with final: true when recognition ends. */
   const start = useCallback(
     (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
