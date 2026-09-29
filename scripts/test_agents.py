@@ -7,9 +7,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+MYSQL_IMAGE = 'mysql:8'
+# Docker Hub occasionally times out from CI runners ("Client.Timeout exceeded
+# while awaiting headers"); that is a network blip, not a test failure, so the
+# shared MySQL image is pulled up front with a few retries.
+PULL_ATTEMPTS = 4
+PULL_BACKOFF_SECONDS = 10
 AGENTS = [
     ('orchestrator', 'agents/orchestrator', 8100, 'app.main:app', 'uvicorn.workers.UvicornWorker'),
     ('capstone-agent', 'agents/project_AI_Agent', 8000, 'app.api.main:app', 'uvicorn.workers.UvicornWorker'),
@@ -36,7 +43,7 @@ SUITES = {
 
 def compose_config(init_file, agents=None):
     services = {'mysql': {
-        'image': 'mysql:8',
+        'image': MYSQL_IMAGE,
         'environment': {'MYSQL_ROOT_PASSWORD': 'local-test-password', 'MYSQL_ROOT_HOST': '%'},
         'volumes': [f'{init_file.as_posix()}:/docker-entrypoint-initdb.d/databases.sql:ro'],
         'healthcheck': {
@@ -73,6 +80,22 @@ def compose_config(init_file, agents=None):
     return {'services': services}
 
 
+def pull_with_retry(image, attempts=PULL_ATTEMPTS, backoff=PULL_BACKOFF_SECONDS, sleep=time.sleep):
+    """Pulls `image`, retrying with a growing wait (10s, 20s, 40s) when the
+    registry is briefly unreachable. Raises the last error once every
+    attempt has failed."""
+    for attempt in range(1, attempts + 1):
+        try:
+            subprocess.run(['docker', 'pull', image], check=True, timeout=600)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            if attempt == attempts:
+                raise
+            wait = backoff * 2 ** (attempt - 1)
+            print(f'Pulling {image} failed (attempt {attempt} of {attempts}); retrying in {wait}s.', file=sys.stderr)
+            sleep(wait)
+
+
 def run_agent(agent, skip_build):
     name, context, port, *_ = agent
     artifacts = ROOT / 'artifacts' / 'agent-tests' / name
@@ -86,6 +109,7 @@ def run_agent(agent, skip_build):
         compose = ['docker', 'compose', '-p', f'digidara-test-{uuid.uuid4().hex[:10]}', '-f', str(config_file)]
         result_code = 0
         try:
+            pull_with_retry(MYSQL_IMAGE)
             subprocess.run(compose + ['up', '--no-build' if skip_build else '--build', '-d'], check=True, cwd=ROOT, timeout=1800)
             env = os.environ.copy()
             env['AGENT_NAME'] = name
