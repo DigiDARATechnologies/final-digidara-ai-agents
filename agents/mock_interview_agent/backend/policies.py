@@ -20,15 +20,19 @@ def counts_toward_daily_limit(*, enabled, is_followup, has_answer):
 
 def completion_progress(rows, required_main_questions):
     """Count evaluated main questions and decide whether completion is allowed."""
-    answered_main_questions = sum(
+    completed_main_questions = sum(
         1
         for row in rows
-        if not row["is_followup"] and row.get("verdict") is not None
+        if not row["is_followup"] and (
+            row.get("verdict") is not None
+            or bool(row.get("timed_out"))
+            or row.get("processing_status") == "skipped"
+        )
     )
     return {
-        "answered_main_questions": answered_main_questions,
+        "answered_main_questions": completed_main_questions,
         "required_main_questions": int(required_main_questions),
-        "complete": answered_main_questions == int(required_main_questions),
+            "complete": completed_main_questions == int(required_main_questions),
     }
 
 

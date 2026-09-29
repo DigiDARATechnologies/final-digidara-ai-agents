@@ -15,6 +15,7 @@
     "typecheck": "tsc -b && tsc -p tsconfig.tests.json"
   },
   "dependencies": {
+    "jszip": "^3.10.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

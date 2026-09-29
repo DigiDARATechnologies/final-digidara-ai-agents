@@ -195,6 +195,45 @@ class BeginnerCalibrationTests(unittest.TestCase):
         self.assertIn("INTERMEDIATE SCORING", prompts[1])
         self.assertIn("ADVANCED SCORING", prompts[2])
 
+    def test_batch_evaluation_allows_unanswered_ideal_only_items(self):
+        prompts = []
+
+        def chat(messages, **_kwargs):
+            prompts.append(messages[0]["content"])
+            return json.dumps({"evaluations": [
+                {"question_id": 1, "verdict": None, "ideal_answer": "A list stores ordered values."},
+                {"question_id": 2, "verdict": "correct", "reason": "Accurate.", "ideal_answer": "CSS controls presentation."},
+            ]})
+
+        pairs = [
+            {"question_id": 1, "question": "What is a list?", "answer": "", "unanswered": True},
+            {"question_id": 2, "question": "What does CSS do?", "answer": "It styles pages."},
+        ]
+        result = evaluate_answers_batch("technical", "Python", "beginner", pairs, chat_fn=chat)
+        self.assertIsNone(result[0]["verdict"])
+        self.assertIn('"unanswered": true', prompts[0])
+
+    def test_batch_evaluation_allows_missing_unanswered_ideal_answer(self):
+        pairs = [{"question_id": 1, "question": "What is a list?", "answer": "", "unanswered": True}]
+        result = evaluate_answers_batch(
+            "technical", "Python", "beginner", pairs,
+            chat_fn=lambda *_args, **_kwargs: json.dumps({"evaluations": [{"question_id": 1, "verdict": None}]}),
+        )
+        self.assertIsNone(result[0].get("ideal_answer"))
+
+    def test_batch_evaluation_ignores_unanswered_verdict(self):
+        pairs = [{"question_id": 1, "question": "What is a list?", "answer": "", "unanswered": True}]
+        result = evaluate_answers_batch(
+            "technical", "Python", "beginner", pairs,
+            chat_fn=lambda *_args, **_kwargs: json.dumps({"evaluations": [{
+                "question_id": 1, "verdict": "wrong", "reason": "Ignore this.",
+                "ideal_answer": "A list stores ordered values.",
+            }]}),
+        )
+        # The raw provider shape is tolerated; the route's unanswered branch
+        # persists only ideal_answer and never persists this verdict/reason.
+        self.assertEqual(result[0]["verdict"], "wrong")
+
     def test_single_answer_and_summary_use_beginner_standard_only(self):
         prompts = []
 

@@ -106,6 +106,78 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(scorecard[0]["followup"]["question"], "Old follow-up?")
         self.assertEqual(scorecard[0]["verdict"], "correct")
 
+    def test_timed_out_question_is_zero_marked_without_a_verdict(self):
+        rows = [{
+            "question": "What is a list?", "answer": None,
+            "is_followup": False, "verdict": None,
+            "verdict_reason": "No answer was submitted before the time limit.",
+            "ideal_answer": None, "timed_out": True,
+        }]
+        scorecard, marks, maximum = build_scorecard(rows)
+        self.assertEqual((marks, maximum), (0, 1))
+        self.assertEqual(scorecard[0]["status"], "timed_out")
+        self.assertIsNone(scorecard[0]["verdict"])
+        self.assertEqual(scorecard[0]["answer"], "Not answered (time expired)")
+
+    def test_unanswered_questions_cannot_inflate_final_quality_scores(self):
+        from routes.interviews import _apply_unanswered_score_adjustment
+
+        result = {
+            "overall_score": 10,
+            "technical_accuracy": 10,
+            "communication_clarity": 10,
+            "confidence": 10,
+        }
+        rows = [
+            {"is_followup": False, "answer": "A", "timed_out": False, "processing_status": "evaluated"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+            {"is_followup": False, "answer": None, "timed_out": True, "processing_status": "timed_out"},
+        ]
+        _apply_unanswered_score_adjustment(result, rows)
+        self.assertEqual(result["overall_score"], 2.0)
+        self.assertEqual(result["technical_accuracy"], 2.0)
+        self.assertEqual(result["communication_clarity"], 2.0)
+        self.assertEqual(result["confidence"], 2.0)
+
+    def test_batch_payload_includes_unanswered_items_once(self):
+        from routes.interviews import _batch_evaluations_or_error
+
+        rows = [
+            {
+                "id": index, "question": f"Question {index}", "answer": None,
+                "timed_out": index <= 2, "processing_status": "timed_out" if index <= 2 else "answer_received",
+            }
+            for index in range(1, 6)
+        ]
+        rows[2]["answer"] = "Answer 3"
+        rows[3]["answer"] = "Answer 4"
+        rows[4]["answer"] = "Answer 5"
+        evaluations = [
+            {"question_id": 1, "verdict": "wrong", "reason": "Ignore", "ideal_answer": "Ideal 1"},
+            {"question_id": 2, "verdict": "correct", "reason": "Ignore", "ideal_answer": "Ideal 2"},
+            {"question_id": 3, "verdict": "correct", "reason": "Good", "ideal_answer": "Ideal 3"},
+            {"question_id": 4, "verdict": "wrong", "reason": "Review", "ideal_answer": "Ideal 4"},
+            {"question_id": 5, "verdict": "partial", "reason": "Partial", "ideal_answer": "Ideal 5"},
+        ]
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", return_value=evaluations) as batch,
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+        ):
+            result, error = _batch_evaluations_or_error({
+                "student_id": 1, "round_type": "technical",
+                "subject": "Python", "difficulty": "beginner",
+            }, 42, rows)
+        self.assertIsNone(error)
+        self.assertEqual(batch.call_count, 1)
+        payload = batch.call_args.args[3]
+        self.assertEqual(len(payload), 5)
+        self.assertEqual([item.get("unanswered", False) for item in payload], [True, True, False, False, False])
+        self.assertEqual(result[0]["ideal_answer"], "Ideal 1")
+        self.assertIsNone(result[0]["verdict"])
+        self.assertIsNone(result[1]["verdict"])
+
 
 if __name__ == "__main__":
     unittest.main()

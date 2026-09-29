@@ -122,13 +122,25 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
   if (state.step === "awaiting_question" && state.question) {
     const status = state.question.status || "unanswered";
     const nav = state.question.navigation || Array.from({ length: state.question.total_questions }, (_, index) => ({ sequence: index + 1, status: "unanswered" as const, visited: false }));
-    return <section className="aptitude-practice-panel aptitude-live-panel aptitude-active-panel" aria-label="Current question status">
+    return <div className="aptitude-live-context">
+      <section className="aptitude-practice-panel aptitude-live-panel aptitude-active-panel" aria-label="Current question status">
       <div className="aptitude-live-heading"><div><span className="aptitude-panel-eyebrow">LIVE PRACTICE</span><strong>Question {state.question.sequence} of {state.question.total_questions}</strong><p>{state.question.category} · {state.question.difficulty}{state.question.topic_is_starred ? " · ★ Priority topic" : ""}</p></div><ExitTestControl onExit={() => onChoose("exit test")} pending={exitPending} /></div>
       <div className="aptitude-live-timer"><Timer seconds={status === "unanswered" ? seconds : 0} total={state.question.total_duration_seconds || state.question.allowed_time_seconds} /></div>
       <div className="aptitude-live-navigation"><div className="aptitude-question-nav" aria-label="Question navigation"><span>Questions</span>{nav.map((item) => <button type="button" key={item.sequence} className={`aptitude-question-number ${item.status}${item.sequence === state.question?.sequence ? " current" : ""}`} aria-label={`Question ${item.sequence} — ${item.sequence === state.question?.sequence ? "Current" : item.status}`} onClick={() => onChoose(`__aptitude_nav:${item.sequence}`)}>{item.sequence}</button>)}</div><small className="aptitude-question-legend">Green = answered · outlined = current · unfilled = unanswered</small></div>
       {state.hintText && <div className="aptitude-hint-text"><b>Hint</b><span>{state.hintText}</span></div>}
       {status === "unanswered" && <div className="aptitude-live-actions"><button type="button" className="aptitude-hint-button" onClick={() => onChoose("skip question")} disabled={seconds <= 0}>Skip Question</button><button type="button" className="aptitude-hint-button" onClick={() => onChoose("hint")} disabled={hintPending || seconds <= 0 || state.hintsRemaining === 0 || !!state.hintText}>{state.hintText ? "Hint shown" : hintPending ? "Generating hint…" : `✦ Get a hint (${state.hintsRemaining ?? state.question.hints_remaining} left)`}</button></div>}
-    </section>;
+      </section>
+      <section className="aptitude-question-content" aria-label={`Question ${state.question.sequence}`}>
+        <div className="aptitude-live-question"><b>{state.question.sequence}.</b><span>{state.question.question}</span></div>
+        {status === "unanswered" && <div className="aptitude-answer-options" aria-label="Answer options">
+          {Object.entries(state.question.options).map(([value, label]) => (
+            <button type="button" key={value} onClick={() => onChoose(value)}>
+              <b>{value}.</b><span>{label}</span>
+            </button>
+          ))}
+        </div>}
+      </section>
+    </div>;
   }
 
   if (state.step === "awaiting_mode") {
