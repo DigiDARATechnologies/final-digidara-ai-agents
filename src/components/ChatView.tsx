@@ -372,7 +372,7 @@ export default function ChatView({
             ? m.options?.filter((option) => !["daily_challenge", "dashboard", "history"].includes(option.value))
             : m.options;
           const visibleOptions = rawOptions?.filter(
-            (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 1 && opt.label.trim() !== "."
+            (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 0 && opt.label.trim() !== "."
           );
           const optionsActive = m.role === "agent" && !!visibleOptions?.length && i === chat.messages.length - 1 && !typing;
           const isEditing = editingIndex === i;
