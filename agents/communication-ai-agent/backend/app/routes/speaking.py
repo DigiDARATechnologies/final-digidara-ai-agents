@@ -1469,3 +1469,32 @@ def download_speaking_report_pdf(session_id):
         download_name=f"Speaking_Report_{session.id}.pdf",
     )
 
+
+@speaking_bp.post("/synthesize")
+@jwt_required()
+def synthesize_speech():
+    """Phase 2: Stream studio-quality Neural TTS audio for coach prompts."""
+    from io import BytesIO
+    from flask import send_file
+    from ..services.neural_tts import synthesize_neural_speech
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    voice = (data.get("voice") or "nova").strip().lower()
+    speed = float(data.get("speed") or 0.92)
+
+    if not text:
+        return _api_error("text is required for speech synthesis.", "MISSING_TEXT", 400)
+
+    audio_bytes, mime_type = synthesize_neural_speech(text, voice=voice, speed=speed)
+    if not audio_bytes:
+        return _api_error("Neural voice synthesis unavailable.", "SYNTHESIS_FAILED", 503)
+
+    return send_file(
+        BytesIO(audio_bytes),
+        mimetype=mime_type or "audio/mpeg",
+        as_attachment=False,
+        download_name="coach_speech.mp3",
+    )
+
+

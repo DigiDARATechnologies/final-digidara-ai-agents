@@ -1,13 +1,12 @@
 /**
- * Unified Female Coach Voice and Natural Pacing Engine.
+ * Hybrid Voice Engine: Neural TTS (Phase 2) with Seamless Browser Fallback (Phase 1).
  *
- * Implements Phase 1 of the Coach Voice Architecture:
- * 1. Prioritized female natural English voice selection (Jenny, Aria, Google US English, Samantha, etc.).
- * 2. Conversational cadence and natural pause pre-processing (greeting commas, boundary pauses, question intonation).
- * 3. Consistent teacher pacing (rate ~0.90, pitch ~1.02).
+ * Architecture:
+ * 1. Checks backend `/api/speaking/synthesize` for studio-quality Neural Audio (OpenAI tts-1 'nova').
+ * 2. If backend Neural TTS is unavailable, rate-limited, or offline, immediately falls back
+ *    to the calibrated local browser voice (Microsoft Jenny / Aria / Google US English).
  */
 
-// Priority list for warm, clear female English voices across Edge, Chrome, Safari, Windows, and Mac
 const FEMALE_VOICE_PATTERNS = [
   /Jenny.*Natural/i,
   /Aria.*Natural/i,
@@ -23,92 +22,168 @@ const FEMALE_VOICE_PATTERNS = [
   /en-US.*female/i,
 ];
 
-/**
- * Find the most natural female English voice available on the student's browser/system.
- */
+let activeAudioElement: HTMLAudioElement | null = null;
+
 export function selectBestCoachVoice(): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !window.speechSynthesis) return null;
-
   const voices = window.speechSynthesis.getVoices() || [];
   if (!voices.length) return null;
 
-  // 1. Try prioritized natural female voices
   for (const pattern of FEMALE_VOICE_PATTERNS) {
     const match = voices.find((v) => pattern.test(v.name) && v.lang?.startsWith("en"));
     if (match) return match;
   }
 
-  // 2. Try any en-US voice that looks female or natural
   const usFemale = voices.find(
     (v) => (v.lang === "en-US" || v.lang === "en_US") && /female|woman|natural/i.test(v.name)
   );
   if (usFemale) return usFemale;
 
-  // 3. Any en-US voice
   const usVoice = voices.find((v) => v.lang === "en-US" || v.lang === "en_US");
   if (usVoice) return usVoice;
 
-  // 4. Any English voice
-  const anyEnglish = voices.find((v) => v.lang?.toLowerCase().startsWith("en"));
-  if (anyEnglish) return anyEnglish;
-
-  return voices[0] || null;
+  return voices.find((v) => v.lang?.toLowerCase().startsWith("en")) || voices[0] || null;
 }
 
-/**
- * Pre-process text to insert natural conversational pauses and teacher cadence.
- *
- * Examples:
- * - "Good morning Harini what did you do today"
- *   -> "Good morning, Harini. What did you do today?"
- * - Handles punctuation so the browser synthesizer pauses at greetings and clause boundaries.
- */
 export function formatCoachSpeechText(rawText: string): string {
   if (!rawText) return "";
-
   let text = rawText.trim();
 
-  // 1. Ensure comma after greetings like "Good morning Harini", "Hello Harini", "Hi Harini"
+  // Natural comma micro-pause after greeting
   text = text.replace(
     /^(Good\s+(?:morning|afternoon|evening)|Hello|Hi|Hey)\s+([A-Z][a-zA-Z]+)(?=[,\s.!?]|$)/i,
     "$1, $2."
   );
 
-  // 2. Ensure greeting questions have proper punctuation boundary
-  // e.g. "Good morning, Harini! What did you do today" -> "Good morning, Harini. What did you do today?"
   text = text.replace(/([.!?])\s*([A-Z])/g, "$1 $2");
 
-  // 3. Ensure trailing question mark if sentence starts with question words
   if (/^(what|how|why|when|where|who|which|can|could|would|are|is|do|did|have|has)\b/i.test(text) && !/[.!?]$/.test(text)) {
     text = `${text}?`;
   } else if (!/[.!?]$/.test(text)) {
     text = `${text}.`;
   }
 
-  // 4. Replace ellipsis or harsh symbols with gentle conversational pause points
   text = text.replace(/\.{2,}/g, ", ");
   text = text.replace(/[—–]/g, ", ");
-
   return text;
 }
 
-export interface CoachUtteranceOptions {
+export interface CoachSpeechOptions {
   rate?: number;
   pitch?: number;
   volume?: number;
+  voiceName?: "nova" | "shimmer" | "alloy";
+  authToken?: string;
+  preferNeural?: boolean;
   onStart?: () => void;
   onEnd?: () => void;
-  onError?: (e: SpeechSynthesisErrorEvent) => void;
+  onError?: () => void;
+}
+
+/** Stop any currently playing coach audio (both neural HTML5 audio and browser speech). */
+export function stopCoachAudio(): void {
+  if (activeAudioElement) {
+    try {
+      activeAudioElement.pause();
+      activeAudioElement.currentTime = 0;
+    } catch {}
+    activeAudioElement = null;
+  }
+  if (typeof window !== "undefined" && window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
+}
+
+/** Fallback: Play through calibrated Phase 1 browser voice. */
+export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions = {}): boolean {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    options.onEnd?.();
+    return false;
+  }
+
+  const processedText = formatCoachSpeechText(text);
+  const utterance = new SpeechSynthesisUtterance(processedText);
+  utterance.rate = options.rate ?? 0.90;
+  utterance.pitch = options.pitch ?? 1.02;
+  utterance.volume = options.volume ?? 1.0;
+  utterance.lang = "en-US";
+
+  const voice = selectBestCoachVoice();
+  if (voice) {
+    utterance.voice = voice;
+    utterance.lang = voice.lang || "en-US";
+  }
+
+  utterance.onstart = () => options.onStart?.();
+  utterance.onend = () => options.onEnd?.();
+  utterance.onerror = () => options.onEnd?.();
+
+  window.speechSynthesis.speak(utterance);
+  return true;
 }
 
 /**
- * Create a SpeechSynthesisUtterance configured with optimal teacher parameters.
+ * Play speech using Phase 2 Neural Backend TTS, seamlessly falling back to Phase 1 browser voice.
  */
-export function createCoachUtterance(text: string, options: CoachUtteranceOptions = {}): SpeechSynthesisUtterance {
+export async function playCoachSpeech(text: string, options: CoachSpeechOptions = {}): Promise<void> {
+  stopCoachAudio();
+
+  const preferNeural = options.preferNeural ?? true;
+  const processedText = formatCoachSpeechText(text);
+
+  if (!preferNeural || !options.authToken) {
+    playBrowserCoachSpeech(processedText, options);
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/speaking/synthesize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${options.authToken}`,
+      },
+      body: JSON.stringify({
+        text: processedText,
+        voice: options.voiceName || "nova",
+        speed: options.rate ?? 0.92,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Neural TTS returned ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    const audio = new Audio(audioUrl);
+    activeAudioElement = audio;
+
+    audio.onplay = () => options.onStart?.();
+    audio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      activeAudioElement = null;
+      options.onEnd?.();
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(audioUrl);
+      activeAudioElement = null;
+      playBrowserCoachSpeech(processedText, options);
+    };
+
+    await audio.play();
+  } catch (err) {
+    // Zero-downtime graceful fallback to local browser voice
+    playBrowserCoachSpeech(processedText, options);
+  }
+}
+
+/** Compatibility helper for existing SpeechSynthesisUtterance references. */
+export function createCoachUtterance(text: string, options: CoachSpeechOptions = {}): SpeechSynthesisUtterance {
   const processedText = formatCoachSpeechText(text);
   const utterance = new SpeechSynthesisUtterance(processedText);
-
-  // Calibrated natural teacher pacing
   utterance.rate = options.rate ?? 0.90;
   utterance.pitch = options.pitch ?? 1.02;
   utterance.volume = options.volume ?? 1.0;

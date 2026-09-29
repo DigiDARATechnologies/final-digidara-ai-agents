@@ -577,13 +577,14 @@ export default function Speaking() {
     });
   };
 
-  const speak = (text, onDone) => {
-    if (!voiceEnabled || !window.speechSynthesis) {
+  const speak = async (text, onDone) => {
+    if (!voiceEnabled) {
       setAiSpeaking(false);
       onDone?.();
       return;
     }
-    window.speechSynthesis.cancel();
+
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     setAiSpeaking(false);
 
     // Natural conversation pause formatting
@@ -599,6 +600,40 @@ export default function Speaking() {
       formattedText = `${formattedText}.`;
     }
     formattedText = formattedText.replace(/\.{2,}/g, ", ").replace(/[—–]/g, ", ");
+
+    // Phase 2: Try Backend Neural Audio Stream (OpenAI TTS 'nova')
+    try {
+      const res = await client.post(
+        "/speaking/synthesize",
+        { text: formattedText, voice: "nova", speed: 0.92 },
+        { responseType: "blob", timeout: 8000 }
+      );
+      if (res.status === 200 && res.data) {
+        const audioUrl = URL.createObjectURL(res.data);
+        const audio = new Audio(audioUrl);
+        setAiSpeaking(true);
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          setAiSpeaking(false);
+          onDone?.();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
+          setAiSpeaking(false);
+          onDone?.();
+        };
+        await audio.play();
+        return;
+      }
+    } catch {
+      // Gracefully fall through to Phase 1 browser voice on network/API limit
+    }
+
+    if (!window.speechSynthesis) {
+      setAiSpeaking(false);
+      onDone?.();
+      return;
+    }
 
     const utterance = new SpeechSynthesisUtterance(formattedText);
     utterance.rate = 0.90;
