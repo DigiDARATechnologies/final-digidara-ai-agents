@@ -45,3 +45,19 @@ def test_bad_transcribe_requests_are_rejected_with_a_reason(client, token, paylo
     response = invoke(client, "speaking_transcribe", payload)
     assert response.status_code == status
     assert response.get_json()["error_code"] == code
+
+
+def test_live_preview_is_transcribed_through_its_own_route(client, token, monkeypatch):
+    monkeypatch.setattr(speaking.groq_service, "transcribe_speaking_audio", lambda audio, filename, content_type: "I went to")
+    response = invoke(client, "speaking_transcribe_preview", {
+        "authToken": token, "audio_data": base64.b64encode(b"partial").decode(), "audio_type": "audio/webm",
+    })
+    assert response.status_code == 200
+    assert response.get_json()["transcript"] == "I went to"
+
+
+def test_live_preview_allows_a_preview_every_three_seconds(client, token, monkeypatch):
+    monkeypatch.setattr(speaking.groq_service, "transcribe_speaking_audio", lambda audio, filename, content_type: "text")
+    payload = {"authToken": token, "audio_data": base64.b64encode(b"partial").decode(), "audio_type": "audio/webm"}
+    statuses = [invoke(client, "speaking_transcribe_preview", payload).status_code for _ in range(20)]
+    assert statuses == [200] * 20

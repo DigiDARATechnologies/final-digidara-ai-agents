@@ -19,10 +19,14 @@ class FakeRecorder {
   addEventListener(name: string, callback: () => void) {
     if (name === 'stop') this.stopListeners.push(callback);
   }
+  private timer: ReturnType<typeof setInterval> | undefined;
   start() {
     this.state = 'recording';
+    // A real recorder started with a timeslice hands over audio as it goes.
+    this.timer = setInterval(() => this.ondataavailable?.({ data: new Blob(['audio so far'], { type: this.mimeType }) }), 250);
   }
   stop() {
+    clearInterval(this.timer);
     this.ondataavailable?.({ data: new Blob(['spoken answer'], { type: this.mimeType }) });
     this.state = 'inactive';
     this.stopListeners.forEach((callback) => callback());
@@ -259,5 +263,72 @@ describe('auto-send after a pause (phone recording)', () => {
     const before = created!.resume.mock.calls.length;
     act(() => { document.dispatchEvent(new Event('pointerdown')); });
     expect(created!.resume.mock.calls.length).toBe(before + 1);
+  });
+  test('with a preview transcriber, the text appears while speaking and the final text still comes from the full recording', async () => {
+    const transcribe = jest.fn().mockResolvedValue('I cooked dinner for my family.');
+    const preview = jest.fn()
+      .mockResolvedValueOnce('I cooked')
+      .mockResolvedValue('I cooked dinner for my');
+    const onResult = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe, preview));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true, silenceMs: 7000 }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+
+    // No preview before the student says anything (the meter works here).
+    await advance(2_000);
+    expect(preview).not.toHaveBeenCalled();
+
+    level = 0.2;
+    await advance(1_000);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I cooked', false));
+    await advance(3_000);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I cooked dinner for my', false));
+    expect(preview.mock.calls[0][0]).toBeInstanceOf(Blob);
+    expect(transcribe).not.toHaveBeenCalled();
+
+    level = 0;
+    await advance(7_500);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I cooked dinner for my family.', true));
+    expect(transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  test('when the phone keeps the meter suspended, previews still run and new words count as speech for the pause', async () => {
+    class Suspended extends LevelAudioContext { state = 'suspended'; }
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: Suspended });
+    const transcribe = jest.fn().mockResolvedValue('I went for a walk.');
+    const preview = jest.fn()
+      .mockResolvedValueOnce('I went')
+      .mockResolvedValue('I went for a walk');
+    const onResult = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe, preview));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true, silenceMs: 7000 }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+
+    await advance(1_000);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I went', false));
+    await advance(3_000);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I went for a walk', false));
+    // The text stops changing: 7s later the recording ends and is sent.
+    expect(transcribe).not.toHaveBeenCalled();
+    await advance(7_500);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I went for a walk.', true));
+  });
+
+  test('a failed preview is ignored and the final transcription still happens', async () => {
+    const transcribe = jest.fn().mockResolvedValue('Final answer.');
+    const preview = jest.fn().mockRejectedValue(new Error('offline'));
+    const onResult = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe, preview));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true, silenceMs: 7000 }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    level = 0.2;
+    await advance(4_000);
+    expect(preview).toHaveBeenCalled();
+    act(() => { result.current.stop(); });
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('Final answer.', true));
+    expect(result.current.error).toBe('');
   });
 });

@@ -1210,6 +1210,20 @@ def respond():
 @limiter.limit("12 per minute")
 @jwt_required()
 def transcribe_audio():
+    return _transcribe_uploaded_audio()
+
+
+# The answer so far, re-transcribed about every 3 seconds while the student is
+# still speaking on a phone, so the text appears in the input box as they
+# talk. The answer that is actually sent comes from /transcribe once they stop.
+@speaking_bp.post("/transcribe-preview")
+@limiter.limit("40 per minute")
+@jwt_required()
+def transcribe_audio_preview():
+    return _transcribe_uploaded_audio()
+
+
+def _transcribe_uploaded_audio():
     audio_file = request.files.get("audio")
     if not audio_file:
         return _api_error("No audio file was received.", "AUDIO_MISSING", 400)
