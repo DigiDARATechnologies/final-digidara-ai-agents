@@ -331,6 +331,12 @@ def _summary_payload(session):
         "answered_turns": session.answered_turns,
         "total_turns": session.total_turns,
         "ended_by_user": session.ended_by_user,
+        "executive_scorecard": getattr(session, "_executive_scorecard", None) or {
+            "you_did_well": "You actively engaged in the conversation and expressed your thoughts.",
+            "key_improvement_area": "Sentence structure and grammatical precision.",
+            "golden_rewrite": None,
+            "scores_breakdown": None,
+        },
     }
 
 
@@ -376,8 +382,15 @@ def _finalize_session(session, ended_by_user=False):
     session.common_mistakes_json = json.dumps(summary.get("common_mistakes", []))
     session.recommendation = summary.get("recommendation")
     session.next_practice_suggestion = summary.get("next_practice_suggestion")
-    session._summary_strengths = summary["strengths"]
-    session._summary_areas = summary["areas_to_improve"]
+    session._summary_strengths = summary.get("strengths", [])
+    session._summary_areas = summary.get("areas_to_improve", [])
+    session._executive_scorecard = {
+        "you_did_well": summary.get("you_did_well"),
+        "key_improvement_area": summary.get("key_improvement_area"),
+        "golden_rewrite": summary.get("golden_rewrite"),
+        "scores_breakdown": summary.get("scores_breakdown"),
+        "recommended_next_step": summary.get("recommended_next_step"),
+    }
     return summary
 
 

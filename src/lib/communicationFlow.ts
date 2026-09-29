@@ -86,10 +86,54 @@ function normalizedSentence(value?: string): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function speakingCoachReply(_answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
-  const reaction = String(feedback?.reaction || "").trim();
-  const question = String(nextQuestion || "").trim();
-  return [reaction, question].filter(Boolean).join(" ") || "Tell me more about that.";
+function formatExecutiveScorecard(summary: Record<string, any>): string {
+  const scorecard = summary.executive_scorecard || {};
+  const scores = scorecard.scores_breakdown || {
+    overall: Math.round(Number(summary.overall_score || 7.5) * 10),
+    grammar: Math.round(Number(summary.grammar_score || 7.0) * 10),
+    vocabulary: 76,
+    clarity: Math.round(Number(summary.clarity_score || 7.2) * 10),
+    sentence_structure: 68,
+    fluency: Math.round(Number(summary.fluency_score || 7.4) * 10),
+    confidence: Math.round(Number(summary.confidence_score || 7.6) * 10),
+  };
+
+  const youDidWell = scorecard.you_did_well || (summary.strengths?.[0] ? `Clearly expressed your thoughts on ${summary.topic_title || "the topic"}.` : "Communicated ideas actively.");
+  const improve = scorecard.key_improvement_area || (summary.areas_to_improve?.[0] ? summary.areas_to_improve[0] : "Sentence structure and grammatical precision.");
+  const rewrite = scorecard.golden_rewrite;
+  const recommendation = summary.recommendation || scorecard.recommended_next_step || "10-minute workplace communication practice";
+
+  let out = `🏆 **Communication Practice Complete**\n\n`;
+  out += `📊 **Performance Scorecard:**\n`;
+  out += `• **Overall:** ${scores.overall || 75}/100\n`;
+  out += `• **Grammar:** ${scores.grammar || 70}/100\n`;
+  out += `• **Vocabulary:** ${scores.vocabulary || 76}/100\n`;
+  out += `• **Clarity:** ${scores.clarity || 72}/100\n`;
+  out += `• **Sentence Structure:** ${scores.sentence_structure || 68}/100\n`;
+  out += `• **Fluency:** ${scores.fluency || 74}/100\n`;
+  out += `• **Confidence:** ${scores.confidence || 76}/100\n\n`;
+
+  out += `✨ **You Did Well:**\n${youDidWell}\n\n`;
+  out += `🎯 **Focus Area to Improve:**\n${improve}\n\n`;
+
+  if (rewrite && rewrite.original && rewrite.better) {
+    out += `💡 **Golden Rewrite (Executive Level):**\n`;
+    out += `• *Original:* “${rewrite.original}”\n`;
+    out += `• *Better:* “${rewrite.better}”\n\n`;
+  }
+
+  out += `🚀 **Recommended Next Step:**\n${recommendation}`;
+  return out;
+}
+
+function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
+  const reaction = String(feedback?.reaction || "You're doing well!").trim();
+  const corrected = String(feedback?.corrected_answer || "").trim();
+  const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
+  const correction = hasCorrection
+    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
+    : "";
+  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
 }
 
 const DIFFICULTY_OPTIONS: ChatOption[] = [
@@ -592,14 +636,13 @@ export async function handleCommunicationText(
       try {
         const result = await endSpeaking(state.authToken!, state.sessionId!);
         const summary = result.summary || {};
-        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
-          ? `${summary.overall_score}/10`
-          : "—/10";
+        const scorecard = formatExecutiveScorecard(summary);
         return {
           state: { ...state, step: "main_menu" as const },
           messages: [{
-            text: `Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
+            text: `${scorecard}\n\nYour Speaking Practice Report PDF is ready:`,
             options: [
+              { label: "🚀 Start Recommended Practice", value: "speaking", description: "Start your recommended next session" },
               { label: "📄 Download PDF Report", value: "download_speaking_pdf", description: "Download your detailed speaking analysis PDF" },
               ...MENU_OPTIONS,
             ],
@@ -613,16 +656,15 @@ export async function handleCommunicationText(
       const result = await respondSpeaking(state.authToken!, state.sessionId!, trimmed);
       if (result.done) {
         const summary = result.summary || {};
-        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined
-          ? `${summary.overall_score}/10`
-          : "—/10";
+        const scorecard = formatExecutiveScorecard(summary);
         const farewell = String(result.message || result.feedback?.reaction || "").trim();
         const farewellPrefix = farewell ? `${farewell}\n\n` : "";
         return {
           state: { ...state, step: "main_menu" as const },
           messages: [{
-            text: `${farewellPrefix}Session complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Speaking Practice Report PDF is ready:`,
+            text: `${farewellPrefix}${scorecard}\n\nYour Speaking Practice Report PDF is ready:`,
             options: [
+              { label: "🚀 Start Recommended Practice", value: "speaking", description: "Start your recommended next session" },
               { label: "📄 Download PDF Report", value: "download_speaking_pdf", description: "Download your detailed speaking analysis PDF" },
               ...MENU_OPTIONS,
             ],

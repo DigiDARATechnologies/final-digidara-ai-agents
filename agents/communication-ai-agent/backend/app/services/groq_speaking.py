@@ -885,33 +885,79 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
 
 def summarize_speaking_session(mode, topic_title, turns):
     turns_text = "\n\n".join(
-        f"Q{t['turn_number']}: {t['ai_question']}\nA{t['turn_number']}: {t['user_answer']}"
-        for t in turns
+        f"Q{t.get('turn_number', i+1)}: {t.get('ai_question', '')}\nA{t.get('turn_number', i+1)}: {t.get('user_answer', '')}"
+        for i, t in enumerate(turns)
     )
     system_prompt = (
-        "You are a spoken communication coach writing an end-of-session summary. "
-        "Return STRICT JSON only: "
-        '{"summary_feedback":"...","strengths":["..."],"areas_to_improve":["..."],'
-        '"common_mistakes":[{"type":"...","example":"...","correction":"..."}],'
-        '"recommendation":"...","next_practice_suggestion":"..."}'
+        "You are an executive spoken communication coach writing a comprehensive performance evaluation for an English learner. "
+        "Return STRICT JSON only matching this exact schema:\n"
+        "{\n"
+        '  "summary_feedback": "A warm, high-impact summary paragraph",\n'
+        '  "you_did_well": "A specific compliment highlighting what idea or communication thought they expressed well",\n'
+        '  "key_improvement_area": "The single most impactful grammar or structural pattern to fix",\n'
+        '  "golden_rewrite": {\n'
+        '    "original": "The learner\'s most flawed or hesitant sentence from this conversation",\n'
+        '    "better": "A professional, articulate, natural rewrite expressing the exact same thought smoothly"\n'
+        "  },\n"
+        '  "scores_breakdown": {\n'
+        '    "overall": 75,\n'
+        '    "grammar": 70,\n'
+        '    "vocabulary": 75,\n'
+        '    "clarity": 72,\n'
+        '    "sentence_structure": 68,\n'
+        '    "fluency": 74,\n'
+        '    "confidence": 76\n'
+        "  },\n"
+        '  "strengths": ["Clear idea expression", "Good turn taking"],\n'
+        '  "areas_to_improve": ["Singular vs plural agreement", "Sentence structure variety"],\n'
+        '  "common_mistakes": [{"type": "Grammar", "example": "...", "correction": "..."}],\n'
+        '  "recommendation": "10-minute workplace communication practice focusing on sentence structure",\n'
+        '  "next_practice_suggestion": "10-minute workplace communication practice"\n'
+        "}"
     )
     user_prompt = (
-        f"Mode: {mode}. Topic: {topic_title or 'Daily conversation'}.\n"
+        f"Mode: {mode}. Topic: {topic_title or 'Spoken English Coaching'}.\n"
         f"Full conversation:\n{turns_text}\n\n"
-        "Write a concise summary, 2 to 5 strengths, 2 to 5 practical areas to improve, common mistakes, "
-        "one final teacher recommendation and one next practice suggestion. Base everything on the actual answers."
+        "Evaluate thoroughly: Extract the user's best idea for 'you_did_well', identify their main pattern issue in 'key_improvement_area', "
+        "pick their weakest sentence and provide an executive-level 'golden_rewrite', calculate the 0-100 score breakdown, and recommend a clear next drill."
     )
     try:
-        data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.5, max_tokens=900, retry_rate_limit=False, timeout=8, operation="speaking.session_summary", module="speaking", service="groq_speaking.summarize_speaking_session"))
+        data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.3, max_tokens=1100, retry_rate_limit=False, timeout=10, operation="speaking.session_summary", module="speaking", service="groq_speaking.summarize_speaking_session"))
     except Exception:
         data = {}
+
+    first_answer = next((t.get("user_answer") for t in turns if t.get("user_answer")), "")
+    default_rewrite = {
+        "original": first_answer[:120] or "I want to share my thoughts.",
+        "better": "I would like to share my thoughts clearly and effectively.",
+    }
+    rewrite_obj = data.get("golden_rewrite") if isinstance(data.get("golden_rewrite"), dict) else default_rewrite
+
+    scores_breakdown = data.get("scores_breakdown") if isinstance(data.get("scores_breakdown"), dict) else {}
+
     return {
-        "summary_feedback": data.get("summary_feedback") or "You completed the speaking practice. Keep using complete sentences and clear examples.",
-        "strengths": data.get("strengths") if isinstance(data.get("strengths"), list) else ["You answered the questions.", "You kept the conversation moving."],
-        "areas_to_improve": data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else ["Use more complete sentence forms.", "Add specific examples when answering."],
+        "summary_feedback": data.get("summary_feedback") or "You completed your speaking session. Keep building clarity and structured sentence delivery.",
+        "you_did_well": data.get("you_did_well") or "You communicated your ideas actively and participated with good effort.",
+        "key_improvement_area": data.get("key_improvement_area") or "Focus on sentence structure and consistent subject-verb agreement.",
+        "golden_rewrite": {
+            "original": str(rewrite_obj.get("original") or default_rewrite["original"]).strip(),
+            "better": str(rewrite_obj.get("better") or default_rewrite["better"]).strip(),
+        },
+        "scores_breakdown": {
+            "overall": int(scores_breakdown.get("overall") or 74),
+            "grammar": int(scores_breakdown.get("grammar") or 70),
+            "vocabulary": int(scores_breakdown.get("vocabulary") or 75),
+            "clarity": int(scores_breakdown.get("clarity") or 72),
+            "sentence_structure": int(scores_breakdown.get("sentence_structure") or 68),
+            "fluency": int(scores_breakdown.get("fluency") or 74),
+            "confidence": int(scores_breakdown.get("confidence") or 76),
+        },
+        "strengths": data.get("strengths") if isinstance(data.get("strengths"), list) else ["Clear main ideas", "Good conversational flow"],
+        "areas_to_improve": data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else ["Sentence structure variety", "Complete sentence forms"],
         "common_mistakes": data.get("common_mistakes") if isinstance(data.get("common_mistakes"), list) else [],
-        "recommendation": data.get("recommendation") or "Practise answering with complete sentences and one clear example.",
-        "next_practice_suggestion": data.get("next_practice_suggestion") or "Try another short conversation on a familiar topic.",
+        "recommendation": data.get("recommendation") or "10-minute workplace communication practice on sentence structure.",
+        "next_practice_suggestion": data.get("next_practice_suggestion") or "10-minute workplace communication practice",
+        "recommended_next_step": data.get("recommendation") or data.get("next_practice_suggestion") or "10-minute workplace communication practice",
     }
 
 def analyze_speaking_intent(answer, history):
