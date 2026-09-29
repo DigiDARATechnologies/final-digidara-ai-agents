@@ -156,3 +156,108 @@ test.each([
 ])('microphone error %s is explained', (name, text) => {
   expect(microphoneErrorMessage({ name })).toContain(text);
 });
+
+describe('auto-send after a pause (phone recording)', () => {
+  let level = 0;
+  class LevelAudioContext {
+    state = 'running';
+    resume = jest.fn(() => Promise.resolve());
+    close() { this.state = 'closed'; return Promise.resolve(); }
+    createMediaStreamSource() { return { connect: () => undefined }; }
+    createAnalyser() {
+      return {
+        fftSize: 1024,
+        getByteTimeDomainData(samples: Uint8Array) {
+          const amplitude = Math.round(level * 128);
+          samples.forEach((_, index) => { samples[index] = 128 + (index % 2 ? amplitude : -amplitude); });
+        },
+      };
+    }
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    level = 0;
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: LevelAudioContext });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    delete (window as { AudioContext?: unknown }).AudioContext;
+  });
+
+  async function advance(ms: number) {
+    await act(async () => { jest.advanceTimersByTime(ms); });
+  }
+
+  test('7 seconds of quiet after speaking ends the recording and delivers the text, with a countdown for the last 3', async () => {
+    const transcribe = jest.fn().mockResolvedValue('I usually read before bed');
+    const onResult = jest.fn();
+    const countdown = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true, silenceMs: 7000, onSilenceCountdown: countdown }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+
+    level = 0.2;
+    await advance(1_000);
+    level = 0;
+    await advance(3_500);
+    expect(countdown).not.toHaveBeenCalledWith(expect.any(Number));
+    await advance(1_000);
+    expect(countdown).toHaveBeenCalledWith(3);
+    expect(transcribe).not.toHaveBeenCalled();
+    await advance(3_000);
+    expect(FakeRecorder.latest?.state).toBe('inactive');
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('I usually read before bed', true));
+    expect(countdown).toHaveBeenLastCalledWith(null);
+  });
+
+  test('speaking again during the countdown cancels it', async () => {
+    const transcribe = jest.fn().mockResolvedValue('text');
+    const countdown = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe));
+    act(() => { result.current.start(jest.fn(), { autoStopOnSilence: true, silenceMs: 7000, onSilenceCountdown: countdown }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    level = 0.2;
+    await advance(500);
+    level = 0;
+    await advance(5_200);
+    expect(countdown).toHaveBeenCalledWith(2);
+    level = 0.2;
+    await advance(500);
+    expect(countdown).toHaveBeenLastCalledWith(null);
+    level = 0;
+    await advance(5_000);
+    expect(FakeRecorder.latest?.state).toBe('recording');
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  test('silence before any speech never ends the recording', async () => {
+    const transcribe = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe));
+    act(() => { result.current.start(jest.fn(), { autoStopOnSilence: true, silenceMs: 7000 }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    await advance(20_000);
+    expect(FakeRecorder.latest?.state).toBe('recording');
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  test('a tap resumes a meter the phone created suspended', async () => {
+    let created: LevelAudioContext | null = null;
+    class Suspended extends LevelAudioContext {
+      state = 'suspended';
+      constructor() { super(); created = this; }
+    }
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: Suspended });
+    const { result } = renderHook(() => useSpeechRecognition('en-US', jest.fn()));
+    act(() => { result.current.start(jest.fn(), { autoStopOnSilence: true }); });
+    await advance(0);
+    await waitFor(() => expect(created).not.toBeNull());
+    const before = created!.resume.mock.calls.length;
+    act(() => { document.dispatchEvent(new Event('pointerdown')); });
+    expect(created!.resume.mock.calls.length).toBe(before + 1);
+  });
+});
