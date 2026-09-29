@@ -96,6 +96,11 @@ _PROMPT_TITLES_LIMIT = 80
 _SIMILARITY_POOL_LIMIT = 1000
 _SIMILARITY_THRESHOLD = 0.85
 _GENERATION_ATTEMPTS = 3
+_NEEDS_WEB_SEARCH = re.compile(
+    r"\b(interview|company|companies|hiring|job|placement|recruit\w*|tcs|infosys|wipro|accenture|cognizant"
+    r"|amazon|google|microsoft|meta|flipkart|zoho|deloitte|ibm|oracle|capgemini|hcl)\b",
+    re.IGNORECASE,
+)
 
 
 def normalize_title(title: str) -> str:
@@ -161,7 +166,14 @@ def topic_generator_node(state: ProjectAgentState) -> dict:
     # search can actually ground (a company, a current role/tech-stack
     # expectation) — a real course name has no such external reality to
     # check against, so search would just add cost/latency for nothing.
-    use_web_search = bool(state.get("free_topic_request")) and config.ENABLE_TOPIC_WEB_SEARCH
+    # Only when the request actually names something external to look up (a
+    # company, an interview, a job role): the search model is several times
+    # slower than a plain call, and "Python — Login page" gains nothing from it.
+    use_web_search = (
+        bool(state.get("free_topic_request"))
+        and config.ENABLE_TOPIC_WEB_SEARCH
+        and bool(_NEEDS_WEB_SEARCH.search(state.get("course_name") or ""))
+    )
 
     rejected: list[str] = []
     options: list[dict] = []
