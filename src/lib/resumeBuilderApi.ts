@@ -168,3 +168,27 @@ export async function previewResumePdf(userId: string, resume: Record<string, un
   if (!blob.size) throw new Error("The generated preview was empty. Please try again.");
   return blob;
 }
+
+export interface ResumeChatTurnInput {
+  message: string;
+  step: string;
+  /** What the chat last asked the candidate. */
+  asked?: string;
+  draft: Record<string, unknown>;
+  history: Array<{ role: "student" | "agent"; text: string }>;
+}
+
+export interface ResumeChatTurnResult {
+  intent: "answer" | "edit" | "question" | "other";
+  /** Draft fields to replace (list fields come back complete). */
+  updates: Record<string, unknown>;
+  reply: string;
+  memories_used?: number;
+}
+
+/** One conversational turn: the agent reads the message against the draft,
+ * the recent chat and the candidate's long-term memory (mem0), and returns
+ * the draft fields it adds or changes. */
+export async function resumeChatTurn(userId: string, input: ResumeChatTurnInput) {
+  return invoke<ResumeChatTurnResult>("resume_chat_turn", { user_id: userId, ...input }, 60_000);
+}
