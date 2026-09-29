@@ -166,6 +166,7 @@ class AudioPersistenceContracts(unittest.TestCase):
                 "technical",
                 subject="Python",
                 question="What is a tuple in Python?",
+                content_type="audio/webm",
             )
 
 

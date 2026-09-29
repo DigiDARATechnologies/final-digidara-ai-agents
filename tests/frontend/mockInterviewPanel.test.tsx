@@ -120,6 +120,53 @@ test('voice answers use contextual audio transcription instead of an inaccurate 
   expect(stopTrack).toHaveBeenCalled();
 });
 
+test('mobile recording works without browser speech recognition and submits the OpenAI transcript', async () => {
+  class FakeMobileMediaRecorder {
+    static isTypeSupported = (type: string) => type.startsWith('audio/mp4');
+    state: RecordingState = 'inactive';
+    mimeType: string;
+    private listeners = new Map<string, Array<(event: { data: Blob }) => void>>();
+    constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
+      this.mimeType = options?.mimeType || 'audio/mp4';
+    }
+    addEventListener(name: string, callback: (event: { data: Blob }) => void) {
+      this.listeners.set(name, [...(this.listeners.get(name) || []), callback]);
+    }
+    start() {
+      this.state = 'recording';
+      this.listeners.get('start')?.forEach((callback) => callback({ data: new Blob() }));
+    }
+    stop() {
+      this.listeners.get('dataavailable')?.forEach((callback) => callback({
+        data: new Blob(['mobile voice'], { type: 'audio/mp4' }),
+      }));
+      this.state = 'inactive';
+      this.listeners.get('stop')?.forEach((callback) => callback({ data: new Blob() }));
+    }
+  }
+  const stopTrack = jest.fn();
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] }) },
+  });
+  Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMobileMediaRecorder });
+  Object.defineProperty(global, 'MediaRecorder', { configurable: true, value: FakeMobileMediaRecorder });
+  mockSpeechSupported = false;
+  (transcribeMockInterviewAudio as jest.Mock).mockResolvedValue({
+    transcript: 'A Python list is a mutable ordered collection.',
+  });
+  const onAnswer = jest.fn();
+
+  render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Pause microphone' })).toBeEnabled());
+  expect(screen.getByRole('button', { name: 'Submit answer' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
+
+  await waitFor(() => expect(transcribeMockInterviewAudio).toHaveBeenCalledWith('session', 42, 1, expect.any(Blob)));
+  expect(onAnswer).toHaveBeenCalledWith('A Python list is a mutable ordered collection.', expect.objectContaining({ timedOut: false }));
+  expect(stopTrack).toHaveBeenCalled();
+});
+
 test('completed interview shows concise summary sections and downloads its PDF', async () => {
   (downloadMockInterviewReport as jest.Mock).mockResolvedValue(undefined);
   const completed: MockInterviewFlowState = {
