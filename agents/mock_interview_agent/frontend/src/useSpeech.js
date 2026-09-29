@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback } from "react";
 import { logClientEvent, reportClientError } from "./utils/clientLogger";
+import { joinSpeechSegments, updateSpeechResultSlots } from "./utils/speechTranscript";
 
 const DONE_PHRASE_PATTERNS = [
   /\b(?:i\s+am|i\s*['’]?\s*m)\s+done(?:\s+answering)?[\s,.;:!?]*$/i,
@@ -82,6 +83,9 @@ export default function useSpeech() {
 
       let finalTranscript = "";
       let interimTranscript = "";
+      let completedSessionsTranscript = "";
+      let currentSessionTranscript = "";
+      const resultSlots = new Map();
       let settled = false;
 
       const detachHandlers = () => {
@@ -126,26 +130,21 @@ export default function useSpeech() {
       recognition.onresult = (event) => {
         if (settled) return;
 
-        interimTranscript = "";
         let newlyFinalized = "";
+        const assembled = updateSpeechResultSlots(resultSlots, event);
+        currentSessionTranscript = assembled.displayText;
+        finalTranscript = joinSpeechSegments([completedSessionsTranscript, assembled.finalText]);
+        interimTranscript = assembled.interimText;
+        newlyFinalized = assembled.finalText;
+        const displayedTranscript = joinSpeechSegments([completedSessionsTranscript, currentSessionTranscript]);
 
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += `${transcript} `;
-            newlyFinalized += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        onTranscript?.((finalTranscript + interimTranscript).trim());
+        onTranscript?.(displayedTranscript);
         setIsCandidateSpeaking(true);
 
         // Check the combined final + interim text. Some Web Speech
         // implementations never finalize the last short utterance before
         // ending, which previously made "I'm done" appear to do nothing.
-        const combinedTranscript = (finalTranscript + interimTranscript).trim();
+        const combinedTranscript = displayedTranscript;
         const { matched, matchedPhrase, cleanedText } =
           stripTrailingDonePhrase(combinedTranscript);
         if (matched) {
@@ -155,6 +154,9 @@ export default function useSpeech() {
           });
           finalTranscript = cleanedText;
           interimTranscript = "";
+          completedSessionsTranscript = cleanedText;
+          currentSessionTranscript = "";
+          resultSlots.clear();
           onTranscript?.(finalTranscript);
           complete();
         }
@@ -178,6 +180,15 @@ export default function useSpeech() {
       recognition.onend = () => {
         setIsListening(false);
         if (settled || manuallyStoppingRef.current) return;
+
+        completedSessionsTranscript = joinSpeechSegments([
+          completedSessionsTranscript,
+          currentSessionTranscript || finalTranscript || interimTranscript,
+        ]);
+        finalTranscript = completedSessionsTranscript;
+        interimTranscript = "";
+        currentSessionTranscript = "";
+        resultSlots.clear();
 
         // Native recognition commonly ends after silence. Always restart it;
         // only finishListening() or a voice command may settle this session.

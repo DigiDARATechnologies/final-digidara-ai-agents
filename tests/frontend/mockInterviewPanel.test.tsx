@@ -6,9 +6,10 @@ import type { MockInterviewFlowState } from '../../src/lib/mockInterviewFlow';
 const mockSpeechStart = jest.fn();
 const mockSpeechStop = jest.fn();
 let mockSpeechSupported = false;
+let mockSpeechListening = false;
 jest.mock('../../src/hooks/useSpeechRecognition', () => ({
   __esModule: true,
-  default: () => ({ supported: mockSpeechSupported, listening: false, error: '', start: mockSpeechStart, stop: mockSpeechStop }),
+  default: () => ({ supported: mockSpeechSupported, listening: mockSpeechListening, error: '', start: mockSpeechStart, stop: mockSpeechStop }),
 }));
 jest.mock('../../src/lib/mockInterviewApi', () => ({
   downloadMockInterviewReport: jest.fn(),
@@ -24,6 +25,7 @@ const live: MockInterviewFlowState = {
 beforeEach(() => {
   sessionStorage.clear();
   mockSpeechSupported = false;
+  mockSpeechListening = false;
   mockSpeechStart.mockReset();
   mockSpeechStop.mockReset();
   (transcribeMockInterviewAudio as jest.Mock).mockReset();
@@ -74,11 +76,18 @@ test('voice answers use contextual audio transcription instead of an inaccurate 
       this.state = 'inactive';
       this.listeners.get('stop')?.forEach((callback) => callback({ data: new Blob() }));
     }
+    pause() {
+      this.state = 'paused';
+    }
+    resume() {
+      this.state = 'recording';
+    }
   }
   const stopTrack = jest.fn();
+  const getUserMedia = jest.fn().mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] });
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: { getUserMedia: jest.fn().mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] }) },
+    value: { getUserMedia },
   });
   Object.defineProperty(window, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder });
   Object.defineProperty(global, 'MediaRecorder', { configurable: true, value: FakeMediaRecorder });
@@ -92,8 +101,18 @@ test('voice answers use contextual audio transcription instead of an inaccurate 
   });
   const onAnswer = jest.fn();
 
-  render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  const { rerender } = render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
   await waitFor(() => expect(screen.getByDisplayValue('It is an in the point URL that returns Jason.')).toBeInTheDocument());
+  // Pausing browser recognition must pause, rather than finalize, the complete
+  // audio capture. Resuming then preserves one blob for enhanced transcription.
+  mockSpeechListening = true;
+  rerender(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Pause microphone' }));
+  mockSpeechListening = false;
+  rerender(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Start microphone' }));
+  await waitFor(() => expect(mockSpeechStart).toHaveBeenCalledTimes(2));
+  expect(getUserMedia).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
 
   await waitFor(() => expect(transcribeMockInterviewAudio).toHaveBeenCalledWith('session', 42, 1, expect.any(Blob)));

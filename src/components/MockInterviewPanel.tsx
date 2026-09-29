@@ -51,7 +51,6 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const captureIncompleteRef = useRef(false);
   const deadlineRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const onAnswerRef = useRef(onAnswer);
@@ -81,6 +80,14 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
 
   async function beginAudioCapture(): Promise<boolean> {
     if (!("MediaRecorder" in window) || !navigator.mediaDevices?.getUserMedia) return false;
+    // Mobile Web Speech may end after a pause even while MediaRecorder is
+    // correctly capturing the full answer. Restart only recognition in that
+    // case; resetting this recorder would discard the answer's first part.
+    if (mediaRecorderRef.current?.state === "recording") return true;
+    if (mediaRecorderRef.current?.state === "paused") {
+      mediaRecorderRef.current.resume();
+      return true;
+    }
     closeAudioStream();
     audioChunksRef.current = [];
     try {
@@ -143,7 +150,6 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     spokenRef.current = "";
     typedRef.current = "";
     typedEditedRef.current = false;
-    captureIncompleteRef.current = false;
     const storageKey = `digidara_mock_interview_deadline_${questionKey}`;
     const existingDeadline = Number(sessionStorage.getItem(storageKey));
 
@@ -212,14 +218,19 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     }
     submittedRef.current = true;
     speech.stop();
+    const shouldImproveTranscript = !typedEditedRef.current
+      && Boolean(mediaRecorderRef.current)
+      && Boolean(state.sessionToken && state.interviewId && state.questionOrder);
+    if (shouldImproveTranscript) {
+      setTranscribing(true);
+      setVoiceStatus("Improving transcription...");
+    }
     const recordedAudio = await finishAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
     const elapsed = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0;
     let finalAnswer = initialAnswer;
-    if (!typedEditedRef.current && !captureIncompleteRef.current && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
-      setTranscribing(true);
-      setVoiceStatus("Improving transcription...");
+    if (shouldImproveTranscript && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
       try {
         const result = await transcribeMockInterviewAudio(state.sessionToken, state.interviewId, state.questionOrder, recordedAudio);
         if (result.transcript?.trim()) {
@@ -234,6 +245,9 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       } finally {
         setTranscribing(false);
       }
+    } else if (shouldImproveTranscript) {
+      setVoiceStatus("Using the live transcript because no complete audio recording was available.");
+      setTranscribing(false);
     }
     onAnswerRef.current(finalAnswer, { timeTakenSec: Math.max(0, Math.min(timeLimit, elapsed)), timedOut: timedOut && !finalAnswer });
   }
@@ -309,8 +323,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
         {speech.supported && <button type="button" className="btn btn-outline" disabled={busy || transcribing || secondsLeft === null} onClick={() => {
           if (speech.listening) {
             speech.stop();
-            captureIncompleteRef.current = true;
-            void finishAudioCapture();
+            if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.pause();
             setVoiceStatus("Microphone paused - restart it or type below.");
           }
           else {
