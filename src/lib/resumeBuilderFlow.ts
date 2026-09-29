@@ -1032,7 +1032,7 @@ async function applyTypedEdit(state: ResumeBuilderFlowState, user: User, value: 
 function withHistory(result: ResumeBuilderFlowResult, previous: ResumeChatTurnHistory, studentText: string): ResumeBuilderFlowResult {
   const history: ResumeChatTurnHistory = [
     ...previous,
-    { role: "student", text: studentText },
+    { role: "student" as const, text: studentText },
     ...result.messages.map((message) => ({ role: "agent" as const, text: message.text })),
   ].slice(-HISTORY_LIMIT);
   return { ...result, state: { ...result.state, history } };
