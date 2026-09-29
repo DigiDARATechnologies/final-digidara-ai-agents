@@ -93,6 +93,80 @@ describe("Resume Builder workflow", () => {
     expect(result.state.draft?.projects?.[0]).toEqual(expect.objectContaining({ title: "Sales dashboard" }));
   });
 
+  test("accepts a project written with a normal comma instead of a pipe", async () => {
+    const result = await handleResumeBuilderText(
+      { step: "awaiting_project", draft: {} },
+      { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+      "Sales Dashboard, built a Power BI dashboard that reduced weekly reporting time",
+    );
+
+    expect(result.state.draft?.projects?.[0]).toEqual({
+      title: "Sales Dashboard",
+      description: "built a Power BI dashboard that reduced weekly reporting time",
+    });
+  });
+
+  test("asks for the exact missing field without discarding the draft", async () => {
+    const draft = {
+      name: "Test User",
+      email: "test@example.com",
+      targetRole: "Data Analyst",
+      experienceLevel: "fresher" as const,
+      education: [{ level: "UG", degree: "BCA", school: "State University" }],
+      projects: [{ title: "Dashboard", description: "Built a Power BI dashboard" }],
+    };
+    const result = await handleResumeBuilderText(
+      { step: "confirming", draft },
+      { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+      "create_now",
+    );
+
+    expect(result.state.step).toBe("awaiting_title");
+    expect(result.state.draft).toEqual(draft);
+    expect(result.messages[0].text).toContain("resume title is missing");
+    expect(result.messages[0].text).toContain("other resume details are still saved");
+  });
+
+  test("hydrates enrichment choices from the saved resume", async () => {
+    const { getResume } = jest.requireMock("../../src/lib/resumeBuilderApi") as { getResume: jest.Mock };
+    getResume.mockResolvedValueOnce({
+      id: 7,
+      title: "Data Analyst Resume",
+      target_role: "Data Analyst",
+      experience_level: "fresher",
+      summary: "Data analyst with verified project experience and strong reporting skills.",
+      personal_info: { name: "Alex Morgan", email: "alex@example.com", links: ["LinkedIn: https://linkedin.com/in/alex", "GitHub: https://github.com/alex"] },
+      skills: ["Python", "SQL", "Power BI", "Excel", "Pandas", "Tableau"],
+      education: [{ level: "UG", degree: "BCA", school: "State University" }],
+      projects: [{ title: "Dashboard", description: "Built reports" }, { title: "Forecast", description: "Built a forecast model" }],
+      certifications: [{ name: "Power BI Associate" }],
+      achievements: [{ title: "Hackathon finalist" }],
+    });
+
+    const result = await handleResumeBuilderText(
+      { step: "reviewing", resumeId: 7, draft: { targetRole: "Data Analyst" } },
+      { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+      "enrich_ats",
+    );
+
+    expect(result.state.step).toBe("awaiting_enrichment_choice");
+    expect(result.state.draft).toEqual(expect.objectContaining({ title: "Data Analyst Resume", name: "Alex Morgan", skills: ["Python", "SQL", "Power BI", "Excel", "Pandas", "Tableau"] }));
+    expect(result.messages[0].options).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "enrich_project" }),
+      expect.objectContaining({ value: "enrich_skills" }),
+    ]));
+  });
+
+  test("allows an experienced candidate with work history to create without UG details", async () => {
+    const result = await handleResumeBuilderText(
+      { step: "confirming", draft: { title: "Engineer Resume", name: "Test User", email: "test@example.com", targetRole: "Software Engineer", experienceLevel: "experienced", experience: [{ company: "Acme", role: "Engineer" }] } },
+      { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+      "create_now",
+    );
+    expect(result.state.step).toBe("reviewing");
+    expect(result.state.resumeId).toBe(99);
+
+  });
   test("blocks final creation when undergraduate education is missing", async () => {
     const result = await handleResumeBuilderText(
       { step: "confirming", draft: { title: "Analyst Resume", name: "Test User", email: "test@example.com", targetRole: "Data Analyst", experienceLevel: "fresher", projects: [{ title: "Dashboard", description: "Power BI dashboard" }] } },
