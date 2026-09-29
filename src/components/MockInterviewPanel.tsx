@@ -10,8 +10,8 @@ const TIME_LIMIT_SECONDS = { beginner: 60, intermediate: 90, advanced: 120 } as 
 
 /** Microphone level above which the candidate counts as speaking, and for how
  * many consecutive 100ms samples -- a single click or tap is not speech. */
-const VOICE_LEVEL = 0.02;
-const VOICE_SAMPLES = 3;
+const VOICE_LEVEL = 0.015;
+const VOICE_SAMPLES = 2;
 /** Phone live preview: how often the answer so far is re-transcribed, and at
  * most how many times per answer (about two minutes of speech). */
 const PREVIEW_INTERVAL_MS = 3_000;
@@ -92,6 +92,15 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   // none, the candidate can only type, so nothing happens automatically.
   const micActiveRef = useRef(false);
   const vadStopRef = useRef<(() => void) | null>(null);
+  // The volume meter is actually measuring. A phone can create it suspended
+  // (not started from a tap), and then it only ever reads silence.
+  const vadWorkingRef = useRef(false);
+  // The interviewer's own voice is playing ("Hey, are you there?"). Tracked
+  // here rather than read from speechSynthesis.speaking, which Android Chrome
+  // can leave stuck at true -- that silenced the meter for the whole answer.
+  const ttsActiveRef = useRef(false);
+  const lastPreviewTextRef = useRef("");
+  const previewFailuresRef = useRef(0);
   const [awayPrompt, setAwayPrompt] = useState(false);
   const [silenceHint, setSilenceHint] = useState("");
   // Phone live preview.
@@ -154,6 +163,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     previewCountRef.current = 0;
     previewChunksRef.current = 0;
     lastPreviewAtRef.current = 0;
+    lastPreviewTextRef.current = "";
+    previewFailuresRef.current = 0;
     setAwayPrompt(false);
     setSilenceHint("");
   }
@@ -164,7 +175,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     if (!text || submittedRef.current) return;
     if (isQuestionEcho(text, state.question) || isQuestionEcho(text, AWAY_PROMPT)) return;
     // The browser recognizer can pick up the interviewer's own voice.
-    if (!fromPreview && typeof window !== "undefined" && window.speechSynthesis?.speaking) return;
+    if (!fromPreview && ttsActiveRef.current) return;
     if (!fromPreview) markVoice();
     spokenRef.current = text;
     setSpokenAnswer(text);
@@ -184,14 +195,24 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     let context: AudioContext;
     try {
       context = new AudioContextCtor();
-      void context.resume?.();
+      const audioContext = context;
+      const updateWorking = () => { vadWorkingRef.current = audioContext.state === "running"; };
+      // Started without a tap, a phone may keep it suspended until the next
+      // one: resume on the first touch, and until then the live preview does
+      // not wait for the meter to hear speech.
+      const resumeOnTouch = () => { void audioContext.resume?.().then(updateWorking, updateWorking); };
+      document.addEventListener("pointerdown", resumeOnTouch);
+      document.addEventListener("touchstart", resumeOnTouch);
+      audioContext.onstatechange = updateWorking;
+      updateWorking();
+      void audioContext.resume?.().then(updateWorking, updateWorking);
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
       context.createMediaStreamSource(stream).connect(analyser);
       const samples = new Uint8Array(analyser.fftSize);
       let loud = 0;
       const timer = window.setInterval(() => {
-        if (micPausedRef.current || window.speechSynthesis?.speaking) {
+        if (micPausedRef.current || ttsActiveRef.current) {
           loud = 0;
           return;
         }
@@ -206,6 +227,9 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       }, 100);
       vadStopRef.current = () => {
         window.clearInterval(timer);
+        document.removeEventListener("pointerdown", resumeOnTouch);
+        document.removeEventListener("touchstart", resumeOnTouch);
+        vadWorkingRef.current = false;
         if (context.state !== "closed") void context.close();
         vadStopRef.current = null;
       };
@@ -472,12 +496,27 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     transcribeMockInterviewPreview(state.sessionToken, state.interviewId, state.questionOrder, audio)
       .then((result) => {
         if (session !== previewSessionRef.current || submittedRef.current) return;
-        const text = result.transcript?.trim();
-        if (text) acceptVoiceTranscript(text, true);
+        if (previewFailuresRef.current >= 2) setVoiceStatus(microphoneStatus(true, false));
+        previewFailuresRef.current = 0;
+        const text = result.transcript?.trim() ?? "";
+        if (!text || isQuestionEcho(text, state.question) || isQuestionEcho(text, AWAY_PROMPT)) return;
+        // New words are proof of speech even when the volume meter hears
+        // nothing, so the silence rules keep working without it.
+        if (text !== lastPreviewTextRef.current) {
+          lastPreviewTextRef.current = text;
+          markVoice();
+        }
+        acceptVoiceTranscript(text, true);
       })
-      .catch(() => {
-        // A missed preview only delays the live text; the full recording is
-        // still transcribed on submit.
+      .catch((error) => {
+        // One missed preview only delays the live text; the full recording is
+        // still transcribed on submit. Repeated failures are shown.
+        if (session !== previewSessionRef.current || submittedRef.current) return;
+        previewFailuresRef.current += 1;
+        if (previewFailuresRef.current === 2) {
+          const reason = error instanceof Error && error.message ? ` (${error.message})` : "";
+          setVoiceStatus(`Live text isn't available right now${reason}. Keep speaking - your whole answer is still turned into text when you submit.`);
+        }
       })
       .finally(() => {
         if (session === previewSessionRef.current) previewInFlightRef.current = false;
@@ -487,7 +526,13 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   function askAreYouThere() {
     promptedAtRef.current = Date.now();
     setAwayPrompt(true);
-    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) void speakBrowserText(AWAY_PROMPT);
+    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+      ttsActiveRef.current = true;
+      const done = () => { ttsActiveRef.current = false; };
+      // A safety net in case the browser never reports the end.
+      window.setTimeout(done, 4_000);
+      void speakBrowserText(AWAY_PROMPT, { onEnd: done, onError: done }).then((started) => { if (!started) done(); });
+    }
   }
 
   function endForInactivity() {
@@ -523,7 +568,10 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       if (action === "submit") void submitAnswerRef.current(typedRef.current || spokenRef.current);
       else if (action === "prompt") askAreYouThere();
       else if (action === "end") endForInactivity();
-      else if (mobileVoice && !speech.listening && lastVoiceAtRef.current !== null
+      // Live text on a phone. Wait for the meter to hear speech only when the
+      // meter is known to work; otherwise every new stretch of audio is sent.
+      else if (mobileVoice && !speech.listening
+        && (lastVoiceAtRef.current !== null || !vadWorkingRef.current)
         && snapshot.now - lastPreviewAtRef.current >= PREVIEW_INTERVAL_MS) refreshLivePreview();
     };
     const timer = window.setInterval(check, 250);

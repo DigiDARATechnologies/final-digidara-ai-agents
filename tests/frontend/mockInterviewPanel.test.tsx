@@ -396,4 +396,47 @@ describe('silence handling and live text on a phone', () => {
     expect(onExit).not.toHaveBeenCalled();
     expect(onAnswer).not.toHaveBeenCalled();
   });
+  test('live text still works when the phone keeps the volume meter suspended, and new words count as speech', async () => {
+    class SuspendedAudioContext extends FakeAudioContext {
+      state = 'suspended';
+      resume() { return Promise.resolve(); }
+    }
+    Object.defineProperty(window, 'AudioContext', { configurable: true, value: SuspendedAudioContext });
+    (transcribeMockInterviewPreview as jest.Mock).mockReset()
+      .mockResolvedValueOnce({ transcript: 'A view' })
+      .mockResolvedValue({ transcript: 'A view function handles a route' });
+    (transcribeMockInterviewAudio as jest.Mock).mockResolvedValue({ transcript: 'A view function handles a route.' });
+    const { onAnswer } = await startRecording();
+
+    await advance(1_000);
+    await waitFor(() => expect(screen.getByDisplayValue('A view')).toBeInTheDocument());
+    await advance(3_000);
+    await waitFor(() => expect(screen.getByDisplayValue('A view function handles a route')).toBeInTheDocument());
+    // The text stopped growing: that is the pause, even though the meter hears nothing.
+    expect(onAnswer).not.toHaveBeenCalled();
+    await advance(6_000);
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith('A view function handles a route.', expect.objectContaining({ timedOut: false })));
+  });
+
+  test('a speechSynthesis "speaking" flag stuck at true (Android Chrome) does not silence the meter', async () => {
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speaking: true, cancel: jest.fn() } });
+    try {
+      await startRecording();
+      micLevel = 0.2;
+      await advance(1_000);
+      expect(transcribeMockInterviewPreview).toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByDisplayValue('A view function handles a route')).toBeInTheDocument());
+    } finally {
+      delete (window as { speechSynthesis?: unknown }).speechSynthesis;
+    }
+  });
+
+  test('repeated live-text failures are shown instead of failing silently', async () => {
+    (transcribeMockInterviewPreview as jest.Mock).mockReset().mockRejectedValue(new Error('Agent did not respond'));
+    await startRecording();
+    micLevel = 0.2;
+    await advance(4_000);
+    await waitFor(() => expect(screen.getByText(/Live text isn't available right now \(Agent did not respond\)/)).toBeInTheDocument());
+    expect(screen.getByText(/still turned into text when you submit/)).toBeInTheDocument();
+  });
 });
