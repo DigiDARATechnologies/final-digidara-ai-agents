@@ -42,11 +42,23 @@ def build_scorecard(rows):
             else row.get("ideal_answer")
         )
         marks = VERDICT_MARKS.get(effective_verdict) if effective_verdict else None
+        status = (
+            "timed_out" if row.get("timed_out") else
+            "skipped" if row.get("processing_status") == "skipped" else
+            "answered" if row.get("answer") is not None else "unanswered"
+        )
+        if status in {"timed_out", "skipped"}:
+            marks = 0
+
+        display_answer = (
+            "Not answered (time expired)" if status == "timed_out" else
+            "Skipped" if status == "skipped" else row["answer"]
+        )
 
         scorecard.append({
             "question_number": len(scorecard) + 1,
             "question": row["question"],
-            "answer": row["answer"],
+            "answer": display_answer,
             "answer_audio_path": row.get("answer_audio_path"),
             "followup": ({
                 "question": followup["question"],
@@ -63,6 +75,8 @@ def build_scorecard(rows):
             ),
             "ideal_answer": effective_ideal_answer,
             "marks": marks,
+            "status": status,
+            "timed_out": bool(row.get("timed_out")),
         })
 
     total_marks = sum(

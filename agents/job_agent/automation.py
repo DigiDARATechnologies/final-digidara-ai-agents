@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE
 from .db import get_db
-from .providers.sync import queue_adzuna_collection, queue_greenhouse_collection, queue_jsearch_collection
+from .providers.sync import queue_adzuna_collection, queue_jsearch_collection
 from .service import prune_expired_jobs
 
 
@@ -109,7 +109,7 @@ def queue_due_automation(now=None):
         # 1. 30-Day Automated Retention Pruning
         prune_outcome = prune_expired_jobs(max_age_days=30)
 
-        # 2. Daily Automated Ingestion from Adzuna & JSearch
+        # 2. Daily Automated Ingestion from Adzuna & JSearch (RapidAPI)
         total_queued = 0
         adzuna_res = queue_adzuna_collection(admin_id=None)
         if adzuna_res.get("ready"):
@@ -118,13 +118,6 @@ def queue_due_automation(now=None):
         jsearch_res = queue_jsearch_collection(admin_id=None)
         if jsearch_res.get("ready"):
             total_queued += jsearch_res.get("queued_count", 0)
-
-        # 3. Greenhouse collection if active
-        try:
-            gh_res = queue_greenhouse_collection(admin_id=None)
-            total_queued += gh_res.get("queued_count", 0)
-        except Exception:
-            pass
 
         _record_outcome(queued_count=total_queued)
         return {

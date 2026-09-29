@@ -14,8 +14,9 @@ import {
   type ResumeEditProposal,
   type ResumeCreateInput,
 } from "./resumeBuilderApi";
+import { parseLinkedInExport } from "./linkedinExport";
 
-export type ResumeBuilderStep = "choose_workflow" | "awaiting_experience_level" | "awaiting_title" | "awaiting_name" | "awaiting_email" | "awaiting_phone" | "awaiting_location" | "awaiting_role" | "awaiting_summary" | "awaiting_skills" | "awaiting_experience" | "awaiting_experience_more" | "awaiting_education" | "awaiting_education_more" | "awaiting_project" | "awaiting_project_more" | "awaiting_linkedin" | "awaiting_github" | "awaiting_portfolio" | "awaiting_certifications" | "awaiting_certifications_more" | "awaiting_achievements" | "awaiting_achievements_more" | "confirming" | "awaiting_enrichment_choice" | "awaiting_upload_role" | "awaiting_upload_job_description" | "awaiting_upload" | "awaiting_import_linkedin" | "awaiting_import_github" | "awaiting_import_portfolio" | "reviewing" | "awaiting_edit_instruction" | "awaiting_edit_confirmation" | "awaiting_template" | "completed" | "error";
+export type ResumeBuilderStep = "choose_workflow" | "awaiting_experience_level" | "awaiting_title" | "awaiting_name" | "awaiting_email" | "awaiting_phone" | "awaiting_location" | "awaiting_role" | "awaiting_summary" | "awaiting_skills" | "awaiting_experience" | "awaiting_experience_more" | "awaiting_education" | "awaiting_education_more" | "awaiting_project" | "awaiting_project_more" | "awaiting_linkedin" | "awaiting_github" | "awaiting_portfolio" | "awaiting_certifications" | "awaiting_certifications_more" | "awaiting_achievements" | "awaiting_achievements_more" | "confirming" | "awaiting_enrichment_choice" | "awaiting_upload_role" | "awaiting_upload_job_description" | "awaiting_upload" | "awaiting_paste_text" | "awaiting_import_zip" | "awaiting_import_linkedin" | "awaiting_import_github" | "awaiting_import_portfolio" | "reviewing" | "awaiting_edit_instruction" | "awaiting_edit_confirmation" | "awaiting_template" | "completed" | "error";
 interface ResumeDraft {
   title?: string; name?: string; email?: string; phone?: string; location?: string; targetRole?: string; jobDescription?: string; experienceLevel?: "fresher" | "experienced"; summary?: string;
   skills?: string[]; experience?: ResumeCreateInput["experience"]; education?: ResumeCreateInput["education"]; projects?: ResumeCreateInput["projects"]; certifications?: NonNullable<ResumeCreateInput["certifications"]>; achievements?: NonNullable<ResumeCreateInput["achievements"]>; links?: string[];
@@ -25,7 +26,12 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
 export interface ResumeBuilderMessage { text: string; options?: ChatOption[]; }
 export interface ResumeBuilderFlowResult { state: ResumeBuilderFlowState; messages: ResumeBuilderMessage[]; }
 export const createInitialResumeBuilderState = (): ResumeBuilderFlowState => ({ step: "choose_workflow" });
-const choices: ChatOption[] = [{ label: "Create a resume", value: "new", description: "Start with a blank, editable resume." }, { label: "Upload an existing resume", value: "upload", description: "Import PDF, DOC, DOCX, or TXT for review." }];
+const choices: ChatOption[] = [
+  { label: "Create a resume", value: "new", description: "Start with a blank, editable resume." },
+  { label: "Upload an existing resume", value: "upload", description: "Import PDF, DOC, DOCX, or TXT for review." },
+  { label: "Paste your LinkedIn or notes", value: "paste_text", description: "Paste your LinkedIn profile text, or any rough notes." },
+  { label: "Import your LinkedIn export", value: "import_linkedin_zip", description: "The ZIP from LinkedIn's own “Get a copy of your data” — your own data, no login sharing, no scraping." },
+];
 const skipOption: ChatOption[] = [{ label: "Skip this section", value: "skip", description: "You can add it later from your resume editor." }];
 const restartOption: ChatOption[] = [{ label: "Start over", value: "restart", description: "Discard this draft and begin again." }];
 const editOptions: ChatOption[] = [
@@ -43,6 +49,50 @@ const editConfirmationOptions: ChatOption[] = [
 
 function clean(value: string) { return value.trim(); }
 function isSkip(value: string) { return clean(value).toLowerCase() === "skip"; }
+
+export function isKeyboardMashOrGibberish(text: string): boolean {
+  const t = clean(text).toLowerCase();
+  if (!t) return false;
+  // 1. 3+ repeated identical characters (e.g. 'aaaa', 'zzzz')
+  if (/([a-z])\1{2,}/i.test(t)) return true;
+  // 2. 2-3 char looping sequences (e.g. 'asdasd', 'jkjkjk', 'ababab')
+  if (t.length >= 4 && /^([a-z]{2,3})\1{2,}$/i.test(t)) return true;
+  // 3. 4+ consecutive letters from QWERTY rows (forward and backward)
+  const keyboardRows = [
+    "qwertyuiop", "poiuytrewq",
+    "asdfghjkl", "lkjhgfdsa",
+    "zxcvbnm", "mnbvcxz",
+  ];
+  for (const row of keyboardRows) {
+    for (let i = 0; i <= row.length - 4; i++) {
+      const sub = row.substring(i, i + 4);
+      if (t.includes(sub)) return true;
+    }
+  }
+  // 4. 5+ consecutive consonants
+  if (/[bcdfghjklmnpqrstvwxz]{5,}/i.test(t)) return true;
+  // 5. Any word with length >= 4 having no vowels at all
+  const words = t.split(/\s+/);
+  for (const word of words) {
+    if (word.length >= 4 && !/[aeiouy]/i.test(word)) return true;
+  }
+  return false;
+}
+
+export function isValidHumanCandidateName(text: string): boolean {
+  const trimmed = clean(text);
+  if (trimmed.length < 2 || trimmed.length > 50) return false;
+  // Reject digits, email symbols, URLs, special punctuation
+  if (/[\d@#$%^&*()_+<>{}[\]/\\~=]/.test(trimmed)) return false;
+  // Reject questions or conversational commands
+  if (/\?|^(can\s+you|what|how|why|who|help|hello|hi|hey|tell\s+me|show\s+me)\b/i.test(trimmed)) return false;
+  // Reject keyboard-mash and gibberish (e.g. 'wertyui', 'qwerty', 'asdfgh', 'aaaa')
+  if (isKeyboardMashOrGibberish(trimmed)) return false;
+  // Reject academic degrees, education phrases, or role titles mistakenly entered as name
+  const academicTerms = /\b(b\.?tech|b\.?e\.?|m\.?tech|m\.?e\.?|mca|bca|bsc|b\.?sc|bcom|b\.?com|mba|engineering|degree|diploma|college|university|school|computer\s+science|information\s+technology|data\s+science|developer|engineer|fresher|resume)\b/i;
+  if (academicTerms.test(trimmed)) return false;
+  return true;
+}
 function hasUndergraduateEducation(education: ResumeCreateInput["education"] | undefined) {
   return (education || []).some((item) => {
     const level = String(item.level || "").toUpperCase();
@@ -1032,6 +1082,16 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
   if (state.step === "choose_workflow") {
     if (value === "new") return { state: { ...state, step: "awaiting_experience_level", draft: {} }, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: [{ label: "Fresher / student", value: "fresher", description: "A concise, one-page resume focused on education, projects, skills, and internships." }, { label: "Experienced professional", value: "experienced", description: "A resume designed for up to two pages, with room for career impact and achievements." }] }] };
     if (value === "upload") return { state: { ...state, step: "awaiting_upload_role", draft: {} }, messages: [{ text: "What role are you targeting with this resume? For example: Data Analyst or Python Developer." }] };
+    if (value === "paste_text") return { state: { ...state, step: "awaiting_paste_text", draft: {} }, messages: [{ text: "Paste your LinkedIn “About” and experience text, or any rough notes about your background, and I'll turn it into a resume." }] };
+    if (value === "import_linkedin_zip") return { state: { ...state, step: "awaiting_import_zip", draft: {} }, messages: [{ text: "Attach the ZIP using the paperclip button. On LinkedIn: Settings & Privacy → Data privacy → Get a copy of your data. It can take LinkedIn a little while to prepare it — come back here once you have the download." }] };
+  }
+  if (state.step === "awaiting_paste_text") {
+    const text = clean(value);
+    if (text.length < 20) return { state, messages: [{ text: "That looks too short to extract a resume from — paste more of your LinkedIn “About”/experience text or notes." }] };
+    return importResumeBuilderFile(state, user, new File([text], "pasted-notes.txt", { type: "text/plain" }));
+  }
+  if (state.step === "awaiting_import_zip") {
+    return { state, messages: [{ text: "Attach the LinkedIn export ZIP using the paperclip button whenever you have it." }] };
   }
   if (state.step === "awaiting_experience_level") {
     if (value !== "fresher" && value !== "experienced") return { state, messages: [{ text: "Please choose Fresher / student or Experienced professional from the options." }] };
@@ -1045,8 +1105,16 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     return { state: updateDraft(state, { title: clean(value) }, "awaiting_name"), messages: [{ text: "What is your full name?" }] };
   }
   if (state.step === "awaiting_name") {
-    if (clean(value).length < 2) return { state, messages: [{ text: "Please enter your full name." }] };
-    return { state: updateDraft(state, { name: clean(value) }, "awaiting_email"), messages: [{ text: "What is your professional email address?" }] };
+    const candidateName = clean(value);
+    if (!isValidHumanCandidateName(candidateName)) {
+      return {
+        state,
+        messages: [{
+          text: "Please enter your real full name (for example, ‘Priya Sharma’ or ‘Arun Kumar’) rather than educational qualifications, random characters, or questions.",
+        }],
+      };
+    }
+    return { state: updateDraft(state, { name: candidateName }, "awaiting_email"), messages: [{ text: "What is your professional email address?" }] };
   }
   if (state.step === "awaiting_email") {
     const email = clean(value).toLowerCase();
@@ -1585,7 +1653,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
       messages: [enrichmentChoiceMessage(state.draft || {})],
     };
   }
-  return { state, messages: [{ text: "Choose Create a resume or Upload an existing resume to continue.", options: choices }] };
+  return { state, messages: [{ text: "Choose how you'd like to start.", options: choices }] };
 }
 
 export async function processUploadedResume(
@@ -1690,7 +1758,62 @@ export async function processUploadedResume(
   }
 }
 
+/** LinkedIn's own "Get a copy of your data" export -- a ZIP of CSVs the member downloads
+ * themselves (Settings & Privacy > Data privacy). Legitimate real LinkedIn content: no
+ * scraping, no third-party data broker, nothing beyond what LinkedIn itself hands the
+ * member. Structured data already, so (unlike a plain resume upload) it skips straight
+ * to creating the resume rather than asking for a target role first. */
+async function processLinkedInExportFile(state: ResumeBuilderFlowState, user: User, file: File): Promise<ResumeBuilderFlowResult> {
+  try {
+    const { input, counts } = await parseLinkedInExport(file);
+    if (!counts.experience && !counts.education && !counts.skills && !counts.certifications && !input.summary) {
+      throw new Error("That didn't look like a LinkedIn data export — it's the ZIP from Settings & Privacy → Data privacy → Get a copy of your data.");
+    }
+    const targetRole = input.target_role || state.draft?.targetRole || "";
+    const created = await createResume(user.id, {
+      title: input.title || "My Resume",
+      target_role: targetRole,
+      experience_level: "experienced",
+      summary: input.summary || "",
+      personal_info: { name: user.name, email: user.email, phone: user.mobile },
+      skills: input.skills || [],
+      experience: input.experience || [],
+      education: input.education || [],
+      projects: [],
+      certifications: input.certifications || [],
+    });
+    const id = Number(created.id);
+    let finalScore = 0;
+    let analysis: Record<string, unknown> | undefined;
+    try {
+      const reanalysis = await analyzeSavedResume(user.id, id, "", targetRole);
+      analysis = reanalysis as Record<string, unknown>;
+      const scoreNum = Number((reanalysis.score as { normalized_score?: number })?.normalized_score);
+      if (Number.isFinite(scoreNum)) finalScore = scoreNum;
+    } catch {
+      // The import itself succeeded; a transient scoring failure shouldn't block it.
+    }
+    const title = String(created.title || targetRole || "My Resume");
+    return {
+      state: { ...state, step: "reviewing", resumeId: id, resumeTitle: title, atsScore: finalScore, draft: { ...state.draft, targetRole, title } },
+      messages: [buildAtsScorecardMessage(file.name, targetRole, finalScore, analysis, undefined, false)],
+    };
+  } catch (error) {
+    return {
+      state: { ...state, step: "error", error: (error as Error).message },
+      messages: [{
+        text: `I could not read that LinkedIn export: ${(error as Error).message}`,
+        options: [
+          { label: "Try again", value: "retry_upload", description: "Attach another LinkedIn export ZIP." },
+          { label: "Create a resume", value: "create_resume", description: "Create your resume step-by-step." },
+        ],
+      }],
+    };
+  }
+}
+
 export async function importResumeBuilderFile(state: ResumeBuilderFlowState, user: User, file: File): Promise<ResumeBuilderFlowResult> {
+  if (file.name.toLowerCase().endsWith(".zip")) return processLinkedInExportFile(state, user, file);
   const targetRole = state.draft?.targetRole?.trim() || "";
   if (!targetRole) {
     return {

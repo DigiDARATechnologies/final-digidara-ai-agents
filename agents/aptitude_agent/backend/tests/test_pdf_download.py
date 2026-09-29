@@ -158,6 +158,21 @@ def test_old_attempt_pdf_uses_validated_download_timezone_header(app,client,auth
     assert "12:24 PM IST" in _pdf_text(response)
 
 
+def test_old_attempt_pdf_defaults_to_ist_without_saved_or_header_timezone(app,client,auth_headers):
+    """Legacy attempts without a timezone must still show the local IST time."""
+    with app.app_context():
+        student=Student.query.filter_by(email="learner@example.com").one()
+        test_id=_completed_test(student.id)
+        test=db.session.get(AptitudeTest,test_id)
+        test.completed_at=datetime(2026,9,12,6,54,tzinfo=timezone.utc)
+        test.timezone=None
+        db.session.commit()
+
+    response=client.get(f"/api/aptitude/tests/{test_id}/download",headers=auth_headers)
+    assert response.status_code==200
+    assert "12:24 PM IST" in _pdf_text(response)
+
+
 def test_pdf_download_enforces_owner_existence_and_completion(app,client,auth_headers):
     with app.app_context():
         student=Student.query.filter_by(email="learner@example.com").one()

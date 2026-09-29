@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
 
 /** Minimal ambient typing for the Web Speech API — not in TS's default DOM
  * lib, and only Chrome/Edge/Safari expose it (Firefox does not), always
@@ -21,6 +22,7 @@ interface SpeechRecognitionLike {
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
@@ -38,8 +40,9 @@ declare global {
   }
 }
 
-const SpeechRecognitionAPI: SpeechRecognitionCtor | undefined =
-  typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined;
+function getSpeechRecognitionAPI(): SpeechRecognitionCtor | undefined {
+  return typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : undefined;
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   "no-speech": "No speech was detected. Try again or type your message.",
@@ -49,6 +52,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   aborted: "Listening stopped.",
 };
 
+function speechDebugEnabled(): boolean {
+  try {
+    return window.localStorage.getItem("digidara_speech_debug") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** Browser-only speech-to-text for the chat composer: dictate into the
  * text input instead of typing. Purely client-side (Web Speech API) — the
  * recognized text is sent through the exact same `onSend(text)` path as
@@ -57,9 +68,11 @@ export default function useSpeechRecognition(locale = "en-US") {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const keepListeningRef = useRef(false);
   const vadCleanupRef = useRef<(() => void) | null>(null);
 
   const stop = useCallback(() => {
+    keepListeningRef.current = false;
     vadCleanupRef.current?.();
     vadCleanupRef.current = null;
     try {
@@ -77,12 +90,16 @@ export default function useSpeechRecognition(locale = "en-US") {
   const start = useCallback(
     (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
+      const SpeechRecognitionAPI = getSpeechRecognitionAPI();
       if (!SpeechRecognitionAPI) {
         setError("Voice input isn't supported in this browser — try Chrome or Edge.");
         return false;
       }
+      keepListeningRef.current = false;
+      const previousRecognition = recognitionRef.current;
+      recognitionRef.current = null;
       try {
-        recognitionRef.current?.abort();
+        previousRecognition?.abort();
       } catch {
         // Ignore.
       }
@@ -96,30 +113,83 @@ export default function useSpeechRecognition(locale = "en-US") {
       // Short utterances can remain interim when recording ends. Keep the
       // latest text so stopping does not clear a usable one-word result.
       let latestText = "";
+      let completedSessionsText = "";
+      const resultSlots = new Map<number, SpeechResultSnapshot>();
       recognition.onresult = (event) => {
-        let interimText = "";
-        for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          const result = event.results[i];
-          const text = result[0]?.transcript || "";
-          if (result.isFinal) finalText = `${finalText} ${text}`.trim();
-          else interimText += text;
+        const assembled = updateSpeechResultSlots(resultSlots, event);
+        finalText = assembled.finalText;
+        latestText = assembled.displayText;
+        const runningText = joinSpeechSegments([completedSessionsText, latestText]);
+        // Raw Web Speech result diagnostics are opt-in because transcripts
+        // may contain personal information. Enable on a test device with:
+        // localStorage.setItem("digidara_speech_debug", "1")
+        if (speechDebugEnabled()) {
+          console.debug("[DigiDARA speech result]", {
+            resultIndex: event.resultIndex,
+            results: Array.from(event.results, (result, index) => ({
+              index,
+              isFinal: result.isFinal,
+              transcript: result[0]?.transcript || "",
+            })),
+            finalText: joinSpeechSegments([completedSessionsText, finalText]),
+            interimText: assembled.interimText,
+            displayText: runningText,
+          });
         }
-        latestText = `${finalText} ${interimText}`.trim();
-        onResult(latestText, false);
+        onResult(runningText, false);
       };
       recognition.onerror = (event) => {
+        if (recognitionRef.current !== recognition) return;
+        // Browsers commonly emit no-speech before ending a recognition
+        // session. onend restarts that session while the question timer runs.
+        if (event.error === "no-speech") return;
+        keepListeningRef.current = false;
+        setListening(false);
         setError(ERROR_MESSAGES[event.error] || "Speech recognition stopped unexpectedly.");
       };
+      recognition.onstart = () => {
+        setListening(true);
+        if (speechDebugEnabled()) console.debug("[DigiDARA speech start]", { monotonicMs: Math.round(performance.now()) });
+      };
       recognition.onend = () => {
+        if (recognitionRef.current !== recognition) return;
+
+        completedSessionsText = joinSpeechSegments([
+          completedSessionsText,
+          latestText || finalText,
+        ]);
+        finalText = "";
+        latestText = "";
+        resultSlots.clear();
+        if (speechDebugEnabled()) console.debug("[DigiDARA speech end]", {
+          completedText: completedSessionsText,
+          restarting: keepListeningRef.current,
+        });
+
+        if (keepListeningRef.current) {
+          window.setTimeout(() => {
+            if (!keepListeningRef.current || recognitionRef.current !== recognition) return;
+            try {
+              recognition.start();
+            } catch {
+              keepListeningRef.current = false;
+              recognitionRef.current = null;
+              setListening(false);
+              setError("Speech recognition stopped unexpectedly. Restart the microphone or type your answer.");
+            }
+          }, 150);
+          return;
+        }
+
+        setListening(false);
         vadCleanupRef.current?.();
         vadCleanupRef.current = null;
-        setListening(false);
         recognitionRef.current = null;
-        onResult((finalText.trim() || latestText).trim(), true);
+        onResult(completedSessionsText.trim(), true);
       };
 
       recognitionRef.current = recognition;
-      setListening(true);
+      keepListeningRef.current = true;
       recognition.start();
 
       if (options.autoStopOnSilence && navigator.mediaDevices?.getUserMedia && window.AudioContext) {
@@ -201,5 +271,5 @@ export default function useSpeechRecognition(locale = "en-US") {
     [locale],
   );
 
-  return { supported: Boolean(SpeechRecognitionAPI), listening, error, start, stop };
+  return { supported: Boolean(getSpeechRecognitionAPI()), listening, error, start, stop };
 }

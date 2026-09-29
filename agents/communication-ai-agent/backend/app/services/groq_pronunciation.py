@@ -3,6 +3,7 @@ from datetime import date
 
 from flask import current_app
 
+from .cache_service import get_cached, set_cached
 from .groq_common import FALLBACK_PRONUNCIATION_ITEMS, _chat, _extract_json
 
 DAILY_CHALLENGE_SCHEMA_VERSION = "daily_challenge_v2"
@@ -547,10 +548,15 @@ def summarize_pronunciation_session(turn_results, difficulty):
 
 
 def generate_phonetic_hints(words):
-    """Priority 3: Lightweight IPA / Phonetic-Level Feedback"""
+    """Priority 3: Lightweight IPA / Phonetic-Level Feedback with Caching"""
     if not words:
         return []
-        
+
+    cache_key = ":".join(sorted(str(w).lower().strip() for w in words if w))
+    cached = get_cached("phonetic_hints", cache_key)
+    if cached is not None:
+        return cached
+
     system_prompt = (
         "You are an English pronunciation assistant. For each word provided, return its IPA transcription "
         "and a one-line plain-English pronunciation tip.\n"
@@ -560,10 +566,11 @@ def generate_phonetic_hints(words):
         ']'
     )
     user_prompt = f"Words: {json.dumps(words)}"
-    
+
     try:
         data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.3, operation="pronunciation.phonetic_hint_generation", module="pronunciation", service="groq_pronunciation.generate_phonetic_hints"))
         if isinstance(data, list):
+            set_cached("phonetic_hints", data, ttl_seconds=86400, cache_key=cache_key)
             return data
         return []
     except Exception:

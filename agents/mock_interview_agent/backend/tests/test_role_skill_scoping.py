@@ -211,6 +211,30 @@ class RoleSkillScopingTests(unittest.TestCase):
         )
         self.assertNotIn("python", breakdown["weak_subjects"])
 
+    def test_all_timed_out_questions_are_not_assessed(self):
+        breakdown = subject_breakdown([
+            {
+                "subject_tag": "sql",
+                "topic_area": "SQL and relational databases",
+                "verdict": None,
+                "timed_out": True,
+                "processing_status": "timed_out",
+            },
+            {
+                "subject_tag": "python",
+                "topic_area": "Python fundamentals",
+                "verdict": "correct",
+                "timed_out": False,
+                "processing_status": "evaluated",
+            },
+        ])
+        self.assertEqual(breakdown["not_assessed_subjects"], ["SQL and relational databases"])
+        self.assertEqual(breakdown["weak_subjects"], [])
+        self.assertEqual(
+            next(item for item in breakdown["subjects"] if item["subject"] == "SQL and relational databases")["status"],
+            "Not assessed",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

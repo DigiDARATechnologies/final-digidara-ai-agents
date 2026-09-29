@@ -91,6 +91,31 @@ export function submitMockInterviewAnswer(sessionToken: string, interviewId: num
   });
 }
 
+async function audioBlobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+export async function transcribeMockInterviewAudio(
+  sessionToken: string,
+  interviewId: number,
+  questionOrder: number,
+  audio: Blob,
+) {
+  return invoke<{ transcript: string; audio_path?: string | null }>("transcribe_audio", {
+    sessionToken,
+    interview_id: interviewId,
+    question_order: questionOrder,
+    audio_data: await audioBlobToBase64(audio),
+    audio_type: (audio.type || "audio/webm").split(";", 1)[0].toLowerCase(),
+  });
+}
+
 export function endMockInterview(sessionToken: string, interviewId: number) {
   return invoke<MockInterviewSummary>("end_interview", { sessionToken, interview_id: interviewId });
 }

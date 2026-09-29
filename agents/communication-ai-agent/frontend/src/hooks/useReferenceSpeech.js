@@ -15,10 +15,32 @@ export default function useReferenceSpeech({ text, locale = "en-US", muted = fal
     return () => window.speechSynthesis?.removeEventListener?.("voiceschanged", loadVoices);
   }, []);
 
-  const selectedVoice = useMemo(
-    () => voices.find((voice) => voice.lang === locale) || voices.find((voice) => voice.lang?.startsWith("en")),
-    [locale, voices]
-  );
+  const selectedVoice = useMemo(() => {
+    const patterns = [
+      /Jenny.*Natural/i,
+      /Aria.*Natural/i,
+      /Microsoft Jenny/i,
+      /Microsoft Aria/i,
+      /Google US English/i,
+      /Google UK English Female/i,
+      /Samantha/i,
+      /Victoria/i,
+      /Karen/i,
+      /Zira/i,
+      /Natural.*English/i,
+      /en-US.*female/i,
+    ];
+    for (const p of patterns) {
+      const match = voices.find((v) => p.test(v.name) && v.lang?.startsWith("en"));
+      if (match) return match;
+    }
+    return (
+      voices.find((v) => v.lang === locale && /female|woman/i.test(v.name)) ||
+      voices.find((v) => v.lang === locale) ||
+      voices.find((v) => v.lang?.startsWith("en")) ||
+      null
+    );
+  }, [locale, voices]);
 
   const stop = useCallback(() => {
     window.speechSynthesis?.cancel?.();

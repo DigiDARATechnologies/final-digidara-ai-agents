@@ -18,6 +18,7 @@ from app.orchestrator.routes import router as chat_router  # noqa: E402
 from app.rate_limit import limiter  # noqa: E402
 from app.registry.routes import router as registry_router  # noqa: E402
 from app.billing.routes import router as billing_router  # noqa: E402
+from app.admin.routes import router as admin_router  # noqa: E402
 from app.chat_history.routes import router as chat_history_router  # noqa: E402
 from app.agent_state.routes import router as agent_state_router  # noqa: E402
 
@@ -54,6 +55,7 @@ app.include_router(registry_router)
 app.include_router(chat_router)
 app.include_router(gateway_router)
 app.include_router(billing_router)
+app.include_router(admin_router)
 app.include_router(chat_history_router)
 app.include_router(agent_state_router)
 

@@ -385,38 +385,18 @@ def _submit_answer(data):
     if evaluation_complete:
         pass
     elif timed_out:
-        verdict = "wrong"
-        verdict_reason = "No answer was given within the time limit."
-        try:
-            with track_ai_usage(
-                student_id=interview_row["student_id"],
-                interview_id=interview_id,
-                question_id=current["id"],
-                request_type="ideal_answer_generation",
-            ):
-                ideal_answer = groq_client.generate_ideal_answer(
-                    current["question"],
-                    interview_row["difficulty"],
-                    interview_row["round_type"],
-                )
-        except Exception:
-            # The timeout verdict must remain deterministic even if OpenAI is
-            # temporarily unavailable for the optional learning aid.
-            log(
-                logging.WARNING,
-                "timeout_ideal_answer_generation_failed",
-                "Optional ideal answer generation failed after timeout",
-                question_order=question_order,
-                exc_info=True,
-            )
-            ideal_answer = None
+        # A timeout is an unanswered slot, not an incorrect response. Keep it
+        # out of answer evaluation and represent it explicitly in reports.
+        verdict = None
+        verdict_reason = "No answer was submitted before the time limit."
+        ideal_answer = None
         db.query(
             """UPDATE interview_details
-               SET verdict = %s, verdict_reason = %s, timed_out = TRUE,
-                   ideal_answer = %s, answered_at = NOW(),
-                   processing_status = 'evaluated', processing_error = NULL
+               SET verdict = NULL, verdict_reason = %s, timed_out = TRUE,
+                   ideal_answer = NULL, answered_at = NOW(),
+                   processing_status = 'timed_out', processing_error = NULL
                WHERE id = %s""",
-            (verdict, verdict_reason, ideal_answer, current["id"]),
+            (verdict_reason, current["id"]),
         )
         current["timed_out"] = True
     else:

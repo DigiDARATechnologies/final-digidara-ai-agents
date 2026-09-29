@@ -6,6 +6,7 @@ import AttachMenu from "./AttachMenu";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
+import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
 
 interface ChatViewProps {
   chat: Chat;
@@ -81,6 +82,8 @@ interface ChatViewProps {
   /** Extra panel rendered above the message list ... used by the Aptitude
    * Trainer Agent to show its practice controls alongside the chat. */
   contextPanel?: ReactNode;
+  /** Suppress the text copy when a live panel renders that content itself. */
+  hideLatestContextMessage?: boolean;
 }
 
 export default function ChatView({
@@ -123,6 +126,7 @@ export default function ChatView({
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
+  hideLatestContextMessage = false,
 }: ChatViewProps) {
   const [input, setInput] = useState("");
   const [code, setCode] = useState(codeSeed);
@@ -146,10 +150,8 @@ export default function ChatView({
   const orbRef = useRef<HTMLButtonElement | null>(null);
 
   function handleMicClick() {
-    if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-      window.speechSynthesis.cancel();
-      setAgentSpeaking(false);
-    }
+    stopCoachAudio();
+    setAgentSpeaking(false);
     if (speech.listening) {
       voiceSessionRef.current += 1;
       speech.stop();
@@ -295,22 +297,18 @@ export default function ChatView({
       }, 200);
     };
 
-    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-      const utterance = new SpeechSynthesisUtterance(activeSpeakingPrompt.replace(/[...]/g, " "));
-      utterance.rate = 0.85;
-      utterance.pitch = 1;
-      utterance.onstart = () => setAgentSpeaking(true);
-      utterance.onend = beginListening;
-      utterance.onerror = beginListening;
-      window.speechSynthesis.speak(utterance);
-    } else {
-      beginListening();
-    }
+    playCoachSpeech(activeSpeakingPrompt, {
+      rate: 0.92,
+      voiceName: "nova",
+      onStart: () => setAgentSpeaking(true),
+      onEnd: beginListening,
+      onError: beginListening,
+    });
 
     return () => {
       submitted = true;
       window.clearInterval(silenceCheck);
-      window.speechSynthesis?.cancel();
+      stopCoachAudio();
       setAgentSpeaking(false);
       if (voiceSessionRef.current === session) voiceSessionRef.current += 1;
       speech.stop();
@@ -377,6 +375,7 @@ export default function ChatView({
           const optionsActive = m.role === "agent" && !!visibleOptions?.length && i === chat.messages.length - 1 && !typing;
           const isEditing = editingIndex === i;
           const hasContextPanel = m.role === "agent" && i === chat.messages.length - 1 && !!contextPanel;
+          const hideContextMessage = hideLatestContextMessage && hasContextPanel;
           return (
             <div className={`msg ${m.role === "user" ? "user" : "agent"}${agent.kind === "mock-interview" ? " mock-interview-msg" : ""}`} key={i}>
               <span
@@ -412,7 +411,7 @@ export default function ChatView({
                 ) : (
                   <>
                     {hasContextPanel && contextPanel}
-                    <div className="bubble">{renderMessageText(m.text)}</div>
+                    {!hideContextMessage && <div className="bubble">{renderMessageText(m.text)}</div>}
                     {/* When the rich context panel (e.g. Aptitude's mode/category/
                         level/language picker) is already showing this message's
                         choices as its own buttons, skip the plain chat-options
@@ -432,7 +431,7 @@ export default function ChatView({
                         ))}
                       </div>
                     )}
-                    <div className="msg-footer">
+                    {!hideContextMessage && <div className="msg-footer">
                       <div className="msg-time">{m.time}</div>
                       <div className="msg-actions">
                         <button type="button" className="msg-action-btn" title="Copy" onClick={() => handleCopy(i, m.text)}>
@@ -444,7 +443,7 @@ export default function ChatView({
                           </button>
                         )}
                       </div>
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>

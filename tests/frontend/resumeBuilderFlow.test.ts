@@ -1,7 +1,8 @@
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT } from "../../src/lib/resumeBuilderFlow";
+import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName } from "../../src/lib/resumeBuilderFlow";
 
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
   ensureResumeProfile: jest.fn().mockResolvedValue({ user_id: "test-user" }),
+  createResume: jest.fn().mockResolvedValue({ id: 99, title: "My Resume" }),
   getResume: jest.fn().mockResolvedValue({ id: 7, declaration: "I declare this is accurate.", declaration_enabled: true }),
   updateResume: jest.fn().mockResolvedValue({ id: 7, title: "Data Analyst Resume", declaration_enabled: false }),
   analyzeResumeUpload: jest.fn().mockResolvedValue({
@@ -696,6 +697,122 @@ Responsibilities:
       expect(parsed[0].end_date).toBe("Present");
       expect(parsed[0].is_current).toBe(true);
       expect(parsed[0].raw_input).toContain("Built Power BI dashboards");
+    });
+  });
+
+  describe("Candidate Name Validation & Keyboard Mash Rejection", () => {
+    test("rejects keyboard mash sequences like wertyui, qwerty, asdfgh", () => {
+      expect(isValidHumanCandidateName("wertyui")).toBe(false);
+      expect(isValidHumanCandidateName("qwerty")).toBe(false);
+      expect(isValidHumanCandidateName("asdfgh")).toBe(false);
+      expect(isValidHumanCandidateName("zxcvbn")).toBe(false);
+      expect(isValidHumanCandidateName("poiuyt")).toBe(false);
+    });
+
+    test("rejects character repetitions and consonant-only gibberish", () => {
+      expect(isValidHumanCandidateName("aaaaa")).toBe(false);
+      expect(isValidHumanCandidateName("zzzzz")).toBe(false);
+      expect(isValidHumanCandidateName("bcdfgh")).toBe(false);
+      expect(isValidHumanCandidateName("dfgh")).toBe(false);
+    });
+
+    test("rejects academic qualifications and questions", () => {
+      expect(isValidHumanCandidateName("B.Tech Computer Science")).toBe(false);
+      expect(isValidHumanCandidateName("Master of Engineering")).toBe(false);
+      expect(isValidHumanCandidateName("Can you help me?")).toBe(false);
+    });
+
+    test("accepts valid human candidate names", () => {
+      expect(isValidHumanCandidateName("Priya Sharma")).toBe(true);
+      expect(isValidHumanCandidateName("Arun Kumar")).toBe(true);
+      expect(isValidHumanCandidateName("Rajesh K")).toBe(true);
+    });
+
+    test("awaiting_name rejects wertyui and returns helpful prompt", async () => {
+      const result = await handleResumeBuilderText(
+        { step: "awaiting_name", draft: { title: "Python Resume" } },
+        { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" },
+        "wertyui",
+      );
+      expect(result.state.step).toBe("awaiting_name");
+      expect(result.messages[0].text).toContain("Please enter your real full name");
+      expect(result.messages[0].text).toContain("random characters");
+    });
+  });
+
+  describe("paste LinkedIn/notes text and the LinkedIn data-export ZIP", () => {
+    const user = { id: "test-user", name: "Asha Rao", email: "asha@example.com", mobile: "9999999999", initial: "A" };
+
+    test("the start options include paste-text and the LinkedIn export, alongside the original two", async () => {
+      const result = await handleResumeBuilderText(createInitialResumeBuilderState(), user, "restart");
+      const values = result.messages[0].options?.map((option) => option.value);
+      expect(values).toEqual(["new", "upload", "paste_text", "import_linkedin_zip"]);
+    });
+
+    test("pasting text goes through the same upload pipeline, asking for a role first", async () => {
+      const chosen = await handleResumeBuilderText(createInitialResumeBuilderState(), user, "paste_text");
+      expect(chosen.state.step).toBe("awaiting_paste_text");
+
+      const pasted = await handleResumeBuilderText(chosen.state, user, "Experienced backend engineer at Acme, built APIs in Python and led a team of 3.");
+      expect(pasted.state.step).toBe("awaiting_upload_role");
+      expect(pasted.state.pendingUploadFile).toBeInstanceOf(File);
+      expect(pasted.state.pendingUploadFile?.name).toBe("pasted-notes.txt");
+    });
+
+    test("too-short pasted text is rejected before it reaches the extraction pipeline", async () => {
+      const chosen = await handleResumeBuilderText(createInitialResumeBuilderState(), user, "paste_text");
+      const result = await handleResumeBuilderText(chosen.state, user, "too short");
+      expect(result.state.step).toBe("awaiting_paste_text");
+      expect(result.messages[0].text).toContain("too short");
+    });
+
+    test("importing a LinkedIn export ZIP creates the resume directly, no role question first", async () => {
+      const api = jest.requireMock("../../src/lib/resumeBuilderApi") as { createResume: jest.Mock };
+      api.createResume.mockResolvedValue({ id: 55, title: "Asha Rao Resume" });
+      const chosen = await handleResumeBuilderText(createInitialResumeBuilderState(), user, "import_linkedin_zip");
+      expect(chosen.state.step).toBe("awaiting_import_zip");
+
+      const zipText = 'PK\x03\x04 fake zip signature but not a real archive';
+      const file = new File([zipText], "Basic_LinkedInDataExport.zip", { type: "application/zip" });
+      const result = await importResumeBuilderFile(chosen.state, user, file);
+      // A malformed archive still reports a clear, specific failure -- not a crash --
+      // exercising the same error path a genuinely empty/wrong export would hit.
+      expect(result.state.step).toBe("error");
+      expect(result.messages[0].text).toContain("LinkedIn export");
+      expect(result.messages[0].options?.map((option) => option.value)).toEqual(["retry_upload", "create_resume"]);
+    });
+
+    test("a real LinkedIn export ZIP creates the resume from its actual content", async () => {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      zip.file("Profile.csv", "First Name,Last Name,Headline,Summary\nAsha,Rao,Data Analyst,Loves clean dashboards.");
+      zip.file("Skills.csv", "Name\nSQL\nPython");
+      const bytes = await zip.generateAsync({ type: "uint8array" });
+      const file = new File([bytes as BlobPart], "export.zip", { type: "application/zip" });
+
+      const api = jest.requireMock("../../src/lib/resumeBuilderApi") as { createResume: jest.Mock; analyzeSavedResume: jest.Mock };
+      api.createResume.mockResolvedValue({ id: 61, title: "Asha Rao Resume" });
+      api.analyzeSavedResume.mockResolvedValue({ score: { normalized_score: 72 }, breakdown: {}, skills: {} });
+
+      const chosen = await handleResumeBuilderText(createInitialResumeBuilderState(), user, "import_linkedin_zip");
+      const result = await importResumeBuilderFile(chosen.state, user, file);
+
+      expect(api.createResume).toHaveBeenCalledWith("test-user", expect.objectContaining({
+        title: "Asha Rao Resume", target_role: "Data Analyst", summary: "Loves clean dashboards.",
+        skills: [{ skill_name: "SQL" }, { skill_name: "Python" }],
+        personal_info: { name: "Asha Rao", email: "asha@example.com", phone: "9999999999" },
+      }));
+      expect(result.state.step).toBe("reviewing");
+      expect(result.state.resumeId).toBe(61);
+      expect(result.state.atsScore).toBe(72);
+    });
+
+    test("importResumeBuilderFile routes a .zip to LinkedIn import and anything else to the normal resume upload", async () => {
+      const api = jest.requireMock("../../src/lib/resumeBuilderApi") as { createResume: jest.Mock; analyzeResumeUpload: jest.Mock };
+      const state = { step: "choose_workflow" as const };
+      const pdfResult = await importResumeBuilderFile(state, user, new File(["x"], "resume.pdf"));
+      expect(pdfResult.state.step).toBe("awaiting_upload_role");
+      expect(api.createResume).not.toHaveBeenCalled();
     });
   });
 });

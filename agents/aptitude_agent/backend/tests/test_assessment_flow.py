@@ -613,6 +613,59 @@ def test_hint_returns_topic_fallback_when_provider_is_not_configured(
         assert saved_question.hint_requested is True
 
 
+def test_skipped_question_opens_a_next_question_that_accepts_hint_and_answer(
+    app, client, auth_headers, monkeypatch
+):
+    test_id, _question_id = _seed_hint_attempt(app, total_questions=3)
+    assessment_routes = importlib.import_module("backend.app.routes.assessment")
+    monkeypatch.setattr(
+        assessment_routes,
+        "generate_hint",
+        lambda _question: (
+            "Compare how the available methods combine the work rates.",
+            {
+                "input_tokens": 1,
+                "output_tokens": 1,
+                "total_tokens": 2,
+                "provider_attempt_count": 1,
+                "model": "hint-test-model",
+            },
+        ),
+    )
+
+    skipped = client.post(
+        f"/api/aptitude/tests/{test_id}/skip", headers=auth_headers
+    )
+    assert skipped.status_code == 200, skipped.get_json()
+    assert skipped.get_json()["sequence"] == 2
+    assert skipped.get_json()["visited"] is True
+
+    hinted = client.post(
+        f"/api/aptitude/tests/{test_id}/hint", headers=auth_headers
+    )
+    assert hinted.status_code == 200, hinted.get_json()
+    assert hinted.get_json()["hint"]
+
+    answered = client.post(
+        f"/api/aptitude/tests/{test_id}/answer",
+        headers=auth_headers,
+        json={"selected_answer": "A"},
+    )
+    assert answered.status_code == 200, answered.get_json()
+    assert answered.get_json()["is_correct"] is True
+    assert answered.get_json()["next_sequence"] == 3
+
+    with app.app_context():
+        skipped_question = AptitudeTestQuestion.query.filter_by(
+            test_id=test_id, sequence_no=1
+        ).one()
+        answered_question = AptitudeTestQuestion.query.filter_by(
+            test_id=test_id, sequence_no=2
+        ).one()
+        assert skipped_question.answer is None
+        assert answered_question.answer is not None
+
+
 def test_first_hint_calls_provider_once_and_repeat_uses_persisted_hint(
     app, client, auth_headers, monkeypatch
 ):

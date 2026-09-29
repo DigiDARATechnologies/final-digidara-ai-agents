@@ -96,3 +96,62 @@ def test_history_endpoint_requires_authentication():
     with TestClient(app) as client:
         assert client.get("/chats").status_code == 401
         assert client.put("/chats/sync", json={"chats": [], "deleted_ids": []}).status_code == 401
+
+
+def test_a_mysql_deadlock_during_sync_is_retried_transparently(history_client, monkeypatch):
+    """The live failure: two overlapping syncs deadlocked MySQL (errno 1213) on the
+    DELETE FROM conversation_messages step and the request crashed with a 500."""
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.chat_history import service
+
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    real_get_session = service.get_session
+    calls = {"n": 0}
+
+    def flaky_get_session():
+        session = real_get_session()
+        calls["n"] += 1
+        if calls["n"] == 1:
+
+            def failing_commit():
+                orig = MagicMock()
+                orig.args = (1213, "Deadlock found when trying to get lock; try restarting transaction")
+                raise OperationalError("DELETE FROM conversation_messages ...", {}, orig)
+
+            session.commit = failing_commit
+        return session
+
+    monkeypatch.setattr(service, "get_session", flaky_get_session)
+    response = client.put("/chats/sync", json={"chats": [sample_chat()], "deleted_ids": []})
+    assert response.status_code == 200
+    assert calls["n"] == 3                                  # 1 failed attempt + 1 retry that commits + get_history's own read
+    assert [chat["id"] for chat in response.json()["chats"]] == ["c_1"]
+
+
+def test_a_non_deadlock_database_error_during_sync_is_not_retried(history_client, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.chat_history import service
+
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    real_get_session = service.get_session
+
+    def broken_get_session():
+        session = real_get_session()
+
+        def failing_commit():
+            orig = MagicMock()
+            orig.args = (1146, "Table 'orchestrator.conversations' doesn't exist")
+            raise OperationalError("INSERT INTO conversations ...", {}, orig)
+
+        session.commit = failing_commit
+        return session
+
+    monkeypatch.setattr(service, "get_session", broken_get_session)
+    with pytest.raises(OperationalError):
+        service.sync_history(_user_a_id, [sample_chat()], [])

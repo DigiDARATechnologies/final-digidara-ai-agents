@@ -1,8 +1,13 @@
 import re
 from difflib import SequenceMatcher
 
-
 ASSESSMENT_TYPE = "speech_recognition_match"
+
+from .phonetic_analysis import (
+    analyze_phonetic_deviations,
+    approximate_word_ipa,
+    compute_prosody_metrics,
+)
 
 # Priority 2: Simple rule-based mapping for ESL problem sounds
 def extract_sound_issues(words):
@@ -149,6 +154,11 @@ def assess_pronunciation(expected_text, recognised_text, recognition_confidence=
             word_accuracy = 0.0
             match_percentage = int(round(overall * 10))
 
+    phonetic_deviations = analyze_phonetic_deviations(expected, recognised, different_words)
+    prosody_metrics = compute_prosody_metrics(expected_text, recognised_text, duration_seconds, recognition_confidence)
+    target_ipa = " ".join(approximate_word_ipa(w) for w in expected) if expected else ""
+    recognised_ipa = " ".join(approximate_word_ipa(w) for w in recognised) if recognised else ""
+
     return {
         "assessment_type": ASSESSMENT_TYPE,
         "exact_match": exact_match,
@@ -170,4 +180,9 @@ def assess_pronunciation(expected_text, recognised_text, recognition_confidence=
         "words_needing_practice": needs_practice,
         "word_results": word_results,
         "sound_tags": extract_sound_issues(needs_practice),
+        # Enhanced non-breaking vertical acoustic & phonetic diagnostics
+        "phonetic_deviations": phonetic_deviations,
+        "prosody_metrics": prosody_metrics,
+        "target_ipa": target_ipa,
+        "recognised_ipa": recognised_ipa,
     }

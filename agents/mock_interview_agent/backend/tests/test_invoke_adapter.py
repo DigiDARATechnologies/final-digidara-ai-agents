@@ -1,5 +1,6 @@
 """Strategy F invoke adapter: identity gate and student-id substitution."""
 import os
+import base64
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -93,6 +94,30 @@ class InvokeAdapterTests(unittest.TestCase):
                 patch.object(db, "query", return_value=({"student_id": 42}, None)):
             self.invoke("end_interview", {"sessionToken": token, "interview_id": 5})
         internal.open.assert_called_once()
+
+    def test_owned_interview_audio_is_forwarded_as_multipart(self):
+        token = issue_session_token(42)
+        internal = MagicMock()
+        internal.post.return_value = MagicMock(status_code=200)
+        audio = b"webm voice bytes"
+        with patch.object(app, "test_client", return_value=internal), \
+                patch.object(db, "query", return_value=({"student_id": 42}, None)):
+            response = self.invoke("transcribe_audio", {
+                "sessionToken": token,
+                "interview_id": 5,
+                "question_order": 2,
+                "audio_type": "audio/webm",
+                "audio_data": base64.b64encode(audio).decode("ascii"),
+            })
+        self.assertEqual(response.status_code, 200)
+        internal.post.assert_called_once()
+        call = internal.post.call_args
+        self.assertEqual(call.args[0], "/api/transcribe")
+        self.assertEqual(call.kwargs["data"]["interview_id"], "5")
+        self.assertEqual(call.kwargs["data"]["question_order"], "2")
+        uploaded = call.kwargs["data"]["audio"]
+        self.assertEqual(uploaded[0].read(), audio)
+        self.assertEqual(uploaded[2], "audio/webm")
 
     def test_unknown_action(self):
         token = issue_session_token(42)

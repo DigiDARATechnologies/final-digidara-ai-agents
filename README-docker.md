@@ -61,6 +61,12 @@ agents use to find each other changed (Docker service names instead of
 6. To expose the administration area, set `ADMIN_EMAIL` and
    `ADMIN_PASSWORD` in `agents/orchestrator/.env`. Startup creates or
    promotes that account without resetting an existing password.
+   Sign in with that email and password on the normal login page, then open
+   **Admin** in the sidebar: Dashboard (revenue, users, tokens, activity),
+   Users (each user's payments, chats and progress), Payments, Agents (health
+   and usage) and the Job agent tools. The data comes from the orchestrator's
+   `/platform-admin/*` API (read-only, `is_admin` accounts only; nginx proxies
+   that prefix). Keep the password only in the server's `.env`, never in git.
 
 ## Running the stack
 

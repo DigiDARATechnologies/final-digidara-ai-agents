@@ -56,6 +56,37 @@ interviews_bp = Blueprint("interviews", __name__)
 logger = logging.getLogger(__name__)
 
 
+def _apply_unanswered_score_adjustment(result, rows):
+    """Ensure unanswered main questions receive no share of interview scores.
+
+    The final evaluator receives answered pairs only, so its 0-10 quality
+    scores describe the answered subset.  Scale those dimensions by the
+    answered fraction of the planned main questions before persisting them.
+    This keeps the scorecard's explicit ``1 / N`` marks and leaves historical
+    follow-up rows out of the denominator.
+    """
+    main_rows = [row for row in rows if not row.get("is_followup")]
+    total = len(main_rows)
+    answered = sum(
+        1 for row in main_rows
+        if row.get("answer") is not None
+        and not row.get("timed_out")
+        and row.get("processing_status") != "skipped"
+    )
+    if not total or answered >= total:
+        return result
+    factor = answered / total
+    for field in ("overall_score", "technical_accuracy", "communication_clarity", "confidence"):
+        value = result.get(field)
+        if value is not None:
+            result[field] = round(float(value) * factor, 1)
+    logger.info(
+        "Scaled interview scores for unanswered questions: answered=%s total=%s factor=%.3f",
+        answered, total, factor,
+    )
+    return result
+
+
 def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
     """Run and validate the single batch evaluator without leaking 500s."""
     try:
@@ -66,12 +97,31 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
         ):
             evaluations = groq_client.evaluate_answers_batch(
                 interview_row["round_type"], interview_row["subject"], interview_row["difficulty"],
-                [{"question_id": row["id"], "question": row["question"], "answer": row.get("answer") or ""} for row in pending_rows],
+                [
+                    {
+                        "question_id": row["id"],
+                        "question": row["question"],
+                        "answer": row.get("answer") or "",
+                        "unanswered": bool(row.get("timed_out") or row.get("processing_status") == "skipped"),
+                    }
+                    for row in pending_rows
+                ],
             )
         by_id = {int(item.get("question_id", -1)): item for item in evaluations}
         expected = {int(row["id"]) for row in pending_rows}
         if len(evaluations) != len(pending_rows) or set(by_id) != expected:
             raise ValueError("Batch evaluation did not return exactly one result for each question.")
+        for row in pending_rows:
+            item = by_id[int(row["id"])]
+            unanswered = bool(row.get("timed_out") or row.get("processing_status") == "skipped")
+            if unanswered and item.get("verdict") is not None:
+                logger.warning("Ignoring provider verdict for unanswered question %s", row["id"])
+                item["verdict"] = None
+                item["reason"] = None
+            if not unanswered and item.get("verdict") not in {"correct", "partial", "wrong"}:
+                raise ValueError("Batch evaluation omitted a valid verdict for an answered question.")
+            if unanswered and not item.get("ideal_answer"):
+                logger.warning("Batch evaluation omitted ideal_answer for unanswered question %s", row["id"])
         return evaluations, None
     except Exception as exc:
         logger.exception("Batch interview evaluation failed for interview %s", interview_id)
@@ -498,7 +548,7 @@ def end_interview():
     rows, _ = db.query(
         """SELECT question_order, id, question, answer, time_taken_sec, is_followup,
                   answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag,
-                  timed_out
+                  timed_out, processing_status
            FROM interview_details
            WHERE interview_id = %s
            ORDER BY question_order, id""",
@@ -506,13 +556,16 @@ def end_interview():
     )
     # Batch-evaluate all submitted answers once, then persist each result by
     # the database question id before building the final scorecard.
-    if interview_row["status"] == "in_progress" and any(
-        not row.get("is_followup") and row.get("answer") is not None and row.get("verdict") is None
-        for row in rows
-    ):
+    batch_rows = [
+        row for row in rows
+        if not row.get("is_followup")
+        and row.get("verdict") is None
+        and (row.get("answer") is not None or row.get("timed_out") or row.get("processing_status") == "skipped")
+    ]
+    if interview_row["status"] == "in_progress" and batch_rows:
         # New interviews contain only main questions. Keep this filter for
         # historical interviews that already have follow-up rows.
-        pending_rows = [row for row in rows if not row.get("is_followup")]
+        pending_rows = batch_rows
         evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending_rows)
         if evaluation_error:
             return jsonify({
@@ -523,8 +576,11 @@ def end_interview():
         by_id = {int(item["question_id"]): item for item in evaluations}
         for row in pending_rows:
             item = by_id[int(row["id"])]
-            db.query("UPDATE interview_details SET verdict=%s, verdict_reason=%s, ideal_answer=%s, processing_status='evaluated' WHERE id=%s", (item["verdict"], item.get("reason"), item.get("ideal_answer"), row["id"]))
-        rows, _ = db.query("SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, timed_out FROM interview_details WHERE interview_id=%s ORDER BY question_order, id", (interview_id,), fetch=True)
+            if row.get("timed_out") or row.get("processing_status") == "skipped":
+                db.query("UPDATE interview_details SET ideal_answer=%s WHERE id=%s", (item.get("ideal_answer"), row["id"]))
+            else:
+                db.query("UPDATE interview_details SET verdict=%s, verdict_reason=%s, ideal_answer=%s, processing_status='evaluated' WHERE id=%s", (item["verdict"], item.get("reason"), item.get("ideal_answer"), row["id"]))
+        rows, _ = db.query("SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id", (interview_id,), fetch=True)
     scorecard, total_marks, max_marks = scoring.build_scorecard(rows)
     role_breakdown = subject_breakdown(rows) if interview_row.get("interview_mode") in {"role", "weak_topic_practice"} else None
 
@@ -605,6 +661,9 @@ def end_interview():
             "timed_out": bool(row["timed_out"]),
         }
         for row in rows
+        if not row.get("is_followup")
+        and row.get("answer") is not None
+        and not row.get("timed_out")
     ]
     try:
         with track_ai_usage(
@@ -628,6 +687,7 @@ def end_interview():
             "retryable": True,
         }), 503
 
+    _apply_unanswered_score_adjustment(result, rows)
     avg_time = int(sum(r["time_taken_sec"] or 0 for r in rows) / max(len(rows), 1))
 
     if role_breakdown:
@@ -636,6 +696,9 @@ def end_interview():
         ] or ["Continue building confidence across the role subjects."])
         result["weaknesses"] = json.dumps([
             f"Weak: {subject}" for subject in role_breakdown["weak_subjects"]
+        ] + [
+            f"Not assessed: {subject}"
+            for subject in role_breakdown.get("not_assessed_subjects", [])
         ] or ["No weak role subjects were identified in this session."])
 
     integrity = finalize_open_focus_events(interview_id)
@@ -734,7 +797,7 @@ def interview_report_pdf(interview_id):
         return jsonify({"error": "A PDF report is available only after interview completion."}), 400
     rows, _ = db.query(
         """SELECT question_order, question, answer, verdict, verdict_reason, ideal_answer,
-                  is_followup FROM interview_details WHERE interview_id = %s
+                  is_followup, timed_out, processing_status FROM interview_details WHERE interview_id = %s
            ORDER BY question_order, id""",
         (interview_id,), fetch=True,
     )
