@@ -106,6 +106,10 @@ def score_job(job: Dict[str, Any], profile: Dict[str, Any], course_name: str) ->
 
     preferred_mode = (profile.get("preferred_work_mode") or "").lower()
     job_mode = (job.get("work_mode") or "").lower()
+    if preferred_mode == "office":
+        preferred_mode = "onsite"
+    if job_mode == "office":
+        job_mode = "onsite"
     mode_score = 5 if preferred_mode and preferred_mode == job_mode else (3 if not preferred_mode else 0)
 
     experience = float(profile.get("experience_years") or 0)

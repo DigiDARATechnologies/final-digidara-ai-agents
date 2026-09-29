@@ -19,9 +19,12 @@ export interface JobFetchProfile {
   preferred_locations: string[];
   preferred_work_mode: string;
   experience_years: number;
+  experience_provided?: boolean;
   resume_url: string;
   resume_original_name: string | null;
   profile_completed: boolean;
+  onboarding_step?: string;
+  onboarding_prompt?: string;
   plan_tier: string;
 }
 
@@ -40,6 +43,8 @@ export interface JobFeedItem {
   is_saved: number;
   application_status: string | null;
   trust_score?: number;
+  source_type?: string;
+  source_label?: string;
   trust_badge?: string;
   is_verified?: boolean;
   seniority_tier?: "entry" | "growth" | "senior";
@@ -49,6 +54,8 @@ export interface JobFeedItem {
   matching_skills?: string[];
   missing_skills?: string[];
   preparation_tips?: string;
+  application_label?: string;
+  verification_note?: string;
 }
 
 export interface SavedJobItem {
@@ -114,26 +121,94 @@ export interface JobAgentChatResponse {
   reply: string;
   show_jobs?: boolean;
   updated_profile: {
+    full_name?: string;
     skills: string[];
     preferred_locations: string[];
     preferred_titles: string[];
     preferred_work_mode: string;
     experience_years: number;
+    experience_provided?: boolean;
     changed_fields: string[];
   };
   suggested_actions: Array<{ label: string; value: string }>;
   matched_jobs: JobFeedItem[];
+  conversation_id?: string;
+  memory_status?: "saved" | "degraded";
+  profile_status?: {
+    completed: boolean;
+    missing_fields: string[];
+    resume_decision_pending: boolean;
+  };
+  search_context?: {
+    titles: string[];
+    locations: string[];
+    work_mode: string | null;
+    role_label: string;
+  };
+}
+
+export interface JobConversation {
+  id: string;
+  title: string;
+  status: string;
+  last_message_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  messages?: Array<{ id: number; role: "user" | "assistant"; content: string; created_at: string }>;
+}
+
+export interface JobMemory {
+  id: number;
+  memory_key: string;
+  memory_type: string;
+  value: unknown;
+  confidence: number;
+  source_conversation_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function ensureJobConversation(conversationId: string, title = "Job Agent") {
+  return invoke<{ conversation_id: string }>("create_conversation", { conversation_id: conversationId, title });
+}
+
+export function listJobConversations(limit = 50) {
+  return invoke<{ conversations: JobConversation[] }>("list_conversations", { limit });
+}
+
+export function getJobConversation(conversationId: string) {
+  return invoke<{ conversation: JobConversation }>("get_conversation", { conversation_id: conversationId });
+}
+
+export function deleteJobConversation(conversationId: string) {
+  return invoke<{ message: string }>("delete_conversation", { conversation_id: conversationId });
+}
+
+export function clearJobConversations() {
+  return invoke<{ message: string; deleted: number }>("clear_conversations");
+}
+
+export function listJobMemories() {
+  return invoke<{ memories: JobMemory[] }>("list_memories");
+}
+
+export function forgetJobMemory(memoryId: number) {
+  return invoke<{ message: string }>("forget_memory", { memory_id: memoryId });
 }
 
 export function chatWithJobAgent(
   message: string,
   history: Array<{ role: string; content: string }> = [],
   selectedJobId?: number,
+    conversationId?: string,
 ) {
+  const randomPart = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`;
   return invoke<JobAgentChatResponse>("chat", {
     message,
     history,
     selected_job_id: selectedJobId,
+    conversation_id: conversationId,
+    client_message_id: `m_${randomPart}`,
   });
 }
 
@@ -177,8 +252,8 @@ export async function downloadJobFetchResume(): Promise<Blob> {
 }
 
 
-export function getJobFeed(filters: { q?: string; location?: string; work_mode?: string; category?: string; saved?: boolean } = {}) {
-  return invoke<{ jobs: JobFeedItem[]; total: number; returned: number; plan_tier: string; limit: number }>(
+export function getJobFeed(filters: { q?: string; location?: string; work_mode?: string; category?: string; saved?: boolean; limit?: number; offset?: number } = {}) {
+  return invoke<{ jobs: JobFeedItem[]; total: number; returned: number; plan_tier: string; limit: number; offset: number; has_more: boolean }>(
     "get_feed",
     filters,
   );

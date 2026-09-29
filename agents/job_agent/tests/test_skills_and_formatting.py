@@ -59,7 +59,8 @@ class SkillsAndFormattingTests(unittest.TestCase):
         self.assertIn("React", updates.get("skills_to_add", []))
         self.assertIn("TypeScript", updates.get("skills_to_add", []))
         self.assertIn("Chennai", updates.get("locations_to_set", []))
-        self.assertIn("Remote", updates.get("locations_to_set", []))
+        self.assertNotIn("Remote", updates.get("locations_to_set", []))
+        self.assertEqual(updates.get("preferred_work_mode"), "remote")
 
     def test_format_job_listings_markdown(self):
         mock_jobs = [
@@ -84,10 +85,12 @@ class SkillsAndFormattingTests(unittest.TestCase):
         self.assertIn("🎓 [Entry-Level / Fresher]", markdown)
         self.assertIn("Match 92%", markdown)
         self.assertIn("🛡️ Verified Corporate Posting", markdown)
-        self.assertIn("95% Trust", markdown)
+        self.assertIn("95% Listing-Check Score", markdown)
         self.assertIn("₹4.5 - ₹6.5 LPA", markdown)
         self.assertIn("Python, SQL, Git", markdown)
-        self.assertIn("[Apply on Official Portal ↗](https://boards.greenhouse.io/techcorp/jobs/101)", markdown)
+        self.assertIn("[Open application page](https://boards.greenhouse.io/techcorp/jobs/101)", markdown)
+        self.assertIn("Role Skills", markdown)
+        self.assertNotIn("Matched Skills", markdown)
 
 
 if __name__ == "__main__":

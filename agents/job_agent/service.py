@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import mysql.connector
 
 from .categories import categorize_job
+from .compensation import extract_salary_text
 from .db import get_db
 from .scraper import scrape_source
 from .skills import extract_skills_from_job
@@ -49,6 +50,9 @@ def _clean_job(job):
     job["location_district"] = district
     job["location_region"] = region
     job["location_type"] = location_type
+
+    if not str(job.get("salary_text") or "").strip():
+        job["salary_text"] = extract_salary_text(job.get("title") or "", job.get("description") or "")
 
     # Extract experience requirements from title and description if not provided
     if job.get("experience_min") is None:

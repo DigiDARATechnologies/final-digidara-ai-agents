@@ -39,7 +39,9 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    for origin in os.environ.get(
+        "ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
     if origin.strip()
 ]
 
