@@ -46,6 +46,13 @@ ALLOWED_AGENT_HOSTS = {
 # aptitude_agent's app/services/usage_service.py for the reference
 # implementation). New accounts start with 50,000 (see app/models.py),
 # topped up via Razorpay (app/billing/routes.py).
+CAPSTONE_LLM_ACTIONS = {
+    "topic_intake_turn",
+    "check_eligibility_free",
+    "choose_topic",
+    "confirm_timer",
+    "ask_project_question",
+}
 TOKEN_COST_PER_CALL = int(os.environ.get("TOKEN_COST_PER_CALL", "100"))
 
 # Background bookkeeping/status calls the UI fires on its own -- opening
@@ -173,6 +180,8 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # The submission upload is multipart (no decoded action), and a new viva attempt writes ten questions.
         else config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
         if agent_name == "capstone_project_agent" and (is_multipart or action_name == "start_viva_attempt")
+        else config.CAPSTONE_LLM_ACTION_TIMEOUT_SECONDS
+        if agent_name == "capstone_project_agent" and action_name in CAPSTONE_LLM_ACTIONS
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
     # Sign last, over the final body and the exact identity headers set above,

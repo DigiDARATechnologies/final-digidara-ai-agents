@@ -31,3 +31,8 @@ MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS = _int("MOCK_INTERVIEW_GENERATION_TIME
 # Capstone grading (docx + zip -> parse, run, several LLM reviews, viva questions) and a fresh viva question set
 # take a minute or more; nginx allows 240s, so stay just under it.
 CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS = _int("CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS", 230)
+# Capstone actions that make one or more LLM calls (topic generation with a
+# repeat check, the tool-calling project Q&A, requirements writing). The
+# ordinary 30s budget cut these off mid-answer and the chat showed a canned
+# reminder instead of the answer.
+CAPSTONE_LLM_ACTION_TIMEOUT_SECONDS = _int("CAPSTONE_LLM_ACTION_TIMEOUT_SECONDS", 120)

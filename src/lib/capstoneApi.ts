@@ -2,6 +2,10 @@ import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
+/** Actions that make one or more LLM calls get the same longer budget the
+ * gateway gives them — the default 60s cut a slow answer off mid-way. */
+const LLM_ACTION_TIMEOUT_MS = 120_000;
+
 function invoke<T>(action: string, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
   return invokeAgent<T>(INVOKE_URL, action, payload, 1, timeoutMs);
 }
@@ -68,7 +72,7 @@ export function checkEligibilityFree(
     name, email, phone, course_name: topic, difficulty,
     exclude_titles: options.excludeTitles ?? [],
     ...(options.topicKey ? { topic_key: options.topicKey } : {}),
-  });
+  }, LLM_ACTION_TIMEOUT_MS);
 }
 
 /** What the topic intake conversation has established so far. A field is
@@ -108,7 +112,7 @@ export function topicIntakeTurn(request: {
   shown_topics: Pick<TopicOption, "id" | "title" | "summary">[];
   history: IntakeTurn[];
 }) {
-  return invoke<IntakeTurnResult>("topic_intake_turn", request);
+  return invoke<IntakeTurnResult>("topic_intake_turn", request, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface TopicChooseResult {
@@ -118,7 +122,7 @@ export interface TopicChooseResult {
 }
 
 export function chooseTopic(thread_id: string, topic_id: string) {
-  return invoke<TopicChooseResult>("choose_topic", { thread_id, topic_id });
+  return invoke<TopicChooseResult>("choose_topic", { thread_id, topic_id }, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface TimerConfirmResult {
@@ -128,7 +132,7 @@ export interface TimerConfirmResult {
 }
 
 export function confirmTimer(thread_id: string) {
-  return invoke<TimerConfirmResult>("confirm_timer", { thread_id });
+  return invoke<TimerConfirmResult>("confirm_timer", { thread_id }, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface CodeQualityScore {
@@ -280,7 +284,7 @@ export interface QAAskResult {
  * Used mid-viva when the student is asking something rather than answering
  * the pending question — see capstoneFlow.ts's looksLikeQuestionNotAnswer. */
 export async function askProjectQuestion(thread_id: string, question: string, image?: File) {
-  if (!image) return invoke<QAAskResult>("ask_project_question", { thread_id, question });
+  if (!image) return invoke<QAAskResult>("ask_project_question", { thread_id, question }, LLM_ACTION_TIMEOUT_MS);
   // An image can only travel as multipart; the agent reads it and folds what it sees into the answer.
   const form = new FormData();
   form.append("action", "ask_project_question");

@@ -55,7 +55,18 @@ const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (i
 /** Once a project's requirements are shown it is locked in: a request to
  * change the language, topic or project gets a plain answer saying so,
  * instead of going to the Q&A agent. */
-const LOCKED_CHANGE_REQUEST = /\b(change|switch|update|replace|regenerate|swap)\b[^.?!]*\b(project|topic|title|language|option)s?\b|\b(different|another|other|new)\s+(project|topic|title|language|option)s?\b/i;
+const LOCKED_CHANGE_REQUEST = /\bregenerate\b|\b(change|switch|update|replace|swap)\b[^.?!]*\b(project|topic|title|language|option|idea)s?\b|\b(different|another|other|new)\s+(two\s+)?(project|topic|title|language|option|idea)s?\b/i;
+
+/** Why a project question could not be answered, in words the student can act on. */
+function qaFailureText(error: unknown): string {
+  const message = (error as Error)?.message ?? "";
+  const reason = /timed out|timeout|504/i.test(message)
+    ? "the answer took too long to prepare"
+    : message
+      ? `the project assistant returned an error (${message})`
+      : "the project assistant could not be reached";
+  return `I couldn't answer your question just now because ${reason}. Nothing is lost — please send it again.`;
+}
 
 /** The chat option that downloads the final report PDF. */
 export const FINAL_REPORT_ACTION = "download_final_report";
@@ -269,6 +280,25 @@ function topicChoiceOptions(topics: TopicOption[] | undefined): ChatOption[] | u
   return topics?.map((topic) => ({ label: `${topic.id}. ${topic.title}`, value: topic.id, description: topic.summary }));
 }
 
+/** "your choice", "idk", "anything" -- leaves the project type open. */
+const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)$|^you\s*(decide|choose|pick)$|^(any|anything|up to you|surprise me|whatever|no preference|idk|not sure|doesn'?t matter)$/i;
+
+/** Words that make a message more than a plain answer: an edit, a request
+ * for other topics, a difficulty change, or a question. */
+const NOT_A_PLAIN_ANSWER = /\?|\b(change|update|switch|instead|actually|not|no|regenerate|another|other|different|new|more|harder|easier|easy|medium|hard|difficulty|what|why|how|which|can|could|should|explain|help|hi|hello|hey)\b/i;
+
+/** A short reply ("Python", "Login page", "your choice") answering the
+ * pending question -- taken as the answer directly, without a model call. */
+function isPlainAnswer(text: string): boolean {
+  if (DEFERRAL_ANSWER.test(text)) return true;
+  return text.split(/\s+/).length <= 4 && text.length <= 40 && !NOT_A_PLAIN_ANSWER.test(text);
+}
+
+const LANGUAGE_NAME = /^(python|java|javascript|js|typescript|ts|c|c\+\+|cpp|c#|csharp|go|golang|rust|kotlin|swift|php|ruby|r|dart|scala|html|css|html\s*(and|&|\/)?\s*css|sql|react|angular|vue|node(\.?js)?|django|flask|spring|flutter|\.net|dotnet)$/i;
+
+/** "I need another two topics", "regenerate", "show me other ideas", "change the topics". */
+const PLAIN_REGENERATE = /^(please\s+)?(i\s+(need|want)\s+(to\s+)?|give\s+me\s+|show\s+me\s+|can\s+i\s+(get|have)\s+)?(a\s+)?(regenerate(\s+(the\s+)?(topics?|ideas?|options?|projects?))?|(an?\s*other|other|new|different|more)\s+(two\s+)?(topics?|ideas?|options?|projects?)|change\s+(the\s+)?(project\s+)?(topics?|ideas?|options?))(\s+please)?[.!]?$/i;
+
 const CHOOSE_PROMPT = 'Choose project A or B to continue — or tell me what to change (the language, the type of project, or "show me other topics").';
 
 /** What goes to the topic generator for this memory: `description` for the
@@ -434,6 +464,24 @@ async function handleTopicIntake(state: CapstoneFlowState, text: string): Promis
     };
   }
 
+  // Fast paths that need no model call (each one is a full LLM round-trip
+  // the student waits on): a plain answer to the pending question, and a
+  // plain "other topics" request.
+  if (shownTopics.length && PLAIN_REGENERATE.test(text)) {
+    const result = await generateTopicsFor(state, memory, "Sure — here are some different ideas.");
+    return { ...result, state: rememberTurns(result.state, text, result.messages) };
+  }
+  // A bare language name while the project-type question is pending is most
+  // likely a change of language ("java"), so that one still goes to the model.
+  const languageSwitch = state.pendingQuestion === "project_type" && LANGUAGE_NAME.test(text);
+  if (state.step === "awaiting_topic_request" && isPlainAnswer(text) && !languageSwitch) {
+    const value = text.charAt(0).toUpperCase() + text.slice(1);
+    const result = !memory.focus || state.pendingQuestion === "focus"
+      ? askFor(state, { ...memory, focus: value }, "project_type", projectTypeQuestion(value))
+      : await generateTopicsFor(state, { ...memory, project_type: DEFERRAL_ANSWER.test(text) ? "Any" : value });
+    return { ...result, state: rememberTurns(result.state, text, result.messages) };
+  }
+
   let turn: IntakeTurnResult;
   try {
     turn = await topicIntakeTurn({
@@ -563,8 +611,10 @@ export async function handleCapstoneText(
                 { text: "Start the 7-day project timer when you're ready.", options: [{ label: "Start 7-day timer", value: "confirm" }] },
               ],
             };
-          } catch {
-            // Q&A itself failed -- fall through to the plain reminder below.
+          } catch (error) {
+            // Say that the answer failed, and why -- a canned "use the button"
+            // here read as the agent ignoring the question.
+            return { state, messages: [{ text: qaFailureText(error), options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
           }
         }
         return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
@@ -762,8 +812,8 @@ export async function handleCapstoneText(
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
-        } catch {
-          // Q&A itself failed -- fall through to the normal reminder below.
+        } catch (error) {
+          return { state, messages: [{ text: qaFailureText(error) }, { text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
         }
       }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };

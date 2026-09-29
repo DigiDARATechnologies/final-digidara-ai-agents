@@ -124,7 +124,7 @@ Classify the student's NEW message (in the user turn) into exactly one intent:
 - "update": it gives or CHANGES a memory field. That includes a plain answer to the
   last question AND an edit of an earlier answer, e.g. "i need to update language python
   to java" -> focus = "Java"; "make it web development instead" -> project_type =
-  "Web development"; "make it harder" -> difficulty = "hard". An edit REPLACES the old
+  "web development"; "make it harder" -> difficulty = "hard". An edit REPLACES the old
   value — never append it or mix it into another field. Keep every other field as it
   is, unless it only made sense for the old value (e.g. "Django web app" after
   switching Python to Java becomes "Web application").
@@ -139,7 +139,10 @@ Classify the student's NEW message (in the user turn) into exactly one intent:
   back to the project.
 
 Memory rules:
-- Normalize values to short, clean labels ("java" -> "Java", "web developement" -> "Web development").
+- Keep the student's OWN words as the value; only fix spelling and capitalization
+  ("java" -> "Java", "login pgae" -> "Login page"). NEVER replace what they said with a
+  broader category: "Login page" stays "Login page" (not "Web development"), "chatbot for
+  a clinic" stays "Chatbot for a clinic". The project ideas must be about exactly that.
 - If the focus itself already says what kind of application it is ("e-commerce website",
   "portfolio site"), also fill project_type from it.
 - If the student leaves project_type up to you ("your choice", "anything", "idk"), set
@@ -267,7 +270,10 @@ basic weather app, generic library management) unless the student explicitly ask
   would visibly impress an interviewer for that context; a request naming a
   role or technology should produce projects that clearly showcase that
   role's/technology's real, job-relevant skills — not a generic beginner
-  exercise that happens to use the same language. If you have live web search
+  exercise that happens to use the same language. When it names a specific kind of
+  project after the "—" (e.g. "Python — Login page"), BOTH ideas must be exactly that
+  kind of project (two different login-page projects), not a broader category it
+  belongs to (not two general websites). If you have live web search
   available, use it to ground this in what that company/role's interviews or
   day-to-day work actually look like right now, rather than guessing from
   memory — e.g. the kind of take-home/portfolio project that role's real
