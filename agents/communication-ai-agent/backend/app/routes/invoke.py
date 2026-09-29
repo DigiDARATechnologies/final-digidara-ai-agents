@@ -93,6 +93,7 @@ ACTION_MAP = {
     "pronunciation_insights": ("GET", "/api/pronunciation/insights"),
     "pronunciation_progress": ("GET", "/api/pronunciation/progress"),
     "pronunciation_streak": ("GET", "/api/pronunciation/streak"),
+    "pronunciation_adaptive_level": ("GET", "/api/pronunciation/adaptive-level"),
 }
 
 _PATH_PARAM = re.compile(r"{(\w+)}")

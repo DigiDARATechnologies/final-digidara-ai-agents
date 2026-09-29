@@ -1,6 +1,7 @@
 import logging
 import re
 
+from .cache_service import get_cached, set_cached
 from .groq_common import _chat, _clamp_score, _extract_json, _score_average
 
 logger = logging.getLogger(__name__)
@@ -716,6 +717,12 @@ def quick_grammar_check(text):
     fallback = {"issues": [], "source": "fallback"}
     if not text or len(text.strip()) < 15:
         return fallback
+
+    norm_key = text.strip()[:600].lower()
+    cached = get_cached("quick_grammar", norm_key)
+    if cached is not None:
+        return cached
+
     system_prompt = (
         "You are a fast grammar and spelling checker for student writing. "
         "Return STRICT JSON only with this schema: "
@@ -744,7 +751,9 @@ def quick_grammar_check(text):
                 "suggestion": suggestion[:160],
                 "type": issue_type,
             })
-    return {"issues": issues, "source": "groq"}
+    result = {"issues": issues, "source": "groq"}
+    set_cached("quick_grammar", result, ttl_seconds=3600, key=norm_key)
+    return result
 
 
 def detect_tone(text):
