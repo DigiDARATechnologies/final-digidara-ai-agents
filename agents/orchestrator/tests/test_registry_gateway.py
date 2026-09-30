@@ -158,7 +158,7 @@ FREE_APTITUDE_AND_MOCK_ACTIONS = [
     "dashboard", "history", "history_detail", "profile", "analytics", "mixed_test_config",
     "save_mixed_test_config", "daily_usage", "active_interview", "status", "download_report",
     "record_focus_event", "question", "answer", "skip", "abandon", "exit_interview",
-    "transcribe_preview",
+    "transcribe_preview", "speaking_transcribe_preview",
 ]
 LLM_ACTIONS = ["create_test", "hint", "results", "start_interview", "submit_answer", "end_interview", "transcribe_audio"]
 

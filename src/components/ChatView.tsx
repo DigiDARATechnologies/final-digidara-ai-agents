@@ -69,6 +69,9 @@ interface ChatViewProps {
    * record the answer and send it here instead of using the browser's live
    * speech recognition, which is unreliable on phones. */
   transcribeAudio?: AudioTranscriber;
+  /** With transcribeAudio: transcribes the recording so far, so the text
+   * appears in the input box while the student is still speaking. */
+  previewAudio?: AudioTranscriber;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -89,6 +92,10 @@ interface ChatViewProps {
   /** Suppress the text copy when a live panel renders that content itself. */
   hideLatestContextMessage?: boolean;
 }
+
+/** Phone recording (Communication Coach): a pause this long after speaking
+ * sends the answer by itself. */
+const PHONE_AUTO_SEND_SILENCE_MS = 7_000;
 
 export default function ChatView({
   chat,
@@ -128,6 +135,7 @@ export default function ChatView({
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
   transcribeAudio,
+  previewAudio,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -143,10 +151,12 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition("en-US", transcribeAudio);
+  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);
+  // Seconds before a pause sends the answer (phone recording), for the hint.
+  const [autoSendIn, setAutoSendIn] = useState<number | null>(null);
   // Recognition is `continuous: true`, so it keeps listening in the
   // background after Send unless explicitly stopped ... and a result that was
   // already in flight can still land *after* stop() and repopulate the box
@@ -178,7 +188,10 @@ export default function ChatView({
       return;
     }
     setInput("");
-    sendOnFinalRef.current = false;
+    // On a phone the answer is sent by itself once the student stops talking
+    // (or taps the mic again) -- no Send tap needed.
+    sendOnFinalRef.current = speech.recordingMode;
+    setAutoSendIn(null);
     const session = ++voiceSessionRef.current;
     speech.start((text, final) => {
       if (voiceSessionRef.current !== session) return;
@@ -192,7 +205,9 @@ export default function ChatView({
         }
       }
     }, {
-      autoStopOnSilence: autoStopVoiceOnSilence,
+      autoStopOnSilence: autoStopVoiceOnSilence || speech.recordingMode,
+      silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+      onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
         if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
       },
@@ -321,7 +336,8 @@ export default function ChatView({
         },
         {
           autoStopOnSilence: true,
-          silenceMs: speech.recordingMode ? 2500 : undefined,
+          silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+          onSilenceCountdown: setAutoSendIn,
           onAudioLevel: (lvl) => {
             if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
           },
@@ -339,8 +355,8 @@ export default function ChatView({
       silenceCheck = window.setInterval(() => {
         if (submitted || voiceSessionRef.current !== session || isNudging) return;
 
-        // 1. Spoken answer detected: auto-submit after natural 6.5s pause
-        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 6500) {
+        // 1. Spoken answer detected: auto-submit after natural 6.5s pause (desktop / live Web Speech)
+        if (!speech.recordingMode && latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 6500) {
           submitSpokenTurn();
           return;
         }
@@ -404,17 +420,12 @@ export default function ChatView({
       }, 250);
     };
 
-    const handleCoachDone = () => {
-      if (submitted || voiceSessionRef.current !== session) return;
-      window.setTimeout(beginListening, 300);
-    };
-
     playCoachSpeech(activeSpeakingPrompt, {
       rate: 0.92,
       voiceName: "nova",
       onStart: () => setAgentSpeaking(true),
-      onEnd: handleCoachDone,
-      onError: handleCoachDone,
+      onEnd: beginListening,
+      onError: beginListening,
     });
 
     return () => {
@@ -475,7 +486,7 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening ? "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"
@@ -722,11 +733,13 @@ export default function ChatView({
           </button>
         </form>
       )}
-      {!codeMode && !multilineMode && autoStopVoiceOnSilence && speech.listening && (
+      {!codeMode && !multilineMode && autoStopVoiceOnSilence && !speech.recordingMode && speech.listening && (
         <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
       )}
-      {!codeMode && !multilineMode && speech.recordingMode && !autoStopVoiceOnSilence && speech.listening && (
-        <div className="voice-capture-status" role="status">Recording… tap the microphone again when you finish, and your answer is sent.</div>
+      {!codeMode && !multilineMode && speech.recordingMode && speech.listening && (
+        <div className="voice-capture-status" role="status">{autoSendIn !== null
+          ? `Sending your answer in ${autoSendIn}s – keep talking to continue.`
+          : "Recording… stop talking for 7 seconds (or tap the microphone) and your answer is sent."}</div>
       )}
       {!codeMode && !multilineMode && speech.transcribing && (
         <div className="voice-capture-status" role="status">Turning your recording into text…</div>
