@@ -2,6 +2,10 @@ import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
+/** Actions that make one or more LLM calls get the same longer budget the
+ * gateway gives them — the default 60s cut a slow answer off mid-way. */
+const LLM_ACTION_TIMEOUT_MS = 120_000;
+
 function invoke<T>(action: string, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
   return invokeAgent<T>(INVOKE_URL, action, payload, 1, timeoutMs);
 }
@@ -46,23 +50,69 @@ export interface EligibilityCheckResult {
 
 export type ProjectDifficulty = "easy" | "medium" | "hard";
 
+export interface TopicGenerationOptions {
+  /** Titles this student was already shown in this chat — never offered again. */
+  excludeTitles?: string[];
+  /** Normalized "<focus>|<project type>" key: students asking for the same
+   * thing share one past-topics pool, so each is offered fresh topics. */
+  topicKey?: string;
+}
+
 /** No certificate/enrollment gate — course_name doubles as whatever
  * language, role, or topic the student typed. */
-export function checkEligibilityFree(name: string, email: string, phone: string, topic: string, difficulty: ProjectDifficulty = "easy") {
-  return invoke<EligibilityCheckResult>("check_eligibility_free", { name, email, phone, course_name: topic, difficulty });
+export function checkEligibilityFree(
+  name: string,
+  email: string,
+  phone: string,
+  topic: string,
+  difficulty: ProjectDifficulty = "easy",
+  options: TopicGenerationOptions = {},
+) {
+  return invoke<EligibilityCheckResult>("check_eligibility_free", {
+    name, email, phone, course_name: topic, difficulty,
+    exclude_titles: options.excludeTitles ?? [],
+    ...(options.topicKey ? { topic_key: options.topicKey } : {}),
+  }, LLM_ACTION_TIMEOUT_MS);
 }
 
-export interface TopicClarifyResult {
+/** What the topic intake conversation has established so far. A field is
+ * overwritten, never appended to, when the student edits it. */
+export interface IntakeMemory {
+  /** The language, role, or topic (the first question). */
+  focus?: string | null;
+  /** The kind of project/application (the second question); "Any" when left open. */
+  project_type?: string | null;
+  details?: string | null;
+  difficulty?: ProjectDifficulty | null;
+}
+
+export type IntakeSlot = "focus" | "project_type";
+
+export interface IntakeTurn {
+  role: "student" | "agent";
+  text: string;
+}
+
+export interface IntakeTurnResult {
+  intent: "update" | "regenerate" | "choose" | "question" | "chitchat";
+  memory: IntakeMemory;
+  choice: string | null;
   ready: boolean;
-  clarifying_question: string | null;
+  next_question: string | null;
+  reply: string | null;
 }
 
-/** Stateless pre-check run before checkEligibilityFree: does this free-text
- * request already say enough (company/role/stack) to generate two genuinely
- * targeted topics, or should the student be asked one clarifying question
- * first? See capstoneFlow.ts's awaiting_topic_request handling. */
-export function clarifyTopicRequest(description: string) {
-  return invoke<TopicClarifyResult>("clarify_topic_request", { description });
+/** One conversational turn before a project is locked in: the agent reads
+ * the message against the intake memory and says whether it answers or edits
+ * a field, asks for other topics, picks an option, or is a question. */
+export function topicIntakeTurn(request: {
+  message: string;
+  memory: IntakeMemory;
+  pending_question?: IntakeSlot;
+  shown_topics: Pick<TopicOption, "id" | "title" | "summary">[];
+  history: IntakeTurn[];
+}) {
+  return invoke<IntakeTurnResult>("topic_intake_turn", request, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface TopicChooseResult {
@@ -72,7 +122,7 @@ export interface TopicChooseResult {
 }
 
 export function chooseTopic(thread_id: string, topic_id: string) {
-  return invoke<TopicChooseResult>("choose_topic", { thread_id, topic_id });
+  return invoke<TopicChooseResult>("choose_topic", { thread_id, topic_id }, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface TimerConfirmResult {
@@ -82,7 +132,7 @@ export interface TimerConfirmResult {
 }
 
 export function confirmTimer(thread_id: string) {
-  return invoke<TimerConfirmResult>("confirm_timer", { thread_id });
+  return invoke<TimerConfirmResult>("confirm_timer", { thread_id }, LLM_ACTION_TIMEOUT_MS);
 }
 
 export interface CodeQualityScore {
@@ -234,7 +284,7 @@ export interface QAAskResult {
  * Used mid-viva when the student is asking something rather than answering
  * the pending question — see capstoneFlow.ts's looksLikeQuestionNotAnswer. */
 export async function askProjectQuestion(thread_id: string, question: string, image?: File) {
-  if (!image) return invoke<QAAskResult>("ask_project_question", { thread_id, question });
+  if (!image) return invoke<QAAskResult>("ask_project_question", { thread_id, question }, LLM_ACTION_TIMEOUT_MS);
   // An image can only travel as multipart; the agent reads it and folds what it sees into the answer.
   const form = new FormData();
   form.append("action", "ask_project_question");

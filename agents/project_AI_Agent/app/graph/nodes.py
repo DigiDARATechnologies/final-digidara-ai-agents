@@ -2,9 +2,11 @@
 returning only the keys it updates, per LangGraph convention."""
 from __future__ import annotations
 
+import difflib
 import functools
 import logging
 import random
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -12,6 +14,7 @@ from app import config
 from app.db.database import get_session
 from app.db.models import (
     AssignmentStatus,
+    OfferedTopic,
     ProjectAssignment,
     Submission,
     SubmissionStatus,
@@ -84,13 +87,49 @@ _TOPIC_ANGLES = [
 ]
 
 
+_PAST_ASSIGNMENTS_SCANNED = 30
+# Most recent titles for the same language/role listed in the prompt itself;
+# the repeat check below covers every title ever offered, not just these.
+_PROMPT_TITLES_LIMIT = 80
+# Titles for the same language/role compared for near-repeats ("Weather Alert
+# API" vs "Weather Alerts API"); exact repeats are checked against all titles.
+_SIMILARITY_POOL_LIMIT = 1000
+_SIMILARITY_THRESHOLD = 0.85
+_GENERATION_ATTEMPTS = 3
+_NEEDS_WEB_SEARCH = re.compile(
+    r"\b(interview|company|companies|hiring|job|placement|recruit\w*|tcs|infosys|wipro|accenture|cognizant"
+    r"|amazon|google|microsoft|meta|flipkart|zoho|deloitte|ibm|oracle|capgemini|hcl)\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_title(title: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", title.lower()).split())[:255]
+
+
+def _focus_key(state: ProjectAgentState) -> str:
+    return normalize_title(state.get("topic_focus_key") or state.get("course_name") or "") or "unknown"
+
+
+def _is_repeat(title: str, taken_exact: set[str], similar_pool: list[str]) -> bool:
+    normalized = normalize_title(title)
+    if not normalized or normalized in taken_exact:
+        return True
+    return any(difflib.SequenceMatcher(None, normalized, other).ratio() >= _SIMILARITY_THRESHOLD for other in similar_pool)
+
+
 @log_node
 def topic_generator_node(state: ProjectAgentState) -> dict:
-    """Two levers keep this from generating the same pair of topics every
-    time: (1) an explicit "don't repeat these" list built from every past
-    chosen topic for this course, and (2) a higher temperature plus a
-    randomly-picked steering angle — low temperature is what made every run
-    converge on the same generic textbook example for a given course+medium."""
+    """No student is offered a topic any student has already been offered.
+    Three levers: (1) the prompt lists the most recent titles offered for the
+    same language/role (to anyone, chosen or not) plus whatever this student
+    already saw in this chat; (2) the model's answer is then checked against
+    every title ever offered -- an exact repeat anywhere, or a near-repeat for
+    the same language/role, is rejected and the pair regenerated with it added
+    to the avoid list; (3) a higher temperature -- low temperature is what made
+    every run converge on the same generic textbook example."""
+    focus_key = _focus_key(state)
+    seen_in_chat = sorted({title for title in state.get("exclude_titles") or [] if title})
     session = get_session()
     try:
         past_assignments = (
@@ -100,14 +139,21 @@ def topic_generator_node(state: ProjectAgentState) -> dict:
                 ProjectAssignment.topic_json.isnot(None),
             )
             .order_by(ProjectAssignment.created_at.desc())
-            .limit(20)
+            .limit(_PAST_ASSIGNMENTS_SCANNED)
             .all()
         )
-        past_titles = sorted(
-            {a.topic_json["title"] for a in past_assignments if a.topic_json and a.topic_json.get("title")}
-        )
+        chosen_titles = [a.topic_json["title"] for a in past_assignments if a.topic_json and a.topic_json.get("title")]
+        focus_titles = [
+            title
+            for (title,) in session.query(OfferedTopic.title)
+            .filter(OfferedTopic.focus_key == focus_key)
+            .order_by(OfferedTopic.created_at.desc())
+            .limit(_SIMILARITY_POOL_LIMIT)
+        ]
     finally:
         session.close()
+    past_titles = sorted(set(chosen_titles) | set(focus_titles[:_PROMPT_TITLES_LIMIT]))
+    similar_pool = [normalize_title(title) for title in focus_titles + chosen_titles + seen_in_chat]
 
     # A free-text request already carries its own angle (whatever the student
     # actually asked for) — injecting a random generic one on top of it is
@@ -120,14 +166,62 @@ def topic_generator_node(state: ProjectAgentState) -> dict:
     # search can actually ground (a company, a current role/tech-stack
     # expectation) — a real course name has no such external reality to
     # check against, so search would just add cost/latency for nothing.
-    use_web_search = bool(state.get("free_topic_request")) and config.ENABLE_TOPIC_WEB_SEARCH
-    result = call_json(
-        system=prompts.topic_generator_prompt(state, past_titles, angle_hint),
-        user="Generate the two topic options now.",
-        temperature=0.9,
-        web_search=use_web_search,
+    # Only when the request actually names something external to look up (a
+    # company, an interview, a job role): the search model is several times
+    # slower than a plain call, and "Python — Login page" gains nothing from it.
+    use_web_search = (
+        bool(state.get("free_topic_request"))
+        and config.ENABLE_TOPIC_WEB_SEARCH
+        and bool(_NEEDS_WEB_SEARCH.search(state.get("course_name") or ""))
     )
-    return {"topic_options": result.get("options", [])}
+
+    rejected: list[str] = []
+    options: list[dict] = []
+    for attempt in range(1, _GENERATION_ATTEMPTS + 1):
+        result = call_json(
+            system=prompts.topic_generator_prompt(state, sorted(set(past_titles) | set(rejected)), angle_hint, seen_in_chat),
+            user="Generate the two topic options now.",
+            temperature=0.9,
+            web_search=use_web_search,
+        )
+        options = [option for option in result.get("options", []) if isinstance(option, dict)]
+        titles = [str(option.get("title") or "") for option in options]
+        session = get_session()
+        try:
+            taken_exact = {
+                normalized
+                for (normalized,) in session.query(OfferedTopic.normalized_title).filter(
+                    OfferedTopic.normalized_title.in_([normalize_title(title) for title in titles])
+                )
+            }
+        finally:
+            session.close()
+        taken_exact |= {normalize_title(title) for title in seen_in_chat}
+        repeats = [title for title in titles if _is_repeat(title, taken_exact, similar_pool)]
+        # The two options must also differ from each other.
+        if len(titles) == 2 and normalize_title(titles[0]) == normalize_title(titles[1]):
+            repeats.append(titles[1])
+        if not repeats:
+            break
+        logger.info("topic attempt %d repeated %s; regenerating", attempt, repeats)
+        rejected.extend(repeats)
+    else:
+        # Out of attempts: still show the student something rather than an
+        # error -- the last pair is the least-repeating one the model gave.
+        logger.warning("topic generation still repeated %s after %d attempts", rejected[-2:], _GENERATION_ATTEMPTS)
+
+    if options:
+        session = get_session()
+        try:
+            for option in options:
+                title = str(option.get("title") or "").strip()[:255]
+                if title:
+                    session.add(OfferedTopic(focus_key=focus_key, title=title, normalized_title=normalize_title(title)))
+            session.commit()
+        finally:
+            session.close()
+
+    return {"topic_options": options}
 
 
 # --- Node 3: RequirementExpansionNode (LLM) ---------------------------------

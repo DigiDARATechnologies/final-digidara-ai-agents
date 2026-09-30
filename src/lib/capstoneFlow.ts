@@ -4,14 +4,18 @@ import {
   askProjectQuestion,
   checkEligibilityFree,
   chooseTopic,
-  clarifyTopicRequest,
   confirmTimer,
   downloadFinalReport,
   getThreadStatus,
   startVivaAttempt,
   submitVivaAnswer,
+  topicIntakeTurn,
   uploadSubmission,
   type CodeQualityScore,
+  type IntakeMemory,
+  type IntakeSlot,
+  type IntakeTurn,
+  type IntakeTurnResult,
   type ProjectDifficulty,
   type SyntaxErrorDetail,
   type TopicOption,
@@ -47,6 +51,22 @@ function looksLikeQuestionOrDispute(text: string): boolean {
  * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
  * heuristic above. */
 const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
+
+/** Once a project's requirements are shown it is locked in: a request to
+ * change the language, topic or project gets a plain answer saying so,
+ * instead of going to the Q&A agent. */
+const LOCKED_CHANGE_REQUEST = /\bregenerate\b|\b(change|switch|update|replace|swap)\b[^.?!]*\b(project|topic|title|language|option|idea)s?\b|\b(different|another|other|new)\s+(two\s+)?(project|topic|title|language|option|idea)s?\b/i;
+
+/** Why a project question could not be answered, in words the student can act on. */
+function qaFailureText(error: unknown): string {
+  const message = (error as Error)?.message ?? "";
+  const reason = /timed out|timeout|504/i.test(message)
+    ? "the answer took too long to prepare"
+    : message
+      ? `the project assistant returned an error (${message})`
+      : "the project assistant could not be reached";
+  return `I couldn't answer your question just now because ${reason}. Nothing is lost — please send it again.`;
+}
 
 /** The chat option that downloads the final report PDF. */
 export const FINAL_REPORT_ACTION = "download_final_report";
@@ -115,13 +135,24 @@ export interface CapstoneFlowState {
    * it on awaiting_topic_choice re-generates the topic options at the new
    * level (see regenerateTopicsForDifficulty). Fixed once a topic is chosen. */
   difficulty: ProjectDifficulty;
-  /** Set while awaiting the student's answer to one clarifying question
-   * (see clarifyTopicRequest) — holds the original free text so the next
-   * message can be combined with it into one enriched description, rather
-   * than replacing it. Cleared once that combined description is sent to
-   * checkEligibilityFree — capped at one clarifying round, not a loop. */
+  /** Chats saved before the intake memory existed: the first answer, held
+   * while a clarifying question was pending. Read once into `intake`. */
   pendingTopicSeed?: string;
+  /** The request as shown back to the student ("Java — Web development"). */
   topicSeed?: string;
+  /** What the student has told us before a project is locked in — the
+   * language/role, the type of project, extra details. Every field stays
+   * editable ("change the language to java") until a project is chosen. */
+  intake?: IntakeMemory;
+  /** Which intake field the last question asked for. */
+  pendingQuestion?: IntakeSlot;
+  /** The last intake question, repeated after answering a side question. */
+  pendingQuestionText?: string;
+  /** The recent intake conversation, sent with every turn so the agent can
+   * resolve "that one" or "change it back". */
+  intakeHistory?: IntakeTurn[];
+  /** Every topic title shown in this chat, so "other topics" never repeats one. */
+  shownTopicTitles?: string[];
   threadId?: string;
   topicOptions?: TopicOption[];
   chosenTopic?: TopicOption;
@@ -175,13 +206,18 @@ export function createInitialCapstoneState(user: User): CapstoneFlowState {
     email: user.email,
     phone: user.mobile,
     difficulty: "easy",
+    pendingQuestion: "focus",
   };
 }
 
+const FOCUS_QUESTION = 'What language, role, or topic would you like your capstone project to be based on? (e.g. "Python", "Data Analyst", "e-commerce website")';
+
+function projectTypeQuestion(focus: string): string {
+  return `What type of project or application would you like to build with ${focus}? (e.g. web app, desktop tool, REST API, data analysis — or say "your choice")`;
+}
+
 export function initialCapstoneMessage(user: User): CapstoneFlowMessage {
-  return {
-    text: `Hi ${user.name.split(" ")[0]}! What language, role, or topic would you like your capstone project to be based on? (e.g. "Python", "Data Analyst", "e-commerce website")`,
-  };
+  return { text: `Hi ${user.name.split(" ")[0]}! ${FOCUS_QUESTION}` };
 }
 
 function formatRequirements(req: Record<string, any>): string {
@@ -219,81 +255,277 @@ function formatSubmissionGuide(guide: Record<string, any>, deadlineAt: string): 
   return lines.join("\n");
 }
 
-/** Merges the original free-text request with the student's answer to the
- * one clarifying question we asked about it. Plain concatenation here reads
- * as "both of these apply" even when the student's answer is actually a
- * correction (e.g. "python developer role" then, asked for more detail,
- * "html developer" — they meant "switch to HTML", not "combine Python and
- * HTML"). Earlier wording told the model the newer answer wins whenever the
- * two "conflict" — but that framing was too eager: given a non-conflicting
- * pair like "portfolio website" then "python", the model still dropped
- * "portfolio website" entirely and generated generic Python topics instead
- * of a Python-based portfolio site. Spelling out that most answers are
- * *additions*, and only a genuinely different role/language/domain is a
- * replacement, keeps the free-text interpretation in topic_generator_prompt
- * from over-applying the override case. Kept short — the backend's
- * Course.name dedup key is capped at 255 chars (see eligibility_check_free),
- * and a shorter, cleaner string also stays a more meaningful dedup key than
- * a long one that gets truncated anyway. */
-/** A deferral ("your choice", "you decide", "surprise me", "idk") answers
- * the clarifying question by declining to add any actual content — it is
- * never itself a role/language/domain detail, so appending it literally
- * (as "python — your choice") reads back to the student as if "your choice"
- * were part of their request, and gives the topic-generator LLM nothing
- * useful to combine. Detected up front so the original request is passed
- * through alone, with a note that the student left this open, instead of
- * being combined at all. */
-const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)\b|^you\s*(decide|choose|pick)\b|^(up to you|surprise me|whatever|anything('?s| is)? (fine|works|good)|no preference|i don'?t (know|care|mind)|idk|not sure|either (is fine|works)|doesn'?t matter)\b/i;
+const HISTORY_LIMIT = 12;
+const SHOWN_TITLES_LIMIT = 60;
+const ANY_PROJECT_TYPE = /^(any|anything|your choice)$/i;
 
-function combineWithClarifyingAnswer(originalRequest: string, answer: string): string {
-  if (DEFERRAL_ANSWER.test(answer.trim())) {
-    return `${originalRequest} (the student was asked a clarifying follow-up about this and declined to add any more detail — use your own best judgment for whatever it was asking about)`;
-  }
-  return `${originalRequest} — additional detail from a follow-up question: "${answer}" (combine both; only drop "${originalRequest}" if "${answer}" genuinely names a different role, language, or domain instead of the same one)`;
+/** The intake memory, including for chats saved before it existed. */
+function intakeOf(state: CapstoneFlowState): IntakeMemory {
+  if (state.intake) return state.intake;
+  if (state.topicSeed) return { focus: state.topicSeed, project_type: "Any" };
+  if (state.pendingTopicSeed) return { focus: state.pendingTopicSeed };
+  return {};
 }
 
-/** What the chat should show as "the request" once a clarifying answer is
- * folded in — a deferral contributes no content of its own, so the original
- * request is shown alone rather than as "python — your choice". */
-function displayLabelForClarifyingAnswer(originalRequest: string, answer: string): string {
-  return DEFERRAL_ANSWER.test(answer.trim()) ? originalRequest : `${originalRequest} — ${answer}`;
+function rememberTurns(state: CapstoneFlowState, studentText: string, messages: CapstoneFlowMessage[]): CapstoneFlowState {
+  const turns: IntakeTurn[] = [
+    ...(state.intakeHistory ?? []),
+    { role: "student", text: studentText },
+    ...messages.map((message) => ({ role: "agent" as const, text: message.text })),
+  ];
+  return { ...state, intakeHistory: turns.slice(-HISTORY_LIMIT) };
 }
 
-/** The actual eligibility+topic-generation call, shared by both the
- * "already specific enough" path and the "combined with the clarifying
- * answer" path below. `description` is what's actually sent to the LLM
- * (for the combined case, that includes instructional framing the student
- * shouldn't see); `displayLabel` — defaulting to the same text — is what
- * shows up in the chat message, so a combined request shows the student's
- * own words back to them instead of the raw merge instructions. */
+function topicChoiceOptions(topics: TopicOption[] | undefined): ChatOption[] | undefined {
+  return topics?.map((topic) => ({ label: `${topic.id}. ${topic.title}`, value: topic.id, description: topic.summary }));
+}
+
+/** "your choice", "idk", "anything" -- leaves the project type open. */
+const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)$|^you\s*(decide|choose|pick)$|^(any|anything|up to you|surprise me|whatever|no preference|idk|not sure|doesn'?t matter)$/i;
+
+/** Words that make a message more than a plain answer: an edit, a request
+ * for other topics, a difficulty change, or a question. */
+const NOT_A_PLAIN_ANSWER = /\?|\b(change|update|switch|instead|actually|not|no|regenerate|another|other|different|new|more|harder|easier|easy|medium|hard|difficulty|what|why|how|which|can|could|should|explain|help|hi|hello|hey)\b/i;
+
+/** A short reply ("Python", "Login page", "your choice") answering the
+ * pending question -- taken as the answer directly, without a model call. */
+function isPlainAnswer(text: string): boolean {
+  if (DEFERRAL_ANSWER.test(text)) return true;
+  return text.split(/\s+/).length <= 4 && text.length <= 40 && !NOT_A_PLAIN_ANSWER.test(text);
+}
+
+const LANGUAGE_NAME = /^(python|java|javascript|js|typescript|ts|c|c\+\+|cpp|c#|csharp|go|golang|rust|kotlin|swift|php|ruby|r|dart|scala|html|css|html\s*(and|&|\/)?\s*css|sql|react|angular|vue|node(\.?js)?|django|flask|spring|flutter|\.net|dotnet)$/i;
+
+/** "I need another two topics", "regenerate", "show me other ideas", "change the topics". */
+const PLAIN_REGENERATE = /^(please\s+)?(i\s+(need|want)\s+(to\s+)?|give\s+me\s+|show\s+me\s+|can\s+i\s+(get|have)\s+)?(a\s+)?(regenerate(\s+(the\s+)?(topics?|ideas?|options?|projects?))?|(an?\s*other|other|new|different|more)\s+(two\s+)?(topics?|ideas?|options?|projects?)|change\s+(the\s+)?(project\s+)?(topics?|ideas?|options?))(\s+please)?[.!]?$/i;
+
+const CHOOSE_PROMPT = 'Choose project A or B to continue — or tell me what to change (the language, the type of project, or "show me other topics").';
+
+/** What goes to the topic generator for this memory: `description` for the
+ * LLM, `label` for the chat, `key` for the shared past-topics pool. */
+function generationRequest(memory: IntakeMemory): { description: string; label: string; key: string } {
+  const focus = memory.focus ?? "";
+  const type = memory.project_type ?? "";
+  const openType = !type || ANY_PROJECT_TYPE.test(type.trim());
+  const label = openType ? focus : `${focus} — ${type}`;
+  let description = label;
+  if (memory.details) description += ` (${memory.details})`;
+  if (openType) description += " (the student left the type of project open — use your own best judgment)";
+  const key = `${focus}|${openType ? "any" : type}`.toLowerCase().replace(/\s+/g, " ").trim();
+  return { description, label, key };
+}
+
+/** Generates (or re-generates) two options from the intake memory, never
+ * repeating a title this chat has already shown. */
 async function generateTopicsFor(
   state: CapstoneFlowState,
-  description: string,
-  displayLabel: string = description,
+  memory: IntakeMemory,
+  lead?: string | null,
 ): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
+  const { description, label, key } = generationRequest(memory);
+  const seen = state.shownTopicTitles ?? [];
   try {
-    const result = await checkEligibilityFree(state.name, state.email, state.phone, description, state.difficulty);
+    const result = await checkEligibilityFree(state.name, state.email, state.phone, description, state.difficulty, {
+      excludeTitles: seen,
+      topicKey: key,
+    });
     const topics = result.topic_options ?? [];
+    const intro = seen.length ? `Here are two new ${state.difficulty} project options` : `I generated two ${state.difficulty} project options`;
     return {
       state: {
         ...state,
+        intake: memory,
+        pendingQuestion: undefined,
+        pendingQuestionText: undefined,
         pendingTopicSeed: undefined,
-        topicSeed: displayLabel,
+        topicSeed: label,
         threadId: result.thread_id,
         topicOptions: topics,
+        shownTopicTitles: [...seen, ...topics.map((topic) => topic.title)].slice(-SHOWN_TITLES_LIMIT),
         step: "awaiting_topic_choice",
       },
       messages: [{
-        text: `I generated two ${state.difficulty} project options for "${displayLabel}". Choose one to continue.`,
-        options: topics.map((topic) => ({ label: `${topic.id}. ${topic.title}`, value: topic.id, description: topic.summary })),
+        text: `${lead ? `${lead}\n\n` : ""}${intro} for "${label}". ${CHOOSE_PROMPT}`,
+        options: topicChoiceOptions(topics),
       }],
     };
   } catch (error) {
     return {
-      state: { ...state, pendingTopicSeed: undefined },
+      state: { ...state, intake: memory },
       messages: [{ text: `I could not generate a project for that: ${(error as Error).message}. Please try again.` }],
     };
   }
+}
+
+/** Asks for a missing intake field. Any options on screen are dropped — the
+ * request they were generated for no longer holds. */
+function askFor(
+  state: CapstoneFlowState,
+  memory: IntakeMemory,
+  slot: IntakeSlot,
+  question: string,
+  lead?: string | null,
+): { state: CapstoneFlowState; messages: CapstoneFlowMessage[] } {
+  return {
+    state: {
+      ...state,
+      intake: memory,
+      step: "awaiting_topic_request",
+      pendingQuestion: slot,
+      pendingQuestionText: question,
+      pendingTopicSeed: undefined,
+      topicOptions: undefined,
+      threadId: undefined,
+    },
+    messages: [{ text: lead ? `${lead}\n\n${question}` : question }],
+  };
+}
+
+/** Moves on from the memory: ask for what's still missing, or generate. */
+function continueIntake(
+  state: CapstoneFlowState,
+  memory: IntakeMemory,
+  ready: boolean,
+  nextQuestion?: string | null,
+  lead?: string | null,
+) {
+  if (!memory.focus) return Promise.resolve(askFor(state, memory, "focus", nextQuestion || FOCUS_QUESTION, lead));
+  if (!ready || !memory.project_type) {
+    return Promise.resolve(askFor(state, memory, "project_type", nextQuestion || projectTypeQuestion(memory.focus), lead));
+  }
+  return generateTopicsFor(state, memory, lead);
+}
+
+async function lockTopic(state: CapstoneFlowState, topic: TopicOption): Promise<CapstoneFlowResult> {
+  try {
+    const result = await chooseTopic(state.threadId!, topic.id);
+    return {
+      state: { ...state, chosenTopic: topic, requirements: result.requirements, step: "awaiting_timer_confirm" },
+      messages: [{
+        text: `${formatRequirements(result.requirements)}\n\nNot sure how your report and zip should look? Download the examples below. Start the 7-day project timer when you are ready.`,
+        options: [{ label: "Start 7-day timer", value: "confirm" }, ...CAPSTONE_EXAMPLE_OPTIONS],
+      }],
+    };
+  } catch (error) {
+    return { state, messages: [{ text: `I could not lock that project: ${(error as Error).message}` }] };
+  }
+}
+
+function sameMemory(a: IntakeMemory, b: IntakeMemory): boolean {
+  return (a.focus ?? null) === (b.focus ?? null)
+    && (a.project_type ?? null) === (b.project_type ?? null)
+    && (a.details ?? null) === (b.details ?? null)
+    && (a.difficulty ?? null) === (b.difficulty ?? null);
+}
+
+/** The intake agent is unreachable: fall back to treating the message as the
+ * answer to whatever was asked, or — with options on screen — as a question
+ * for the project Q&A agent, which is how this chat worked before. */
+async function intakeFallback(state: CapstoneFlowState, memory: IntakeMemory, text: string): Promise<CapstoneFlowResult> {
+  const options = topicChoiceOptions(state.topicOptions);
+  if (state.step === "awaiting_topic_choice") {
+    if (state.threadId) {
+      try {
+        const qa = await askProjectQuestion(state.threadId, text);
+        return { state, messages: [{ text: qa.answer }, { text: CHOOSE_PROMPT, options }] };
+      } catch {
+        // Q&A itself failed -- fall through to the plain reminder below.
+      }
+    }
+    return { state, messages: [{ text: "Choose project A or B.", options }] };
+  }
+  if (!memory.focus || state.pendingQuestion === "focus") {
+    const next = { ...memory, focus: text };
+    return askFor(state, next, "project_type", projectTypeQuestion(text));
+  }
+  return generateTopicsFor(state, { ...memory, project_type: text });
+}
+
+/** Everything before a project is locked in: answering the two intake
+ * questions, editing an earlier answer, asking for other topics, side
+ * questions, and picking A or B. */
+async function handleTopicIntake(state: CapstoneFlowState, text: string): Promise<CapstoneFlowResult> {
+  const memory = intakeOf(state);
+  const shownTopics = state.step === "awaiting_topic_choice" ? state.topicOptions ?? [] : [];
+
+  // An exact selection ("A", "b", "option A", "A.") never needs the model.
+  // Only an exact one: stripping any text down to a letter it happens to
+  // contain silently picked a project for "I need to change the project topics".
+  const exact = text.match(/^(?:option\s*)?([ab])\.?$/i);
+  const exactTopic = exact ? shownTopics.find((topic) => topic.id === exact[1].toUpperCase()) : undefined;
+  if (exactTopic) return lockTopic(state, exactTopic);
+
+  if (!memory.focus && text.split(/\s+/).length <= 5 && OFF_TOPIC_SMALL_TALK.test(text)) {
+    return {
+      state,
+      messages: [{
+        text: 'I\'m the Capstone Project Agent — I help you choose a project topic, write out its requirements, track your 7-day build, and grade the final submission (with a short viva). Tell me the language, role, or topic you\'d like your project based on (e.g. "python", "data analyst", "e-commerce website") and I\'ll generate two options.',
+      }],
+    };
+  }
+
+  // Fast paths that need no model call (each one is a full LLM round-trip
+  // the student waits on): a plain answer to the pending question, and a
+  // plain "other topics" request.
+  if (shownTopics.length && PLAIN_REGENERATE.test(text)) {
+    const result = await generateTopicsFor(state, memory, "Sure — here are some different ideas.");
+    return { ...result, state: rememberTurns(result.state, text, result.messages) };
+  }
+  // A bare language name while the project-type question is pending is most
+  // likely a change of language ("java"), so that one still goes to the model.
+  const languageSwitch = state.pendingQuestion === "project_type" && LANGUAGE_NAME.test(text);
+  if (state.step === "awaiting_topic_request" && isPlainAnswer(text) && !languageSwitch) {
+    const value = text.charAt(0).toUpperCase() + text.slice(1);
+    const result = !memory.focus || state.pendingQuestion === "focus"
+      ? askFor(state, { ...memory, focus: value }, "project_type", projectTypeQuestion(value))
+      : await generateTopicsFor(state, { ...memory, project_type: DEFERRAL_ANSWER.test(text) ? "Any" : value });
+    return { ...result, state: rememberTurns(result.state, text, result.messages) };
+  }
+
+  let turn: IntakeTurnResult;
+  try {
+    turn = await topicIntakeTurn({
+      message: text,
+      memory,
+      pending_question: state.step === "awaiting_topic_request" ? state.pendingQuestion : undefined,
+      shown_topics: shownTopics.map(({ id, title, summary }) => ({ id, title, summary })),
+      history: state.intakeHistory ?? [],
+    });
+  } catch {
+    return intakeFallback(state, memory, text);
+  }
+
+  let result: { state: CapstoneFlowState; messages: CapstoneFlowMessage[] };
+  switch (turn.intent) {
+    case "choose": {
+      const topic = shownTopics.find((item) => item.id === turn.choice);
+      if (topic) return lockTopic(state, topic);
+      result = { state, messages: [{ text: CHOOSE_PROMPT, options: topicChoiceOptions(shownTopics) }] };
+      break;
+    }
+    case "regenerate":
+      result = await generateTopicsFor(state, memory, "Sure — here are some different ideas.");
+      break;
+    case "update": {
+      const next: IntakeMemory = { ...turn.memory };
+      const withLevel = next.difficulty && next.difficulty !== state.difficulty ? { ...state, difficulty: next.difficulty } : state;
+      if (shownTopics.length && sameMemory(next, memory) && withLevel === state) {
+        result = { state, messages: [{ text: turn.reply ? `${turn.reply}\n\n${CHOOSE_PROMPT}` : CHOOSE_PROMPT, options: topicChoiceOptions(shownTopics) }] };
+        break;
+      }
+      result = await continueIntake(withLevel, next, turn.ready, turn.next_question, turn.reply);
+      break;
+    }
+    default: {
+      // A side question or small talk: answer it, then put the pending step back in front of the student.
+      const reply = turn.reply || "I'm here to help you pick your capstone project.";
+      const back: CapstoneFlowMessage = shownTopics.length
+        ? { text: CHOOSE_PROMPT, options: topicChoiceOptions(shownTopics) }
+        : { text: state.pendingQuestionText || (memory.focus ? projectTypeQuestion(memory.focus) : FOCUS_QUESTION) };
+      result = { state, messages: [{ text: reply }, back] };
+    }
+  }
+  return { ...result, state: rememberTurns(result.state, text, result.messages) };
 }
 
 /** A chat saved before failed grades were made retryable can be sitting in
@@ -341,90 +573,27 @@ export async function handleCapstoneText(
   }
 
   switch (state.step) {
-    case "awaiting_topic_request": {
-      if (!trimmed) {
-        return { state, messages: [{ text: "Tell me the language, role, or topic you'd like your project based on." }] };
-      }
-      if (OFF_TOPIC_SMALL_TALK.test(trimmed)) {
-        return {
-          state,
-          messages: [{
-            text: 'I\'m the Capstone Project Agent — I help you choose a project topic, write out its requirements, track your 7-day build, and grade the final submission (with a short viva). Tell me the language, role, or topic you\'d like your project based on (e.g. "python", "data analyst", "e-commerce website") and I\'ll generate two options.',
-          }],
-        };
-      }
-
-      // Answering a clarifying question we already asked — combine it with
-      // the original request and generate now. Capped at one round: we
-      // don't re-run the clarity check on the combined description, even
-      // if it's still vague, so this can never turn into a back-and-forth.
-      if (state.pendingTopicSeed) {
-        const combined = combineWithClarifyingAnswer(state.pendingTopicSeed, trimmed);
-        return generateTopicsFor(state, combined, displayLabelForClarifyingAnswer(state.pendingTopicSeed, trimmed));
-      }
-
-      try {
-        const clarity = await clarifyTopicRequest(trimmed);
-        if (!clarity.ready && clarity.clarifying_question) {
-          return {
-            state: { ...state, pendingTopicSeed: trimmed },
-            messages: [{ text: clarity.clarifying_question }],
-          };
-        }
-      } catch {
-        // Clarity check failing shouldn't block generation — fall through
-        // and try to generate directly from what was typed, same as before
-        // this feature existed.
-      }
-      return generateTopicsFor(state, trimmed);
-    }
-
+    case "awaiting_topic_request":
     case "awaiting_topic_choice": {
-      // Only an actual selection ("A", "b", "option A", "A.") should count --
-      // stripping the text down to whichever of the letters A/B it happens to
-      // contain (the previous approach) silently mis-selected a project for
-      // any unrelated message that merely used the letter "a" somewhere, e.g.
-      // "I need to change the project topics" collapsing to "A".
-      const match = trimmed.match(/^(?:option\s*)?([ab])\.?$/i);
-      const choice = match ? match[1].toUpperCase() : null;
-      const topic = choice ? state.topicOptions?.find((item) => item.id === choice) : undefined;
-      if (!topic) {
-        const options = state.topicOptions?.map((item) => ({ label: `${item.id}. ${item.title}`, value: item.id, description: item.summary }));
-        // Plain text is never itself a valid action here (only "A"/"B" is),
-        // so any non-selection always gets a real answer from the Q&A agent
-        // rather than being pre-filtered by a brittle question-shaped-text
-        // heuristic -- that heuristic previously missed genuine requests
-        // like "I can't understand the requirements, explain more" (no "?",
-        // no matched opening phrase) and sent them the canned reminder
-        // instead of an answer. The Q&A agent itself already declines
-        // anything unrelated to this project and redirects, so this can
-        // never turn into open-ended chat -- mirrors the same
-        // always-try-Q&A-first pattern awaiting_timer_confirm already uses.
-        if (state.threadId && trimmed) {
-          try {
-            const qa = await askProjectQuestion(state.threadId, trimmed);
-            return { state, messages: [{ text: qa.answer }, { text: "Choose project A or B to continue.", options }] };
-          } catch {
-            // Q&A itself failed -- fall through to the plain reminder below.
-          }
-        }
-        return { state, messages: [{ text: "Choose project A or B.", options }] };
+      if (!trimmed) {
+        return state.step === "awaiting_topic_choice"
+          ? { state, messages: [{ text: CHOOSE_PROMPT, options: topicChoiceOptions(state.topicOptions) }] }
+          : { state, messages: [{ text: "Tell me the language, role, or topic you'd like your project based on." }] };
       }
-      try {
-        const result = await chooseTopic(state.threadId!, topic.id);
-        return {
-          state: { ...state, chosenTopic: topic, requirements: result.requirements, step: "awaiting_timer_confirm" },
-          messages: [{
-            text: `${formatRequirements(result.requirements)}\n\nNot sure how your report and zip should look? Download the examples below. Start the 7-day project timer when you are ready.`,
-            options: [{ label: "Start 7-day timer", value: "confirm" }, ...CAPSTONE_EXAMPLE_OPTIONS],
-          }],
-        };
-      } catch (error) {
-        return { state, messages: [{ text: `I could not lock that project: ${(error as Error).message}` }] };
-      }
+      return handleTopicIntake(state, trimmed);
     }
 
     case "awaiting_timer_confirm": {
+      // The project was locked in the moment its requirements were shown.
+      if (LOCKED_CHANGE_REQUEST.test(trimmed)) {
+        return {
+          state,
+          messages: [{
+            text: `Your project "${state.chosenTopic?.title ?? "this project"}" is locked in — its requirements are fixed now, so the language, project type and topic can no longer be changed. To work on a different project, start a new chat. Ask me anything about these requirements, or start the 7-day timer when you're ready.`,
+            options: [{ label: "Start 7-day timer", value: "confirm" }],
+          }],
+        };
+      }
       if (!/^(confirm|yes|start)/i.test(trimmed)) {
         // The only valid action here is confirming the timer, so anything
         // else typed is by definition a doubt about the requirements just
@@ -442,8 +611,10 @@ export async function handleCapstoneText(
                 { text: "Start the 7-day project timer when you're ready.", options: [{ label: "Start 7-day timer", value: "confirm" }] },
               ],
             };
-          } catch {
-            // Q&A itself failed -- fall through to the plain reminder below.
+          } catch (error) {
+            // Say that the answer failed, and why -- a canned "use the button"
+            // here read as the agent ignoring the question.
+            return { state, messages: [{ text: qaFailureText(error), options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
           }
         }
         return { state, messages: [{ text: "Use the button when you are ready. The timer cannot be paused.", options: [{ label: "Start 7-day timer", value: "confirm" }] }] };
@@ -641,8 +812,8 @@ export async function handleCapstoneText(
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return { state, messages: [{ text: qa.answer }, { text: "Attach both your .docx report and .zip source archive using the paperclip button when you're ready to resubmit." }] };
-        } catch {
-          // Q&A itself failed -- fall through to the normal reminder below.
+        } catch (error) {
+          return { state, messages: [{ text: qaFailureText(error) }, { text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
         }
       }
       return { state, messages: [{ text: "Attach both your .docx report and .zip source archive using the paperclip button." }] };
@@ -682,29 +853,22 @@ export async function handleCapstoneText(
 
 /** Re-runs topic generation for a new difficulty level after topics were
  * already generated (connector pill level change on awaiting_topic_choice).
- * A no-op with a friendly message outside that window — regeneration needs
- * the original topic seed, and once a topic is chosen the level is already
- * baked into the locked requirements. */
+ * Before any options exist it only records the level; once a topic is
+ * chosen the level is already baked into the locked requirements. */
 export async function regenerateTopicsForDifficulty(
   state: CapstoneFlowState,
   difficulty: ProjectDifficulty,
 ): Promise<{ state: CapstoneFlowState; messages: CapstoneFlowMessage[] }> {
-  if (state.step !== "awaiting_topic_choice" || !state.topicSeed) {
+  const memory = intakeOf(state);
+  if (state.step !== "awaiting_topic_choice" || !memory.focus) {
     return { state: { ...state, difficulty }, messages: [] };
   }
-  try {
-    const result = await checkEligibilityFree(state.name, state.email, state.phone, state.topicSeed, difficulty);
-    const topics = result.topic_options ?? [];
-    return {
-      state: { ...state, difficulty, threadId: result.thread_id, topicOptions: topics },
-      messages: [{
-        text: `Switched to ${difficulty} difficulty. I generated two new ${difficulty} project options for "${state.topicSeed}". Choose one to continue.`,
-        options: topics.map((topic) => ({ label: `${topic.id}. ${topic.title}`, value: topic.id, description: topic.summary })),
-      }],
-    };
-  } catch (error) {
-    return { state, messages: [{ text: `I could not regenerate projects at ${difficulty} difficulty: ${(error as Error).message}` }] };
+  const result = await generateTopicsFor({ ...state, difficulty }, { ...memory, difficulty }, `Switched to ${difficulty} difficulty.`);
+  // A failed regeneration leaves the current options (and their level) as they were.
+  if (result.state.step !== "awaiting_topic_choice" || result.state.threadId === state.threadId) {
+    return { state, messages: [{ text: `I could not regenerate projects at ${difficulty} difficulty. ${result.messages[0]?.text ?? ""}`.trim() }] };
   }
+  return result;
 }
 
 export function mergeCapstoneFiles(state: CapstoneFlowState, files: File[]): { state: CapstoneFlowState; messages: CapstoneFlowMessage[] } {

@@ -150,6 +150,7 @@ def init_job_tables():
                 preferred_locations LONGTEXT,
                 preferred_work_mode VARCHAR(30),
                 experience_years DECIMAL(4,1) NOT NULL DEFAULT 0,
+                experience_provided TINYINT(1) NOT NULL DEFAULT 0,
                 resume_url TEXT,
                 profile_completed TINYINT(1) NOT NULL DEFAULT 0,
                 onboarding_step VARCHAR(50) DEFAULT 'full_name',
@@ -171,6 +172,54 @@ def init_job_tables():
                 INDEX idx_user_application (user_id, application_status),
                 CONSTRAINT fk_job_action_user FOREIGN KEY (user_id) REFERENCES user_job_profiles(user_id) ON DELETE CASCADE,
                 CONSTRAINT fk_job_action_job FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS job_conversations (
+                id VARCHAR(64) NOT NULL,
+                user_id VARCHAR(32) NOT NULL,
+                title VARCHAR(255) NOT NULL DEFAULT 'Job Agent',
+                status VARCHAR(20) NOT NULL DEFAULT 'active',
+                summary TEXT NULL,
+                last_message_at TIMESTAMP NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id, user_id),
+                INDEX idx_job_conversations_user_updated (user_id, updated_at),
+                CONSTRAINT fk_job_conversation_user FOREIGN KEY (user_id)
+                    REFERENCES user_job_profiles(user_id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS job_conversation_messages (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                conversation_id VARCHAR(64) NOT NULL,
+                user_id VARCHAR(32) NOT NULL,
+                role VARCHAR(16) NOT NULL,
+                content TEXT NOT NULL,
+                content_hash CHAR(64) NOT NULL,
+                client_message_id VARCHAR(64) NULL,
+                metadata LONGTEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_job_conversation_client_role (conversation_id, user_id, client_message_id, role),
+                INDEX idx_job_messages_conversation_id (conversation_id, user_id, id),
+                INDEX idx_job_messages_user_created (user_id, created_at),
+                CONSTRAINT fk_job_message_conversation FOREIGN KEY (conversation_id, user_id)
+                    REFERENCES job_conversations(id, user_id) ON DELETE CASCADE,
+                CONSTRAINT fk_job_message_user FOREIGN KEY (user_id)
+                    REFERENCES user_job_profiles(user_id) ON DELETE CASCADE
+            )""",
+            """CREATE TABLE IF NOT EXISTS user_job_memories (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL,
+                memory_key VARCHAR(100) NOT NULL,
+                memory_type VARCHAR(30) NOT NULL DEFAULT 'profile',
+                memory_value TEXT NOT NULL,
+                source_conversation_id VARCHAR(64) NULL,
+                confidence DECIMAL(4,3) NOT NULL DEFAULT 1.000,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_user_job_memory (user_id, memory_key),
+                INDEX idx_job_memories_user_active (user_id, is_active, updated_at),
+                CONSTRAINT fk_job_memory_user FOREIGN KEY (user_id)
+                    REFERENCES user_job_profiles(user_id) ON DELETE CASCADE
             )""",
             """CREATE TABLE IF NOT EXISTS job_automation_settings (
                 id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
@@ -223,6 +272,13 @@ def init_job_tables():
         _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN resume_original_name VARCHAR(255) NULL")
         _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN onboarding_step VARCHAR(50) DEFAULT 'full_name'")
         _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN education VARCHAR(255) NULL")
+        _add_column(cursor, "ALTER TABLE user_job_profiles ADD COLUMN experience_provided TINYINT(1) NOT NULL DEFAULT 0")
+        # Existing completed profiles have already passed the legacy flow. Mark
+        # their stored value as intentional so a deployment does not restart
+        # onboarding for every current user (including genuine freshers).
+        cursor.execute(
+            "UPDATE user_job_profiles SET experience_provided=1 WHERE profile_completed=1 AND experience_provided=0"
+        )
 
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN department VARCHAR(150) NULL AFTER employment_type")
         _add_column(cursor, "ALTER TABLE jobs ADD COLUMN category VARCHAR(50) NULL AFTER department")

@@ -3,7 +3,7 @@ import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
-import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import useSpeechRecognition, { type AudioTranscriber } from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
 import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
@@ -65,6 +65,13 @@ interface ChatViewProps {
   immersiveSpeaking?: boolean;
   /** Pronunciation uses microphone energy detection to stop after speech. */
   autoStopVoiceOnSilence?: boolean;
+  /** Server-side transcription for a recorded answer. When given, phones
+   * record the answer and send it here instead of using the browser's live
+   * speech recognition, which is unreliable on phones. */
+  transcribeAudio?: AudioTranscriber;
+  /** With transcribeAudio: transcribes the recording so far, so the text
+   * appears in the input box while the student is still speaking. */
+  previewAudio?: AudioTranscriber;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -85,6 +92,10 @@ interface ChatViewProps {
   /** Suppress the text copy when a live panel renders that content itself. */
   hideLatestContextMessage?: boolean;
 }
+
+/** Phone recording (Communication Coach): a pause this long after speaking
+ * sends the answer by itself. */
+const PHONE_AUTO_SEND_SILENCE_MS = 7_000;
 
 export default function ChatView({
   chat,
@@ -123,6 +134,8 @@ export default function ChatView({
   onDailyChallenge,
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
+  transcribeAudio,
+  previewAudio,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -138,7 +151,12 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition();
+  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio);
+  // Recording mode (phones): tapping the mic to stop sends the answer once
+  // the server has transcribed it -- the text does not exist yet at the tap.
+  const sendOnFinalRef = useRef(false);
+  // Seconds before a pause sends the answer (phone recording), for the hint.
+  const [autoSendIn, setAutoSendIn] = useState<number | null>(null);
   // Recognition is `continuous: true`, so it keeps listening in the
   // background after Send unless explicitly stopped ... and a result that was
   // already in flight can still land *after* stop() and repopulate the box
@@ -152,7 +170,14 @@ export default function ChatView({
   function handleMicClick() {
     stopCoachAudio();
     setAgentSpeaking(false);
+    if (speech.transcribing) return;
     if (speech.listening) {
+      if (speech.recordingMode) {
+        sendOnFinalRef.current = true;
+        speech.stop();
+        if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
+        return;
+      }
       voiceSessionRef.current += 1;
       speech.stop();
       if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
@@ -163,12 +188,26 @@ export default function ChatView({
       return;
     }
     setInput("");
+    // On a phone the answer is sent by itself once the student stops talking
+    // (or taps the mic again) -- no Send tap needed.
+    sendOnFinalRef.current = speech.recordingMode;
+    setAutoSendIn(null);
     const session = ++voiceSessionRef.current;
-    speech.start((text) => {
+    speech.start((text, final) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
+      if (final && sendOnFinalRef.current) {
+        sendOnFinalRef.current = false;
+        if (text.trim()) {
+          voiceSessionRef.current += 1;
+          onSend(text.trim());
+          setInput("");
+        }
+      }
     }, {
-      autoStopOnSilence: autoStopVoiceOnSilence,
+      autoStopOnSilence: autoStopVoiceOnSilence || speech.recordingMode,
+      silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+      onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
         if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
       },
@@ -242,6 +281,7 @@ export default function ChatView({
   }, [input]);
 
   const activeSpeakingPrompt = [...chat.messages].reverse().find((message) => message.role === "agent")?.text || "Speak when you are ready.";
+  const learnerFirstName = user?.name ? user.name.trim().split(/\s+/)[0] : "";
 
   useEffect(() => {
     window.clearTimeout(silenceTimerRef.current);
@@ -256,6 +296,9 @@ export default function ChatView({
     let observedTranscript = "";
     let lastSpeechAt = 0;
     let submitted = false;
+    let promptFinishedAt = 0;
+    let silenceNudgeCount = 0;
+    let isNudging = false;
     let silenceCheck: number | undefined;
     const session = ++voiceSessionRef.current;
 
@@ -269,32 +312,112 @@ export default function ChatView({
       setInput("");
     };
 
-    const beginListening = () => {
+    const startListening = () => {
       if (submitted || voiceSessionRef.current !== session) return;
       setAgentSpeaking(false);
       setInput("");
-      speech.start((text) => {
-        if (voiceSessionRef.current !== session || submitted) return;
-        if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-          window.speechSynthesis.cancel();
-          setAgentSpeaking(false);
-        }
-        const next = text.trim();
-        latestTranscript = next;
-        setInput(text);
-        if (next && next !== observedTranscript) {
-          observedTranscript = next;
-          lastSpeechAt = Date.now();
-        }
-      }, {
-        autoStopOnSilence: true,
-        onAudioLevel: (lvl) => {
-          if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+      speech.start(
+        (text, final) => {
+          if (voiceSessionRef.current !== session || submitted) return;
+          if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
+            window.speechSynthesis.cancel();
+            setAgentSpeaking(false);
+          }
+          const next = text.trim();
+          latestTranscript = next;
+          setInput(text);
+          if (next && next !== observedTranscript) {
+            observedTranscript = next;
+            lastSpeechAt = Date.now();
+          }
+          // Recording mode delivers the whole answer once, after the pause that
+          // ended the recording: send it straight away.
+          if (final && next && speech.recordingMode) submitSpokenTurn();
         },
-      });
+        {
+          autoStopOnSilence: true,
+          silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+          onSilenceCountdown: setAutoSendIn,
+          onAudioLevel: (lvl) => {
+            if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
+          },
+        },
+      );
+    };
+
+    const beginListening = () => {
+      if (submitted || voiceSessionRef.current !== session) return;
+      promptFinishedAt = Date.now();
+      silenceNudgeCount = 0;
+      isNudging = false;
+      startListening();
+
       silenceCheck = window.setInterval(() => {
-        if (latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 4000) submitSpokenTurn();
-      }, 200);
+        if (submitted || voiceSessionRef.current !== session || isNudging) return;
+
+        // 1. Spoken answer detected: auto-submit after natural 6.5s pause (desktop / live Web Speech)
+        if (!speech.recordingMode && latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 6500) {
+          submitSpokenTurn();
+          return;
+        }
+
+        // 2. Silence watchdog: user has not spoken yet
+        if (!latestTranscript && promptFinishedAt > 0) {
+          const silenceElapsed = Date.now() - promptFinishedAt;
+
+          // First silence nudge (after 9 seconds of complete silence)
+          if (silenceNudgeCount === 0 && silenceElapsed >= 9000) {
+            silenceNudgeCount = 1;
+            isNudging = true;
+            speech.stop();
+            const nudge = learnerFirstName
+              ? `${learnerFirstName}, are you here? Take your time, whenever you are ready.`
+              : "Are you here? Take your time, whenever you are ready.";
+            playCoachSpeech(nudge, {
+              rate: 0.95,
+              voiceName: "nova",
+              onStart: () => setAgentSpeaking(true),
+              onEnd: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+              onError: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+            });
+            return;
+          }
+
+          // Second silence nudge (after another 11 seconds of silence)
+          if (silenceNudgeCount === 1 && silenceElapsed >= 11000) {
+            silenceNudgeCount = 2;
+            isNudging = true;
+            speech.stop();
+            const nudge = learnerFirstName
+              ? `${learnerFirstName}, would you like me to repeat the question or simplify it for you?`
+              : "Would you like me to repeat the question or simplify it for you?";
+            playCoachSpeech(nudge, {
+              rate: 0.95,
+              voiceName: "nova",
+              onStart: () => setAgentSpeaking(true),
+              onEnd: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+              onError: () => {
+                isNudging = false;
+                promptFinishedAt = Date.now();
+                window.setTimeout(startListening, 300);
+              },
+            });
+            return;
+          }
+        }
+      }, 250);
     };
 
     playCoachSpeech(activeSpeakingPrompt, {
@@ -315,7 +438,7 @@ export default function ChatView({
     };
     // A new coach prompt is spoken, then hands control back to recognition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [immersiveSpeaking, typing, activeSpeakingPrompt]);
+  }, [immersiveSpeaking, typing, activeSpeakingPrompt, learnerFirstName]);
 
   return (
     <section className={`view view-chat active${immersiveSpeaking ? " immersive-speaking" : ""}`} id="view-chat">
@@ -363,7 +486,7 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening... (Pause or tap orb to send)" : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"
@@ -587,7 +710,8 @@ export default function ChatView({
             <button
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.listening ? "Stop recording" : "Voice input"}
+              title={speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              disabled={speech.transcribing}
               onClick={handleMicClick}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -609,8 +733,16 @@ export default function ChatView({
           </button>
         </form>
       )}
-      {!codeMode && !multilineMode && autoStopVoiceOnSilence && speech.listening && (
+      {!codeMode && !multilineMode && autoStopVoiceOnSilence && !speech.recordingMode && speech.listening && (
         <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
+      )}
+      {!codeMode && !multilineMode && speech.recordingMode && speech.listening && (
+        <div className="voice-capture-status" role="status">{autoSendIn !== null
+          ? `Sending your answer in ${autoSendIn}s – keep talking to continue.`
+          : "Recording… stop talking for 7 seconds (or tap the microphone) and your answer is sent."}</div>
+      )}
+      {!codeMode && !multilineMode && speech.transcribing && (
+        <div className="voice-capture-status" role="status">Turning your recording into text…</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
     </section>

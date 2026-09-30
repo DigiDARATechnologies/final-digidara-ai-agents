@@ -18,11 +18,12 @@ text alone. See providers.yaml's comment on this same point.
 # Canonical Tamil Nadu district name -> alias/spelling variants that
 # should resolve to it. Checked in this order, so a name that could be a
 # substring of another (none currently) would resolve to the first
-# listed. All 32 Tamil Nadu districts per the current administrative list.
+# listed. Includes the current Tamil Nadu districts plus the commonly searched
+# Hosur city retained for backward compatibility with existing profiles.
 TN_DISTRICTS = {
     "Chennai": ["chennai"],
     "Coimbatore": ["coimbatore"],
-    "Madurai": ["madurai"],
+    "Madurai": ["madurai", "madhurai"],
     "Tiruchirappalli": ["tiruchirappalli", "tiruchirapalli", "trichy"],
     "Salem": ["salem"],
     "Tiruppur": ["tiruppur", "tirupur"],
@@ -52,6 +53,13 @@ TN_DISTRICTS = {
     "Perambalur": ["perambalur"],
     "Ariyalur": ["ariyalur"],
     "The Nilgiris": ["nilgiris", "ooty", "udhagamandalam"],
+    "Dharmapuri": ["dharmapuri"],
+    "Kanyakumari": ["kanyakumari", "nagercoil"],
+    "Theni": ["theni"],
+    "Tiruvannamalai": ["tiruvannamalai", "thiruvannamalai"],
+    "Tiruvarur": ["tiruvarur", "thiruvarur"],
+    "Tirupattur": ["tirupattur", "thirupattur"],
+    "Tiruvallur": ["tiruvallur", "thiruvallur"],
 }
 
 TAMIL_NADU_STATE_ALIASES = ["tamil nadu", "tamilnadu"]
@@ -62,8 +70,40 @@ TAMIL_NADU_STATE_ALIASES = ["tamil nadu", "tamilnadu"]
 OTHER_INDIA_HINTS = [
     "bengaluru", "bangalore", "hyderabad", "mumbai", "pune", "delhi",
     "gurgaon", "gurugram", "noida", "kolkata", "ahmedabad", "jaipur",
-    "kochi", "cochin", "thiruvananthapuram", "trivandrum", "india",
+    "kochi", "cochin", "thiruvananthapuram", "trivandrum", "ladakh",
+    "chandigarh", "bhubaneswar", "indore", "lucknow", "india",
 ]
+
+# User-facing canonical names. Work modes intentionally do not live in this
+# map: "Remote" is a work mode, not a city, and must never be persisted as a
+# physical location.
+INDIA_LOCATION_ALIASES = {
+    "bangalore": "Bengaluru",
+    "bengaluru": "Bengaluru",
+    "hyderabad": "Hyderabad",
+    "hydrabad": "Hyderabad",
+    "secunderabad": "Hyderabad",
+    "pune": "Pune",
+    "mumbai": "Mumbai",
+    "navi mumbai": "Mumbai",
+    "delhi": "Delhi",
+    "new delhi": "Delhi",
+    "noida": "Noida",
+    "gurgaon": "Gurgaon",
+    "gurugram": "Gurgaon",
+    "kolkata": "Kolkata",
+    "ahmedabad": "Ahmedabad",
+    "jaipur": "Jaipur",
+    "kochi": "Kochi",
+    "cochin": "Kochi",
+    "trivandrum": "Thiruvananthapuram",
+    "thiruvananthapuram": "Thiruvananthapuram",
+    "ladakh": "Ladakh",
+    "chandigarh": "Chandigarh",
+    "bhubaneswar": "Bhubaneswar",
+    "indore": "Indore",
+    "lucknow": "Lucknow",
+}
 
 INTERNATIONAL_HINTS = [
     "usa", "united states", "u.s.", "uk", "united kingdom", "canada",
@@ -89,6 +129,97 @@ TYPE_UNKNOWN = "UNKNOWN"
 
 def _padded(text):
     return f" {(text or '').lower()} "
+
+
+def _contains_alias(text, alias):
+    """Match a place as a token/phrase, never as part of another word."""
+    import re
+
+    return bool(re.search(rf"(?<![a-z0-9]){re.escape(alias.lower())}(?![a-z0-9])", (text or "").lower()))
+
+
+def canonicalize_location(value):
+    """Return a canonical known Indian location while preserving unknown input."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower()
+    for district, aliases in TN_DISTRICTS.items():
+        if lowered == district.lower() or lowered in {alias.lower() for alias in aliases}:
+            return district
+    return INDIA_LOCATION_ALIASES.get(lowered, raw.title())
+
+
+def extract_known_locations(text):
+    """Extract supported physical locations from a user message."""
+    positions = {}
+    for district, aliases in TN_DISTRICTS.items():
+        matches = [text.lower().find(alias.lower()) for alias in aliases if _contains_alias(text, alias)]
+        if matches:
+            positions[district] = min(matches)
+    for alias, canonical in sorted(INDIA_LOCATION_ALIASES.items(), key=lambda item: -len(item[0])):
+        if _contains_alias(text, alias):
+            position = text.lower().find(alias.lower())
+            positions[canonical] = min(position, positions.get(canonical, position))
+    found = [value for value, _ in sorted(positions.items(), key=lambda item: item[1])]
+    if not found:
+        # Safe free-form fallback only when the user used an explicit location
+        # construction. This supports portal cities outside the static alias
+        # catalogue without interpreting arbitrary skills as locations.
+        import re
+
+        match = re.search(
+            r"\b(?:jobs?|openings?|roles?)\s+(?:in|near|at)\s+([a-z][a-z .'-]{1,40})",
+            text or "",
+            re.IGNORECASE,
+        )
+        if match:
+            candidate = re.split(r"\s+(?:for|with|as|using)\s+", match.group(1), maxsplit=1, flags=re.IGNORECASE)[0]
+            candidate = candidate.strip(" .,-")
+            if candidate and candidate.lower() not in {
+                "remote", "hybrid", "onsite", "all", "anywhere",
+                "my location", "my preferred location", "the preferred location",
+                "preferred location", "saved location", "selected location",
+            }:
+                found.append(canonicalize_location(candidate))
+    return found
+
+
+def location_matches_preferences(job_location, work_mode, target_locations):
+    """Match only a listing's stated location, without cross-city fallback.
+
+    Remote listings match only an explicit Remote target. Unknown targets are
+    matched literally so the filter remains useful beyond the alias catalogue.
+    """
+    targets = [str(item).strip() for item in (target_locations or []) if str(item).strip()]
+    if not targets:
+        return True
+    if any(str(target).strip().lower() in {"any", "anywhere", "no preference", "either"} for target in targets):
+        return True
+
+    location = (job_location or "").strip()
+    mode = (work_mode or "").strip().lower()
+    is_remote = mode == "remote" or _contains_alias(location, "remote") or "work from home" in location.lower()
+
+    for raw_target in targets:
+        target_mode = raw_target.lower()
+        if target_mode in {"remote", "work from home", "wfh", "hybrid", "onsite", "on-site", "office"}:
+            expected_mode = "remote" if target_mode in {"remote", "work from home", "wfh"} else ("onsite" if target_mode == "office" else target_mode.replace("-", ""))
+            normalized_mode = "onsite" if mode == "office" else mode.replace("-", "")
+            if (expected_mode == "remote" and is_remote) or normalized_mode == expected_mode:
+                return True
+            continue
+
+        canonical = canonicalize_location(raw_target)
+        aliases = [canonical]
+        for district, district_aliases in TN_DISTRICTS.items():
+            if canonical == district:
+                aliases.extend(district_aliases)
+                break
+        aliases.extend(alias for alias, value in INDIA_LOCATION_ALIASES.items() if value == canonical)
+        if any(_contains_alias(location, alias) for alias in aliases):
+            return True
+    return False
 
 
 def classify_district(location_text):

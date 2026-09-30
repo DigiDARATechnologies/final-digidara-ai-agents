@@ -126,8 +126,24 @@ function formatExecutiveScorecard(summary: Record<string, any>): string {
   return out;
 }
 
+function deduplicateReaction(reaction: string, nextQuestion: string): string {
+  let clean = reaction.trim();
+  const normNext = normalizedSentence(nextQuestion);
+  if (!normNext) return clean;
+
+  const sentences = clean.match(/[^.!?]+[.!?]*/g) || [clean];
+  const filtered = sentences.filter((s) => normalizedSentence(s) !== normNext);
+  if (filtered.length > 0 && filtered.length < sentences.length) {
+    clean = filtered.join(" ").trim();
+  } else if (normalizedSentence(clean) === normNext) {
+    clean = "";
+  }
+  return clean;
+}
+
 function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedback"], nextQuestion: string): string {
-  const reaction = String(feedback?.reaction || "You're doing well!").trim();
+  const rawReaction = String(feedback?.reaction || "You're doing well!").trim();
+  const reaction = deduplicateReaction(rawReaction, nextQuestion);
   const corrected = String(feedback?.corrected_answer || "").trim();
   const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
   const correction = hasCorrection

@@ -58,12 +58,12 @@ import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
-import { checkCommunicationHealth, getDailyChallengeToday } from "./lib/communicationApi";
+import { checkCommunicationHealth, getDailyChallengeToday, previewCommunicationAudio, transcribeCommunicationAudio } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
 import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
-import { checkJobFetchHealth } from "./lib/jobFetchApi";
+import { checkJobFetchHealth, clearJobConversations, deleteJobConversation } from "./lib/jobFetchApi";
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
@@ -496,7 +496,16 @@ export default function App() {
     persistChats(chats.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned, updatedAt: Date.now() } : c)));
   }
 
-  function handleDeleteChat(chatId: string) {
+  async function handleDeleteChat(chatId: string) {
+    const chat = chats.find((item) => item.id === chatId);
+    if (chat && findAgent(chat.agentId)?.kind === "job-fetch") {
+      try {
+        await deleteJobConversation(chatId);
+      } catch (error) {
+        showToast(`Could not delete the server-side Job Agent conversation: ${(error as Error).message}`);
+        return;
+      }
+    }
     persistChats(chats.filter((c) => c.id !== chatId));
     setResumeBuilderStates((prev) => {
       const next = { ...prev };
@@ -764,7 +773,7 @@ export default function App() {
       setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "job-fetch") {
-      const { state, messages } = await openJobFetchChat(user);
+      const { state, messages } = await openJobFetchChat(user, chatId);
       setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
       appendAgentMessages(chatId, messages);
     } else if (agent.kind === "mock-interview") {
@@ -905,7 +914,7 @@ export default function App() {
     } else if (agent.kind === "job-fetch") {
       setDashboardOpen(false);
       setTyping(true);
-      openJobFetchChat(user).then(({ state, messages }) => {
+      openJobFetchChat(user, chat.id).then(({ state, messages }) => {
         setJobFetchStates((prev) => ({ ...prev, [chat.id]: state }));
         setChats((prev) => {
           const next = prev.map((c) => c.id === chat.id
@@ -1267,7 +1276,7 @@ export default function App() {
                 { role: "user", content: `Uploaded resume: ${pendingResume.name}` },
                 ...resumeMessages.map((m) => ({ role: "assistant", content: m.text })),
               ];
-              const { state: finalTextState, messages: textMessages } = await handleJobFetchText(uploadedState, text.trim(), updatedHistory);
+              const { state: finalTextState, messages: textMessages } = await handleJobFetchText(uploadedState, text.trim(), updatedHistory, chatId);
               currentState = finalTextState;
               allMessages.push(...textMessages);
             }
@@ -1282,7 +1291,7 @@ export default function App() {
         return;
       }
 
-      handleJobFetchText(flowState, text, history)
+      handleJobFetchText(flowState, text, history, chatId)
         .then(({ state, messages }) => {
           setJobFetchStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
@@ -1447,7 +1456,15 @@ export default function App() {
     setOpenMenu(null);
   }
 
-  function handleClearHistory() {
+  async function handleClearHistory() {
+    if (chats.some((chat) => findAgent(chat.agentId)?.kind === "job-fetch")) {
+      try {
+        await clearJobConversations();
+      } catch (error) {
+        showToast(`Could not clear server-side Job Agent conversations: ${(error as Error).message}`);
+        return;
+      }
+    }
     persistChats([]);
     setCapstoneStates({});
     setCodeforgeStates({});
@@ -1768,6 +1785,12 @@ export default function App() {
                 codeBusy={codeBusy}
                 onRunCode={handleRunCode}
                 onSubmitCode={handleSubmitCode}
+                transcribeAudio={isCommunicationChat && communicationState?.authToken
+                  ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
+                  : undefined}
+                previewAudio={isCommunicationChat && communicationState?.authToken
+                  ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
+                  : undefined}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."
                 multilineSubmitLabel="Submit Answer"
@@ -1780,7 +1803,7 @@ export default function App() {
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
+                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}

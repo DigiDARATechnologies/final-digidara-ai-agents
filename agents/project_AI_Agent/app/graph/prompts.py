@@ -81,6 +81,93 @@ OUTPUT FORMAT (strict JSON, no prose outside the JSON):
 }}"""
 
 
+def topic_intake_prompt(
+    memory: dict[str, Any],
+    pending_question: str | None,
+    shown_topics: list[dict[str, Any]],
+    history: list[dict[str, str]],
+) -> str:
+    """One conversational turn of the topic intake, before any project is
+    locked in. The model sees the structured memory of what the student has
+    told us so far and classifies the new message against it — so "change the
+    language from python to java" overwrites the language instead of being
+    glued onto the answer of whatever question happened to be pending."""
+    options_block = "No project options have been generated yet."
+    if shown_topics:
+        options_block = "PROJECT OPTIONS CURRENTLY ON SCREEN:\n" + "\n".join(
+            f"- {t.get('id')}. {t.get('title')}: {t.get('summary', '')}" for t in shown_topics
+        )
+    history_block = "\n".join(f"{turn['role'].upper()}: {turn['text']}" for turn in history[-12:]) or "(none)"
+    pending = {
+        "focus": "the language, role, or topic the project should be based on",
+        "project_type": "what type of project or application they want to build",
+    }.get(pending_question or "", "nothing — no question is pending")
+
+    return f"""You are the conversational intake assistant of the DigiDARA Capstone Project Agent.
+You help a student settle two things before project ideas are generated:
+  1. focus — the language, role, or topic (e.g. "Python", "Java", "Data Analyst", "React")
+  2. project_type — the kind of project/application (e.g. "web development", "desktop tool",
+     "REST API", "data dashboard", "e-commerce website", "chatbot")
+Until the student picks one project option, EVERYTHING stays editable.
+
+MEMORY (what the student has told you so far — the single source of truth):
+{json.dumps(memory, ensure_ascii=False)}
+
+LAST QUESTION ASKED BY YOU: {pending}
+
+{options_block}
+
+RECENT CONVERSATION:
+{history_block}
+
+Classify the student's NEW message (in the user turn) into exactly one intent:
+- "update": it gives or CHANGES a memory field. That includes a plain answer to the
+  last question AND an edit of an earlier answer, e.g. "i need to update language python
+  to java" -> focus = "Java"; "make it web development instead" -> project_type =
+  "web development"; "make it harder" -> difficulty = "hard". An edit REPLACES the old
+  value — never append it or mix it into another field. Keep every other field as it
+  is, unless it only made sense for the old value (e.g. "Django web app" after
+  switching Python to Java becomes "Web application").
+- "regenerate": the student wants different project options without changing any field
+  ("change the project topics", "give me other ideas", "I don't like these", "new topics").
+  If they ask for new topics AND name a new field value, it is "update" instead.
+- "choose": the student picks one of the options on screen, by letter or by describing it
+  ("I'll take the weather one"). Only possible when options are on screen.
+- "question": a question about the options, the process, or what to pick. Answer it in
+  "reply" in 1-3 sentences, using the options on screen when relevant.
+- "chitchat": a greeting or something unrelated. Reply in one short friendly line and steer
+  back to the project.
+
+Memory rules:
+- Keep the student's OWN words as the value; only fix spelling and capitalization
+  ("java" -> "Java", "login pgae" -> "Login page"). NEVER replace what they said with a
+  broader category: "Login page" stays "Login page" (not "Web development"), "chatbot for
+  a clinic" stays "Chatbot for a clinic". The project ideas must be about exactly that.
+- If the focus itself already says what kind of application it is ("e-commerce website",
+  "portfolio site"), also fill project_type from it.
+- If the student leaves project_type up to you ("your choice", "anything", "idk"), set
+  project_type to "Any".
+- "details" holds any other useful preference (a domain, a company, a feature); null if none.
+- "difficulty" only changes when the student explicitly asks for easy/medium/hard; else keep it.
+
+"ready" is true only when focus AND project_type are both set.
+When "ready" is false, "next_question" is ONE short natural question for the first missing
+field, mentioning the current focus when known, e.g. "What type of project would you like to
+build with Java? (e.g. web app, desktop tool, REST API, data analysis)". Otherwise null.
+"reply" is a short acknowledgement for "update" (e.g. "Got it — switched the language to Java."),
+the answer for "question"/"chitchat", and null for "regenerate"/"choose".
+
+OUTPUT FORMAT (strict JSON, no prose outside the JSON):
+{{
+  "intent": "update|regenerate|choose|question|chitchat",
+  "memory": {{"focus": <string|null>, "project_type": <string|null>, "details": <string|null>, "difficulty": <"easy"|"medium"|"hard"|null>}},
+  "choice": <"A"|"B"|null>,
+  "ready": <true|false>,
+  "next_question": <string|null>,
+  "reply": <string|null>
+}}"""
+
+
 def final_score_decision_prompt(state: dict[str, Any], pass_threshold: int) -> str:
     difficulty = state.get("difficulty", "easy")
     return f"""You are the Final Score Decision Agent for a DigiDARA capstone project.
@@ -127,15 +214,30 @@ OUTPUT FORMAT (strict JSON):
 
 
 def topic_generator_prompt(
-    state: dict[str, Any], past_titles: list[str], angle_hint: str | None
+    state: dict[str, Any],
+    past_titles: list[str],
+    angle_hint: str | None,
+    seen_in_chat: list[str] | None = None,
 ) -> str:
     avoid_block = ""
     if past_titles:
         joined = "\n".join(f"- {t}" for t in past_titles)
         avoid_block = f"""
-TOPICS ALREADY USED FOR THIS COURSE — do not repeat these or generate a close
-variant of any of them (same idea with a different name doesn't count as new):
+TOPICS ALREADY OFFERED TO OTHER STUDENTS FOR THIS LANGUAGE/ROLE — every student must
+get their own fresh ideas, so do not repeat these or generate a close variant of
+any of them (same idea with a different name doesn't count as new):
 {joined}
+"""
+    if seen_in_chat:
+        joined = "\n".join(f"- {t}" for t in seen_in_chat)
+        avoid_block += f"""
+TOPICS THIS STUDENT HAS ALREADY SEEN AND ASKED TO REPLACE — they want something
+genuinely different: a different problem domain, not a renamed version of these:
+{joined}
+"""
+    if avoid_block:
+        avoid_block += """Also avoid the most over-used textbook projects (to-do list, calculator,
+basic weather app, generic library management) unless the student explicitly asked for one.
 """
     difficulty = state.get("difficulty", "easy")
     difficulty_guidance = {
@@ -168,7 +270,10 @@ variant of any of them (same idea with a different name doesn't count as new):
   would visibly impress an interviewer for that context; a request naming a
   role or technology should produce projects that clearly showcase that
   role's/technology's real, job-relevant skills — not a generic beginner
-  exercise that happens to use the same language. If you have live web search
+  exercise that happens to use the same language. When it names a specific kind of
+  project after the "—" (e.g. "Python — Login page"), BOTH ideas must be exactly that
+  kind of project (two different login-page projects), not a broader category it
+  belongs to (not two general websites). If you have live web search
   available, use it to ground this in what that company/role's interviews or
   day-to-day work actually look like right now, rather than guessing from
   memory — e.g. the kind of take-home/portfolio project that role's real

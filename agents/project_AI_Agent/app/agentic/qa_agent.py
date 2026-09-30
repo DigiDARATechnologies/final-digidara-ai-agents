@@ -165,7 +165,26 @@ Answer every question about the student's own project fully and clearly: say wha
 is, where it goes, why it is needed and how to do it, in plain language. A thorough
 answer is better than a one-line one; a question about their project deserves an
 explanation, not a pointer. Stay specific - reference actual file names, section
-names, or requirement text from the tools rather than speaking generically."""
+names, or requirement text from the tools rather than speaking generically.
+
+"I DON'T UNDERSTAND THE REQUIREMENTS" / "EXPLAIN IN MORE DETAIL": walk through the
+project brief section by section. For the objective, say in plain words what the
+finished project does and who uses it. Then take EVERY functional requirement one at
+a time, numbered, and for each give: what it means, a concrete example of it working
+in THIS project, how to build it (the screen/file/function it lives in and the steps),
+and how the grader will check it. Then explain each technical constraint and each
+deliverable the same way. End with a short suggested day-by-day plan for the 7 days.
+
+OFF-TOPIC QUESTIONS: anything not about this student's own project -- people ("who is
+the PM", "who made you"), general knowledge, other projects, jokes, small talk -- is
+never answered, not even partly. Reply with exactly one short line: that you can only
+answer questions about their project "<project title>", with one example of a question
+they could ask (e.g. about a requirement, their code, the report or the screenshots).
+
+THE PROJECT BRIEF is already given to you below, so answer questions about the topic
+and requirements directly from it without calling get_project_brief."""
+
+_BRIEF_CHAR_LIMIT = 8000
 
 
 class ProjectNotFound(LookupError):
@@ -317,7 +336,12 @@ def ask_project_question(thread_id: str, question: str, extra_context: str | Non
     # Q&A conversation so a follow-up question ("explain that more", "what
     # about the second one") has the earlier exchange to refer back to,
     # instead of each question being answered in isolation.
-    messages: list[dict[str, Any]] = [{"role": "system", "content": _SYSTEM_PROMPT}, *ctx.conversation_history, {"role": "user", "content": user_message}]
+    # The brief goes into the system message up front: most questions are about
+    # the topic or requirements, and answering those no longer costs a separate
+    # tool round-trip (each one a full LLM call) before the actual answer.
+    brief = json.dumps(ctx.brief(), ensure_ascii=False, default=str)[:_BRIEF_CHAR_LIMIT]
+    system = f"{_SYSTEM_PROMPT}\n\nPROJECT BRIEF:\n{brief}"
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *ctx.conversation_history, {"role": "user", "content": user_message}]
     tools_used: list[str] = []
 
     for _ in range(_MAX_TOOL_ITERATIONS):

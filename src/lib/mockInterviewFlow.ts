@@ -186,10 +186,13 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
 
   if (state.step === "in_interview" && state.interviewId && state.questionOrder) {
     if (value === "retry_report") return finish(state);
-    if (value === "exit_interview") {
+    if (value === "exit_interview" || value === "exit_interview_inactive") {
       try {
         await exitMockInterview(state.sessionToken, state.interviewId, state.questionOrder);
-        return { state: { ...state, step: "completed", question: undefined }, messages: [{ text: "You've exited the interview.", options: restartOption }] };
+        const text = value === "exit_interview_inactive"
+          ? "The interview has ended because no answer was heard: nothing was said for 30 seconds after the question, or for 15 seconds after I asked \"Hey, are you there?\". Unanswered questions are not scored. Start a new interview whenever you're ready."
+          : "You've exited the interview.";
+        return { state: { ...state, step: "completed", question: undefined }, messages: [{ text, options: restartOption }] };
       } catch (error) {
         return { state, messages: [{ text: `I couldn't exit the interview: ${errorText(error)}`, options: exitOption }] };
       }

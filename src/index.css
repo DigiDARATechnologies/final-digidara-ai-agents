@@ -1394,6 +1394,18 @@ body.glow-off .send-btn:hover{
 
 .mock-interview-round{margin:5px 0 0!important}.mock-interview-progress{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:64px;padding-top:3px;color:var(--cy);font-size:11px;font-weight:800}.mock-interview-progress-track{width:64px;height:4px;overflow:hidden;border-radius:99px;background:var(--line-1)}.mock-interview-progress-track i{display:block;height:100%;border-radius:inherit;background:var(--cy);transition:width .2s ease}.mock-interview-question{display:flex;align-items:flex-start;gap:8px;margin:12px 0 10px;padding:14px 15px;line-height:1.5}.mock-interview-question-number{flex:0 0 auto;color:var(--cy);font-size:17px;font-weight:800;line-height:1.45}.mock-interview-voice{gap:7px}.mock-interview-answer-label{margin-top:12px}.mock-interview-panel textarea{margin-bottom:10px}.mock-interview-actions{margin-top:8px;padding-top:2px}
 
+@media(max-width:700px){
+  .mock-interview-header{align-items:stretch;flex-wrap:wrap}
+  .mock-interview-header>div:first-child{flex:1 1 160px}
+  .mock-interview-voice,.mock-interview-voice>div,.mock-interview-actions{width:100%}
+  .mock-interview-voice .btn,.mock-interview-actions .btn{flex:1 1 140px;min-height:44px}
+}
+@media(max-width:420px){
+  .mock-interview-progress{order:3;width:100%;align-items:stretch}
+  .mock-interview-progress-track{width:100%}
+  .mock-interview-timer{margin-left:auto}
+}
+
 /* ===================== TYPOGRAPHY (SaaS type system) =====================
    One scale for the whole product. Inter with its cleaner alternates,
    optically tightened headings, regular/medium body weights, and tabular
@@ -2346,3 +2358,5 @@ a{ color:var(--accent3); }
 .recent-agent-chats>button i.pending{ background:rgba(242,167,27,.18); color:var(--gold-text, var(--gold)); }
 
 :root[data-theme="light"] .immersive-speaking .speaking-stage-copy>span{ color:#0e7490; }
+.mock-interview-away{margin:12px 0 0;padding:11px 13px;border-radius:11px;border:1px solid var(--err);background:rgba(248,113,113,.12);color:var(--canvas-text);font-size:13px;line-height:1.5}.mock-interview-away strong{display:block;font-size:15px;margin-bottom:2px}
+.mock-interview-silence-hint{margin:10px 0 0;font-size:12px;font-weight:700;color:var(--canvas-text-dim)}

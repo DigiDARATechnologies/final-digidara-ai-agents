@@ -45,7 +45,9 @@ class ProductionEnhancementsTests(unittest.TestCase):
             cursor.fetchall.return_value = [
                 {
                     "id": 1,
-                    "title": "Junior Python Developer",
+                    # Keep the role aligned so this test isolates the location
+                    # filter; unrelated roles are now intentionally excluded.
+                    "title": "Junior Software Engineer",
                     "company": "Tech Solutions",
                     "location": "Coimbatore, Tamil Nadu",
                     "location_district": "Coimbatore",
@@ -81,9 +83,11 @@ class ProductionEnhancementsTests(unittest.TestCase):
                 self.assertEqual(len(data["jobs"]), 1)
                 self.assertEqual(data["jobs"][0]["location_district"], "Coimbatore")
 
-                # Verify SQL jobs query included location filter
+                # Location aliases are enforced by the shared post-query matcher.
                 executed_jobs_query = cursor.execute.call_args_list[1][0][0]
-                self.assertIn("location", executed_jobs_query.lower())
+                self.assertNotIn("j.location like", executed_jobs_query.lower())
+                self.assertEqual(data["offset"], 0)
+                self.assertFalse(data["has_more"])
 
     def test_application_status_update_lifecycle(self):
         with patch("job_agent.routes.get_db") as mock_db:
@@ -195,7 +199,10 @@ class ProductionEnhancementsTests(unittest.TestCase):
 
             res = chat_with_job_agent(
                 user_id="test_learner_123",
-                message="Find Python jobs",
+                # A job search with zero retrieved rows now intentionally
+                # bypasses the LLM so it cannot invent vacancies. Use a
+                # non-retrieval career question to retain OpenAI-path coverage.
+                message="How can I improve my resume?",
             )
             self.assertIsNotNone(res)
             self.assertIn("Python roles", res["reply"])

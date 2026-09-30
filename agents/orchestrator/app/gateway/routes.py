@@ -46,6 +46,13 @@ ALLOWED_AGENT_HOSTS = {
 # aptitude_agent's app/services/usage_service.py for the reference
 # implementation). New accounts start with 50,000 (see app/models.py),
 # topped up via Razorpay (app/billing/routes.py).
+CAPSTONE_LLM_ACTIONS = {
+    "topic_intake_turn",
+    "check_eligibility_free",
+    "choose_topic",
+    "confirm_timer",
+    "ask_project_question",
+}
 TOKEN_COST_PER_CALL = int(os.environ.get("TOKEN_COST_PER_CALL", "100"))
 
 # Background bookkeeping/status calls the UI fires on its own -- opening
@@ -77,6 +84,13 @@ FREE_ACTIONS = {
     # question cost tokens. Actions that do call an LLM (create_test, hint,
     # results, start_interview, submit_answer, end_interview) stay billable.
     "dashboard", "history", "history_detail", "profile", "analytics",
+    # Mock Interview's live answer preview on phones: re-transcribes the answer
+    # so far every few seconds while the candidate speaks. Charging each one
+    # as a call would bill a single answer many times over; the answer of
+    # record (transcribe_audio, on submit) stays billable.
+    "transcribe_preview",
+    # The same live preview for the Communication Coach's spoken answers.
+    "speaking_transcribe_preview",
     "mixed_test_config", "save_mixed_test_config", "daily_usage",
     "active_interview", "status", "download_report", "record_focus_event",
     # State changes with no LLM call: questions are served from the batch
@@ -173,6 +187,8 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # The submission upload is multipart (no decoded action), and a new viva attempt writes ten questions.
         else config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
         if agent_name == "capstone_project_agent" and (is_multipart or action_name == "start_viva_attempt")
+        else config.CAPSTONE_LLM_ACTION_TIMEOUT_SECONDS
+        if agent_name == "capstone_project_agent" and action_name in CAPSTONE_LLM_ACTIONS
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
     # Sign last, over the final body and the exact identity headers set above,

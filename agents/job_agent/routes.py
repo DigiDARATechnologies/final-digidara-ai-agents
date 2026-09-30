@@ -13,9 +13,26 @@ from werkzeug.utils import secure_filename
 from .auth import admin_required, user_required
 from .automation import get_automation_settings, set_automation_enabled
 from .categories import OTHER_CATEGORY, OTHER_LABEL, load_categories, related_category_ids
+from .compensation import extract_salary_text
 from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
 from .db import get_db
 from .matching import parse_list, score_job
+from .memory import (
+    ensure_conversation,
+    get_cached_response,
+    get_conversation,
+    list_conversations,
+    load_conversation_summary,
+    load_memory_context,
+    load_recent_history,
+    normalize_client_message_id,
+    normalize_conversation_id,
+    prune_expired_conversations,
+    reserve_turn,
+    sanitize_client_history,
+    save_exchange,
+    sync_profile_memories,
+)
 from .providers.adzuna import is_configured as is_adzuna_configured
 from .providers.apify import get_apify_status
 from .providers.config_loader import (
@@ -36,9 +53,9 @@ from .providers.sync import (
 )
 from .scraper import _validate_public_url, ScraperError
 from .service import _clean_job, queue_source_run_once
-from .skills import parse_resume_for_profile
-from .tn_location import ALL_TN_DISTRICTS
-from .chat_service import chat_with_job_agent
+from .skills import normalize_skill_name, parse_resume_for_profile
+from .tn_location import ALL_TN_DISTRICTS, canonicalize_location, location_matches_preferences
+from .chat_service import MAX_EXPERIENCE_YEARS, _has_location_preference, _matches_target_role, _next_onboarding_prompt, chat_with_job_agent, extract_work_mode_from_text
 from .trust import evaluate_job_trust
 from .usage import (
     check_and_record_chat_usage,
@@ -160,39 +177,70 @@ def my_profile():
                 return jsonify({"error": "Profile not found"}), 404
             for field in ("skills", "preferred_titles", "preferred_locations"):
                 profile[field] = parse_list(profile.get(field))
+            if (profile.get("preferred_work_mode") or "").lower() == "onsite":
+                profile["preferred_work_mode"] = "office"
+            if profile.get("experience_provided"):
+                profile["experience_status"] = "fresher" if float(profile.get("experience_years") or 0) == 0 else "experienced"
+            else:
+                profile["experience_status"] = None
+            # Keep the opening question aligned with the same saved facts used
+            # by chat onboarding, including the legacy experience marker.
+            profile["experience_provided"] = bool(
+                profile.get("experience_provided") or profile.get("profile_completed")
+                or profile.get("onboarding_step") in {"preferred_titles", "preferred_locations", "resume", "completed"}
+            )
+            if profile.get("profile_completed") and not _has_location_preference(profile):
+                profile["profile_completed"] = 0
+            if profile.get("profile_completed"):
+                profile["onboarding_step"] = "completed"
+                profile["onboarding_prompt"] = ""
+            else:
+                profile["onboarding_step"], profile["onboarding_prompt"] = _next_onboarding_prompt(profile)
             return jsonify({"profile": _serialize(profile)})
 
         data = request.get_json(silent=True) or {}
-        full_name = str(data.get("full_name") or "").strip()[:255]
-        skills = parse_list(data.get("skills"))[:50]
-        titles = parse_list(data.get("preferred_titles"))[:20]
-        locations = parse_list(data.get("preferred_locations"))[:20]
-        work_mode = str(data.get("preferred_work_mode") or "").strip().lower()
-        if work_mode not in {"", "remote", "hybrid", "onsite"}:
+        existing = _get_profile(cursor, g.job_user_id) or {}
+        if not isinstance(existing, dict):
+            existing = {}
+        full_name = str(data.get("full_name", existing.get("full_name")) or "").strip()[:255]
+        skills_raw = data.get("skills", existing.get("skills", []))
+        skills = list(dict.fromkeys(normalize_skill_name(skill) for skill in parse_list(skills_raw) if normalize_skill_name(skill)))[:50]
+        titles = parse_list(data.get("preferred_titles", existing.get("preferred_titles", [])))[:20]
+        locations = list(dict.fromkeys(canonicalize_location(value) for value in parse_list(data.get("preferred_locations", existing.get("preferred_locations", []))) if value))[:20]
+        raw_work_mode = str(data.get("preferred_work_mode", existing.get("preferred_work_mode") or "") or "").strip().lower()
+        work_mode = extract_work_mode_from_text(raw_work_mode) or raw_work_mode
+        if work_mode == "onsite":
+            work_mode = "office"
+        if work_mode not in {"", "remote", "hybrid", "office", "any"}:
             return jsonify({"error": "Invalid preferred work mode"}), 400
+        experience_provided = data.get("experience_years") not in (None, "") or bool(existing.get("experience_provided"))
         try:
-            experience = max(0, min(50, float(data.get("experience_years") or 0)))
+            experience = float(data.get("experience_years")) if data.get("experience_years") not in (None, "") else float(existing.get("experience_years") or 0.0)
         except (TypeError, ValueError):
             return jsonify({"error": "Experience must be a number"}), 400
-        resume_url = str(data.get("resume_url") or "").strip()[:2000]
+        if experience_provided and not 0 <= experience <= MAX_EXPERIENCE_YEARS:
+            return jsonify({"error": f"Experience must be between 0 and {MAX_EXPERIENCE_YEARS:g} years"}), 400
+        resume_url = str(data.get("resume_url", existing.get("resume_url")) or "").strip()[:2000]
         if resume_url:
             parsed_resume_url = urlparse(resume_url)
             if parsed_resume_url.scheme not in {"http", "https"} or not parsed_resume_url.netloc:
                 return jsonify({"error": "Invalid resume URL. Only http and https URLs are allowed."}), 400
-        completed = bool(full_name and skills and titles)
+        completed = bool(full_name and skills and experience_provided and titles and
+                         _has_location_preference({"preferred_locations": locations, "preferred_work_mode": work_mode}))
         cursor.execute(
             """INSERT INTO user_job_profiles (
                 user_id, full_name, skills, preferred_titles, preferred_locations,
-                preferred_work_mode, experience_years, resume_url, profile_completed
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                preferred_work_mode, experience_years, experience_provided, resume_url, profile_completed
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE full_name=IF(VALUES(full_name)<>'', VALUES(full_name), full_name),
                 skills=VALUES(skills), preferred_titles=VALUES(preferred_titles),
                 preferred_locations=VALUES(preferred_locations), preferred_work_mode=VALUES(preferred_work_mode),
-                experience_years=VALUES(experience_years), resume_url=VALUES(resume_url),
+                experience_years=VALUES(experience_years), experience_provided=VALUES(experience_provided),
+                resume_url=VALUES(resume_url),
                 profile_completed=VALUES(profile_completed)""",
             (
                 g.job_user_id, full_name, json.dumps(skills), json.dumps(titles), json.dumps(locations),
-                work_mode, experience, resume_url, int(completed),
+                work_mode, experience, int(experience_provided), resume_url, int(completed),
             ),
         )
         db.commit()
@@ -243,7 +291,8 @@ def my_resume_upload():
     try:
         cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
         cursor.execute(
-            """SELECT resume_filename, skills, experience_years, full_name, preferred_titles
+            """SELECT resume_filename, skills, experience_years, experience_provided,
+                      full_name, preferred_titles, preferred_locations, preferred_work_mode
                FROM user_job_profiles WHERE user_id=%s""",
             (g.job_user_id,),
         )
@@ -252,20 +301,29 @@ def my_resume_upload():
             previous_resume_filename = previous.get("resume_filename")
             current_skills = parse_list(previous.get("skills"))
             current_exp = float(previous.get("experience_years") or 0)
+            experience_provided = bool(previous.get("experience_provided"))
             full_name = (previous.get("full_name") or "").strip()
             pref_titles = parse_list(previous.get("preferred_titles"))
+            pref_locations = parse_list(previous.get("preferred_locations"))
+            preferred_work_mode = (previous.get("preferred_work_mode") or "").strip()
         elif isinstance(previous, (tuple, list)) and len(previous) > 0:
             previous_resume_filename = previous[0]
             current_skills = parse_list(previous[1]) if len(previous) > 1 else []
             current_exp = float(previous[2] or 0) if len(previous) > 2 else 0.0
-            full_name = (previous[3] or "").strip() if len(previous) > 3 else ""
-            pref_titles = parse_list(previous[4]) if len(previous) > 4 else []
+            experience_provided = bool(previous[3]) if len(previous) > 3 else False
+            full_name = (previous[4] or "").strip() if len(previous) > 4 else ""
+            pref_titles = parse_list(previous[5]) if len(previous) > 5 else []
+            pref_locations = parse_list(previous[6]) if len(previous) > 6 else []
+            preferred_work_mode = (previous[7] or "").strip() if len(previous) > 7 else ""
         else:
             previous_resume_filename = None
             current_skills = []
             current_exp = 0.0
+            experience_provided = False
             full_name = ""
             pref_titles = []
+            pref_locations = []
+            preferred_work_mode = ""
 
         # Merge newly extracted skills with existing profile skills (preserving uniqueness)
         existing_skills_lower = {s.lower() for s in current_skills}
@@ -276,20 +334,39 @@ def my_resume_upload():
                 existing_skills_lower.add(s.lower())
         all_skills = merged_skills[:50]
 
-        new_exp = current_exp if current_exp > 0 else (detected_exp or 0.0)
-        completed = bool(full_name and all_skills and pref_titles)
+        valid_detected_exp = detected_exp is not None and 0 <= float(detected_exp) <= MAX_EXPERIENCE_YEARS
+        new_exp = current_exp if experience_provided else (float(detected_exp) if valid_detected_exp else 0.0)
+        new_experience_provided = experience_provided or valid_detected_exp
+        completed = bool(
+            full_name and all_skills and new_experience_provided and pref_titles
+            and _has_location_preference({"preferred_locations": pref_locations, "preferred_work_mode": preferred_work_mode})
+        )
+        if not full_name:
+            next_step = "full_name"
+        elif not all_skills:
+            next_step = "skills"
+        elif not new_experience_provided:
+            next_step = "experience"
+        elif not pref_titles:
+            next_step = "preferred_titles"
+        elif not _has_location_preference({"preferred_locations": pref_locations, "preferred_work_mode": preferred_work_mode}):
+            next_step = "preferred_locations"
+        else:
+            next_step = "completed"
 
         cursor.execute(
             """UPDATE user_job_profiles
                SET resume_filename=%s, resume_original_name=%s, skills=%s, experience_years=%s,
-                   profile_completed=%s, onboarding_step='completed'
+                   experience_provided=%s, profile_completed=%s, onboarding_step=%s
                WHERE user_id=%s""",
             (
                 f"{g.job_user_id}/{stored_name}",
                 original_name,
                 json.dumps(all_skills),
                 new_exp,
+                int(new_experience_provided),
                 int(completed),
+                next_step,
                 g.job_user_id,
             ),
         )
@@ -355,9 +432,50 @@ def my_chat():
     if not message:
         return jsonify({"error": "Message is required"}), 400
 
+    try:
+        conversation_id = normalize_conversation_id(data.get("conversation_id"))
+        client_message_id = normalize_client_message_id(data.get("client_message_id"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
+        cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
+        ensure_conversation(cursor, g.job_user_id, conversation_id, data.get("conversation_title") or "Job Agent")
+        cached = get_cached_response(cursor, g.job_user_id, conversation_id, client_message_id)
+        if cached is not None:
+            cached["conversation_id"] = conversation_id
+            cached["memory_status"] = "saved"
+            db.commit()
+            resp = jsonify(cached)
+            resp.headers["X-Tokens-Used"] = "0"
+            resp.headers["X-Idempotent-Replay"] = "true"
+            return resp
+
+        stored_history = load_recent_history(cursor, g.job_user_id, conversation_id)
+        memory_context = load_memory_context(cursor, g.job_user_id)
+        conversation_summary = load_conversation_summary(cursor, g.job_user_id, conversation_id)
+        if conversation_summary:
+            memory_context = f"{memory_context}\n{conversation_summary}".strip()
+        prune_expired_conversations(cursor, g.job_user_id)
+        if not reserve_turn(cursor, g.job_user_id, conversation_id, message, client_message_id):
+            cached = get_cached_response(cursor, g.job_user_id, conversation_id, client_message_id)
+            if cached is not None:
+                cached["conversation_id"] = conversation_id
+                cached["memory_status"] = "saved"
+                resp = jsonify(cached)
+                resp.headers["X-Tokens-Used"] = "0"
+                resp.headers["X-Idempotent-Replay"] = "true"
+                return resp
+            response = jsonify({
+                "error": "conversation_turn_in_progress",
+                "message": "This message is already being processed. Retry shortly with the same client_message_id.",
+                "conversation_id": conversation_id,
+            })
+            response.status_code = 409
+            response.headers["Retry-After"] = "2"
+            return response
         user_balance = getattr(g, "job_token_balance", None)
         usage_res = check_and_record_chat_usage(cursor, g.job_user_id, user_token_balance=user_balance)
         if usage_res.get("insufficient_tokens"):
@@ -376,17 +494,144 @@ def my_chat():
     res = chat_with_job_agent(
         g.job_user_id,
         message,
-        history,
+        stored_history or sanitize_client_history(history),
         selected_job_id=selected_job_id,
+        memory_context=memory_context,
     )
     res["daily_usage"] = {
         "free_turns_remaining": usage_res["free_turns_remaining"],
         "total_turns_today": usage_res["total_turns_today"],
         "tokens_charged": usage_res["tokens_charged"],
     }
+    res["conversation_id"] = conversation_id
+    res["memory_status"] = "saved"
+
+    memory_db = get_db()
+    memory_cursor = memory_db.cursor(dictionary=True)
+    try:
+        ensure_conversation(memory_cursor, g.job_user_id, conversation_id, data.get("conversation_title") or "Job Agent")
+        save_exchange(
+            memory_cursor,
+            g.job_user_id,
+            conversation_id,
+            message,
+            res,
+            client_message_id=client_message_id,
+        )
+        profile_snapshot = res.get("updated_profile") or {}
+        if isinstance(profile_snapshot, dict):
+            sync_profile_memories(memory_cursor, g.job_user_id, profile_snapshot, conversation_id)
+        memory_db.commit()
+    except Exception:
+        memory_db.rollback()
+        logger.exception("[JobAgent] Could not persist conversation memory")
+        res["memory_status"] = "degraded"
+    finally:
+        _close(memory_cursor, memory_db)
     resp = jsonify(res)
     resp.headers["X-Tokens-Used"] = str(usage_res["tokens_charged"])
     return resp
+
+
+@job_bp.route("/api/jobs/me/conversations", methods=["GET", "POST", "DELETE"])
+@user_required
+def my_conversations():
+    """List, create, or clear authenticated Job Agent conversations."""
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        if request.method == "GET":
+            limit = _bounded_int(request.args.get("limit"), default=50, minimum=1, maximum=100)
+            return jsonify({"conversations": [_serialize(row) for row in list_conversations(cursor, g.job_user_id, limit)]})
+        if request.method == "DELETE":
+            cursor.execute("DELETE FROM job_conversations WHERE user_id=%s", (g.job_user_id,))
+            deleted = cursor.rowcount
+            db.commit()
+            return jsonify({"message": "Job Agent conversations deleted", "deleted": deleted})
+        data = request.get_json(silent=True) or {}
+        try:
+            conversation_id = normalize_conversation_id(data.get("conversation_id"))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        cursor.execute("INSERT IGNORE INTO user_job_profiles (user_id) VALUES (%s)", (g.job_user_id,))
+        ensure_conversation(cursor, g.job_user_id, conversation_id, data.get("title") or "Job Agent")
+        db.commit()
+        return jsonify({"conversation_id": conversation_id}), 201
+    finally:
+        _close(cursor, db)
+
+
+@job_bp.route("/api/jobs/me/conversations/<conversation_id>", methods=["GET", "DELETE"])
+@user_required
+def my_conversation(conversation_id):
+    try:
+        conversation_id = normalize_conversation_id(conversation_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        if request.method == "GET":
+            message_limit = _bounded_int(request.args.get("message_limit"), default=200, minimum=1, maximum=500)
+            conversation = get_conversation(cursor, g.job_user_id, conversation_id, message_limit)
+            if not conversation:
+                return jsonify({"error": "Conversation not found"}), 404
+            conversation = _serialize(conversation)
+            conversation["messages"] = [_serialize(row) for row in conversation.get("messages", [])]
+            return jsonify({"conversation": conversation})
+        cursor.execute("DELETE FROM job_conversations WHERE id=%s AND user_id=%s", (conversation_id, g.job_user_id))
+        deleted = cursor.rowcount
+        db.commit()
+        if not deleted:
+            return jsonify({"error": "Conversation not found"}), 404
+        return jsonify({"message": "Conversation deleted", "conversation_id": conversation_id})
+    finally:
+        _close(cursor, db)
+
+
+@job_bp.get("/api/jobs/me/memories")
+@user_required
+def my_memories():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """SELECT id, memory_key, memory_type, memory_value, confidence,
+                      source_conversation_id, created_at, updated_at
+               FROM user_job_memories WHERE user_id=%s AND is_active=1 ORDER BY updated_at DESC""",
+            (g.job_user_id,),
+        )
+        memories = []
+        for row in cursor.fetchall() or []:
+            item = _serialize(row)
+            raw_value = item.pop("memory_value", None)
+            try:
+                item["value"] = json.loads(raw_value)
+            except (TypeError, json.JSONDecodeError):
+                item["value"] = raw_value
+            memories.append(item)
+        return jsonify({"memories": memories})
+    finally:
+        _close(cursor, db)
+
+
+@job_bp.delete("/api/jobs/me/memories/<int:memory_id>")
+@user_required
+def forget_memory(memory_id):
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        cursor.execute(
+            "UPDATE user_job_memories SET is_active=0, updated_at=NOW() WHERE id=%s AND user_id=%s",
+            (memory_id, g.job_user_id),
+        )
+        forgotten = cursor.rowcount
+        db.commit()
+        if not forgotten:
+            return jsonify({"error": "Memory not found"}), 404
+        return jsonify({"message": "Memory forgotten", "memory_id": memory_id})
+    finally:
+        _close(cursor, db)
 
 
 @job_bp.get("/api/jobs/me/categories")
@@ -408,8 +653,11 @@ def my_feed():
 
         query = (request.args.get("q") or "").strip()
         location = (request.args.get("location") or "").strip()
+        requested_locations = [item.strip() for item in location.split("|") if item.strip()]
         mode = (request.args.get("work_mode") or "").strip().lower()
         category = (request.args.get("category") or "").strip()
+        page_limit = _bounded_int(request.args.get("limit"), default=20, minimum=1, maximum=50)
+        offset = _bounded_int(request.args.get("offset"), default=0, minimum=0, maximum=5000)
         saved_only = (request.args.get("saved") or "").strip().lower() in {"1", "true", "yes"}
         params = [g.job_user_id]
         where = ["j.status='active'", "(j.expires_at IS NULL OR j.expires_at >= NOW())", "COALESCE(a.is_hidden,0)=0"]
@@ -419,13 +667,9 @@ def my_feed():
             where.append("(j.title LIKE %s OR j.company LIKE %s OR j.description LIKE %s)")
             pattern = f"%{query}%"
             params.extend([pattern, pattern, pattern])
-        if location and location.lower() != "all":
-            where.append("(j.location LIKE %s OR j.location_district LIKE %s OR j.location_region LIKE %s)")
-            loc_pattern = f"%{location}%"
-            params.extend([loc_pattern, loc_pattern, loc_pattern])
-        if mode in {"remote", "hybrid", "onsite"}:
-            where.append("j.work_mode=%s")
-            params.append(mode)
+        # Location/work-mode filtering is performed with the shared matcher
+        # after retrieval so aliases such as Trichy/Tiruchirappalli are exact
+        # and Remote is never treated as a match for every physical city.
         if category and category != "all":
             valid_category_ids = {c["id"] for c in load_categories()} | {OTHER_CATEGORY}
             if category in valid_category_ids:
@@ -436,8 +680,9 @@ def my_feed():
                 where.append(f"j.category IN ({placeholders})")
                 params.extend(category_ids)
         cursor.execute(
-            f"""SELECT j.*, COALESCE(a.is_saved,0) AS is_saved, a.application_status
+            f"""SELECT j.*, s.source_type, COALESCE(a.is_saved,0) AS is_saved, a.application_status
                 FROM jobs j
+                LEFT JOIN job_sources s ON s.id=j.source_id
                 LEFT JOIN user_job_actions a ON a.job_id=j.id AND a.user_id=%s
                 WHERE {' AND '.join(where)}
                 ORDER BY COALESCE(j.published_at,j.created_at) DESC LIMIT 500""",
@@ -452,7 +697,23 @@ def my_feed():
         skills_list = parse_list(profile.get("skills"))
         preferred_titles_text = " ".join(preferred_titles_list) if preferred_titles_list else " ".join(skills_list[:3])
         jobs = cursor.fetchall()
+        # Default/profile feeds honor the explicit target role. Related roles
+        # are an opt-in conversational search, never a silent replacement.
+        if preferred_titles_list and not query and not category:
+            jobs = [job for job in jobs if _matches_target_role(job.get("title") or "", preferred_titles_list)]
+        if requested_locations and location.lower() != "all":
+            jobs = [
+                job for job in jobs
+                if location_matches_preferences(job.get("location") or "", job.get("work_mode") or "", requested_locations)
+            ]
+        if mode in {"remote", "hybrid", "onsite", "office"}:
+            jobs = [
+                job for job in jobs
+                if location_matches_preferences(job.get("location") or "", job.get("work_mode") or "", [mode])
+            ]
         for job in jobs:
+            if not job.get("salary_text"):
+                job["salary_text"] = extract_salary_text(job.get("title") or "", job.get("description") or "")
             job["skills"] = parse_list(job.get("skills"))
             score, reasons = score_job(job, profile, preferred_titles_text)
             job["match_score"] = score
@@ -478,18 +739,28 @@ def my_feed():
 
         # Dynamic SaaS Feed Quota & Token Gating
         user_balance = getattr(g, "job_token_balance", None)
-        requested_count = 20
+        total = len(jobs)
+        page = jobs[offset:offset + page_limit]
+        requested_count = len(page)
+
+        if requested_count == 0:
+            return jsonify({
+                "jobs": [], "total": total, "returned": 0, "plan_tier": plan_tier,
+                "limit": page_limit, "offset": offset, "has_more": False,
+            })
 
         if plan_tier != "free":
             # Paid plan tier bypasses daily feed limits
-            limit = 200
-            capped = jobs[:limit]
+            limit = page_limit
+            capped = page
             resp = jsonify({
                 "jobs": [_serialize(job) for job in capped],
                 "total": len(jobs),
                 "returned": len(capped),
                 "plan_tier": plan_tier,
                 "limit": limit,
+                "offset": offset,
+                "has_more": offset + len(capped) < total,
             })
             resp.headers["X-Tokens-Used"] = "0"
             return resp
@@ -514,13 +785,15 @@ def my_feed():
         db.commit()
 
         limit = usage_res["jobs_served"] if usage_res["jobs_served"] > 0 else requested_count
-        capped = jobs[:limit]
+        capped = page[:limit]
         resp = jsonify({
             "jobs": [_serialize(job) for job in capped],
-            "total": len(jobs),
+            "total": total,
             "returned": len(capped),
             "plan_tier": plan_tier,
             "limit": limit,
+            "offset": offset,
+            "has_more": offset + len(capped) < total,
             "daily_usage": {
                 "free_quota_remaining": usage_res["free_quota_remaining"],
                 "total_viewed_today": usage_res["total_viewed_today"],
@@ -695,9 +968,32 @@ def my_data():
                    WHERE a.user_id=%s ORDER BY a.created_at""",
                 (g.job_user_id,),
             )
+            job_actions = [_serialize(row) for row in cursor.fetchall()]
+            cursor.execute(
+                """SELECT id, title, status, last_message_at, created_at, updated_at
+                   FROM job_conversations WHERE user_id=%s ORDER BY created_at""",
+                (g.job_user_id,),
+            )
+            conversations = [_serialize(row) for row in cursor.fetchall()]
+            cursor.execute(
+                """SELECT conversation_id, role, content, created_at
+                   FROM job_conversation_messages WHERE user_id=%s ORDER BY id""",
+                (g.job_user_id,),
+            )
+            conversation_messages = [_serialize(row) for row in cursor.fetchall()]
+            cursor.execute(
+                """SELECT id, memory_key, memory_type, memory_value, confidence,
+                          source_conversation_id, created_at, updated_at
+                   FROM user_job_memories WHERE user_id=%s AND is_active=1 ORDER BY id""",
+                (g.job_user_id,),
+            )
+            memories = [_serialize(row) for row in cursor.fetchall()]
             return jsonify({
                 "profile": _serialize(profile) if profile else None,
-                "job_actions": [_serialize(row) for row in cursor.fetchall()],
+                "job_actions": job_actions,
+                "conversations": conversations,
+                "conversation_messages": conversation_messages,
+                "memories": memories,
             })
 
         cursor.execute("DELETE FROM user_job_profiles WHERE user_id=%s", (g.job_user_id,))
@@ -921,23 +1217,24 @@ def admin_jobs():
             offset = _bounded_int(request.args.get("offset"), default=0, minimum=0)
             where, params = [], []
             if status in JOB_STATUSES:
-                where.append("status=%s")
+                where.append("j.status=%s")
                 params.append(status)
             if category and category != "all":
-                where.append("category=%s")
+                where.append("j.category=%s")
                 params.append(category)
             if location:
-                where.append("location LIKE %s")
+                where.append("j.location LIKE %s")
                 params.append(f"%{location}%")
             clause = f"WHERE {' AND '.join(where)}" if where else ""
-            cursor.execute(f"SELECT COUNT(*) AS n FROM jobs {clause}", tuple(params))
+            cursor.execute(f"SELECT COUNT(*) AS n FROM jobs j {clause}", tuple(params))
             total = cursor.fetchone()["n"]
             cursor.execute(
-                f"SELECT * FROM jobs {clause} ORDER BY created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
+                f"SELECT j.*, s.source_type FROM jobs j LEFT JOIN job_sources s ON s.id=j.source_id {clause} ORDER BY j.created_at DESC LIMIT %s OFFSET %s", (*params, limit, offset)
             )
             rows = cursor.fetchall()
             for row in rows:
                 row["skills"] = parse_list(row.get("skills"))
+                row["source_label"] = evaluate_job_trust(row)["source_label"]
             return jsonify({
                 "jobs": [_serialize(row) for row in rows], "total": total, "limit": limit, "offset": offset,
             })

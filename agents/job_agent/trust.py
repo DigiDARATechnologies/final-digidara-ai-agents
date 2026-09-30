@@ -41,6 +41,17 @@ SUSPICIOUS_PHRASES = [
 ]
 
 
+def candidate_trust_badge(job: Dict[str, Any]) -> str:
+    """Expose safety checks without naming ingestion providers to candidates."""
+    badge = str(job.get("trust_badge") or "Listing not independently verified")
+    return re.sub(r"\s*\(via\s+[^)]*\)", "", badge, flags=re.I)
+
+
+def candidate_trust_signals(job: Dict[str, Any]) -> List[str]:
+    return [re.sub(r"Listing supplied by [^;]+;", "Listing supplied externally;", str(signal))
+            for signal in (job.get("signals") or ["No independent verification signals available"])]
+
+
 def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     """
     Evaluates authenticity, safety, and source transparency for a job posting.
@@ -61,7 +72,7 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     company = str(job.get("company") or "").strip()
     desc = str(job.get("description") or "").strip()
     apply_url = str(job.get("apply_url") or "").strip()
-    source_type = str(job.get("source") or "").lower().strip()
+    source_type = str(job.get("source_type") or job.get("source") or "").lower().strip()
     external_id = str(job.get("external_id") or "").lower().strip()
     combined_text = f"{title} {company} {desc}".lower()
 
@@ -76,13 +87,11 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
 
     is_adzuna = (
         source_type == "adzuna"
-        or "adzuna" in external_id
-        or any(d in parsed_domain for d in ADZUNA_DOMAINS)
+        or (not source_type and ("adzuna" in external_id or any(d in parsed_domain for d in ADZUNA_DOMAINS)))
     )
     is_jsearch = (
         source_type == "jsearch"
-        or "jsearch" in external_id
-        or any(d in parsed_domain for d in RAPIDAPI_DOMAINS)
+        or (not source_type and ("jsearch" in external_id or any(d in parsed_domain for d in RAPIDAPI_DOMAINS)))
     )
     is_direct_career_page = (
         bool(parsed_domain)
@@ -94,12 +103,12 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
 
     if is_adzuna:
         source_label = "Adzuna Job API"
-        score += 10
-        signals.append("Verified listing via Adzuna API")
+        score += 3
+        signals.append("Listing supplied by Adzuna; employer verification not established")
     elif is_jsearch:
         source_label = "RapidAPI JSearch"
-        score += 10
-        signals.append("Verified listing via RapidAPI JSearch")
+        score += 3
+        signals.append("Listing supplied by JSearch; employer verification not established")
     elif is_direct_career_page:
         source_label = "Direct Company Portal"
         score += 15
@@ -145,7 +154,9 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
 
     # Clamp score
     final_score = max(20, min(99, score))
-    is_verified = final_score >= 80 and not scam_found
+    if is_adzuna or is_jsearch:
+        final_score = min(final_score, 79)
+    is_verified = bool(is_direct_career_page and final_score >= 85 and not scam_found)
 
     # Transparent Badge Assignment (Never misrepresent aggregator as corporate posting)
     if scam_found:
@@ -161,14 +172,24 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         trust_badge = "📋 Aggregator Listing (via RapidAPI JSearch)"
         trust_level = "aggregator"
     elif final_score >= 75:
-        trust_badge = "✅ Genuine Opportunity"
-        trust_level = "trusted"
+        trust_badge = "ℹ️ Listing Checks Passed"
+        trust_level = "standard"
     elif final_score >= 50:
         trust_badge = "ℹ️ Standard Listing"
         trust_level = "standard"
     else:
         trust_badge = "⚠️ Review With Caution"
         trust_level = "caution"
+
+    if is_direct_career_page:
+        application_label = "Apply on company career page"
+        verification_note = "Direct career-page signals found; still verify the employer and role before sharing personal data."
+    elif is_adzuna or is_jsearch:
+        application_label = "Open listing source"
+        verification_note = "Aggregator-supplied listing; the employer and vacancy were not independently verified."
+    else:
+        application_label = "Open application page"
+        verification_note = "Source checks are limited; verify the employer and vacancy before applying."
 
     return {
         "trust_score": final_score,
@@ -177,4 +198,6 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         "trust_level": trust_level,
         "source_label": source_label,
         "signals": signals[:3],
+        "application_label": application_label,
+        "verification_note": verification_note,
     }
