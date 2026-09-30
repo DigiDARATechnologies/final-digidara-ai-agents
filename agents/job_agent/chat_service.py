@@ -1560,8 +1560,10 @@ def _profile_clarification(profile: Dict[str, Any], message: str) -> Optional[Di
         else:
             reply = PROFILE_FIELD_PURPOSES.get(field or active_field, "I ask for that detail to fill its section of your job-search profile.")
         reply += "\n\n" + _profile_status_reply(profile)
-    elif re.search(r"\b(?:i\s+(?:do\s*not|don't|dont)\s+have\s+(?:a\s+)?name|no\s+name)\b", text):
-        reply = "No problem. You can use any name or nickname; it does not have to be a legal name."
+    elif re.search(r"\b(?:i\s+(?:do\s*not|don't|dont)\s+have\s+(?:(?:a|any)\s+)?name|no\s+name)\b", text):
+        reply = ("No problem. I understand—you don't want to provide a name. I won't invent one. "
+                 "A name or nickname is needed only to complete that profile section. "
+                 "You can still ask me to search for jobs by role and city without completing your profile.")
         if not _profile_completion_status(profile)["completed"]:
             reply += "\n\n" + _profile_status_reply(profile)
     elif questioning and field == "full_name":
@@ -1629,6 +1631,148 @@ def _next_onboarding_prompt(profile: Dict[str, Any]) -> Tuple[str, str]:
             return "preferred_locations", "Which city would you like to work in? (e.g. Chennai or Bengaluru). You can also say **Any location**."
         return "preferred_locations", "Which city would you like to work in? (e.g. Chennai or Bengaluru). You can also choose **Remote** or **Any location**."
     return "resume", "Your profile details are saved. Attach your resume or type **skip** to view matching jobs."
+
+
+_CORRECTION_LABELS = {
+    "preferred_titles": "target role",
+    "preferred_locations": "preferred location",
+    "full_name": "name or nickname",
+    "skills": "skills",
+    "experience_years": "experience",
+    "preferred_work_mode": "work mode",
+}
+
+
+def _requested_profile_correction(message: str) -> Optional[str]:
+    """Recognize an edit request, not a job search or an ordinary profile question."""
+    text = message.casefold()
+    if not re.search(r"\b(?:change|update|correct|replace|edit|switch)\b", text):
+        return None
+    if re.search(r"\b(?:my\s+)?(?:preferred\s+)?(?:locations?|cit(?:y|ies))\b", text):
+        return "preferred_locations"
+    if re.search(r"\b(?:my\s+)?(?:target\s+|preferred\s+|job\s+)?(?:roles?|job\s+titles?)\b", text):
+        return "preferred_titles"
+    if re.search(r"\b(?:my\s+)?(?:full\s+)?(?:name|nickname)\b", text):
+        return "full_name"
+    if re.search(r"\b(?:my\s+)?skills?\b", text):
+        return "skills"
+    if re.search(r"\b(?:my\s+)?(?:work\s+)?experience\b", text):
+        return "experience_years"
+    if re.search(r"\b(?:my\s+)?work\s+mode\b", text):
+        return "preferred_work_mode"
+    return None
+
+
+def _correction_value(field: str, message: str, pending: bool) -> Optional[Any]:
+    """Accept only an explicit, recognizable replacement for the requested field."""
+    if field == "preferred_titles":
+        titles = extract_target_titles_from_text(message)
+        return titles or None
+    if field == "preferred_locations":
+        locations = extract_locations_from_text(message)
+        if not locations:
+            # The location extractor supports unknown cities when phrased as
+            # "jobs in Pune". Apply that safe fallback only to a value turn.
+            candidate = re.sub(
+                r"^(?:(?:no[,.!]?\s*)+)?(?:please\s+)?(?:i\s+)?(?:want|would\s+like|prefer)?\s*"
+                r"(?:to\s+)?(?:change|update|set|switch)?\s*(?:my\s+)?(?:preferred\s+)?"
+                r"(?:location|city)?\s*(?:to|as|is|instead|rather)?\s*",
+                "", message.strip(), flags=re.I,
+            ).strip(" .!?,")
+            if (candidate and len(candidate) <= 40 and re.fullmatch(r"[A-Za-z][A-Za-z .'-]*", candidate)
+                    and not re.search(r"\b(?:change|update|skip|cancel|later|jobs?|roles?|preferred|location|city|any|remote|no|yes|what|why|how)\b", candidate, re.I)
+                    and (pending or re.search(r"\b(?:location|city)\s+(?:to|as|is)\b", message, re.I))):
+                locations = extract_locations_from_text(f"jobs in {candidate}")
+        mode = extract_work_mode_from_text(message)
+        if locations:
+            return locations
+        if mode in {"remote", "any"}:
+            return [mode.title()]
+        return None
+    if field == "full_name":
+        return _detect_explicit_name_update(message) or (_detect_name_from_message(message) if pending else None)
+    if field == "skills":
+        skills = extract_skills_from_user_message(message)
+        return skills or None
+    if field == "experience_years":
+        if re.search(r"\b(?:fresher|fresh graduate|entry[ -]level|no experience)\b", message, re.I):
+            return 0.0
+        amount = re.search(r"(?<![\w.])(-?\d+(?:\.\d+)?)\s*(years?|yrs?|months?)\b", message, re.I)
+        if amount:
+            number = float(amount.group(1))
+            return number / 12 if amount.group(2).lower().startswith("month") else number
+        amount = re.search(r"\bexperience\s*(?:to|as|is)\s*(-?\d+(?:\.\d+)?)\b", message, re.I)
+        if amount:
+            return float(amount.group(1))
+        if pending and re.fullmatch(r"\d+(?:\.\d+)?", message.strip()):
+            return float(message.strip())
+        return None
+    if field == "preferred_work_mode":
+        return extract_work_mode_from_text(message)
+    return None
+
+
+def _handle_profile_correction(db, cursor, user_id: str, profile: Dict[str, Any],
+                               message: str, history=None) -> Optional[Dict[str, Any]]:
+    """Resolve a profile edit before onboarding or search can consume its text."""
+    last_assistant = next(
+        (turn.get("content", "") for turn in reversed(history or []) if turn.get("role") == "assistant"), "")
+    pending_match = re.search(r"What would you like to use instead for your \*\*(.+?)\*\*\?", last_assistant)
+    pending_field = next((key for key, label in _CORRECTION_LABELS.items()
+                          if pending_match and pending_match.group(1) == label), None)
+    field = _requested_profile_correction(message) or pending_field
+    if not field:
+        return None
+    # Preserve the established name-update confirmation and persistence path.
+    if field == "full_name" and not pending_field and _detect_explicit_name_update(message):
+        return None
+    label = _CORRECTION_LABELS[field]
+    prompt = f"What would you like to use instead for your **{label}**?"
+    if pending_field and re.fullmatch(r"\s*(?:cancel|never mind|nevermind|keep it|don't change it)\s*[.!]?\s*", message, re.I):
+        return {"reply": f"Okay, I kept your {label} unchanged.\n\n{_next_onboarding_prompt(profile)[1]}"
+                if not _profile_completion_status(profile)["completed"] else
+                f"Okay, I kept your {label} unchanged. What would you like help with next?",
+                "show_jobs": False, "suggested_actions": [], "matched_jobs": [],
+                "updated_profile": _build_profile_response_dict(profile, []),
+                "profile_status": _profile_completion_status(profile)}
+    value = _correction_value(field, message, bool(pending_field))
+    if value is None or (field == "experience_years" and not 0 <= value <= MAX_EXPERIENCE_YEARS):
+        return {"reply": f"Of course—I can change your {label}. Your current value is still saved. {prompt}",
+                "show_jobs": False, "suggested_actions": [], "matched_jobs": [],
+                "updated_profile": _build_profile_response_dict(profile, []),
+                "profile_status": _profile_completion_status(profile)}
+
+    stored = json.dumps(value) if isinstance(value, list) else value
+    if field == "experience_years":
+        cursor.execute("UPDATE user_job_profiles SET experience_years=%s, experience_provided=1 WHERE user_id=%s",
+                       (stored, user_id))
+        profile["experience_provided"] = True
+        profile["experience_status"] = "fresher" if value == 0 else "experienced"
+    elif field == "preferred_locations":
+        # Do not leave an old Remote/Any mode restricting a newly selected city,
+        # or an old office mode restricting a newly selected Remote preference.
+        new_mode = ("remote" if value == ["Remote"] else "any" if value == ["Any"] else
+                    "" if profile.get("preferred_work_mode") in {"remote", "any"} else
+                    profile.get("preferred_work_mode") or "")
+        cursor.execute("UPDATE user_job_profiles SET preferred_locations=%s, preferred_work_mode=%s WHERE user_id=%s",
+                       (stored, new_mode, user_id))
+        profile["preferred_work_mode"] = new_mode
+    else:
+        cursor.execute(f"UPDATE user_job_profiles SET {field}=%s WHERE user_id=%s", (stored, user_id))
+    db.commit()
+    profile[field] = value
+    changed = {"preferred_titles": "target job titles", "preferred_locations": "preferred locations",
+               "full_name": "full name", "skills": "skills", "experience_years": "experience",
+               "preferred_work_mode": "work mode"}[field]
+    shown = ", ".join(value) if isinstance(value, list) else (f"{value:g} years" if field == "experience_years" else str(value))
+    continuation = (_next_onboarding_prompt(profile)[1] if not _profile_completion_status(profile)["completed"]
+                    else "What would you like help with next? You can ask me to show matching jobs.")
+    confirmation = (f"I'll use **{shown}**." if field == "full_name" else
+                    f"Updated your {label} to **{shown}**.")
+    return {"reply": f"{confirmation}\n\n{continuation}",
+            "show_jobs": False, "suggested_actions": [], "matched_jobs": [],
+            "updated_profile": _build_profile_response_dict(profile, [changed]),
+            "profile_status": _profile_completion_status(profile)}
 
 
 def _social_reply(profile: Dict[str, Any], message: str, history=None) -> Optional[Dict[str, Any]]:
@@ -2808,6 +2952,10 @@ def chat_with_job_agent(
     cursor = db.cursor(dictionary=True)
     try:
         profile, missing = _get_user_profile_and_missing(cursor, user_id)
+
+        correction = _handle_profile_correction(db, cursor, user_id, profile, message, history)
+        if correction:
+            return correction
 
         clarification = _profile_clarification(profile, message)
         if clarification:
