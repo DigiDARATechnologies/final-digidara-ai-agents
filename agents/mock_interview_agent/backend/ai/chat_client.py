@@ -115,10 +115,15 @@ def transcribe_audio(
     round_type="technical",
     subject=None,
     question=None,
+    content_type=None,
 ):
     """Transcribe a recorded candidate answer using OpenAI."""
+    resolved_content_type = (
+        (content_type or "audio/webm").split(";", 1)[0].strip().lower()
+        or "audio/webm"
+    )
     request_options = {
-        "file": (filename or "answer.webm", audio_file, "audio/webm"),
+        "file": (filename or "answer.webm", audio_file, resolved_content_type),
         "model": TRANSCRIPTION_MODEL,
         "language": "en",
         # gpt-4o-mini-transcribe returns the OpenAI transcription JSON object.

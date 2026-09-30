@@ -58,7 +58,7 @@ import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
-import { checkCommunicationHealth, getDailyChallengeToday } from "./lib/communicationApi";
+import { checkCommunicationHealth, getDailyChallengeToday, transcribeCommunicationAudio } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
 import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
@@ -1727,6 +1727,9 @@ export default function App() {
                 codeBusy={codeBusy}
                 onRunCode={handleRunCode}
                 onSubmitCode={handleSubmitCode}
+                transcribeAudio={isCommunicationChat && communicationState?.authToken
+                  ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
+                  : undefined}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."
                 multilineSubmitLabel="Submit Answer"
@@ -1739,7 +1742,7 @@ export default function App() {
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={() => sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
+                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}

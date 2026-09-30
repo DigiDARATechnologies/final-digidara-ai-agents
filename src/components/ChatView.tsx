@@ -3,7 +3,7 @@ import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
 import ConnectorPill, { type DifficultyPickerProps } from "./ConnectorPill";
 import AttachMenu from "./AttachMenu";
-import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import useSpeechRecognition, { type AudioTranscriber } from "../hooks/useSpeechRecognition";
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
 import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
@@ -65,6 +65,10 @@ interface ChatViewProps {
   immersiveSpeaking?: boolean;
   /** Pronunciation uses microphone energy detection to stop after speech. */
   autoStopVoiceOnSilence?: boolean;
+  /** Server-side transcription for a recorded answer. When given, phones
+   * record the answer and send it here instead of using the browser's live
+   * speech recognition, which is unreliable on phones. */
+  transcribeAudio?: AudioTranscriber;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -123,6 +127,7 @@ export default function ChatView({
   onDailyChallenge,
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
+  transcribeAudio,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -138,7 +143,10 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition();
+  const speech = useSpeechRecognition("en-US", transcribeAudio);
+  // Recording mode (phones): tapping the mic to stop sends the answer once
+  // the server has transcribed it -- the text does not exist yet at the tap.
+  const sendOnFinalRef = useRef(false);
   // Recognition is `continuous: true`, so it keeps listening in the
   // background after Send unless explicitly stopped ... and a result that was
   // already in flight can still land *after* stop() and repopulate the box
@@ -152,7 +160,14 @@ export default function ChatView({
   function handleMicClick() {
     stopCoachAudio();
     setAgentSpeaking(false);
+    if (speech.transcribing) return;
     if (speech.listening) {
+      if (speech.recordingMode) {
+        sendOnFinalRef.current = true;
+        speech.stop();
+        if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
+        return;
+      }
       voiceSessionRef.current += 1;
       speech.stop();
       if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
@@ -163,10 +178,19 @@ export default function ChatView({
       return;
     }
     setInput("");
+    sendOnFinalRef.current = false;
     const session = ++voiceSessionRef.current;
-    speech.start((text) => {
+    speech.start((text, final) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
+      if (final && sendOnFinalRef.current) {
+        sendOnFinalRef.current = false;
+        if (text.trim()) {
+          voiceSessionRef.current += 1;
+          onSend(text.trim());
+          setInput("");
+        }
+      }
     }, {
       autoStopOnSilence: autoStopVoiceOnSilence,
       onAudioLevel: (lvl) => {
@@ -278,7 +302,7 @@ export default function ChatView({
       setAgentSpeaking(false);
       setInput("");
       speech.start(
-        (text) => {
+        (text, final) => {
           if (voiceSessionRef.current !== session || submitted) return;
           if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
             window.speechSynthesis.cancel();
@@ -291,9 +315,13 @@ export default function ChatView({
             observedTranscript = next;
             lastSpeechAt = Date.now();
           }
+          // Recording mode delivers the whole answer once, after the pause that
+          // ended the recording: send it straight away.
+          if (final && next && speech.recordingMode) submitSpokenTurn();
         },
         {
           autoStopOnSilence: true,
+          silenceMs: speech.recordingMode ? 2500 : undefined,
           onAudioLevel: (lvl) => {
             if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
           },
@@ -447,14 +475,14 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.listening ? "Listening... (Pause or tap orb to send)" : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening ? "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"
             ? m.options?.filter((option) => !["daily_challenge", "dashboard", "history"].includes(option.value))
             : m.options;
           const visibleOptions = rawOptions?.filter(
-            (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 1 && opt.label.trim() !== "."
+            (opt) => opt && typeof opt.label === "string" && opt.label.trim().length > 0 && opt.label.trim() !== "."
           );
           const optionsActive = m.role === "agent" && !!visibleOptions?.length && i === chat.messages.length - 1 && !typing;
           const isEditing = editingIndex === i;
@@ -671,7 +699,8 @@ export default function ChatView({
             <button
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.listening ? "Stop recording" : "Voice input"}
+              title={speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              disabled={speech.transcribing}
               onClick={handleMicClick}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -695,6 +724,12 @@ export default function ChatView({
       )}
       {!codeMode && !multilineMode && autoStopVoiceOnSilence && speech.listening && (
         <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
+      )}
+      {!codeMode && !multilineMode && speech.recordingMode && !autoStopVoiceOnSilence && speech.listening && (
+        <div className="voice-capture-status" role="status">Recording… tap the microphone again when you finish, and your answer is sent.</div>
+      )}
+      {!codeMode && !multilineMode && speech.transcribing && (
+        <div className="voice-capture-status" role="status">Turning your recording into text…</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
     </section>

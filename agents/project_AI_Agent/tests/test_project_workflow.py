@@ -525,3 +525,32 @@ def test_intake_never_lets_a_non_update_change_memory_or_pick_a_missing_option(c
 def test_intake_regenerate_without_options_on_screen_is_not_a_regenerate(client, database, monkeypatch):
     monkeypatch.setattr(routes, "call_json", Mock(return_value={"intent": "regenerate", "memory": {}}))
     assert intake_turn(client).json()["intent"] == "update"
+
+
+def test_qa_agent_gets_the_brief_up_front_and_answers_in_one_call(database, monkeypatch):
+    from types import SimpleNamespace
+    from app.agentic import qa_agent
+    with database() as session:
+        assignment = session.get(ProjectAssignment, "assignment")
+        assignment.topic_json = {"title": "Clinic Login Page"}
+        assignment.requirements_json = {"functional_requirements": ["Lock the account after 3 failed logins"]}
+        session.commit()
+    reply = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="1. Lockout: ...", tool_calls=None))], usage=None)
+    completion = Mock(return_value=reply)
+    monkeypatch.setattr(qa_agent.litellm, "completion", completion)
+    monkeypatch.setattr(qa_agent, "record_usage", lambda *args: None)
+    answer = qa_agent.ask_project_question("thread", "I need a more detailed requirement")
+    assert answer["answer"] == "1. Lockout: ..."
+    assert completion.call_count == 1
+    system = completion.call_args.kwargs["messages"][0]["content"]
+    assert "Lock the account after 3 failed logins" in system
+    assert "OFF-TOPIC QUESTIONS" in system
+
+
+@pytest.mark.parametrize("request_text,searches", [("Python — Login page", False), ("Java — Amazon SDE interview project", True)])
+def test_topic_web_search_only_when_the_request_names_a_company_or_interview(state, database, monkeypatch, request_text, searches):
+    monkeypatch.setattr(config, "ENABLE_TOPIC_WEB_SEARCH", True)
+    provider = Mock(return_value={"options": [{"id": "A", "title": f"Idea {request_text} 1"}, {"id": "B", "title": f"Idea {request_text} 2"}]})
+    monkeypatch.setattr(nodes, "call_json", provider)
+    nodes.topic_generator_node({**state, "course_name": request_text, "free_topic_request": True})
+    assert provider.call_args.kwargs["web_search"] is searches

@@ -55,6 +55,7 @@ GENERAL_ROUTES = {
 INTERVIEW_SCOPED_ACTIONS = {
     "submit_answer", "end_interview", "exit_interview",
     "history_detail", "record_focus_event", "download_report", "transcribe_audio",
+    "transcribe_preview",
 }
 
 
@@ -176,7 +177,9 @@ def _dispatch(action: str, payload: dict):
             return pdf
         return jsonify(content_type="application/pdf", filename="interview-report.pdf", data=base64.b64encode(pdf.data).decode("ascii"))
 
-    if action == "transcribe_audio":
+    # transcribe_preview: the answer so far, shown live while the candidate is
+    # still speaking on a phone. Same checks; nothing is saved.
+    if action in {"transcribe_audio", "transcribe_preview"}:
         audio_type = str(payload.get("audio_type") or "audio/webm").split(";", 1)[0].lower()
         if audio_type not in ALLOWED_AUDIO_TYPES:
             return _error("Use a WebM, OGG, M4A, MP3, or WAV recording.", "invalid_audio_type", 400)
@@ -200,6 +203,7 @@ def _dispatch(action: str, payload: dict):
             data={
                 "interview_id": str(payload.get("interview_id") or ""),
                 "question_order": str(payload.get("question_order") or ""),
+                "preview": "1" if action == "transcribe_preview" else "0",
                 "audio": (BytesIO(audio_bytes), f"answer{extension}", audio_type),
             },
             content_type="multipart/form-data",

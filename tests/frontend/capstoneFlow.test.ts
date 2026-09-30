@@ -154,7 +154,8 @@ describe('mid-resubmission dispute detection', () => {
   test('a plain attach-related message still gets the standard reminder if the Q&A agent has nothing else to add', async () => {
     jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
     const result = await handleCapstoneText(submissionState, 'ok');
-    expect(result.messages[0].text).toBe('Attach both your .docx report and .zip source archive using the paperclip button.');
+    expect(result.messages[0].text).toContain("couldn't answer your question just now");
+    expect(result.messages[1].text).toBe('Attach both your .docx report and .zip source archive using the paperclip button.');
   });
 
   test('any text is routed through the Q&A agent, not just messages that look question-shaped', async () => {
@@ -183,10 +184,19 @@ describe('requirements doubts before the timer is confirmed', () => {
     expect(api.confirmTimer).toHaveBeenCalledWith('thread');
   });
 
-  test('if the Q&A call itself fails, the plain reminder is shown instead', async () => {
-    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
+  test('if the Q&A call itself fails, the student is told it failed and why, not given a canned reminder', async () => {
+    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('The ask project question request timed out. Please try again.'));
     const result = await handleCapstoneText(timerConfirmState, 'what does this requirement mean?');
-    expect(result.messages[0].text).toBe('Use the button when you are ready. The timer cannot be paused.');
+    expect(result.messages[0].text).toContain('the answer took too long to prepare');
+    expect(result.messages[0].text).toContain('send it again');
+    expect(result.messages[0].options?.[0]).toMatchObject({ value: 'confirm' });
+  });
+
+  test('a request for more detailed requirements goes to the Q&A agent', async () => {
+    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: '1. Login form: ...', tools_used: [] });
+    const result = await handleCapstoneText(timerConfirmState, 'I need a more detailed requirement');
+    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'I need a more detailed requirement');
+    expect(result.messages[0].text).toBe('1. Login form: ...');
   });
 });
 
@@ -253,7 +263,7 @@ describe('the intake conversation remembers answers and lets the student edit th
   test('once both answers are known the topics are generated from the memory, not from the raw messages', async () => {
     jest.mocked(api.topicIntakeTurn).mockResolvedValue(intake({ memory: { focus: 'Java', project_type: 'Web development' }, ready: true }));
     jest.mocked(api.checkEligibilityFree).mockResolvedValue(generated(['Clinic Booking Portal', 'Recipe Sharing Site']));
-    const result = await handleCapstoneText({ ...askingProjectType, intake: { focus: 'Java' } }, 'web developement');
+    const result = await handleCapstoneText({ ...askingProjectType, intake: { focus: 'Java' } }, "let's go with web developement for it");
     const [, , , description, , options] = jest.mocked(api.checkEligibilityFree).mock.calls[0];
     expect(description).toBe('Java — Web development');
     expect(options).toEqual({ excludeTitles: [], topicKey: 'java|web development' });
@@ -281,18 +291,39 @@ describe('the intake conversation remembers answers and lets the student edit th
     expect(result.state.intake).toEqual({ focus: 'Python' });
   });
 
-  test('if the intake agent is unreachable, the message is taken as the answer to the pending question', async () => {
+  test('a short plain answer is used exactly as typed, with no model call, so "Login page" never becomes "Web development"', async () => {
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue(generated(['One', 'Two']));
+    await handleCapstoneText(askingProjectType, 'Login page');
+    expect(api.topicIntakeTurn).not.toHaveBeenCalled();
+    expect(jest.mocked(api.checkEligibilityFree).mock.calls[0][3]).toBe('Python — Login page');
+  });
+
+  test('a short first answer is saved as the language and the project-type question follows, with no model call', async () => {
+    const fresh: CapstoneFlowState = { step: 'awaiting_topic_request', name: 'L', email: 'l@x.y', phone: '', difficulty: 'easy', pendingQuestion: 'focus' };
+    const result = await handleCapstoneText(fresh, 'python');
+    expect(api.topicIntakeTurn).not.toHaveBeenCalled();
+    expect(result.state.intake?.focus).toBe('Python');
+    expect(result.messages[0].text).toContain('build with Python?');
+  });
+
+  test('a bare language name while the project type is pending still goes to the model (it is probably a language change)', async () => {
+    jest.mocked(api.topicIntakeTurn).mockResolvedValue(intake({ memory: { focus: 'Java' }, next_question: 'What type of project with Java?' }));
+    await handleCapstoneText(askingProjectType, 'java');
+    expect(api.topicIntakeTurn).toHaveBeenCalled();
+  });
+
+  test('if the intake agent is unreachable, a longer message is taken as the answer to the pending question', async () => {
     jest.mocked(api.topicIntakeTurn).mockRejectedValue(new Error('offline'));
     jest.mocked(api.checkEligibilityFree).mockResolvedValue(generated(['One', 'Two']));
-    await handleCapstoneText(askingProjectType, 'desktop tool');
-    expect(jest.mocked(api.checkEligibilityFree).mock.calls[0][3]).toBe('Python — desktop tool');
+    await handleCapstoneText(askingProjectType, 'a desktop tool for my shop');
+    expect(jest.mocked(api.checkEligibilityFree).mock.calls[0][3]).toBe('Python — a desktop tool for my shop');
   });
 
   test('a chat saved before the intake memory existed keeps its first answer', async () => {
     jest.mocked(api.topicIntakeTurn).mockResolvedValue(intake({ memory: { focus: 'portfolio website', project_type: 'Web development' }, ready: true }));
     jest.mocked(api.checkEligibilityFree).mockResolvedValue(generated(['One', 'Two']));
     const legacy: CapstoneFlowState = { step: 'awaiting_topic_request', name: 'L', email: 'l@x.y', phone: '', difficulty: 'easy', pendingTopicSeed: 'portfolio website' };
-    await handleCapstoneText(legacy, 'python');
+    await handleCapstoneText(legacy, 'use python for building it');
     expect(jest.mocked(api.topicIntakeTurn).mock.calls[0][0].memory).toEqual({ focus: 'portfolio website' });
   });
 });
@@ -310,6 +341,14 @@ describe('choosing, regenerating and editing while project options are on screen
     expect(api.topicIntakeTurn).not.toHaveBeenCalled();
     expect(api.chooseTopic).toHaveBeenCalledWith('thread', 'A');
     expect(result.state.step).toBe('awaiting_timer_confirm');
+  });
+
+  test.each(['I need a another two topics', 'regenerate', 'show me other ideas'])('%p regenerates straight away, with no model call', async (message) => {
+    jest.mocked(api.checkEligibilityFree).mockResolvedValue(generated(['Expense Splitter', 'Plant Care Reminder']));
+    const result = await handleCapstoneText(choosing, message);
+    expect(api.topicIntakeTurn).not.toHaveBeenCalled();
+    expect(jest.mocked(api.checkEligibilityFree).mock.calls[0][3]).toBe('Python (the student left the type of project open — use your own best judgment)');
+    expect(result.state.topicOptions?.[0].title).toBe('Expense Splitter');
   });
 
   test('"change the project topics" regenerates, never repeating what was already shown', async () => {
@@ -360,7 +399,7 @@ describe('choosing, regenerating and editing while project options are on screen
   test('if the intake agent is unreachable, the old Q&A path still answers and nothing is mis-selected', async () => {
     jest.mocked(api.topicIntakeTurn).mockRejectedValue(new Error('offline'));
     jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'Both fit in 7 days.', tools_used: [] });
-    const result = await handleCapstoneText(choosing, 'i need to change the project topics');
+    const result = await handleCapstoneText(choosing, 'which of these two fits in 7 days');
     expect(api.chooseTopic).not.toHaveBeenCalled();
     expect(result.messages[0].text).toBe('Both fit in 7 days.');
     expect(result.state.step).toBe('awaiting_topic_choice');
@@ -368,7 +407,7 @@ describe('choosing, regenerating and editing while project options are on screen
 });
 
 describe('after the requirements are shown the project is locked', () => {
-  test.each(['i need to change the project topic', 'switch the language to java', 'give me another project'])(
+  test.each(['i need to change the project topic', 'switch the language to java', 'give me another project', 'I need to regenerate', 'I need another two topics'])(
     '%p gets a locked answer, not a regeneration',
     async (message) => {
       const result = await handleCapstoneText({ ...timerConfirmState, chosenTopic: topicChoiceState.topicOptions![0] }, message);

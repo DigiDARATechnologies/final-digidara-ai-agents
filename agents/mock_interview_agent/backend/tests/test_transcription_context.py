@@ -27,6 +27,7 @@ class TranscriptionContextTests(unittest.TestCase):
                 "technical",
                 subject="Python",
                 question="What is a tuple in Python?",
+                content_type="audio/mp4; codecs=mp4a.40.2",
             )
 
         self.assertEqual(
@@ -38,6 +39,8 @@ class TranscriptionContextTests(unittest.TestCase):
         self.assertIn("What is a tuple in Python?", options["prompt"])
         self.assertIn("tuple", options["prompt"])
         self.assertEqual(options["model"], "gpt-4o-mini-transcribe")
+        self.assertEqual(options["file"][0], "answer.webm")
+        self.assertEqual(options["file"][2], "audio/mp4")
         self.assertEqual(create.call_count, 1)
 
     def test_missing_context_omits_prompt_without_failing(self):

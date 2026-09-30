@@ -64,6 +64,10 @@ def transcribe():
     subject = None
     question = None
     raw_interview_id = request.form.get("interview_id")
+    # A preview transcribes the answer so far while the candidate is still
+    # speaking (phones show it live in the answer box). It is never the
+    # answer of record, so nothing is saved: no audio file, no audio path.
+    preview = request.form.get("preview") == "1"
     audio_path = None
     student_id = None
     question_id = None
@@ -94,6 +98,7 @@ def transcribe():
         # transcription usage record may safely omit it in that case.
         student_id = detail.get("student_id")
         question_id = detail["id"]
+    if raw_interview_id and not preview:
         extension = ALLOWED_AUDIO_TYPES[audio_type]
         filename = (
             f"{interview_id}-{question_order}-{uuid4().hex}{extension}"
@@ -118,7 +123,7 @@ def transcribe():
             student_id=student_id,
             interview_id=interview_id,
             question_id=question_id,
-            request_type="audio_transcription",
+            request_type="audio_transcription_preview" if preview else "audio_transcription",
         ):
             transcript_text = groq_client.transcribe_audio(
                 BytesIO(audio_bytes),
@@ -126,6 +131,7 @@ def transcribe():
                 round_type,
                 subject=subject,
                 question=question,
+                content_type=audio_type,
             )
     except Exception:
         log(

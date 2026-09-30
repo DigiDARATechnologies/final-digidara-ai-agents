@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
+import {
+  audioRecordingSupported,
+  isMobileVoiceDevice,
+  microphoneErrorMessage,
+  preferredRecordingType,
+} from "../lib/voiceCapture";
 
 /** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
@@ -29,7 +35,16 @@ type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 type VoiceCaptureOptions = {
   autoStopOnSilence?: boolean;
   onAudioLevel?: (level: number) => void;
+  /** How long a pause (after some speech) ends the recording. Default 7s. */
+  silenceMs?: number;
 };
+
+/** Sends a recorded answer to the server and resolves with its transcript. */
+export type AudioTranscriber = (audio: Blob) => Promise<string>;
+
+/** Longest single recording on a phone, so an uploaded answer stays small. */
+const MAX_RECORDING_MS = 3 * 60 * 1000;
+const DEFAULT_SILENCE_MS = 7000;
 
 declare global {
   interface Window {
@@ -90,19 +105,49 @@ export function mergeCumulativeText(existing: string, incoming: string): string 
   return joinSpeechSegments([existing, incoming]);
 }
 
-/** Browser-only speech-to-text for the chat composer: dictate into the
- * text input instead of typing. Purely client-side (Web Speech API) — the
- * recognized text is sent through the exact same onSend(text) path as
- * anything typed, so no backend agent needs to know the difference. */
-export default function useSpeechRecognition(locale = "en-US") {
+/** Speech-to-text for the chat composer: dictate into the text input
+ * instead of typing. The recognized text is sent through the exact same
+ * `onSend(text)` path as anything typed.
+ *
+ * Two ways of getting there:
+ * - Desktop (and any agent without a `transcribe` function): the browser's
+ *   live Web Speech recognition, words appearing as they are spoken.
+ * - Phones, when `transcribe` is given: record the answer on a single
+ *   microphone stream and have the server transcribe it when recording
+ *   stops. Live recognition is unreliable on phones -- see voiceCapture.ts. */
+export default function useSpeechRecognition(locale = "en-US", transcribe?: AudioTranscriber) {
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const keepListeningRef = useRef(false);
   const vadCleanupRef = useRef<(() => void) | null>(null);
   const retryCountRef = useRef(0);
+  const transcribeRef = useRef(transcribe);
+  transcribeRef.current = transcribe;
+  const recordingMode = Boolean(transcribe) && isMobileVoiceDevice() && audioRecordingSupported();
+  // Recording mode: every start() is a new session; finishing an older one is ignored.
+  const recordSessionRef = useRef(0);
+  const finishRecordingRef = useRef<((deliver: boolean) => void) | null>(null);
+
+  /** Recording mode only: ends the current recording. `deliver` transcribes it
+   * and reports the text; otherwise it is thrown away (unmount, restart). */
+  const endRecording = useCallback((deliver: boolean) => {
+    const finish = finishRecordingRef.current;
+    if (finish) {
+      finish(deliver);
+      return;
+    }
+    // Still waiting for the microphone to open: cancel that start.
+    recordSessionRef.current += 1;
+    setListening(false);
+  }, []);
 
   const stop = useCallback(() => {
+    if (finishRecordingRef.current) {
+      endRecording(true);
+      return;
+    }
     keepListeningRef.current = false;
     vadCleanupRef.current?.();
     vadCleanupRef.current = null;
@@ -113,7 +158,150 @@ export default function useSpeechRecognition(locale = "en-US") {
     }
   }, []);
 
-  useEffect(() => stop, [stop]);
+  useEffect(() => () => {
+    endRecording(false);
+    stop();
+  }, [endRecording, stop]);
+
+  /** Recording mode: one microphone stream feeds both the recorder and the
+   * silence detector, so nothing competes for the microphone. */
+  const startRecording = useCallback(
+    (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions) => {
+      endRecording(false);
+      const session = ++recordSessionRef.current;
+      setError("");
+      setListening(true);
+
+      void navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      }).then((stream) => {
+        if (session !== recordSessionRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const type = preferredRecordingType();
+        let recorder: MediaRecorder;
+        try {
+          recorder = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
+        } catch (recorderError) {
+          stream.getTracks().forEach((track) => track.stop());
+          setListening(false);
+          setError(microphoneErrorMessage(recorderError));
+          return;
+        }
+        const chunks: Blob[] = [];
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        };
+
+        let animationFrame: number | undefined;
+        let audioContext: AudioContext | null = null;
+        let finished = false;
+        const maxTimer = window.setTimeout(() => finish(true), MAX_RECORDING_MS);
+        const cleanup = () => {
+          window.clearTimeout(maxTimer);
+          if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame);
+          options.onAudioLevel?.(0);
+          stream.getTracks().forEach((track) => track.stop());
+          if (audioContext && audioContext.state !== "closed") void audioContext.close();
+        };
+
+        const deliverRecording = async () => {
+          const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+          if (!audio.size) {
+            setError("No audio was recorded. Tap the microphone and try again.");
+            onResult("", true);
+            return;
+          }
+          setTranscribing(true);
+          try {
+            const text = (await transcribeRef.current?.(audio))?.trim() ?? "";
+            if (session !== recordSessionRef.current) return;
+            if (!text) setError("I couldn't hear any words in that recording. Tap the microphone and speak a little closer to the phone.");
+            onResult(text, true);
+          } catch (transcribeError) {
+            if (session !== recordSessionRef.current) return;
+            const reason = (transcribeError as Error)?.message || "the transcription service did not respond";
+            setError(`Your answer couldn't be turned into text (${reason}). Tap the microphone to try again, or type your answer.`);
+            onResult("", true);
+          } finally {
+            if (session === recordSessionRef.current) setTranscribing(false);
+          }
+        };
+
+        function finish(deliver: boolean) {
+          if (finished) return;
+          finished = true;
+          if (finishRecordingRef.current === finish) finishRecordingRef.current = null;
+          const onStopped = () => {
+            cleanup();
+            if (session !== recordSessionRef.current) return;
+            setListening(false);
+            if (deliver) void deliverRecording();
+          };
+          if (recorder.state !== "inactive") {
+            recorder.addEventListener("stop", onStopped, { once: true });
+            recorder.stop();
+          } else {
+            onStopped();
+          }
+        }
+        finishRecordingRef.current = finish;
+
+        const AudioContextCtor = window.AudioContext
+          || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (AudioContextCtor) {
+          try {
+            audioContext = new AudioContextCtor();
+            // A phone may create it suspended when this did not start from a tap.
+            void audioContext.resume?.();
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 1024;
+            audioContext.createMediaStreamSource(stream).connect(analyser);
+            const samples = new Uint8Array(analyser.fftSize);
+            const silenceMs = options.silenceMs ?? DEFAULT_SILENCE_MS;
+            let speechDetected = false;
+            let quietSince = 0;
+            const measure = () => {
+              if (finished) return;
+              analyser.getByteTimeDomainData(samples);
+              let sum = 0;
+              for (const sample of samples) {
+                const value = (sample - 128) / 128;
+                sum += value * value;
+              }
+              const rms = Math.sqrt(sum / samples.length);
+              options.onAudioLevel?.(Math.min(1, Math.max(0, (rms - 0.012) * 8.5)));
+              const now = performance.now();
+              if (rms >= 0.015) {
+                speechDetected = true;
+                quietSince = 0;
+                if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
+              } else if (speechDetected && options.autoStopOnSilence) {
+                if (!quietSince) quietSince = now;
+                if (now - quietSince >= silenceMs) {
+                  finish(true);
+                  return;
+                }
+              }
+              animationFrame = window.requestAnimationFrame(measure);
+            };
+            measure();
+          } catch {
+            // No level meter or auto-stop, but recording still works: the
+            // student taps the microphone to finish.
+          }
+        }
+        recorder.start(250);
+      }).catch((microphoneError) => {
+        if (session !== recordSessionRef.current) return;
+        setListening(false);
+        setError(microphoneErrorMessage(microphoneError));
+      });
+      return true;
+    },
+    [endRecording],
+  );
 
   /** Starts listening. onResult is called with the running transcript
    * (accumulated final text + the current interim guess) on every update,
@@ -121,6 +309,7 @@ export default function useSpeechRecognition(locale = "en-US") {
   const start = useCallback(
     (onResult: (text: string, final: boolean) => void, options: VoiceCaptureOptions = {}) => {
       setError("");
+      if (recordingMode) return startRecording(onResult, options);
       const SpeechRecognitionAPI = getSpeechRecognitionAPI();
       if (!SpeechRecognitionAPI) {
         setError("Voice input isn't supported in this browser — try Chrome or Edge.");
@@ -308,8 +497,8 @@ export default function useSpeechRecognition(locale = "en-US") {
               }
             } else if (speechDetected) {
               if (!quietSince) quietSince = now;
-              // 12-second silence allowance before VAD stops, coordinating with 6.5s auto-submit:
-              if (now - quietSince >= 12000) {
+              // Silence allowance before VAD stops, coordinating with auto-submit:
+              if (now - quietSince >= (options.silenceMs ?? 12000)) {
                 cleanupVad();
                 try {
                   recognitionRef.current?.stop();
@@ -328,8 +517,17 @@ export default function useSpeechRecognition(locale = "en-US") {
       }
       return true;
     },
-    [locale],
+    [locale, recordingMode, startRecording],
   );
 
-  return { supported: Boolean(getSpeechRecognitionAPI()), listening, error, start, stop };
+  return {
+    supported: recordingMode || Boolean(getSpeechRecognitionAPI()),
+    /** True on a phone with a server transcriber: text arrives once, after recording stops. */
+    recordingMode,
+    listening,
+    transcribing,
+    error,
+    start,
+    stop,
+  };
 }
