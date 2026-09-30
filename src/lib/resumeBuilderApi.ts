@@ -226,3 +226,14 @@ export interface ResumeChatTurnResult {
 export async function resumeChatTurn(userId: string, input: ResumeChatTurnInput) {
   return invoke<ResumeChatTurnResult>("resume_chat_turn", { user_id: userId, ...input }, 60_000);
 }
+
+export type WordingField = "summary" | "project" | "experience";
+
+/** A stronger wording of what the candidate just wrote, or null when their
+ * text is already good (or no suggestion could be made). Never adds facts. */
+export async function suggestResumeWording(userId: string, field: WordingField, text: string, targetRole?: string) {
+  const result = await invoke<{ suggestion: string | null }>(
+    "suggest_wording", { user_id: userId, field, text, target_role: targetRole }, 20_000,
+  );
+  return result.suggestion?.trim() || null;
+}

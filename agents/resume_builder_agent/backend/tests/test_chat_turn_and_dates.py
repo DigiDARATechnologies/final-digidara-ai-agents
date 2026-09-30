@@ -151,3 +151,46 @@ def test_model_failure_is_reported_not_crashed(client, monkeypatch):
     response = ask(client, message="change my name")
     assert response.status_code == 502
     assert "AI provider is not configured" in response.get_json()["message"]
+
+
+def suggest(client, **payload):
+    return client.post("/api/ai/suggest-wording", json={"field": "summary", "text": "i am good in python and sql and made dashboards", "target_role": "Data Analyst", **payload})
+
+
+def test_a_stronger_wording_is_suggested_without_new_facts_in_the_prompt(client, monkeypatch):
+    prompts = []
+    def respond(prompt, max_tokens):
+        prompts.append(prompt)
+        return json.dumps({"suggestion": "Data analyst skilled in Python and SQL, building dashboards that support decisions."})
+    monkeypatch.setattr(ai, "get_ai_response_text", respond)
+    body = suggest(client).get_json()
+    assert body == {"suggestion": "Data analyst skilled in Python and SQL, building dashboards that support decisions."}
+    assert "Do NOT add numbers" in prompts[0]
+    assert "for a Data Analyst role" in prompts[0]
+
+
+@pytest.mark.parametrize("answer", [
+    json.dumps({"suggestion": "I am good in Python and SQL and made dashboards"}),  # effectively unchanged
+    json.dumps({"suggestion": ""}),
+    RuntimeError("AI provider is not configured"),
+])
+def test_no_suggestion_when_nothing_useful_comes_back(client, monkeypatch, answer):
+    def respond(prompt, max_tokens):
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    monkeypatch.setattr(ai, "get_ai_response_text", respond)
+    body = suggest(client, text="I am good in Python and SQL and made dashboards").get_json()
+    assert body == {"suggestion": None}
+
+
+@pytest.mark.parametrize("payload,status", [({"field": "salary"}, 400), ({"text": ""}, 400), ({"text": "x" * 3001}, 413)])
+def test_bad_wording_requests_are_refused(client, payload, status):
+    assert suggest(client, **payload).status_code == status
+
+
+def test_wording_suggestions_are_reachable_through_invoke(client, monkeypatch):
+    monkeypatch.setattr(ai, "get_ai_response_text", lambda prompt, max_tokens: json.dumps({"suggestion": "Built a Power BI sales dashboard."}))
+    response = client.post("/api/invoke", json={"action": "suggest_wording", "payload": {"user_id": "test-user", "field": "project", "text": "made power bi dashboard for sales"}})
+    assert response.status_code == 200
+    assert response.get_json()["suggestion"] == "Built a Power BI sales dashboard."

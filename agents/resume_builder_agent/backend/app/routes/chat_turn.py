@@ -179,3 +179,53 @@ def chat_turn():
         {"role": "assistant", "content": reply},
     ])
     return jsonify({"success": True, "intent": intent, "updates": updates, "reply": reply, "memories_used": len(memories)})
+
+
+WORDING_FIELDS = {
+    "summary": "professional summary (2-3 sentences)",
+    "project": "project description (1-2 sentences)",
+    "experience": "description of this role's work (1-3 short sentences or bullet-style lines)",
+}
+
+
+@chat_turn_bp.post("/ai/suggest-wording")
+@rate_limit(30)
+def suggest_wording():
+    """A stronger, ATS-friendly wording of what the candidate just wrote, for
+    them to accept or ignore while building the resume in the chat. Never adds
+    facts: no invented numbers, tools, employers or results. suggestion=null
+    when the text is already good or the model's answer is unusable."""
+    payload = request.get_json(silent=True) or {}
+    field = payload.get("field")
+    text = str(payload.get("text") or "").strip()
+    if field not in WORDING_FIELDS:
+        return error_response(f"field must be one of: {', '.join(WORDING_FIELDS)}", 400)
+    if not text:
+        return error_response("text is required", 400)
+    if len(text) > 3000:
+        return error_response("text must not exceed 3000 characters", 413)
+    role = str(payload.get("target_role") or "").strip()[:120]
+    try:
+        parsed = get_ai_json_response(
+            f"""You are a resume writing assistant. Rewrite the candidate's {WORDING_FIELDS[field]} so it reads as
+professional, concise and ATS-friendly{f' for a {role} role' if role else ''}.
+
+Candidate's text: {json.dumps(text)}
+
+Rules:
+- Keep every fact exactly as given. Do NOT add numbers, percentages, tools, employers, dates or results
+  that are not in the candidate's text.
+- Use strong action verbs and plain language; no first person ("I", "my"), no buzzword filler.
+- Keep it about the same length or shorter.
+- If the text is already strong, return it unchanged.
+
+Return strict JSON: {{"suggestion": "..."}}""",
+            max_tokens=400,
+        )
+    except (RuntimeError, json.JSONDecodeError):
+        return jsonify({"suggestion": None}), 200
+    suggestion = str(parsed.get("suggestion") or "").strip()
+    unchanged = " ".join(suggestion.lower().split()) == " ".join(text.lower().split())
+    if not suggestion or unchanged or len(suggestion) > 1500:
+        return jsonify({"suggestion": None}), 200
+    return jsonify({"suggestion": suggestion}), 200
