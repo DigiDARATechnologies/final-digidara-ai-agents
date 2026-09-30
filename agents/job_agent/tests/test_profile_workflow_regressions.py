@@ -233,6 +233,122 @@ def test_name_correction_after_nickname_keeps_onboarding_on_skills():
     assert database.profile["onboarding_step"] == "skills"
 
 
+def test_role_correction_during_skills_replaces_saved_role_without_skipping_skills():
+    database = _ProfileDatabase()
+    database.profile.update(full_name="Marimuthu", preferred_titles='["AI Engineer"]', onboarding_step="skills")
+    with patch("job_agent.chat_service.get_db", return_value=database), patch(
+        "job_agent.chat_service._get_top_matched_jobs"
+    ) as search:
+        request = chat_with_job_agent("user-1", "hello i want to change the role before we move to skills")
+        assert "target role" in request["reply"]
+        assert json.loads(database.profile["preferred_titles"]) == ["AI Engineer"]
+        answer = chat_with_job_agent("user-1", "Data Analyst", history=[
+            {"role": "assistant", "content": request["reply"]},
+        ])
+    assert json.loads(database.profile["preferred_titles"]) == ["Data Analyst"]
+    assert answer["updated_profile"]["changed_fields"] == ["target job titles"]
+    assert "technical **skills**" in answer["reply"]
+    search.assert_not_called()
+
+
+def test_location_correction_blocks_resume_skip_until_replacement_is_supplied():
+    database = _ProfileDatabase()
+    database.profile.update(
+        full_name="Marimuthu", skills='["Python"]', experience_provided=1,
+        preferred_titles='["AI Engineer"]', preferred_locations='["Tiruchirappalli"]',
+        onboarding_step="resume",
+    )
+    with patch("job_agent.chat_service.get_db", return_value=database), patch(
+        "job_agent.chat_service._get_top_matched_jobs"
+    ) as search:
+        request = chat_with_job_agent("user-1", "no no i want to change my preferred location")
+        assert "preferred location" in request["reply"]
+        assert json.loads(database.profile["preferred_locations"]) == ["Tiruchirappalli"]
+        reminder = chat_with_job_agent("user-1", "skip", history=[
+            {"role": "assistant", "content": request["reply"]},
+        ])
+        assert "preferred location" in reminder["reply"]
+        assert database.profile["profile_completed"] == 0
+        changed = chat_with_job_agent("user-1", "Bengaluru", history=[
+            {"role": "assistant", "content": reminder["reply"]},
+        ])
+    assert json.loads(database.profile["preferred_locations"]) == ["Bengaluru"]
+    assert changed["updated_profile"]["changed_fields"] == ["preferred locations"]
+    assert "skip" in changed["reply"].lower()
+    search.assert_not_called()
+
+
+def test_direct_correction_replaces_location_without_adding_old_city():
+    database = _ProfileDatabase()
+    database.profile.update(
+        full_name="Marimuthu", skills='["Python"]', experience_provided=1,
+        preferred_titles='["AI Engineer"]', preferred_locations='["Tiruchirappalli"]',
+        onboarding_step="resume",
+    )
+    with patch("job_agent.chat_service.get_db", return_value=database):
+        response = chat_with_job_agent("user-1", "change my preferred location to Madurai")
+    assert json.loads(database.profile["preferred_locations"]) == ["Madurai"]
+    assert "Madurai" in response["reply"]
+
+
+def test_corrected_location_is_used_when_resume_is_skipped():
+    database = _ProfileDatabase()
+    database.profile.update(
+        full_name="Marimuthu", skills='["Python"]', experience_provided=1,
+        preferred_titles='["AI Engineer"]', preferred_locations='["Tiruchirappalli"]',
+        onboarding_step="resume",
+    )
+    with patch("job_agent.chat_service.get_db", return_value=database), patch(
+        "job_agent.chat_service._get_top_matched_jobs", return_value=([], False)
+    ) as search:
+        changed = chat_with_job_agent("user-1", "change my preferred location to Bengaluru")
+        result = chat_with_job_agent("user-1", "skip", history=[
+            {"role": "assistant", "content": changed["reply"]},
+        ])
+    assert search.call_args.kwargs["location_filter"] == ["Bengaluru"]
+    assert "Bengaluru" in result["reply"]
+    assert "Tiruchirappalli" not in result["reply"]
+
+
+def test_location_correction_clears_conflicting_old_work_mode():
+    database = _ProfileDatabase()
+    database.profile.update(full_name="Marimuthu", preferred_locations='["Tiruchirappalli"]',
+                            preferred_work_mode="office", onboarding_step="skills")
+    with patch("job_agent.chat_service.get_db", return_value=database):
+        remote = chat_with_job_agent("user-1", "change my preferred location to Remote")
+        assert remote["updated_profile"]["preferred_work_mode"] == "remote"
+        assert json.loads(database.profile["preferred_locations"]) == ["Remote"]
+        city = chat_with_job_agent("user-1", "change my preferred location to Pune")
+    assert city["updated_profile"]["preferred_work_mode"] == ""
+    assert json.loads(database.profile["preferred_locations"]) == ["Pune"]
+
+
+def test_invalid_experience_correction_and_cancellation_keep_original_values():
+    database = _ProfileDatabase()
+    database.profile.update(full_name="Marimuthu", skills='["Python"]',
+                            experience_provided=1, experience_years=2.0,
+                            preferred_titles='["AI Engineer"]', onboarding_step="preferred_locations")
+    with patch("job_agent.chat_service.get_db", return_value=database):
+        request = chat_with_job_agent("user-1", "I want to change my experience")
+        invalid = chat_with_job_agent("user-1", "100 years", history=[
+            {"role": "assistant", "content": request["reply"]},
+        ])
+        cancelled = chat_with_job_agent("user-1", "cancel", history=[
+            {"role": "assistant", "content": invalid["reply"]},
+        ])
+    assert database.profile["experience_years"] == 2.0
+    assert "current value is still saved" in invalid["reply"]
+    assert "unchanged" in cancelled["reply"]
+
+
+def test_repeated_no_name_refusal_does_not_guess_a_name():
+    database = _ProfileDatabase()
+    with patch("job_agent.chat_service.get_db", return_value=database):
+        response = chat_with_job_agent("user-1", "what i am saying i dont have any name")
+    assert "won't invent one" in response["reply"]
+    assert database.profile["full_name"] == ""
+
+
 def test_reopened_onboarding_name_question_preserves_memory_then_accepts_correction():
     database = _ProfileDatabase()
     database.profile.update(full_name="Dhanu", onboarding_step="skills")
