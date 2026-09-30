@@ -1,4 +1,4 @@
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName } from "../../src/lib/resumeBuilderFlow";
+import { checkPhoneNumber, createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName } from "../../src/lib/resumeBuilderFlow";
 
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
   ensureResumeProfile: jest.fn().mockResolvedValue({ user_id: "test-user" }),
@@ -211,7 +211,7 @@ describe("Resume Builder workflow", () => {
   test("skipping a required UG keeps the complete draft and stays on UG", async () => {
     const state = { step: "awaiting_education" as const, pendingField: "education.ug" as const, draft: { projects: [{ title: "Project", description: "Description" }], links: ["LinkedIn: https://linkedin.com/in/test"], education: [{ level: "PG", degree: "MCA", school: "KSR College" }] } };
     const result = await handleResumeBuilderText(state, { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" }, "skip");
-    expect(result.state).toEqual({ ...state, history: expect.any(Array) });
+    expect(result.state).toEqual({ ...state, history: expect.any(Array), lastMessage: expect.any(Object) });
     // No Skip button that leads straight back here: the saved PG is named, the
     // format is shown, and there is a way on for someone with no UG degree.
     expect(result.messages[0].text).toContain("I have saved: MCA at KSR College, but no UG degree");
@@ -268,7 +268,7 @@ describe("Resume Builder workflow", () => {
       "not a url",
     );
 
-    expect(result.state).toEqual({ ...state, history: expect.any(Array) });
+    expect(result.state).toEqual({ ...state, history: expect.any(Array), lastMessage: expect.any(Object) });
     expect(result.messages[0].text).toMatch(/valid URL/i);
   });
 
@@ -1006,5 +1006,67 @@ describe("education, typed edits and the assistant (with memory)", () => {
     const result = await handleResumeBuilderText(state, user, "change my name to Prem Kumar");
     expect(result.state.draft).toEqual(baseDraft);
     expect(result.messages[0].text).toContain("I couldn't apply that change right now");
+  });
+});
+
+describe("phone numbers and returning after editing one field", () => {
+  const user = { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" };
+  const draft = { title: "Analyst Resume", name: "premkumar", email: "prem@example.com", phone: "9876543210" };
+
+  test.each(["9876543210", "98765 43210", "98765-43210", "+91 98765 43210", "09876543210", "919876543210", "+1 (415) 555-2671"])(
+    "%p is accepted", (value) => expect(checkPhoneNumber(value)).toEqual({ value }),
+  );
+
+  test.each([["78945613", "8 digits"], ["12345", "5 digits"], ["98765 432109", "11 digits"]])(
+    "%p is rejected with the digit count", (value, count) => {
+      expect(checkPhoneNumber(value)).toEqual({ error: expect.stringContaining(count) });
+    },
+  );
+
+  test.each(["98765abc", "98765+43210"])("%p with other characters is rejected", (value) => {
+    expect(checkPhoneNumber(value)).toEqual({ error: expect.stringContaining("only contain digits") });
+  });
+
+  test("an 8-digit phone number is not saved; the question is asked again", async () => {
+    const result = await handleResumeBuilderText({ step: "awaiting_phone", draft: { ...draft, phone: undefined } }, user, "78945613");
+    expect(result.state.step).toBe("awaiting_phone");
+    expect(result.state.draft?.phone).toBeUndefined();
+    expect(result.messages[0].text).toContain("8 digits");
+  });
+
+  test("changing the full name mid-way returns to the question the candidate was on", async () => {
+    const locationQuestion = { text: "What city and country should appear on your resume? Type Skip to omit it.", options: [{ label: "Skip this section", value: "skip" }] };
+    const onLocation = { step: "awaiting_location" as const, draft, lastMessage: locationQuestion };
+
+    const asked = await handleResumeBuilderText(onLocation, user, "i want to change the full name");
+    expect(asked.state.step).toBe("awaiting_name");
+    expect(asked.messages[0].text).toContain("Current: premkumar");
+
+    const saved = await handleResumeBuilderText(asked.state, user, "prem");
+    expect(saved.state.draft?.name).toBe("prem");
+    // Back on city/country - not on to email, phone, ... again.
+    expect(saved.state.step).toBe("awaiting_location");
+    expect(saved.state.returnTo).toBeUndefined();
+    expect(saved.messages[0].text).toContain("back to where we were");
+    expect(saved.messages[1]).toEqual(locationQuestion);
+  });
+
+  test("an edit that fails validation keeps waiting, then still returns", async () => {
+    const onLocation = { step: "awaiting_location" as const, draft, lastMessage: { text: "What city and country should appear on your resume?" } };
+    const asked = await handleResumeBuilderText(onLocation, user, "change my phone");
+    const wrong = await handleResumeBuilderText(asked.state, user, "12345");
+    expect(wrong.state.step).toBe("awaiting_phone");
+    expect(wrong.state.returnTo?.step).toBe("awaiting_location");
+    const fixed = await handleResumeBuilderText(wrong.state, user, "98765 43210");
+    expect(fixed.state.step).toBe("awaiting_location");
+    expect(fixed.state.draft?.phone).toBe("98765 43210");
+  });
+
+  test("an edit from the details review comes back to an updated review", async () => {
+    const asked = await handleResumeBuilderText({ step: "confirming", draft, lastMessage: { text: "old review" } }, user, "change my phone");
+    const saved = await handleResumeBuilderText(asked.state, user, "+91 98765 43210");
+    expect(saved.state.step).toBe("confirming");
+    expect(saved.messages[1].text).not.toBe("old review");
+    expect(saved.messages[1].options?.map((option) => option.value)).toContain("create_now");
   });
 });

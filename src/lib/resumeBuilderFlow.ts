@@ -26,7 +26,14 @@ interface ResumeDraft {
 export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: ResumeDraft; resumeId?: number; resumeTitle?: string; atsScore?: number; templateChoice?: string; pendingField?: "education.ug"; pendingEdit?: ResumeEditProposal; pendingUploadFile?: File; error?: string;
   /** The recent conversation, sent with every AI chat turn so "change that" or
    * "the second one" can be resolved. */
-  history?: ResumeChatTurnHistory; }
+  history?: ResumeChatTurnHistory;
+  /** The last message shown (with its buttons), so a jump to edit one field
+   * can come back to exactly this question. */
+  lastMessage?: ResumeBuilderMessage;
+  /** Set by "change my <field>": where the chat was, to return to once that
+   * one field is saved -- instead of re-asking every question after it. */
+  returnTo?: { step: ResumeBuilderStep; message?: ResumeBuilderMessage };
+}
 type ResumeChatTurnHistory = Array<{ role: "student" | "agent"; text: string }>;
 const HISTORY_LIMIT = 16;
 export interface ResumeBuilderMessage { text: string; options?: ChatOption[]; }
@@ -253,6 +260,24 @@ function optionalProfileUrl(value: string): { value?: string; error?: string } {
     return { error: "Please enter a valid URL such as https://example.com, or type Skip." };
   }
 }
+/** A phone number the way a recruiter can dial it: 10 digits (a leading 0 or
+ * 91 is allowed), or a "+" country code with 8 to 15 digits in all. Spaces,
+ * dashes, dots and brackets are fine. */
+export function checkPhoneNumber(value: string): { value: string } | { error: string } {
+  const text = clean(value);
+  if (/[^\d+\s().-]/.test(text) || (text.match(/\+/g) || []).length > 1 || (text.includes("+") && !text.startsWith("+"))) {
+    return { error: "A phone number can only contain digits (with an optional + country code). Please type it again, for example 98765 43210, or type Skip." };
+  }
+  const digits = text.replace(/\D/g, "");
+  const valid = text.startsWith("+")
+    ? digits.length >= 8 && digits.length <= 15
+    : digits.length === 10 || (digits.length === 11 && digits.startsWith("0")) || (digits.length === 12 && digits.startsWith("91"));
+  if (valid) return { value: text };
+  return {
+    error: `"${text}" has ${digits.length} digit${digits.length === 1 ? "" : "s"}, so it isn't a complete phone number. A mobile number needs 10 digits, for example 98765 43210 - or add the country code, like +91 98765 43210. Please type it again, or type Skip.`,
+  };
+}
+
 const draftFieldSteps: Record<string, ResumeBuilderStep> = {
   title: "awaiting_title", name: "awaiting_name", email: "awaiting_email",
   phone: "awaiting_phone", location: "awaiting_location", city: "awaiting_location",
@@ -1014,6 +1039,10 @@ async function applyTypedEdit(state: ResumeBuilderFlowState, user: User, value: 
   if (turn.intent === "answer" && state.step !== "confirming" && state.step !== "awaiting_enrichment_choice") return undefined;
   const updates = turn.updates as Partial<ResumeDraft>;
   if (!Object.keys(updates).length) return turn.reply ? { state, messages: [{ text: turn.reply }] } : undefined;
+  if (updates.phone) {
+    const phone = checkPhoneNumber(updates.phone);
+    if ("error" in phone) return { state, messages: [{ text: phone.error }] };
+  }
   const draft: ResumeDraft = { ...state.draft, ...updates };
   const ugNowPresent = state.pendingField === "education.ug" && hasUndergraduateEducation(draft.education);
   const next: ResumeBuilderFlowState = {
@@ -1035,12 +1064,34 @@ function withHistory(result: ResumeBuilderFlowResult, previous: ResumeChatTurnHi
     { role: "student" as const, text: studentText },
     ...result.messages.map((message) => ({ role: "agent" as const, text: message.text })),
   ].slice(-HISTORY_LIMIT);
-  return { ...result, state: { ...result.state, history } };
+  const lastMessage = result.messages.length ? result.messages[result.messages.length - 1] : result.state.lastMessage;
+  return { ...result, state: { ...result.state, history, lastMessage } };
+}
+
+/** After "change my <field>", once that field is saved the step handler moves
+ * on to the question after it. Go back to where the candidate was instead. */
+function returnAfterFieldEdit(previous: ResumeBuilderFlowState, value: string, result: ResumeBuilderFlowResult): ResumeBuilderFlowResult {
+  const returnTo = previous.returnTo;
+  if (!returnTo) return result;
+  // A jump to yet another field: keep the original place to come back to.
+  if (requestedDraftField(value)) return result;
+  // Still on the edited field (the answer was not accepted): keep waiting.
+  if (result.state.step === previous.step) return { ...result, state: { ...result.state, returnTo } };
+  // Anything other than simply moving on to another question (an error, a
+  // restart, a created resume) is left as it is, without the return.
+  if (!DRAFT_STEPS.has(result.state.step)) return { ...result, state: { ...result.state, returnTo: undefined } };
+  const draft = result.state.draft || {};
+  const back = returnTo.step === "confirming" || !returnTo.message ? reviewMessage(draft) : returnTo.message;
+  return {
+    state: { ...result.state, step: returnTo.step === "confirming" || !returnTo.message ? "confirming" : returnTo.step, returnTo: undefined },
+    messages: [{ text: "Saved. Now back to where we were:" }, back],
+  };
 }
 
 export async function handleResumeBuilderText(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult> {
   const restarting = value === "restart" || clean(value).toLowerCase() === "start over";
-  const result = (restarting ? undefined : await applyTypedEdit(state, user, value)) ?? await handleResumeBuilderStep(state, user, value);
+  const edited = restarting ? undefined : await applyTypedEdit(state, user, value);
+  const result = edited ?? returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value));
   return withHistory(result, restarting ? [] : state.history || [], value);
 }
 
@@ -1147,7 +1198,10 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
 
   const draftField = requestedDraftField(value);
   if (draftField && !["reviewing", "awaiting_edit_instruction", "awaiting_edit_confirmation"].includes(state.step)) {
-    return { state: { ...state, step: draftField }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
+    // Remember the question the candidate was on (unless they are already
+    // editing that same field), to come back to it once this field is saved.
+    const returnTo = state.returnTo ?? (state.step !== draftField ? { step: state.step, message: state.lastMessage } : undefined);
+    return { state: { ...state, step: draftField, returnTo }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
   }
   if (command === "back" && state.step.startsWith("awaiting_")) {
     const previousSteps: Partial<Record<ResumeBuilderStep, ResumeBuilderStep>> = {
@@ -1311,7 +1365,13 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { state, messages: [{ text: "Please enter a valid email address, for example name@example.com." }] };
     return { state: updateDraft(state, { email }, "awaiting_phone"), messages: [{ text: "What is your phone number? Type Skip if you prefer not to include one.", options: skipOption }] };
   }
-  if (state.step === "awaiting_phone") return { state: updateDraft(state, { phone: isSkip(value) ? "" : clean(value) }, "awaiting_location"), messages: [{ text: "What city and country should appear on your resume? Type Skip to omit it.", options: skipOption }] };
+  if (state.step === "awaiting_phone") {
+    if (!isSkip(value)) {
+      const phone = checkPhoneNumber(value);
+      if ("error" in phone) return { state, messages: [{ text: phone.error, options: skipOption }] };
+    }
+    return { state: updateDraft(state, { phone: isSkip(value) ? "" : clean(value) }, "awaiting_location"), messages: [{ text: "What city and country should appear on your resume? Type Skip to omit it.", options: skipOption }] };
+  }
   if (state.step === "awaiting_location") return { state: updateDraft(state, { location: isSkip(value) ? "" : normalizeLocation(value) }, "awaiting_role"), messages: [{ text: "What role are you targeting? For example: Data Analyst or Frontend Developer." }] };
   if (state.step === "awaiting_role") {
     if (clean(value).length < 2) return { state, messages: [{ text: "Please enter the role you are targeting." }] };
