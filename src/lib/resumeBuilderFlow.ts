@@ -11,6 +11,8 @@ import {
   selectResumeTemplate,
   suggestResumeEdit,
   resumeChatTurn,
+  suggestResumeWording,
+  type WordingField,
   updateResume,
   type ResumeEditProposal,
   type ResumeCreateInput,
@@ -33,6 +35,13 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
   /** Set by "change my <field>": where the chat was, to return to once that
    * one field is saved -- instead of re-asking every question after it. */
   returnTo?: { step: ResumeBuilderStep; message?: ResumeBuilderMessage };
+  /** A stronger wording offered for what the candidate just wrote, waiting
+   * for "Use this", "Keep mine" or their own typed version. `next` is what the
+   * chat would have said next, shown once they decide. */
+  pendingSuggestion?: { field: WordingField; index: number; suggestion: string; next: ResumeBuilderMessage[] };
+  /** Text typed at a project question that reads like a request ("i want my
+   * resume"), held while the candidate says whether it really is a project. */
+  pendingProjectText?: string;
 }
 type ResumeChatTurnHistory = Array<{ role: "student" | "agent"; text: string }>;
 const HISTORY_LIMIT = 16;
@@ -1088,10 +1097,187 @@ function returnAfterFieldEdit(previous: ResumeBuilderFlowState, value: string, r
   };
 }
 
+/** Text typed at a project question that is a request, not a project:
+ * "i want my resume", "create my resume", "done", "that's all". */
+const PROJECT_REQUEST = /^(?:i\s+(?:want|need|would like)|give me|can you|could you|please|show me)\b[^.]*\b(?:resume|cv|pdf|download|next|done|finish)\b|^(?:done|finish(?:ed)?|that'?s all|no more(?: projects?)?|nothing (?:else|more)|(?:generate|create|make|build|download)(?: my| the)? (?:resume|cv)(?: now)?|(?:i want )?my (?:resume|cv))\W*$/i;
+const CONFIRM_PROJECT = "confirm_project";
+
+function projectOrRequest(state: ResumeBuilderFlowState, value: string): ResumeBuilderFlowResult | undefined {
+  if (!PROJECT_REQUEST.test(clean(value))) return undefined;
+  const first = state.step === "awaiting_project";
+  return {
+    state: { ...state, pendingProjectText: clean(value) },
+    messages: [{
+      text: `Did you mean "${clean(value)}" as a project, or do you want to ${first ? "skip projects for now" : "move on and finish your resume"}?`,
+      options: [
+        first
+          ? { label: "Skip projects", value: "skip", description: "Continue without adding a project." }
+          : { label: "Move on to the next section", value: "next_section", description: "Stop adding projects and continue to your links." },
+        { label: "Add it as a project", value: CONFIRM_PROJECT, description: `Save "${clean(value)}" as a project.` },
+      ],
+    }],
+  };
+}
+
+type RemovableSection = "projects" | "experience" | "education" | "certifications" | "achievements";
+const SECTION_WORDS: Array<[RegExp, RemovableSection, string]> = [
+  [/\bprojects?\b/i, "projects", "project"],
+  [/\b(experiences?|internships?|jobs?|work)\b/i, "experience", "experience"],
+  [/\b(education|degrees?|college|qualifications?)\b/i, "education", "education"],
+  [/\bcertifications?|certificates?\b/i, "certifications", "certification"],
+  [/\bachievements?|awards?\b/i, "achievements", "achievement"],
+];
+const ORDINALS: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, last: -1 };
+
+/** Words too common in titles to identify one entry on their own. */
+const GENERIC_TITLE_WORDS = new Set(["project", "projects", "system", "application", "website", "using", "based", "management", "with", "from", "that", "this", "only", "delete", "remove"]);
+
+function entryTitle(entry: Record<string, unknown>) {
+  return String(entry.title || entry.name || [entry.role, entry.company].filter(Boolean).join(" at ") || [entry.degree, entry.school].filter(Boolean).join(", ") || "");
+}
+
+function words(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+}
+
+/** Two words match when equal, or when long enough and one typo apart ("resuem" / "resume"). */
+function similarWord(a: string, b: string) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+  const sorted = (word: string) => word.split("").sort().join("");
+  if (a.length === b.length && sorted(a) === sorted(b)) return true;
+  let i = 0; let j = 0; let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i += 1; j += 1; continue; }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length > b.length) i += 1; else if (b.length > a.length) j += 1; else { i += 1; j += 1; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/** "delete the 2 project", "remove the second project", "delete the i want my
+ * resuem project only": exactly which one entry to remove, or undefined when
+ * the request does not say clearly (the AI edit handles it then). */
+function entryToRemove(value: string, resume: Record<string, unknown>): { section: RemovableSection; label: string; index: number; title: string } | undefined {
+  const text = clean(value);
+  if (!/\b(delete|remove|drop|take out|get rid of)\b/i.test(text)) return undefined;
+  const found = SECTION_WORDS.find(([pattern]) => pattern.test(text));
+  if (!found) return undefined;
+  const [, section, label] = found;
+  const entries = Array.isArray(resume[section]) ? resume[section] as Array<Record<string, unknown>> : [];
+  if (!entries.length) return undefined;
+
+  const numbered = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\b/)?.[1];
+  const ordinal = Object.entries(ORDINALS).find(([word]) => new RegExp(`\\b${word}\\b`, "i").test(text))?.[1];
+  const position = numbered ? Number(numbered) : ordinal;
+  if (position !== undefined) {
+    const index = position === -1 ? entries.length - 1 : position - 1;
+    return index >= 0 && index < entries.length ? { section, label, index, title: entryTitle(entries[index]) } : undefined;
+  }
+
+  // By name: the entry whose title words best appear in the request -- most
+  // of the title ("i want my resuem" for "I Want My Resume"), or one
+  // distinctive word that only that entry has ("parkinson").
+  const requestWords = words(text);
+  const scored = entries.map((entry, index) => {
+    const titleWords = words(entryTitle(entry));
+    const matched = titleWords.filter((word) => requestWords.some((candidate) => similarWord(word, candidate)));
+    return {
+      index,
+      score: titleWords.length ? matched.length / titleWords.length : 0,
+      distinctive: matched.filter((word) => word.length >= 4 && !GENERIC_TITLE_WORDS.has(word)).length,
+    };
+  });
+  const byScore = [...scored].sort((a, b) => b.score - a.score);
+  if (byScore[0].score >= 0.6 && byScore[0].score !== byScore[1]?.score) {
+    return { section, label, index: byScore[0].index, title: entryTitle(entries[byScore[0].index]) };
+  }
+  const distinctive = scored.filter((entry) => entry.distinctive > 0);
+  if (distinctive.length === 1) {
+    return { section, label, index: distinctive[0].index, title: entryTitle(entries[distinctive[0].index]) };
+  }
+  return undefined;
+}
+
+const USE_SUGGESTION = "use_suggestion";
+const KEEP_MINE = "keep_mine";
+const WORDING_LABEL: Record<WordingField, string> = { summary: "summary", project: "project description", experience: "experience description" };
+
+/** What the candidate just wrote in a summary, project or experience answer:
+ * the field, which entry, and the text -- or undefined when the step did not
+ * save exactly one new piece of free text. */
+function newlyWritten(previous: ResumeBuilderFlowState, result: ResumeBuilderFlowResult): { field: WordingField; index: number; text: string } | undefined {
+  const before = previous.draft || {};
+  const after = result.state.draft || {};
+  if (previous.step === "awaiting_summary" && after.summary && after.summary !== before.summary) {
+    return { field: "summary", index: 0, text: after.summary };
+  }
+  if (previous.step === "awaiting_project" && (after.projects?.length || 0) === (before.projects?.length || 0) + 1) {
+    const index = after.projects!.length - 1;
+    return { field: "project", index, text: String(after.projects![index].description || "") };
+  }
+  if (previous.step === "awaiting_experience" && (after.experience?.length || 0) === (before.experience?.length || 0) + 1) {
+    const index = after.experience!.length - 1;
+    return { field: "experience", index, text: String(after.experience![index].raw_input || "") };
+  }
+  return undefined;
+}
+
+/** After a summary, project or experience answer is saved, offer a stronger
+ * wording to use or ignore. Any failure just carries on without one. */
+async function offerWordingSuggestion(previous: ResumeBuilderFlowState, result: ResumeBuilderFlowResult, user: User): Promise<ResumeBuilderFlowResult> {
+  if (previous.returnTo || result.state.step === previous.step) return result;
+  const written = newlyWritten(previous, result);
+  if (!written || written.text.trim().length < 30) return result;
+  let suggestion: string | null = null;
+  try {
+    suggestion = await suggestResumeWording(user.id, written.field, written.text, result.state.draft?.targetRole);
+  } catch {
+    return result;
+  }
+  if (!suggestion) return result;
+  return {
+    state: { ...result.state, pendingSuggestion: { field: written.field, index: written.index, suggestion, next: result.messages } },
+    messages: [{
+      text: `💡 Here is a stronger way to write your ${WORDING_LABEL[written.field]}:\n\n"${suggestion}"\n\nUse it, keep yours, or type your own version.`,
+      options: [
+        { label: "Use this", value: USE_SUGGESTION, description: "Replace your text with this wording." },
+        { label: "Keep mine", value: KEEP_MINE, description: "Keep exactly what you wrote." },
+      ],
+    }],
+  };
+}
+
+function withWording(draft: ResumeDraft, field: WordingField, index: number, text: string): ResumeDraft {
+  if (field === "summary") return { ...draft, summary: text };
+  if (field === "project") {
+    return { ...draft, projects: (draft.projects || []).map((project, i) => i === index ? { ...project, description: text } : project) };
+  }
+  return { ...draft, experience: (draft.experience || []).map((entry, i) => i === index ? { ...entry, raw_input: text } : entry) };
+}
+
+/** "Use this", "Keep mine", or the candidate's own new version -- then on to
+ * whatever the chat was going to ask next. */
+function resolveWordingSuggestion(state: ResumeBuilderFlowState, value: string): ResumeBuilderFlowResult {
+  const pending = state.pendingSuggestion!;
+  const typed = clean(value);
+  const keep = value === KEEP_MINE || isSkip(value) || /^keep( mine| it| my (own|version))?$/i.test(typed);
+  const use = value === USE_SUGGESTION || /^(use( this| it)?|yes|ok(ay)?|accept)$/i.test(typed);
+  const next = { ...state, pendingSuggestion: undefined };
+  if (keep || !typed) return { state: next, messages: [{ text: "Okay - keeping your wording." }, ...pending.next] };
+  const text = use ? pending.suggestion : typed;
+  return {
+    state: { ...next, draft: withWording(state.draft || {}, pending.field, pending.index, text) },
+    messages: [{ text: use ? "Done - I've used the suggested wording." : "Saved your version." }, ...pending.next],
+  };
+}
+
 export async function handleResumeBuilderText(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult> {
   const restarting = value === "restart" || clean(value).toLowerCase() === "start over";
+  if (state.pendingSuggestion && !restarting) return withHistory(resolveWordingSuggestion(state, value), state.history || [], value);
   const edited = restarting ? undefined : await applyTypedEdit(state, user, value);
-  const result = edited ?? returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value));
+  const result = edited ?? await offerWordingSuggestion(state, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value)), user);
   return withHistory(result, restarting ? [] : state.history || [], value);
 }
 
@@ -1314,7 +1500,17 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
     try {
       const currentResume = await getResume(user.id, state.resumeId);
-      const proposal = await suggestResumeEdit(user.id, currentResume, clean(value));
+      // Removing one named or numbered entry is done exactly, not left to the
+      // AI (which removed the wrong project, or both, for such requests).
+      const removal = entryToRemove(value, currentResume);
+      const proposal = removal
+        ? {
+            resume: { ...currentResume, [removal.section]: (currentResume[removal.section] as unknown[]).filter((_, index) => index !== removal.index) },
+            changes: [`Removed ${removal.label} ${removal.index + 1}: "${removal.title}". Everything else is unchanged.`],
+            warnings: [],
+            requires_confirmation: true,
+          }
+        : await suggestResumeEdit(user.id, currentResume, clean(value));
       return {
         state: { ...state, step: "awaiting_edit_confirmation", pendingEdit: proposal },
         messages: [{ text: formatEditProposal(proposal), options: editConfirmationOptions }],
@@ -1547,7 +1743,14 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     };
   }
   if (state.step === "awaiting_project") {
-    if (isSkip(value)) return { state: updateDraft(state, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
+    if (isSkip(value)) return { state: updateDraft({ ...state, pendingProjectText: undefined }, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
+    if (value === CONFIRM_PROJECT && state.pendingProjectText) return handleResumeBuilderStep({ ...state, pendingProjectText: undefined }, user, `${CONFIRM_PROJECT}:${state.pendingProjectText}`);
+    const confirmed = value.startsWith(`${CONFIRM_PROJECT}:`);
+    if (!confirmed) {
+      const request = projectOrRequest(state, value);
+      if (request) return request;
+    }
+    value = confirmed ? value.slice(CONFIRM_PROJECT.length + 1) : value;
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
       const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);
@@ -1589,6 +1792,13 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
       }
       return { state: updateDraft(state, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
     }
+    if (value === CONFIRM_PROJECT && state.pendingProjectText) return handleResumeBuilderStep({ ...state, pendingProjectText: undefined }, user, `${CONFIRM_PROJECT}:${state.pendingProjectText}`);
+    const confirmed = value.startsWith(`${CONFIRM_PROJECT}:`);
+    if (!confirmed) {
+      const request = projectOrRequest(state, value);
+      if (request) return request;
+    }
+    value = confirmed ? value.slice(CONFIRM_PROJECT.length + 1) : value;
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
       const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);

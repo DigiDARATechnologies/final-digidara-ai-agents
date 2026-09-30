@@ -28,6 +28,8 @@ ACTION_ROUTE_MAP = {
     "list_templates": ("GET", "/api/templates"), "get_template": ("GET", "/api/templates/{template_id}"),
     "preview_resume": ("POST", "/api/resumes/preview"), "export_pdf": ("POST", "/api/resumes/{resume_id}/download"),
 }
+# The chat's wording suggestions (app/routes/chat_turn.py).
+ACTION_ROUTE_MAP["suggest_wording"] = ("POST", "/api/ai/suggest-wording")
 
 
 def _identity_headers(payload: dict) -> dict[str, str]:

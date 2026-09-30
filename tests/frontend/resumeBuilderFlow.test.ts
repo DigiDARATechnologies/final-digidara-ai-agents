@@ -60,6 +60,8 @@ jest.mock("../../src/lib/resumeBuilderApi", () => ({
     { id: "modern-minimal", name: "Modern Minimal", description: "Contemporary style" },
   ]),
   resumeChatTurn: jest.fn(),
+  suggestResumeWording: jest.fn().mockResolvedValue(null),
+  suggestResumeEdit: jest.fn(),
 }));
 
 describe("Resume Builder workflow", () => {
@@ -1068,5 +1070,162 @@ describe("phone numbers and returning after editing one field", () => {
     expect(saved.state.step).toBe("confirming");
     expect(saved.messages[1].text).not.toBe("old review");
     expect(saved.messages[1].options?.map((option) => option.value)).toContain("create_now");
+  });
+});
+
+describe("wording suggestions while adding details", () => {
+  const user = { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" };
+  const api = jest.requireMock("../../src/lib/resumeBuilderApi") as Record<string, jest.Mock>;
+  const draft = { title: "Analyst Resume", name: "Prem", email: "prem@example.com", targetRole: "Data Analyst", experienceLevel: "fresher" as const };
+  const mine = "i am good in python and sql and i made dashboards for my college";
+  const better = "Data analyst skilled in Python and SQL, building dashboards for college reporting.";
+
+  beforeEach(() => api.suggestResumeWording.mockReset().mockResolvedValue(null));
+
+  async function summaryWithSuggestion() {
+    api.suggestResumeWording.mockResolvedValue(better);
+    return handleResumeBuilderText({ step: "awaiting_summary", draft }, user, mine);
+  }
+
+  test("a stronger summary is offered after it is written, with Use this / Keep mine", async () => {
+    const offered = await summaryWithSuggestion();
+    expect(api.suggestResumeWording).toHaveBeenCalledWith("test-user", "summary", mine, "Data Analyst");
+    expect(offered.messages).toHaveLength(1);
+    expect(offered.messages[0].text).toContain(`"${better}"`);
+    expect(offered.messages[0].options?.map((option) => option.value)).toEqual(["use_suggestion", "keep_mine"]);
+    // Their own text is saved until they choose.
+    expect(offered.state.draft?.summary).toBe(mine);
+  });
+
+  test("Use this saves the suggestion, then the chat carries on to skills", async () => {
+    const offered = await summaryWithSuggestion();
+    const used = await handleResumeBuilderText(offered.state, user, "use_suggestion");
+    expect(used.state.draft?.summary).toBe(better);
+    expect(used.state.pendingSuggestion).toBeUndefined();
+    expect(used.messages[0].text).toContain("used the suggested wording");
+    expect(used.messages[1].text).toContain("key skills");
+    expect(used.state.step).toBe("awaiting_skills");
+  });
+
+  test("Keep mine keeps exactly what was written", async () => {
+    const offered = await summaryWithSuggestion();
+    const kept = await handleResumeBuilderText(offered.state, user, "keep_mine");
+    expect(kept.state.draft?.summary).toBe(mine);
+    expect(kept.messages[1].text).toContain("key skills");
+  });
+
+  test("typing a new version saves that version", async () => {
+    const offered = await summaryWithSuggestion();
+    const own = "Aspiring data analyst with Python, SQL and dashboard experience.";
+    const saved = await handleResumeBuilderText(offered.state, user, own);
+    expect(saved.state.draft?.summary).toBe(own);
+    expect(saved.messages[0].text).toBe("Saved your version.");
+    expect(api.suggestResumeWording).toHaveBeenCalledTimes(1);
+  });
+
+  test("a project description gets its own suggestion", async () => {
+    api.suggestResumeWording.mockResolvedValue("Built a Power BI dashboard for weekly sales reporting.");
+    const offered = await handleResumeBuilderText({ step: "awaiting_project", draft }, user, "Sales Dashboard, made a power bi dashboard for weekly sales reports");
+    expect(api.suggestResumeWording).toHaveBeenCalledWith("test-user", "project", "made a power bi dashboard for weekly sales reports", "Data Analyst");
+    const used = await handleResumeBuilderText(offered.state, user, "use_suggestion");
+    expect(used.state.draft?.projects?.[0]).toEqual({ title: "Sales Dashboard", description: "Built a Power BI dashboard for weekly sales reporting." });
+    expect(used.state.step).toBe("awaiting_project_more");
+  });
+
+  test("no suggestion (already strong, or the AI is unavailable) means the chat just carries on", async () => {
+    const plain = await handleResumeBuilderText({ step: "awaiting_summary", draft }, user, mine);
+    expect(plain.state.pendingSuggestion).toBeUndefined();
+    expect(plain.messages[0].text).toContain("key skills");
+
+    api.suggestResumeWording.mockRejectedValue(new Error("offline"));
+    const offline = await handleResumeBuilderText({ step: "awaiting_summary", draft }, user, mine);
+    expect(offline.state.pendingSuggestion).toBeUndefined();
+    expect(offline.messages[0].text).toContain("key skills");
+  });
+
+  test("a very short summary is not sent for a suggestion", async () => {
+    await handleResumeBuilderText({ step: "awaiting_summary", draft }, user, "Data analyst");
+    expect(api.suggestResumeWording).not.toHaveBeenCalled();
+  });
+});
+
+test("an experience entry's description gets a suggestion too", async () => {
+  const api = jest.requireMock("../../src/lib/resumeBuilderApi") as Record<string, jest.Mock>;
+  api.suggestResumeWording.mockReset().mockResolvedValue("Developed Power BI dashboards for weekly business reporting.");
+  const user = { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" };
+  const offered = await handleResumeBuilderText(
+    { step: "awaiting_experience", draft: { targetRole: "Data Analyst" } }, user,
+    "Company: Acme Technologies\nRole: Data Analyst Intern\nDuration: Jan 2024 - Jun 2024\n\nResponsibilities:\n• made power bi dashboards for weekly business reports",
+  );
+  expect(api.suggestResumeWording).toHaveBeenCalledWith("test-user", "experience", expect.stringContaining("power bi dashboards"), "Data Analyst");
+  const used = await handleResumeBuilderText(offered.state, user, "use_suggestion");
+  expect(used.state.draft?.experience?.[0]).toEqual(expect.objectContaining({ company: "Acme Technologies", raw_input: "Developed Power BI dashboards for weekly business reporting." }));
+  expect(used.state.step).toBe("awaiting_experience_more");
+});
+
+describe("project answers that are really requests, and removing one entry", () => {
+  const user = { id: "test-user", name: "Test User", email: "test@example.com", mobile: "", initial: "T" };
+  const api = jest.requireMock("../../src/lib/resumeBuilderApi") as Record<string, jest.Mock>;
+  const parkinson = { title: "Parkinson Diease Prediction", description: "parkinson diease prediction" };
+  const draft = { title: "python", name: "Prem", email: "prem@example.com", targetRole: "python developer", experienceLevel: "fresher" as const, projects: [parkinson] };
+
+  test('"i want my resume" after a project is not saved as another project; the chat asks', async () => {
+    const asked = await handleResumeBuilderText({ step: "awaiting_project_more", draft }, user, "i want my resume");
+    expect(asked.state.draft?.projects).toEqual([parkinson]);
+    expect(asked.messages[0].text).toContain('Did you mean "i want my resume" as a project');
+    expect(asked.messages[0].options?.map((option) => option.value)).toEqual(["next_section", "confirm_project"]);
+
+    const moved = await handleResumeBuilderText(asked.state, user, "next_section");
+    expect(moved.state.draft?.projects).toEqual([parkinson]);
+    expect(moved.state.step).toBe("awaiting_linkedin");
+  });
+
+  test("choosing Add it as a project saves it after all", async () => {
+    const asked = await handleResumeBuilderText({ step: "awaiting_project_more", draft }, user, "i want my resume");
+    const added = await handleResumeBuilderText(asked.state, user, "confirm_project");
+    expect(added.state.draft?.projects?.map((project) => project.title)).toEqual(["Parkinson Diease Prediction", "I Want My Resume"]);
+    expect(added.state.pendingProjectText).toBeUndefined();
+  });
+
+  test.each(["create my resume", "done", "that's all"])("%p at the first project question offers to skip projects", async (text) => {
+    const asked = await handleResumeBuilderText({ step: "awaiting_project", draft: { ...draft, projects: [] } }, user, text);
+    expect(asked.state.draft?.projects).toEqual([]);
+    expect(asked.messages[0].options?.map((option) => option.value)).toEqual(["skip", "confirm_project"]);
+  });
+
+  test("a real project is still saved straight away", async () => {
+    const added = await handleResumeBuilderText({ step: "awaiting_project", draft: { ...draft, projects: [] } }, user, "parkinson diease prediction");
+    expect(added.state.draft?.projects).toHaveLength(1);
+    expect(added.messages[0].text).toContain("Added project");
+  });
+
+  const saved = {
+    id: 7, updated_at: "2026-09-30T19:05:00",
+    projects: [{ title: "Parkinson Diease Prediction", description: "ML model" }, { title: "I Want My Resume", description: "web app" }],
+  };
+  const reviewing = { step: "reviewing" as const, resumeId: 7, draft };
+
+  test.each([
+    ["i want to delete the 2 project only", "I Want My Resume"],
+    ["remove the second project", "I Want My Resume"],
+    ["i want to delete the i want my resuem project only you remove other project i need", "I Want My Resume"],
+    ["delete the parkinson project", "Parkinson Diease Prediction"],
+  ])("%p removes exactly that one project, without the AI", async (request, removed) => {
+    api.getResume.mockResolvedValueOnce(saved);
+    api.suggestResumeEdit.mockClear();
+    const proposed = await handleResumeBuilderText(reviewing, user, request);
+    expect(api.suggestResumeEdit).not.toHaveBeenCalled();
+    expect(proposed.state.step).toBe("awaiting_edit_confirmation");
+    const remaining = (proposed.state.pendingEdit?.resume.projects as Array<{ title: string }>).map((project) => project.title);
+    expect(remaining).toEqual(saved.projects.map((project) => project.title).filter((title) => title !== removed));
+    expect(proposed.messages[0].text).toContain(`"${removed}". Everything else is unchanged.`);
+    expect(proposed.state.pendingEdit?.resume.updated_at).toBe(saved.updated_at);
+  });
+
+  test("an unclear removal still goes to the AI edit", async () => {
+    api.getResume.mockResolvedValueOnce(saved);
+    api.suggestResumeEdit.mockReset().mockResolvedValueOnce({ resume: saved, changes: ["Asked which one"], warnings: [], requires_confirmation: true });
+    await handleResumeBuilderText(reviewing, user, "remove some projects");
+    expect(api.suggestResumeEdit).toHaveBeenCalled();
   });
 });
