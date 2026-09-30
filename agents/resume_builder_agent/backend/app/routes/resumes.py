@@ -26,6 +26,7 @@ from app.models import (
     Language,
 )
 from app.services.pdf_export import VALID_TEMPLATES, render_resume_pdf
+from app.services.resume_style import normalize_style, style_options
 from app.services.import_review import (
     ImportValidationError,
     analyze_resume_text,
@@ -279,6 +280,7 @@ def serialize_resume_summary(resume):
         "target_role": resume.target_role,
         "experience_level": resume.experience_level,
         "template_choice": normalize_template_choice(resume.template_choice),
+        "style_settings": normalize_style(getattr(resume, "style_settings", None)),
         "status": effective_resume_status(resume, completion_percentage),
         "summary": resume.summary,
         "profile_photo": resume.profile_photo,
@@ -500,6 +502,8 @@ def apply_resume_payload(resume, payload):
                 f"Invalid template_choice. Use one of: {', '.join(sorted(VALID_TEMPLATES))}."
             )
         resume.template_choice = template_choice
+    if "style_settings" in payload:
+        resume.style_settings = normalize_style(payload.get("style_settings"), strict=True)
     if "summary" in payload:
         resume.summary = clean_text(payload.get("summary"), "summary", 12000)
     if "profile_photo" in payload:
@@ -1105,7 +1109,8 @@ def export_resume(resume_id):
         )
 
     try:
-        pdf_bytes = render_resume_pdf(serialize_resume(resume), template_choice)
+        style = normalize_style(payload.get("style_settings") or getattr(resume, "style_settings", None))
+        pdf_bytes = render_resume_pdf(serialize_resume(resume), template_choice, style)
         resume.last_downloaded_at = datetime.now(timezone.utc).replace(tzinfo=None)
         resume.download_count = (resume.download_count or 0) + 1
         db.session.commit()
@@ -1126,6 +1131,12 @@ def export_resume(resume_id):
         as_attachment=True,
         download_name=filename,
     )
+
+
+@resumes_bp.get("/resume-styles")
+def list_resume_styles():
+    """The fonts, text sizes and line spacings the editor offers."""
+    return jsonify(style_options())
 
 
 @resumes_bp.post("/resumes/preview")
@@ -1156,7 +1167,8 @@ def preview_resume_pdf():
         )
 
     try:
-        pdf_bytes = render_resume_pdf(resume_data, template_choice)
+        style = normalize_style(payload.get("style_settings") or resume_data.get("style_settings"))
+        pdf_bytes = render_resume_pdf(resume_data, template_choice, style)
     except Exception:
         return error_response("PDF preview failed", 500)
 

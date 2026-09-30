@@ -252,7 +252,7 @@ def test_pdf_export_with_long_resume_content(client, monkeypatch, sample_resume_
     created = client.post("/api/resume", json=sample_resume_payload).get_json()["data"]
     captured = {}
 
-    def fake_render_resume_pdf(resume_data, template_choice):
+    def fake_render_resume_pdf(resume_data, template_choice, style=None):
         captured["resume_data"] = resume_data
         captured["template_choice"] = template_choice
         return b"%PDF-1.4\n% test pdf bytes\n"
@@ -291,7 +291,7 @@ def test_pdf_export_normalizes_legacy_template_aliases(client, monkeypatch, samp
     created = client.post("/api/resume", json=sample_resume_payload).get_json()["data"]
     captured = {}
 
-    def fake_render_resume_pdf(resume_data, template_choice):
+    def fake_render_resume_pdf(resume_data, template_choice, style=None):
         captured["template_choice"] = template_choice
         return b"%PDF-1.4\n% test pdf bytes\n"
 
@@ -468,7 +468,7 @@ def test_plural_pdf_download_response_headers(client, monkeypatch, sample_resume
 
     monkeypatch.setattr(
         "app.routes.resumes.render_resume_pdf",
-        lambda resume_data, template_choice: b"%PDF-1.4\n% test pdf bytes\n",
+        lambda resume_data, template_choice, style=None: b"%PDF-1.4\n% test pdf bytes\n",
     )
 
     response = client.post(
@@ -486,7 +486,7 @@ def test_live_preview_uses_pdf_renderer_and_inline_headers(client, monkeypatch, 
     created = client.post("/api/resume", json=sample_resume_payload).get_json()["data"]
     captured = {}
 
-    def fake_render(resume_data, template_choice):
+    def fake_render(resume_data, template_choice, style=None):
         captured["template_choice"] = template_choice
         return b"%PDF-1.4\n% exact preview\n"
 

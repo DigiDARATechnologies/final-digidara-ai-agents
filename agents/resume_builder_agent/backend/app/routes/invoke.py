@@ -25,7 +25,7 @@ ACTION_ROUTE_MAP = {
     "improve_bullet": ("POST", "/api/ai/improve-bullet"), "suggest_skills": ("POST", "/api/ai/suggest-skills"),
     "analyze_job_description": ("POST", "/api/ai/analyze-job-description"), "generate_declaration": ("POST", "/api/ai/generate-declaration"),
     "tailor_to_job": ("POST", "/api/ai/tailor-to-jd"), "select_template": ("PUT", "/api/resumes/{resume_id}"),
-    "list_templates": ("GET", "/api/templates"), "get_template": ("GET", "/api/templates/{template_id}"),
+    "list_templates": ("GET", "/api/templates"), "list_resume_styles": ("GET", "/api/resume-styles"), "suggest_resume_style": ("POST", "/api/ai/suggest-resume-style"), "get_template": ("GET", "/api/templates/{template_id}"),
     "preview_resume": ("POST", "/api/resumes/preview"), "export_pdf": ("POST", "/api/resumes/{resume_id}/download"),
 }
 

@@ -39,6 +39,9 @@ class Resume(db.Model):
     target_role = db.Column(db.String(255))
     experience_level = db.Column(db.String(20))
     template_choice = db.Column(db.String(100), nullable=False, default="default")
+    # Font family / text size / line spacing on top of the template
+    # (app/services/resume_style.py). NULL means the template's own style.
+    style_settings = db.Column(db.JSON, nullable=True)
     status = db.Column(db.String(30), nullable=False, default="draft")
     summary = db.Column(Text)
     profile_photo = db.Column(db.String(500), nullable=True)
