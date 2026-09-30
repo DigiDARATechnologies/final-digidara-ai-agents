@@ -1,11 +1,13 @@
 import uuid
 import logging
 import os
+import re
 import smtplib
 import ssl
 import hashlib
 import hmac
 import secrets
+import random
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from typing import List, Dict, Optional
@@ -149,10 +151,32 @@ def start_exam(user_id: int, username: str, topic: str) -> Dict:
             f"Exam locked: Maximum {settings.MAX_ATTEMPTS} attempts reached for '{topic}'"
         )
 
-    # Try pre-cached questions first (instant); fall back to live AI generation
-    questions = _get_cached_questions(topic)
-    if questions is None:
-        questions = generate_questions(topic)
+    from cert_app.db import question_history
+    from cert_app.agents.question_agent import QuestionDeduper
+
+    seen = question_history.get_seen_questions(user_id, topic)
+
+    # Try pre-cached questions first (instant), skipping any this learner has
+    # already been asked; top up with live AI generation when needed.
+    cached = _get_cached_questions(topic)
+    if cached is None:
+        questions = generate_questions(topic, exclude_questions=seen)
+    else:
+        deduper = QuestionDeduper(seen)
+        questions = [q for q in cached if deduper.add(str(q.get("question", "")))]
+        deficit = len(cached) - len(questions)
+        if deficit > 0:
+            try:
+                questions += generate_questions(
+                    topic, num_questions=deficit,
+                    exclude_questions=seen + [q["question"] for q in questions],
+                )
+            except Exception as e:
+                logger.warning(f"Could not top up cached exam for '{topic}': {e}")
+                if not questions:
+                    raise
+        random.shuffle(questions)
+    question_history.record_seen_questions(user_id, topic, questions)
 
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -303,13 +327,15 @@ def submit_exam(user_id: int, username: str, exam_id: int, answers: List[Dict]) 
                 "passed": passed,
                 "certificate_ready": passed,
                 "certificate_id": cert_id,
-                "certificate_number": cert_number
+                "certificate_number": cert_number,
+                "correct_answers": correct_count,
+                "total_questions": total,
             }
             card_content = (
                 f"🎉 Congratulations! You **PASSED** the '{exam['topic']}' certification with **{score_pct}%**!"
                 if passed else
                 f"Exam Complete. Your score was **{score_pct}%**. Passing threshold is {settings.PASS_SCORE}%. Better luck next time!"
-            )
+            ) + f"\n\n✅ Correct answers: **{correct_count} out of {total}**"
             
             import uuid
             msg_id = str(uuid.uuid4())
@@ -517,13 +543,31 @@ def _get_owned_certificate(user_id: int, certificate_id: int) -> Dict:
         conn.close()
 
 
+def _name_key(name: str) -> str:
+    """Compare names ignoring case, spacing and punctuation such as . - '"""
+    return " ".join(re.sub(r"[^\w\s]", " ", (name or "").casefold()).split())
+
+
 def regenerate_certificate_with_recipient_name(user_id: int, certificate_id: int, recipient_name: str) -> Dict:
-    """Re-render one learner-owned certificate with a confirmed recipient name."""
-    clean_name = " ".join((recipient_name or "").split())
+    """Re-render one learner-owned certificate with a confirmed recipient name.
+
+    A certificate may only carry the learner's verified account name. The
+    learner can fix its presentation (capitalisation, spacing, punctuation),
+    but cannot put a different person's name on it. An empty name re-issues
+    the certificate with the verified account name.
+    """
+    certificate = _get_owned_certificate(user_id, certificate_id)
+    verified_name = " ".join((certificate.get("account_name") or "").split())
+
+    clean_name = " ".join((recipient_name or "").split()) or verified_name
     if len(clean_name) < 2 or len(clean_name) > 120:
         raise ValueError("Enter a full certificate name between 2 and 120 characters")
-
-    certificate = _get_owned_certificate(user_id, certificate_id)
+    if not verified_name or _name_key(clean_name) != _name_key(verified_name):
+        raise ValueError(
+            f"For security, a certificate can only be issued in your verified account name "
+            f"({verified_name or 'not available'}). You can correct its capitalisation or spacing here; "
+            f"to change the name itself, update the name on your DigiDARA profile first."
+        )
     file_path = generate_certificate(
         clean_name,
         certificate["topic"],

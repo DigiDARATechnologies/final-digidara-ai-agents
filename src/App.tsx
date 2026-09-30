@@ -944,6 +944,41 @@ export default function App() {
     openAgentChat(agentId);
   }
 
+  /** Every certification attempt gets its own chat: once an exam in a chat has
+   * finished (passed or failed), the next exam starts here in a fresh chat. */
+  async function startNextCertificateExamChat(agent: Agent, initialText: string) {
+    if (!user) return;
+    const chat: Chat = {
+      id: newChatId(),
+      agentId: agent.id,
+      title: agent.name,
+      messages: initialText === "start_exam" ? [] : [{ role: "user", text: initialText, time: nowStr() }],
+      updatedAt: Date.now(),
+    };
+    setChats((prev) => {
+      const next = [...prev, chat];
+      saveChats(next);
+      return next;
+    });
+    setCurrentChatId(chat.id);
+    setNewChatPending(false);
+    setDashboardOpen(false);
+    setTyping(true);
+    try {
+      const opened = await openCertificateChat(user);
+      const result = await handleCertificateText(opened.state, initialText, user);
+      setCertificateStates((prev) => ({ ...prev, [chat.id]: result.state }));
+      appendAgentMessages(chat.id, result.messages);
+    } catch {
+      appendAgentMessages(chat.id, [{
+        text: "I couldn’t start your next exam right now. Please try again in a moment.",
+        options: [{ label: "Take Certification Exam", value: "start_exam" }],
+      }]);
+    } finally {
+      setTyping(false);
+    }
+  }
+
   function startNewChatLanding() {
     setCurrentChatId(null);
     setNewChatPending(true);
@@ -1175,17 +1210,23 @@ export default function App() {
 
     if (agent?.kind === "certificate") {
       const flowState = certificateStates[chatId] ?? createInitialCertificateState();
+      let nextExamText: string | undefined;
       handleCertificateText(flowState, text, user)
-        .then(({ state, messages }) => {
-          setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
+        .then(({ state, messages, openNewChat, stale }) => {
+          // A stale turn was ignored by the server; keep the newer state.
+          if (!stale) setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
+          nextExamText = openNewChat?.initialText;
         })
         .catch(() => {
           appendAgentMessages(chatId, [{
             text: "I couldn’t complete that certificate request right now. Your certificate records are safe. Please try again in a moment.",
           }]);
         })
-        .finally(() => setTyping(false));
+        .finally(() => {
+          setTyping(false);
+          if (nextExamText !== undefined) void startNextCertificateExamChat(agent, nextExamText);
+        });
       return;
     }
 

@@ -7,7 +7,7 @@ from cert_app.db import chat_repository
 from cert_app.services import chat_orchestrator
 
 
-def _mock_mcq_questions(topic, num_questions=30, difficulty="mixed"):
+def _mock_mcq_questions(topic, num_questions=30, difficulty="mixed", **kwargs):
     return [
         {
             "question": f"MCQ Question {i + 1} for {topic}?",
@@ -20,7 +20,7 @@ def _mock_mcq_questions(topic, num_questions=30, difficulty="mixed"):
     ]
 
 
-def _mock_freetext_questions(topic, num_questions=30, difficulty="mixed"):
+def _mock_freetext_questions(topic, num_questions=30, difficulty="mixed", **kwargs):
     return [
         {
             "question": f"Free-text Question {i + 1} for {topic}?",
@@ -311,7 +311,7 @@ class TestChatOrchestrator(unittest.TestCase):
         self.assertEqual(last["role"], "assistant")
         self.assertIn("went wrong", last["content"])
 
-    def _mock_yes_option_questions(self, topic, num_questions=30, difficulty="mixed"):
+    def _mock_yes_option_questions(self, topic, num_questions=30, difficulty="mixed", **kwargs):
         """Questions whose first option is literally 'Yes' — the former keyword guard would have swallowed this."""
         return [
             {

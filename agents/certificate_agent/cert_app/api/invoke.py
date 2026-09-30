@@ -36,6 +36,8 @@ ACTION_ROUTE_MAP: Dict[str, tuple[str, str]] = {
     "get_chat_sessions": ("GET", "/api/chat/sessions"),
     "get_chat_session": ("GET", "/api/chat/session/{session_id}"),
     "recover_chat_certificate": ("POST", "/api/chat/session/{session_id}/certificate"),
+    "download_chat_exam_report": ("GET", "/api/chat/session/{session_id}/report"),
+    "download_exam_report": ("GET", "/api/exam/{exam_id}/report"),
 }
 
 

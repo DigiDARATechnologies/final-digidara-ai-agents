@@ -124,6 +124,29 @@ def update_session_status(
         conn.close()
 
 
+def claim_question_index(session_id: str, expected_index: int, next_index: int) -> bool:
+    """Atomically move an in-exam session from `expected_index` to `next_index`.
+
+    Returns False when another request already answered that question (e.g. a
+    double click, or the timer's "Timeout" racing a real answer). The caller
+    must then ignore its message, otherwise the same question would be graded
+    twice and the next one sent twice.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            """UPDATE conversation_sessions SET current_question_index = %s
+               WHERE id = %s AND status = 'in_exam' AND current_question_index = %s""",
+            (next_index, session_id, expected_index),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def attach_certificate(session_id: str, certificate_id: int) -> bool:
     """Link a chat attempt to its issued certificate for idempotent recovery."""
     conn = get_connection()

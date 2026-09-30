@@ -8,6 +8,7 @@ import {
   verifyCertificateEmail,
   interpretCertificateRequest,
   downloadCertificatePdf,
+  downloadExamReportPdf,
   startCertificateChat,
   sendCertificateChatMessage,
   getCertificateChatSession,
@@ -59,6 +60,8 @@ export interface CertificateFlowState {
   totalQuestions?: number;
   /** Absolute deadline keeps the per-question timer intact after a refresh. */
   questionDeadlineAt?: number;
+  /** An exam already finished (passed or failed) in this chat: the next exam opens in a new chat. */
+  hasCompletedExam?: boolean;
 }
 
 export interface CertificateFlowMessage {
@@ -69,6 +72,37 @@ export interface CertificateFlowMessage {
 export interface CertificateFlowResponse {
   state: CertificateFlowState;
   messages: CertificateFlowMessage[];
+  /** Ask the host to open a fresh certificate chat and send `initialText` there. */
+  openNewChat?: { initialText: string };
+  /** The turn was ignored by the server; the host must not replace its current state. */
+  stale?: boolean;
+}
+
+const EXAM_REPORT_OPTION: ChatOption = { label: "Download Exam Report", value: "download_exam_report" };
+
+/** Each exam attempt gets its own chat: once an attempt in this chat has
+ * finished, a further exam is started in a new chat instead. */
+function openNextExamInNewChat(state: CertificateFlowState, initialText = "start_exam"): CertificateFlowResponse {
+  return {
+    state,
+    messages: [{ text: "🆕 Opening a new chat for your next exam. Your results and certificates from this chat stay available here." }],
+    openNewChat: { initialText },
+  };
+}
+
+/** Names are compared the same way the server does: case, spacing and . - ' ignored. */
+const nameKey = (name: string) => name.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).join(" ");
+
+function verifiedNamePrompt(verifiedName: string | undefined): CertificateFlowMessage {
+  return {
+    text: verifiedName
+      ? `For security, certificates are always issued in your verified account name: **${verifiedName}**. You can correct its capitalisation or spacing — type it exactly as it should appear. To use a different name, update the name on your DigiDARA profile first.`
+      : "For security, certificates are always issued in your verified account name. Type it exactly as it should appear (only capitalisation and spacing can be changed).",
+    options: [
+      ...(verifiedName ? [{ label: `Use "${verifiedName}"`, value: "use_verified_certificate_name" }] : []),
+      { label: "Cancel", value: "cancel_certificate_management" },
+    ],
+  };
 }
 
 const DEFAULT_TOPICS = [
@@ -143,7 +177,7 @@ export async function handleCertificateText(
         state.token = profile.token || profile.sessionToken;
       }
       return {
-        state: { ...createInitialCertificateState(), token: state.token },
+        state: { ...createInitialCertificateState(), token: state.token, hasCompletedExam: state.hasCompletedExam },
         messages: [user ? initialCertificateMessage(user) : { text: "Main Menu:", options: topicOptions }],
       };
     }
@@ -152,6 +186,12 @@ export async function handleCertificateText(
     // its first message. Preserve that behaviour instead of forcing users to
     // click a menu action before they can talk to CertifyAI.
     if (state.step === "awaiting_action") {
+      if (state.hasCompletedExam) {
+        const isCertificateManagement = val === "my_certificates" || lower === "my certificates" || lower === "certificates"
+          || val === "leaderboard" || val.startsWith("download_");
+        if (!isCertificateManagement) return openNextExamInNewChat(state, val);
+        return handleCertificateText({ ...state, step: "completed" }, val, user, allowTokenRefresh);
+      }
       if (!state.token && user) {
         const profile = await ensureCertificateProfile(user.id, user.name, user.email);
         state.token = profile.token || profile.sessionToken;
@@ -164,7 +204,10 @@ export async function handleCertificateText(
       );
     }
 
-    if (val === "start_exam" || lower === "take certification exam" || lower === "take exam") {
+    if (val === "start_exam" || lower === "take certification exam" || lower === "take exam" || lower === "start new exam") {
+      if (state.step === "completed" || state.hasCompletedExam) {
+        return openNextExamInNewChat(state);
+      }
       if (!state.token && user) {
         const profile = await ensureCertificateProfile(user.id, user.name, user.email);
         state.token = profile.token || profile.sessionToken;
@@ -330,6 +373,39 @@ export async function handleCertificateText(
       };
     }
 
+    const wantsExamReport = val === "download_exam_report"
+      || (state.step === "completed" && /\b(report|result sheet|answer sheet|review)\b/i.test(val));
+    if (wantsExamReport && state.token) {
+      const target = state.mode !== "chat" && state.examId
+        ? { examId: state.examId }
+        : state.sessionId
+          ? { sessionId: state.sessionId }
+          : undefined;
+      if (!target) {
+        return { state, messages: [{ text: "There is no finished exam in this chat to report on yet." }] };
+      }
+      try {
+        const { blob, filename } = await downloadExamReportPdf(state.token, target);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        return {
+          state,
+          messages: [{
+            text: "📄 Your exam report has been downloaded. It lists every question with your answer, the correct answer and whether you got it right.",
+            options: [{ label: "Start New Exam", value: "start_exam" }],
+          }],
+        };
+      } catch (error) {
+        const reason = (error as Error).message || "";
+        if (/\b401\b|unauthori[sz]ed|invalid or expired token/i.test(reason)) throw error;
+        return { state, messages: [{ text: `I couldn’t prepare your exam report: ${reason || "please try again."}` }] };
+      }
+    }
+
     if (val.startsWith("download_") || lower.startsWith("download")) {
       const certIdMatch = val.match(/(\d+)/);
       if (certIdMatch && state.token) {
@@ -355,9 +431,7 @@ export async function handleCertificateText(
     if (val === "change_certificate_name" && selectedCertificateId) {
       return {
         state: { ...state, step: "awaiting_certificate_name", selectedCertificateId },
-        messages: [{
-          text: "Of course. What full name would you like printed on this certificate? I’ll show it back to you for confirmation before changing anything.",
-        }],
+        messages: [verifiedNamePrompt(user?.name)],
       };
     }
 
@@ -384,9 +458,15 @@ export async function handleCertificateText(
     }
 
     if (state.step === "awaiting_certificate_name") {
-      const recipientName = val.replace(/\s+/g, " ").trim();
+      const recipientName = val === "use_verified_certificate_name" && user?.name
+        ? user.name.replace(/\s+/g, " ").trim()
+        : val.replace(/\s+/g, " ").trim();
       if (recipientName.length < 2 || recipientName.length > 120) {
         return { state, messages: [{ text: "Please enter the full name exactly as it should appear on the certificate." }] };
+      }
+      // The server enforces this too; checking here gives an instant answer.
+      if (user?.name && nameKey(recipientName) !== nameKey(user.name)) {
+        return { state, messages: [verifiedNamePrompt(user.name)] };
       }
       return {
         state: { ...state, step: "confirming_certificate_name", pendingRecipientName: recipientName },
@@ -459,7 +539,20 @@ export async function handleCertificateText(
     }
 
     if (val === "confirm_certificate_name" && state.step === "confirming_certificate_name" && state.token && state.selectedCertificateId && state.pendingRecipientName) {
-      const updated = await updateCertificateRecipient(state.token, state.selectedCertificateId, state.pendingRecipientName);
+      let updated: Awaited<ReturnType<typeof updateCertificateRecipient>>;
+      try {
+        updated = await updateCertificateRecipient(state.token, state.selectedCertificateId, state.pendingRecipientName);
+      } catch (error) {
+        const reason = (error as Error).message || "";
+        if (/\b401\b|unauthori[sz]ed|invalid or expired token/i.test(reason)) throw error;
+        return {
+          state: { ...state, step: "awaiting_certificate_name", pendingRecipientName: undefined },
+          messages: [{
+            text: reason || "The certificate name could not be updated.",
+            options: verifiedNamePrompt(user?.name).options,
+          }],
+        };
+      }
       return {
         state: {
           ...state,
@@ -591,14 +684,30 @@ export async function handleCertificateText(
     // arbitrary follow-up to the old server session; offer only safe next
     // actions, exactly as the standalone agent does after an exam closes.
     if (state.step === "completed") {
+      // A clear request for another exam never needs the LLM.
+      if (/\b(next|new|another|retake|retry|re-?attempt|again)\b.*\b(exam|test|assessment|certification|attempt)\b|\b(exam|test)\b.*\bagain\b/i.test(val)) {
+        return openNextExamInNewChat(state, val);
+      }
+      if (!state.passed && state.token) {
+        try {
+          const understanding = await interpretCertificateRequest(state.token, val);
+          if (understanding.intent === "start_new_exam") return openNextExamInNewChat(state, val);
+        } catch {
+          // Fall through to the closed-attempt options below.
+        }
+      }
       if (state.passed && state.token) {
         const understanding = await interpretCertificateRequest(state.token, val);
         const activeCertificateId = state.selectedCertificateId ?? state.certificateId;
 
+        if (understanding.intent === "start_new_exam") {
+          return openNextExamInNewChat(state, val);
+        }
+
         if (understanding.intent === "rename_certificate" && activeCertificateId) {
           return {
             state: { ...state, step: "awaiting_certificate_name", selectedCertificateId: activeCertificateId },
-            messages: [{ text: "Absolutely. What full name would you like printed on the certificate? I’ll confirm it with you before I regenerate the PDF." }],
+            messages: [verifiedNamePrompt(user?.name)],
           };
         }
         if (understanding.intent === "email_certificate" && activeCertificateId) {
@@ -629,12 +738,14 @@ export async function handleCertificateText(
                 },
                 messages: [{
                   text: understanding.intent === "unknown"
-                    ? (understanding.reply || "Your certificate is ready. You can download it here, update the printed name, or ask me to email it.")
+                    ? (understanding.reply || "Your certificate is ready. You can download or email it, or start your next exam.")
                     : `📜 Your certificate is ready${recovered.certificate_number ? `. Certificate number: **${recovered.certificate_number}**` : "."}`,
                   options: [
                     { label: "Download PDF Certificate", value: `download_${recovered.certificate_id}` },
-                    { label: "Update Certificate Name", value: "change_certificate_name" },
                     { label: "Email Certificate", value: "email_certificate" },
+                    { label: "Update Certificate Name", value: "change_certificate_name" },
+                    EXAM_REPORT_OPTION,
+                    { label: "Start New Exam", value: "start_exam" },
                   ],
                 }],
               };
@@ -687,7 +798,8 @@ export async function handleCertificateText(
               ? "This certification attempt is complete. You can download your certificate or start another exam."
               : "This certification attempt is closed. You can start a new exam when you are ready.",
             options: [
-              { label: "Take Certification Exam", value: "start_exam" },
+              EXAM_REPORT_OPTION,
+              { label: "Start New Exam", value: "start_exam" },
               { label: "My Certificates", value: "my_certificates" },
               { label: "Main Menu", value: "menu" },
             ],
@@ -856,9 +968,13 @@ export async function handleCertificateText(
       const replyText = lastMsg?.content || "Please enter a technical topic to proceed with your certification.";
       const metaOpts: string[] = lastMsg?.metadata?.options || [];
 
-      const messageOptions: ChatOption[] = metaOpts.length > 0
+      // After "No, let's keep chatting" the learner stays in this same
+      // conversation; re-showing the start-exam topic menu made it look like
+      // a brand-new session.
+      const keepChatting = lastMsg?.metadata?.phase === "keep_chatting";
+      const messageOptions: ChatOption[] | undefined = metaOpts.length > 0
         ? metaOpts.map((opt) => ({ label: opt, value: opt }))
-        : topicOptions;
+        : keepChatting ? undefined : topicOptions;
 
       const currentTopic = lastMsg?.metadata?.temp_topic || state.topic || val;
 
@@ -878,9 +994,15 @@ export async function handleCertificateText(
     }
 
     if (state.step === "awaiting_chat_session" && state.sessionId && state.token) {
-      const turnRes = await sendCertificateChatMessage(state.token, state.sessionId, val);
+      const turnRes = await sendCertificateChatMessage(state.token, state.sessionId, val, state.currentQuestionIndex ?? 0);
       if (turnRes.error) {
         return { state, messages: [{ text: `Error: ${turnRes.error}` }] };
+      }
+      // The server ignored this answer because that question was already
+      // answered (e.g. the timer's "Timeout" raced a click). Show nothing
+      // and leave the newer state from the accepted answer untouched.
+      if (turnRes.status?.stale) {
+        return { state, messages: [], stale: true };
       }
 
       const assistantMessages = turnRes.messages.filter((message) => message.role === "assistant");
@@ -903,12 +1025,14 @@ export async function handleCertificateText(
         ? certificateId
           ? [
               { label: "Download PDF Certificate", value: `download_${certificateId}` },
+              EXAM_REPORT_OPTION,
               { label: "Update Certificate Name", value: "change_certificate_name" },
               { label: "Email Certificate", value: "email_certificate" },
               { label: "My Certificates", value: "my_certificates" },
               { label: "Start New Exam", value: "start_exam" },
             ]
           : [
+              EXAM_REPORT_OPTION,
               { label: "Start New Exam", value: "start_exam" },
               { label: "Main Menu", value: "menu" },
             ]
@@ -917,6 +1041,7 @@ export async function handleCertificateText(
         state: {
           ...state,
           step: isComplete ? "completed" : "awaiting_chat_session",
+          hasCompletedExam: isComplete || state.hasCompletedExam,
           currentQuestionIndex: status?.current_question_index ?? state.currentQuestionIndex,
           totalQuestions: status?.total_questions ?? state.totalQuestions,
           score: status?.score_percentage ?? state.score,
@@ -974,8 +1099,9 @@ export async function handleCertificateText(
         const passed = result.passed ?? score >= 70;
 
         const options: ChatOption[] = [
+          EXAM_REPORT_OPTION,
+          { label: "Start New Exam", value: "start_exam" },
           { label: "Main Menu", value: "menu" },
-          { label: "Try Another Topic", value: "start_exam" },
         ];
 
         if (passed && result.certificate_id) {
@@ -989,13 +1115,14 @@ export async function handleCertificateText(
           state: {
             ...state,
             step: "completed" as const,
+            hasCompletedExam: true,
             answers: updatedAnswers,
             score,
             passed,
           },
           messages: [
             {
-              text: `🎉 **Exam Submitted!**\n\n- Topic: **${state.topic}**\n- Final Score: **${score}%**\n- Outcome: **${passed ? "PASSED ✅" : "FAILED ❌"}**\n\n${
+              text: `🎉 **Exam Submitted!**\n\n- Topic: **${state.topic}**\n- Correct Answers: **${result.correct_answers ?? "—"} out of ${result.total_questions ?? state.questions.length}**\n- Final Score: **${score}%**\n- Outcome: **${passed ? "PASSED ✅" : "FAILED ❌"}**\n\n${
                 passed
                   ? "Congratulations! You have passed the certification exam and your official certificate has been issued."
                   : "Keep practicing! You need 70% or higher to earn a certificate."

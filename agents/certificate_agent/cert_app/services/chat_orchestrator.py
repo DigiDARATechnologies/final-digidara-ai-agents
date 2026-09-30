@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from cert_app.config import get_settings
-from cert_app.db import chat_repository
+from cert_app.db import chat_repository, question_history
 from cert_app.agents.question_agent import generate_questions
 from cert_app.agents.evaluation_agent import evaluate_answer
 from cert_app.services.usage_service import record_llm_usage
@@ -26,6 +26,30 @@ class ChatTurnResult:
     total_questions: int
     score_percentage: Optional[float] = None
     passed: Optional[bool] = None
+    correct_answers: Optional[int] = None
+    # True when the message answered a question that was already answered
+    # (double submit / timer race); nothing was recorded for it.
+    stale: bool = False
+
+
+# Button labels of the "start this exam?" prompt, recognised without an LLM
+# call so the choice is always honoured exactly.
+_CONFIRM_YES_LABELS = {"yes, start the exam", "yes", "start", "start the exam"}
+_CONFIRM_NO_LABELS = {"no, let's keep chatting", "no", "not now", "keep chatting", "let's keep chatting"}
+
+_session_locks: Dict[str, "threading.RLock"] = {}
+_session_locks_guard = threading.Lock()
+
+
+def _session_lock(session_id: str):
+    """Serialise turns of one session inside this process (re-entrant, since a
+    force-submit turn re-dispatches itself)."""
+    with _session_locks_guard:
+        lock = _session_locks.get(session_id)
+        if lock is None:
+            lock = threading.RLock()
+            _session_locks[session_id] = lock
+        return lock
 
 
 def _sanitize_message_for_client(msg: Dict) -> Dict:
@@ -222,11 +246,16 @@ def bg_generate_questions(session_id: str, topic: str, choice: str):
     """Generate 30 exam questions in the background and transition session state."""
     try:
         logger.info(f"[Chat] [BG] Generating 30 questions ({choice}) for topic: {topic}")
-        questions = generate_questions(topic, num_questions=30, difficulty=choice)
+        session = chat_repository.get_session(session_id) or {}
+        user_id = session.get("user_id")
+        seen = question_history.get_seen_questions(user_id, topic) if user_id else []
+        questions = generate_questions(topic, num_questions=30, difficulty=choice, exclude_questions=seen)
         total = len(questions)
 
         # Persist questions in the session
         chat_repository.store_session_questions(session_id, questions)
+        if user_id:
+            question_history.record_seen_questions(user_id, topic, questions)
         chat_repository.update_session_status(
             session_id=session_id,
             status="in_exam",
@@ -274,7 +303,27 @@ def default_bg_runner(fn: Callable, *args, **kwargs) -> None:
     thread.start()
 
 
-def handle_message(session_id: str, user_message: str, bg_runner: Callable = default_bg_runner) -> ChatTurnResult:
+def handle_message(
+    session_id: str,
+    user_message: str,
+    bg_runner: Callable = default_bg_runner,
+    question_index: Optional[int] = None,
+) -> ChatTurnResult:
+    """Process one learner turn. Turns of the same session never interleave.
+
+    `question_index` (optional) is the question the client believes it is
+    answering; an answer for an already-answered question is ignored.
+    """
+    with _session_lock(session_id):
+        return _handle_message(session_id, user_message, bg_runner, question_index)
+
+
+def _handle_message(
+    session_id: str,
+    user_message: str,
+    bg_runner: Callable = default_bg_runner,
+    question_index: Optional[int] = None,
+) -> ChatTurnResult:
     """
     Main entry point for driving the conversational exam state machine.
 
@@ -344,8 +393,15 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
                 temp_topic = meta.get("temp_topic")
 
         if is_waiting_for_confirmation:
-            # Analyze confirmation choice
-            is_confirmed = analyze_confirmation(session_id, user_message_clean)
+            # The prompt's own buttons are answered deterministically; only
+            # free-typed replies need the LLM classifier.
+            choice_key = user_message_clean.lower().rstrip(".!")
+            if choice_key in _CONFIRM_YES_LABELS:
+                is_confirmed = True
+            elif choice_key in _CONFIRM_NO_LABELS:
+                is_confirmed = False
+            else:
+                is_confirmed = analyze_confirmation(session_id, user_message_clean)
             if is_confirmed:
                 # User said YES!
                 chat_repository.append_message(session_id, "user", user_message_clean, "text")
@@ -373,7 +429,11 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
                 # User said NO! Keep chatting.
                 chat_repository.append_message(session_id, "user", user_message_clean, "text")
                 reply_text = "No problem! What else would you like to chat about?"
-                prompt_msg = chat_repository.append_message(session_id, "assistant", reply_text, "text")
+                # `keep_chatting` tells clients to continue this same
+                # conversation rather than re-showing the start-exam menu.
+                prompt_msg = chat_repository.append_message(
+                    session_id, "assistant", reply_text, "text", {"phase": "keep_chatting"}
+                )
                 return ChatTurnResult(
                     messages=[_sanitize_message_for_client(prompt_msg)],
                     session_status="onboarding",
@@ -413,7 +473,14 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
 
         # Otherwise, handle standard conversational reply (no exam offered)
         reply_text = analysis.get("reply") or "I am the CertifyAI evaluator, designed strictly to help you get certified on technical topics. Please type a technical subject (like Python, AWS, or Docker) to start your certification!"
-        prompt_msg = chat_repository.append_message(session_id, "assistant", reply_text, "text")
+        # Once the learner has chosen to keep chatting, stay in that mode.
+        chatting = any(
+            isinstance(m.get("metadata"), dict) and m["metadata"].get("phase") == "keep_chatting"
+            for m in history
+        )
+        prompt_msg = chat_repository.append_message(
+            session_id, "assistant", reply_text, "text", {"phase": "keep_chatting"} if chatting else None
+        )
         return ChatTurnResult(
             messages=[_sanitize_message_for_client(prompt_msg)],
             session_status="onboarding",
@@ -544,12 +611,21 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
             # always be committed.
             chat_repository.append_message(session_id, "user", user_message_clean, "text")
             chat_repository.update_session_status(session_id, status="failed", score=0.0)
+            answered_correctly = sum(
+                int(m["metadata"].get("score_delta", 0))
+                for m in chat_repository.get_message_history(session_id)
+                if isinstance(m.get("metadata"), dict) and m["metadata"].get("phase") == "exam"
+                and "score_delta" in m["metadata"]
+            )
+            total_q = session.get("total_questions", 0)
             failure_msg = chat_repository.append_message(
                 session_id,
                 "assistant",
-                "🚫 Exam closed: three tab switches were detected. This certification attempt has been marked as failed.",
+                "🚫 Exam closed: three tab switches were detected. This certification attempt has been marked as failed."
+                f"\n\n✅ Correct answers before the exam closed: **{answered_correctly} out of {total_q}**",
                 "certificate_card",
-                {"passed": False, "score_percentage": 0.0, "reason": "tab_switch_limit"},
+                {"passed": False, "score_percentage": 0.0, "reason": "tab_switch_limit",
+                 "correct_answers": answered_correctly, "total_questions": total_q},
             )
             return ChatTurnResult(
                 messages=[_sanitize_message_for_client(failure_msg)],
@@ -558,6 +634,7 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
                 total_questions=session.get("total_questions", 0),
                 score_percentage=0.0,
                 passed=False,
+                correct_answers=answered_correctly,
             )
 
         if user_message_clean == "force_submit_exam_due_to_tab_switches":
@@ -566,10 +643,27 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
                 status="grading",
                 current_question_index=session.get("current_question_index", 0)
             )
-            return handle_message(session_id, user_message)
+            return _handle_message(session_id, user_message)
 
         history = chat_repository.get_message_history(session_id)
         current_idx = session.get("current_question_index", 0)
+
+        # An answer to a question that was already answered (double click,
+        # or the timer's "Timeout" racing a real answer) must be ignored —
+        # otherwise that question is graded twice and the next one repeated.
+        stale_result = ChatTurnResult(
+            messages=[],
+            session_status="in_exam",
+            current_question_index=current_idx,
+            total_questions=session.get("total_questions", 0),
+            stale=True,
+        )
+        if question_index is not None and int(question_index) != int(current_idx):
+            logger.info(f"[Chat] Ignoring stale answer for Q{question_index} (session at Q{current_idx}) in {session_id}")
+            return stale_result
+        if not chat_repository.claim_question_index(session_id, current_idx, current_idx + 1):
+            logger.info(f"[Chat] Q{current_idx} of {session_id} was already answered by a concurrent request")
+            return stale_result
 
         # Append user answer
         chat_repository.append_message(session_id, "user", user_message_clean, "text")
@@ -686,16 +780,19 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
             "passed": passed,
             "certificate_ready": bool(cert_id),
             "certificate_id": cert_id,
-            "certificate_number": cert_number
+            "certificate_number": cert_number,
+            "correct_answers": correct_count,
+            "total_questions": total,
         }
 
+        correct_line = f"\n\n✅ Correct answers: **{correct_count} out of {total}**"
         card_content = (
             f"🎉 Congratulations! You **PASSED** the '{session.get('topic')}' certification with **{score_pct}%**!"
             if passed and cert_id else
             f"🎉 You passed the '{session.get('topic')}' certification with **{score_pct}%**, but the certificate file could not be issued. Please contact support or retry after the service is restored."
             if passed else
             f"Exam Complete. Your score was **{score_pct}%**. Passing threshold is {settings.PASS_SCORE}%. Better luck next time!"
-        )
+        ) + correct_line
 
         card_msg = chat_repository.append_message(
             session_id,
@@ -711,7 +808,8 @@ def handle_message(session_id: str, user_message: str, bg_runner: Callable = def
             current_question_index=session.get("total_questions", 0),
             total_questions=session.get("total_questions", 0),
             score_percentage=score_pct,
-            passed=passed
+            passed=passed,
+            correct_answers=correct_count,
         )
 
     raise ValueError(f"Unhandled session status '{status}'")
