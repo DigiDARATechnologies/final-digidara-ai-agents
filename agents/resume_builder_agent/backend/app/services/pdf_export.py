@@ -30,12 +30,14 @@ def template_style_spec(template_choice):
     return TEMPLATE_STYLE_SPECS.get(normalize_template_id(template_choice), TEMPLATE_STYLE_SPECS["steady-form"])
 
 
-def render_resume_pdf(resume_data, template_choice):
+def render_resume_pdf(resume_data, template_choice, style=None):
+    """`style`: the candidate's font family / text size / line spacing (see
+    app/services/resume_style.py); None or the default leaves the template as is."""
     template = normalize_template_id(template_choice)
     # ReportLab is the canonical renderer on every platform. Keeping one engine
     # eliminates browser/canvas differences and avoids native GTK dependencies
     # on Windows while preserving selectable ATS-readable text.
-    return render_reportlab_resume_pdf(resume_data, template)
+    return render_reportlab_resume_pdf(resume_data, template, style)
 
 
 def normalize_template_id(template_choice):
@@ -54,7 +56,7 @@ def header_role(resume):
     return str(role).strip()
 
 
-def render_reportlab_resume_pdf(resume, template_choice):
+def render_reportlab_resume_pdf(resume, template_choice, style=None):
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
@@ -73,6 +75,11 @@ def render_reportlab_resume_pdf(resume, template_choice):
         )
     except ImportError:
         return render_basic_resume_pdf(resume, template_choice)
+
+    # Every template creates its text styles through this class, so the
+    # candidate's font and size choice applies to all of them at once.
+    from app.services.resume_style import styled_paragraph_style
+    ParagraphStyle = styled_paragraph_style(ParagraphStyle, style)
 
     if template_choice == "navy-portrait":
         return render_reportlab_navy_portrait_pdf(resume, colors, A4, ParagraphStyle, getSampleStyleSheet, inch, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, keep_together=KeepTogether)

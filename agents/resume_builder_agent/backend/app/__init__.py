@@ -103,6 +103,7 @@ def ensure_schema_updates(app):
                 "job_match_score": "ALTER TABLE resumes ADD COLUMN job_match_score INT",
                 "download_count": "ALTER TABLE resumes ADD COLUMN download_count INT NOT NULL DEFAULT 0",
                 "last_analyzed_at": "ALTER TABLE resumes ADD COLUMN last_analyzed_at DATETIME",
+                "style_settings": "ALTER TABLE resumes ADD COLUMN style_settings JSON",
             }
             with db.engine.begin() as connection:
                 for column_name, statement in resume_updates.items():

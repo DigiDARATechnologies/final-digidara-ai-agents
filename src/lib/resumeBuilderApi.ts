@@ -147,21 +147,55 @@ export async function selectResumeTemplate(userId: string, resumeId: number, tem
   );
 }
 
-export async function exportResumePdf(userId: string, resumeId: number, templateChoice?: string) {
+/** Font family / text size / line spacing applied on top of the template. */
+export interface ResumeStyle {
+  font_family: string;
+  font_scale: number;
+  line_spacing: number;
+}
+
+export interface ResumeStyleOptions {
+  font_families: Array<{ id: string; label: string }>;
+  font_scales: Array<{ value: number; label: string }>;
+  line_spacings: Array<{ value: number; label: string }>;
+  default: ResumeStyle;
+}
+
+export const DEFAULT_RESUME_STYLE: ResumeStyle = { font_family: "template", font_scale: 1, line_spacing: 1 };
+
+export async function listResumeStyles() {
+  return unwrap<ResumeStyleOptions>(await invoke("list_resume_styles", {}));
+}
+
+/** Saves the style on the resume, so the download uses it too. */
+export async function saveResumeStyle(userId: string, resumeId: number, style: ResumeStyle) {
+  return unwrap<Record<string, unknown>>(
+    await invoke("update_resume", { user_id: userId, resume_id: resumeId, style_settings: style }),
+  );
+}
+
+/** A professional style for this resume, from the offered options only. */
+export async function suggestResumeStyle(userId: string, resume: Record<string, unknown>, templateChoice?: string) {
+  return invoke<{ style: ResumeStyle; reason: string; source: "ai" | "rules" }>(
+    "suggest_resume_style", { user_id: userId, resume, template_choice: templateChoice },
+  );
+}
+
+export async function exportResumePdf(userId: string, resumeId: number, templateChoice?: string, style?: ResumeStyle) {
   const platformToken = localStorage.getItem("digidara_token");
-  const response = await fetch(INVOKE_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) }, body: JSON.stringify({ action: "export_pdf", payload: { user_id: userId, resume_id: resumeId, template_choice: templateChoice } }) });
+  const response = await fetch(INVOKE_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) }, body: JSON.stringify({ action: "export_pdf", payload: { user_id: userId, resume_id: resumeId, template_choice: templateChoice, ...(style ? { style_settings: style } : {}) } }) });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "PDF export failed");
   const filename = response.headers.get("content-disposition")?.match(/filename="?([^";]+)"?/)?.[1] || `resume-${resumeId}.pdf`;
   return { blob: await response.blob(), filename };
 }
 
 /** Render the same saved, final resume object used for download as an inline PDF. */
-export async function previewResumePdf(userId: string, resume: Record<string, unknown>, templateChoice?: string) {
+export async function previewResumePdf(userId: string, resume: Record<string, unknown>, templateChoice?: string, style?: ResumeStyle) {
   const platformToken = localStorage.getItem("digidara_token");
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) },
-    body: JSON.stringify({ action: "preview_resume", payload: { user_id: userId, resume, template_choice: templateChoice } }),
+    body: JSON.stringify({ action: "preview_resume", payload: { user_id: userId, resume, template_choice: templateChoice, ...(style ? { style_settings: style } : {}) } }),
   });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "Resume preview failed");
   const blob = await response.blob();
