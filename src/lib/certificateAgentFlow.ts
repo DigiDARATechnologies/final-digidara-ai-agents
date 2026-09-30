@@ -80,6 +80,26 @@ export interface CertificateFlowResponse {
 
 const EXAM_REPORT_OPTION: ChatOption = { label: "Download Exam Report", value: "download_exam_report" };
 
+/** The buttons offered once an exam is finished: the certificate actions when
+ * one was issued, otherwise the report and a new exam. Shown at the end of the
+ * exam and again after the exam report is downloaded. */
+function finishedExamOptions(certificateId?: number): ChatOption[] {
+  return certificateId
+    ? [
+        { label: "Download PDF Certificate", value: `download_${certificateId}` },
+        EXAM_REPORT_OPTION,
+        { label: "Update Certificate Name", value: "change_certificate_name" },
+        { label: "Email Certificate", value: "email_certificate" },
+        { label: "My Certificates", value: "my_certificates" },
+        { label: "Start New Exam", value: "start_exam" },
+      ]
+    : [
+        EXAM_REPORT_OPTION,
+        { label: "Start New Exam", value: "start_exam" },
+        { label: "Main Menu", value: "menu" },
+      ];
+}
+
 /** Each exam attempt gets its own chat: once an attempt in this chat has
  * finished, a further exam is started in a new chat instead. */
 function openNextExamInNewChat(state: CertificateFlowState, initialText = "start_exam"): CertificateFlowResponse {
@@ -396,7 +416,9 @@ export async function handleCertificateText(
           state,
           messages: [{
             text: "📄 Your exam report has been downloaded. It lists every question with your answer, the correct answer and whether you got it right.",
-            options: [{ label: "Start New Exam", value: "start_exam" }],
+            // The same buttons as the exam result, so the certificate can still
+            // be downloaded, emailed or renamed after the report.
+            options: finishedExamOptions(state.certificateId),
           }],
         };
       } catch (error) {
@@ -1022,20 +1044,7 @@ export async function handleCertificateText(
         ? metadata.certificate_number
         : undefined;
       const resultOptions: ChatOption[] | undefined = isComplete
-        ? certificateId
-          ? [
-              { label: "Download PDF Certificate", value: `download_${certificateId}` },
-              EXAM_REPORT_OPTION,
-              { label: "Update Certificate Name", value: "change_certificate_name" },
-              { label: "Email Certificate", value: "email_certificate" },
-              { label: "My Certificates", value: "my_certificates" },
-              { label: "Start New Exam", value: "start_exam" },
-            ]
-          : [
-              EXAM_REPORT_OPTION,
-              { label: "Start New Exam", value: "start_exam" },
-              { label: "Main Menu", value: "menu" },
-            ]
+        ? finishedExamOptions(certificateId)
         : options;
       return {
         state: {
@@ -1119,6 +1128,8 @@ export async function handleCertificateText(
             answers: updatedAnswers,
             score,
             passed,
+            // Kept so the certificate buttons come back after the report download.
+            certificateId: passed && result.certificate_id ? Number(result.certificate_id) : state.certificateId,
           },
           messages: [
             {
