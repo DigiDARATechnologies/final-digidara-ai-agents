@@ -19,7 +19,7 @@ export const AGENTS: Agent[] = [
     greeting: "Hi! I'm your Career Guidance Agent. Tell me your current role and where you'd like to be in 2 years, and I'll sketch a roadmap for you.",
   },
   {
-    id: "leetcode", name: "LeetCode / DSA Agent", icon: "⌨️", color: "#eab308", author: "DigiDARA", rating: 4.7,
+    id: "leetcode", name: "LeetCode Agent", icon: "⌨️", color: "#eab308", author: "DigiDARA", rating: 4.7,
     category: ["Top Picks", "Programming", "Education"], featured: true, kind: "codeforge", backendAgentName: "codeforge_agent",
     desc: "Practice real coding problems by course and topic, run and submit against sandboxed tests, and get AI tutor guidance when you're stuck.",
     greeting: "Ready to practice? Connecting you now…",

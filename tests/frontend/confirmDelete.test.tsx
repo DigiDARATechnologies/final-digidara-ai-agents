@@ -83,7 +83,7 @@ describe('Settings: agent chats list', () => {
       <SettingsModal open user={user} chats={[]} glowOn initialTab="agent-chats" onClose={jest.fn()} onOpenChat={jest.fn()} onGlowToggle={jest.fn()}
         onClearHistory={jest.fn()} onToast={jest.fn()} onExportData={jest.fn()} onDeleteAccount={jest.fn()} />,
     );
-    for (const name of ['Capstone Project Agent', 'LeetCode / DSA Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
+    for (const name of ['Capstone Project Agent', 'LeetCode Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
     for (const name of ['Research Agent', 'Career Guidance Agent', 'Content Writer Agent', 'Data Analyst Agent', 'Video AI Agent', 'Business Strategy Agent', 'Coding Assistant Agent']) {

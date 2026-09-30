@@ -9,7 +9,7 @@ root [README.md](README.md) for full setup/run instructions.
 Three agents currently use Strategy F:
 
 - **Capstone Project Agent** (`agents/project_AI_Agent`, FastAPI + MySQL)
-- **CodeForge (LeetCode/DSA) Agent** (`agents/codeforge_agent`, Flask + MySQL)
+- **CodeForge (LeetCode) Agent** (`agents/codeforge_agent`, Flask + MySQL)
 - **Communication Coach Agent** (`agents/communication-ai-agent`, Flask + MySQL)
 
 ## 1. The name

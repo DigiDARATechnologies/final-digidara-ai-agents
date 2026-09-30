@@ -70,7 +70,7 @@ describe('pending notifications', () => {
     expect(list.map((n) => [n.agentName, n.body])).toEqual(expect.arrayContaining([
       ['Aptitude Trainer Agent', 'Your aptitude test is in progress. Continue.'],
       ['Resume Builder Agent', 'Your ATS resume is ready to download.'],
-      ['LeetCode / DSA Agent', 'Continue solving “Two Sum”.'],
+      ['LeetCode Agent', 'Continue solving “Two Sum”.'],
     ]));
     expect(new Set(list.map((n) => n.icon)).size).toBe(3);
   });
