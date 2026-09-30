@@ -17,7 +17,17 @@ interface JobFetchDashboardProps {
   onClose: () => void;
 }
 
-export default function JobFetchDashboard({ user, state, onClose }: JobFetchDashboardProps) {
+export function jobProfileProgress(state: JobFetchFlowState): { complete: boolean; percent: number } {
+  const hasLocation = state.preferredLocations.length > 0 || ["remote", "any"].includes(state.preferredWorkMode.toLowerCase());
+  const savedFields = [Boolean(state.fullName.trim()), state.skills.length > 0,
+    state.experienceProvided, state.preferredTitles.length > 0, hasLocation];
+  const complete = state.profileCompleted && savedFields.every(Boolean);
+  // The sixth step is the server-confirmed completion decision (including
+  // resume upload or skip), not the client-side chat routing state.
+  return { complete, percent: Math.round((savedFields.filter(Boolean).length + Number(complete)) / 6 * 100) };
+}
+
+export default function JobFetchDashboard({ state, onClose }: JobFetchDashboardProps) {
   const [savedJobs, setSavedJobs] = useState<SavedJobItem[]>([]);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [applications, setApplications] = useState<AppliedJobItem[]>([]);
@@ -25,8 +35,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
   const [hiddenJobs, setHiddenJobs] = useState<HiddenJobItem[]>([]);
   const [hiddenError, setHiddenError] = useState<string | null>(null);
   const [unhidingId, setUnhidingId] = useState<number | null>(null);
-  const profileSteps = ["collecting_name", "collecting_skills", "collecting_titles", "collecting_locations", "collecting_work_mode", "collecting_experience", "collecting_resume"];
-  const profileProgress = state.step === "browsing" ? 100 : Math.round((profileSteps.indexOf(state.step) / profileSteps.length) * 100);
+  const profileProgress = jobProfileProgress(state);
 
   useEffect(() => {
     let active = true;
@@ -73,27 +82,27 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
 
       <div className="dashboard-status-card">
         <div className="dashboard-status-row">
-          <strong>{state.step === "browsing" ? "Browsing feed" : "Building profile"}</strong>
-          <span>{profileProgress}%</span>
+          <strong>{profileProgress.complete ? "Browsing feed" : "Building profile"}</strong>
+          <span>{profileProgress.percent}%</span>
         </div>
-        <div className="progress-track"><span style={{ width: `${profileProgress}%` }} /></div>
+        <div className="progress-track"><span style={{ width: `${profileProgress.percent}%` }} /></div>
         <p>Jobs are scored against your skills, target titles, location, and work-mode preferences.</p>
       </div>
 
       <div className="dashboard-section">
         <h3>Profile</h3>
         <dl>
-          <div><dt>Name</dt><dd>{state.fullName || user.name}</dd></div>
+          <div><dt>Name</dt><dd>{state.fullName || "Not provided"}</dd></div>
           <div><dt>Plan</dt><dd>{state.planTier === "pro" ? "Pro" : "Free"}</dd></div>
           <div><dt>Skills</dt><dd>{state.skills.length ? state.skills.join(", ") : "—"}</dd></div>
           <div><dt>Target Titles</dt><dd>{state.preferredTitles.length ? state.preferredTitles.join(", ") : "—"}</dd></div>
-          <div><dt>Locations</dt><dd>{state.preferredLocations.length ? state.preferredLocations.join(", ") : "Any"}</dd></div>
-          <div><dt>Work Mode</dt><dd>{state.preferredWorkMode || "Any"}</dd></div>
+          <div><dt>Locations</dt><dd>{state.preferredLocations.length ? state.preferredLocations.join(", ") : state.preferredWorkMode === "remote" ? "Remote" : state.preferredWorkMode === "any" ? "Any location" : "Not provided"}</dd></div>
+          <div><dt>Work Mode</dt><dd>{state.preferredWorkMode || "Not provided"}</dd></div>
           <div><dt>Resume</dt><dd>{state.resumeOriginalName || "Not uploaded"}</dd></div>
         </dl>
       </div>
 
-      {state.step === "browsing" && (
+      {(profileProgress.complete || state.feed.length > 0) && (
         <div className="dashboard-section">
           <h3>Feed</h3>
           <dl>
@@ -176,7 +185,7 @@ export default function JobFetchDashboard({ user, state, onClose }: JobFetchDash
         </div>
       )}
 
-      {!hiddenJobs.length && !hiddenError && state.step === "browsing" && (
+      {!hiddenJobs.length && !hiddenError && profileProgress.complete && (
         <div className="dashboard-section"><h3>Hidden Jobs</h3><p>No hidden jobs. Jobs you mark "Not interested" will show up here so you can undo it.</p></div>
       )}
       {hiddenError && <div className="dashboard-section"><h3>Hidden Jobs</h3><p>Hidden jobs could not be loaded: {hiddenError}</p></div>}

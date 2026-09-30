@@ -1605,6 +1605,7 @@ def _build_profile_response_dict(profile: Dict[str, Any], changed_fields: List[s
         "preferred_work_mode": profile.get("preferred_work_mode") or "",
         "experience_years": float(profile.get("experience_years") or 0.0),
         "experience_provided": bool(profile.get("experience_provided")),
+        "profile_completed": bool(profile.get("profile_completed")),
         "experience_status": profile.get("experience_status") or (
             "fresher" if profile.get("experience_provided") and float(profile.get("experience_years") or 0) == 0
             else "experienced" if profile.get("experience_provided") else None
