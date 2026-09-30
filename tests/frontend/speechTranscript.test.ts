@@ -1,4 +1,8 @@
-import { updateSpeechResultSlots, type SpeechResultSnapshot } from '../../src/lib/speechTranscript';
+import {
+  removeMobileTranscriptLoops,
+  updateSpeechResultSlots,
+  type SpeechResultSnapshot,
+} from '../../src/lib/speechTranscript';
 
 type ResultInput = { text: string; final: boolean };
 
@@ -56,4 +60,18 @@ test('an exact replay in a later result slot is included only once', () => {
     { text: 'A URL identifies an endpoint', final: true },
   ]));
   expect(result.finalText).toBe('A URL identifies an endpoint');
+});
+
+test('removes a phone recognizer word loop after three repetitions', () => {
+  expect(removeMobileTranscriptLoops('No no no no, thank you.')).toBe('No thank you.');
+});
+
+test('removes a repeated mobile phrase despite punctuation differences', () => {
+  expect(removeMobileTranscriptLoops('Batter, no. Batter, no. Batter, no. Batter, no.'))
+    .toBe('Batter, no.');
+});
+
+test('keeps natural two-time emphasis unchanged', () => {
+  expect(removeMobileTranscriptLoops('No no, I would like to play.'))
+    .toBe('No no, I would like to play.');
 });
