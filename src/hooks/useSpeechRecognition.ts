@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
+import {
+  joinSpeechSegments,
+  removeMobileTranscriptLoops,
+  updateSpeechResultSlots,
+  type SpeechResultSnapshot,
+} from "../lib/speechTranscript";
 import {
   audioRecordingSupported,
   isMobileVoiceDevice,
@@ -261,7 +266,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           }
           setTranscribing(true);
           try {
-            const text = (await transcribeRef.current?.(audio))?.trim() ?? "";
+            const rawText = (await transcribeRef.current?.(audio))?.trim() ?? "";
+            const text = removeMobileTranscriptLoops(rawText);
             if (session !== recordSessionRef.current) return;
             if (!text) setError("I couldn't hear any words in that recording. Tap the microphone and speak a little closer to the phone.");
             onResult(text, true);
@@ -365,7 +371,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
             previewTranscribe(audio)
               .then((text) => {
                 if (finished || session !== recordSessionRef.current) return;
-                const trimmed = text.trim();
+                const trimmed = removeMobileTranscriptLoops(text);
                 if (!trimmed || trimmed === lastText) return;
                 lastText = trimmed;
                 if (!meterRunning()) {
@@ -429,7 +435,10 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         const assembled = updateSpeechResultSlots(resultSlots, event);
         finalText = assembled.finalText;
         latestText = assembled.displayText;
-        const runningText = joinSpeechSegments([completedSessionsText, latestText]);
+        const unfilteredRunningText = joinSpeechSegments([completedSessionsText, latestText]);
+        const runningText = isMobileDevice
+          ? removeMobileTranscriptLoops(unfilteredRunningText)
+          : unfilteredRunningText;
         if (speechDebugEnabled()) {
           console.debug("[DigiDARA speech result]", {
             resultIndex: event.resultIndex,
@@ -524,7 +533,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         vadCleanupRef.current?.();
         vadCleanupRef.current = null;
         recognitionRef.current = null;
-        onResult(completedSessionsText.trim(), true);
+        const completedText = completedSessionsText.trim();
+        onResult(isMobileDevice ? removeMobileTranscriptLoops(completedText) : completedText, true);
       };
 
       recognitionRef.current = recognition;
