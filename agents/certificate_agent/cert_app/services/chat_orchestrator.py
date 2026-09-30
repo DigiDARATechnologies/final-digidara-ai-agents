@@ -52,6 +52,13 @@ def _session_lock(session_id: str):
         return lock
 
 
+def is_hidden_grading_record(msg: Dict) -> bool:
+    """A per-question grading result stored during the exam. It feeds the
+    score and the end-of-exam report but is never shown in the chat."""
+    meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+    return msg.get("message_type") == "feedback" and meta.get("phase") == "exam"
+
+
 def _sanitize_message_for_client(msg: Dict) -> Dict:
     """Strips server-only secret fields (correct_answer, expected_answer, etc.) from message metadata."""
     clean_msg = {
@@ -698,7 +705,7 @@ def _handle_message(
             score = eval_res["score"]
             feedback = eval_res["feedback"]
 
-        fb_msg = chat_repository.append_message(
+        chat_repository.append_message(
             session_id, "assistant", feedback, "feedback", {"score_delta": score, "phase": "exam"}
         )
 
@@ -724,8 +731,11 @@ def _handle_message(
                 msg_type,
                 next_meta
             )
+            # The grading feedback is stored (it scores the exam and fills the
+            # report) but not shown: right/wrong appears only in the report at
+            # the end, so the learner sees just the next question.
             return ChatTurnResult(
-                messages=[_sanitize_message_for_client(fb_msg), _sanitize_message_for_client(q_msg)],
+                messages=[_sanitize_message_for_client(q_msg)],
                 session_status="in_exam",
                 current_question_index=next_idx,
                 total_questions=total_questions
@@ -793,6 +803,14 @@ def _handle_message(
             if passed else
             f"Exam Complete. Your score was **{score_pct}%**. Passing threshold is {settings.PASS_SCORE}%. Better luck next time!"
         ) + correct_line
+        try:
+            from cert_app.services.exam_report import chat_exam_report_text
+            report = chat_exam_report_text(session, score_pct, passed)
+        except Exception as e:  # the report is extra; never fail the grading over it
+            logger.error(f"Could not build the exam report for chat session '{session_id}': {e}")
+            report = ""
+        if report:
+            card_content = f"{card_content}\n\n{report}"
 
         card_msg = chat_repository.append_message(
             session_id,

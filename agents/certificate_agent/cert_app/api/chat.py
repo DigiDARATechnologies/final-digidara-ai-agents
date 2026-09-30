@@ -10,7 +10,7 @@ from cert_app.schemas.chat import StartChatRequest, SendMessageRequest
 from cert_app.services.auth_service import verify_token
 from cert_app.db import chat_repository
 from cert_app.services import chat_orchestrator
-from cert_app.services.chat_orchestrator import _sanitize_message_for_client
+from cert_app.services.chat_orchestrator import _sanitize_message_for_client, is_hidden_grading_record
 from cert_app.services.exam_service import ensure_certificate_for_completed_chat_session
 from cert_app.services.exam_report import build_chat_exam_report
 
@@ -150,7 +150,7 @@ def get_chat_session(
         raise HTTPException(status_code=403, detail="Access denied. Session belongs to another user.")
 
     raw_history = chat_repository.get_message_history(session_id)
-    clean_history = [_sanitize_message_for_client(msg) for msg in raw_history]
+    clean_history = [_sanitize_message_for_client(msg) for msg in raw_history if not is_hidden_grading_record(msg)]
 
     return {
         "session": session,
