@@ -299,6 +299,10 @@ export default function ChatView({
     let promptFinishedAt = 0;
     let silenceNudgeCount = 0;
     let isNudging = false;
+    // Phone recording: the level meter heard the student. Their words only
+    // reach the box as a preview a few seconds later, so "have they spoken
+    // yet?" must not wait for text.
+    let heardVoice = false;
     let silenceCheck: number | undefined;
     const session = ++voiceSessionRef.current;
 
@@ -316,6 +320,7 @@ export default function ChatView({
       if (submitted || voiceSessionRef.current !== session) return;
       setAgentSpeaking(false);
       setInput("");
+      heardVoice = false;
       speech.start(
         (text, final) => {
           if (voiceSessionRef.current !== session || submitted) return;
@@ -338,6 +343,7 @@ export default function ChatView({
           autoStopOnSilence: true,
           silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
           onSilenceCountdown: setAutoSendIn,
+          onVoiceDetected: () => { heardVoice = true; },
           onAudioLevel: (lvl) => {
             if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
           },
@@ -362,14 +368,16 @@ export default function ChatView({
         }
 
         // 2. Silence watchdog: user has not spoken yet
-        if (!latestTranscript && promptFinishedAt > 0) {
+        if (!latestTranscript && !heardVoice && promptFinishedAt > 0) {
           const silenceElapsed = Date.now() - promptFinishedAt;
 
           // First silence nudge (after 9 seconds of complete silence)
           if (silenceNudgeCount === 0 && silenceElapsed >= 9000) {
             silenceNudgeCount = 1;
             isNudging = true;
-            speech.stop();
+            // A phone's recording of the silence is thrown away, not sent to
+            // be transcribed (it would only come back empty, as an error).
+            if (speech.recordingMode) speech.cancel(); else speech.stop();
             const nudge = learnerFirstName
               ? `${learnerFirstName}, are you here? Take your time, whenever you are ready.`
               : "Are you here? Take your time, whenever you are ready.";
@@ -395,7 +403,9 @@ export default function ChatView({
           if (silenceNudgeCount === 1 && silenceElapsed >= 11000) {
             silenceNudgeCount = 2;
             isNudging = true;
-            speech.stop();
+            // A phone's recording of the silence is thrown away, not sent to
+            // be transcribed (it would only come back empty, as an error).
+            if (speech.recordingMode) speech.cancel(); else speech.stop();
             const nudge = learnerFirstName
               ? `${learnerFirstName}, would you like me to repeat the question or simplify it for you?`
               : "Would you like me to repeat the question or simplify it for you?";

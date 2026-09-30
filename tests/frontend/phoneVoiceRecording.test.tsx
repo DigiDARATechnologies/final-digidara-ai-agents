@@ -331,4 +331,35 @@ describe('auto-send after a pause (phone recording)', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledWith('Final answer.', true));
     expect(result.current.error).toBe('');
   });
+
+  test('the student being heard is reported straight away, before any transcript exists', async () => {
+    const voice = jest.fn();
+    const transcribe = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe));
+    act(() => { result.current.start(jest.fn(), { autoStopOnSilence: true, silenceMs: 7000, onVoiceDetected: voice }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    await advance(1_000);
+    expect(voice).not.toHaveBeenCalled();
+    level = 0.2;
+    await advance(200);
+    expect(voice).toHaveBeenCalled();
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
+  test('cancel() throws a recording away without transcribing it', async () => {
+    const transcribe = jest.fn();
+    const onResult = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    act(() => { result.current.cancel(); });
+    await advance(1_000);
+    expect(FakeRecorder.latest?.state).toBe('inactive');
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(onResult).not.toHaveBeenCalled();
+    expect(result.current.listening).toBe(false);
+    expect(result.current.error).toBe('');
+  });
 });

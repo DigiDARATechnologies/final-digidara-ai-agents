@@ -40,6 +40,10 @@ type VoiceCaptureOptions = {
   /** Recording mode: whole seconds left before a pause ends the recording
    * (only in its last 3 seconds), or null once speech resumes. */
   onSilenceCountdown?: (seconds: number | null) => void;
+  /** Recording mode: the student was heard (by the level meter, or new words
+   * in a live preview when the meter is not measuring). Arrives before any
+   * transcript, so "has the student spoken yet?" never waits for text. */
+  onVoiceDetected?: () => void;
 };
 
 /** Sends a recorded answer to the server and resolves with its transcript. */
@@ -169,6 +173,15 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
       // Already stopped — ignore.
     }
   }, []);
+
+  const cancel = useCallback(() => {
+    // Also cancels a recording whose microphone is still opening.
+    if (recordingMode || finishRecordingRef.current) {
+      endRecording(false);
+      return;
+    }
+    stop();
+  }, [endRecording, recordingMode, stop]);
 
   useEffect(() => () => {
     endRecording(false);
@@ -308,6 +321,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
                 speechDetected = true;
                 quietSince = 0;
                 reportCountdown(null);
+                options.onVoiceDetected?.();
                 if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
               } else if (speechDetected && options.autoStopOnSilence) {
                 if (!quietSince) quietSince = now;
@@ -357,6 +371,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
                 if (!meterRunning()) {
                   speechDetected = true;
                   quietSince = performance.now();
+                  options.onVoiceDetected?.();
                 }
                 onResult(trimmed, false);
               })
@@ -603,5 +618,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
     error,
     start,
     stop,
+    /** Ends listening without using what was heard. In recording mode the
+     * recording is thrown away (not transcribed); otherwise it is stop(). */
+    cancel,
   };
 }
