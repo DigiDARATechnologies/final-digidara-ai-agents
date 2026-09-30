@@ -28,6 +28,8 @@ export interface JobFetchFlowMessage {
 
 export interface JobFetchFlowState {
   step: JobFetchStep;
+  profileCompleted: boolean;
+  experienceProvided: boolean;
   fullName: string;
   skills: string[];
   preferredTitles: string[];
@@ -43,6 +45,7 @@ export interface JobFetchFlowState {
   conversationId?: string;
   contextualSearch?: boolean;
   searchLabel?: string;
+  pendingChat?: { message: string; clientMessageId: string };
 }
 
 const WORK_MODE_OPTIONS: ChatOption[] = [
@@ -68,6 +71,8 @@ export function safeJobApplyUrl(value: string): string | null {
 function createInitialState(): JobFetchFlowState {
   return {
     step: "browsing",
+    profileCompleted: false,
+    experienceProvided: false,
     fullName: "",
     skills: [],
     preferredTitles: [],
@@ -209,7 +214,9 @@ export async function openJobFetchChat(user: User, conversationId?: string): Pro
     const profileState: JobFetchFlowState = {
       ...base,
       conversationId,
-      fullName: profile.full_name || user.name,
+      fullName: profile.full_name || "",
+      profileCompleted: Boolean(profile.profile_completed),
+      experienceProvided: Boolean(profile.experience_provided),
       skills: profile.skills,
       preferredTitles: profile.preferred_titles,
       preferredLocations: profile.preferred_locations,
@@ -234,7 +241,15 @@ export async function openJobFetchChat(user: User, conversationId?: string): Pro
     }
 
     // IF USER ALREADY HAS PROFILE INFO:
-    const withFeed = await loadFeed(profileState);
+    let withFeed: JobFetchFlowState;
+    try {
+      withFeed = await loadFeed(profileState);
+    } catch {
+      return {
+        state: profileState,
+        messages: [{ text: `Welcome back, ${firstName}. Your job-search profile is available, but I couldn't load your job feed right now. Please try again in a moment.` }],
+      };
+    }
     const intro = `👋 Welcome back, ${firstName}! Here are your latest curated matches based on your profile:`;
     const filterLabel = withFeed.preferredLocations.join(", ") || withFeed.preferredWorkMode;
     const initialMsg = feedMessage(withFeed.feed, withFeed.planTier, intro, filterLabel);
@@ -281,8 +296,9 @@ export async function submitJobFetchResume(
 }
 
 async function saveProfileAndShowFeed(state: JobFetchFlowState): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
+  let saved: Awaited<ReturnType<typeof updateJobFetchProfile>>;
   try {
-    await updateJobFetchProfile({
+    saved = await updateJobFetchProfile({
       full_name: state.fullName,
       skills: state.skills,
       preferred_titles: state.preferredTitles,
@@ -290,11 +306,19 @@ async function saveProfileAndShowFeed(state: JobFetchFlowState): Promise<{ state
       preferred_work_mode: state.preferredWorkMode || undefined,
       experience_years: state.experienceYears,
     });
-    const withFeed = await loadFeed({ ...state, step: "browsing" });
-    const filterLabel = withFeed.preferredLocations.join(", ") || withFeed.preferredWorkMode;
-    return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Profile saved! Here are your matched jobs.", filterLabel)] };
   } catch (error) {
     return { state, messages: [{ text: `I could not save your profile: ${(error as Error).message}. Try again.` }] };
+  }
+  if (!saved.profile_completed) {
+    return { state: { ...state, profileCompleted: false }, messages: [{ text: "Your profile is not complete yet. Please provide the remaining required details before finishing setup." }] };
+  }
+  const completedState = { ...state, profileCompleted: true };
+  try {
+    const withFeed = await loadFeed({ ...completedState, step: "browsing" });
+    const filterLabel = withFeed.preferredLocations.join(", ") || withFeed.preferredWorkMode;
+    return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Profile saved! Here are your matched jobs.", filterLabel)] };
+  } catch {
+    return { state: { ...completedState, step: "browsing" }, messages: [{ text: "Your profile was saved, but I couldn't load matching jobs right now. Please try again in a moment." }] };
   }
 }
 
@@ -417,7 +441,7 @@ export async function handleJobFetchText(
         return { state, messages: [{ text: "That experience value looks invalid. Please enter a value between 0 and 50 years." }] };
       }
       return {
-        state: { ...state, experienceYears: years, step: "collecting_resume" },
+        state: { ...state, experienceYears: years, experienceProvided: true, step: "collecting_resume" },
         messages: [{ text: "Would you like to upload your resume? Attach a PDF or DOCX file below, or type \"skip\"." }],
       };
     }
@@ -442,7 +466,7 @@ export async function handleJobFetchText(
     };
   }
 
-  if (!state.contextualSearch && /^(more|show me more jobs|more matches)$/i.test(trimmed)) {
+  if (!state.contextualSearch && (state.profileCompleted || state.feed.length > 0) && /^(more|show me more jobs|more matches)$/i.test(trimmed)) {
     if (state.hasMore === false && (state.feedOffset ?? state.feed.length) > 0) {
       const place = state.preferredLocations.join(", ") || state.preferredWorkMode || "your current preferences";
       return { state, messages: [{ text: `There are no more active jobs listed for **${place}** in the portal right now.` }] };
@@ -457,7 +481,7 @@ export async function handleJobFetchText(
     return { state: withFeed, messages: [feedMessage(added, withFeed.planTier, "Here are your next matching opportunities:")] };
   }
 
-  if (!state.contextualSearch && /^(refresh|update)$/i.test(trimmed)) {
+  if (!state.contextualSearch && (state.profileCompleted || state.feed.length > 0) && /^(refresh|update)$/i.test(trimmed)) {
     const withFeed = await loadFeed(state);
     return { state: withFeed, messages: [feedMessage(withFeed.feed, withFeed.planTier, "Refreshed your live job feed:", withFeed.preferredLocations.join(", ") || withFeed.preferredWorkMode)] };
   }
@@ -538,6 +562,10 @@ export async function handleJobFetchText(
   }
 
   // 5. Intelligent Multi-Turn Conversational Interaction via DigiDARA Job Agent!
+  const pendingChat = state.pendingChat?.message === trimmed ? state.pendingChat : {
+    message: trimmed,
+    clientMessageId: `m_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`,
+  };
   try {
     let targetJobId = state.selectedJobId;
     if (!targetJobId && state.feed.length > 0) {
@@ -549,9 +577,9 @@ export async function handleJobFetchText(
       if (matched) targetJobId = matched.id;
     }
 
-    const chatRes = await chatWithJobAgent(trimmed, history, targetJobId, activeConversationId);
+    const chatRes = await chatWithJobAgent(trimmed, history, targetJobId, activeConversationId, pendingChat.clientMessageId);
 
-    let nextState = { ...state, conversationId: activeConversationId };
+    let nextState = { ...state, conversationId: activeConversationId, pendingChat: undefined };
     if (chatRes.conversation_id) nextState.conversationId = chatRes.conversation_id;
     if (chatRes.show_jobs) {
       nextState.contextualSearch = Boolean(chatRes.search_context);
@@ -569,6 +597,8 @@ export async function handleJobFetchText(
         preferredTitles: chatRes.updated_profile.preferred_titles || nextState.preferredTitles,
         preferredWorkMode: chatRes.updated_profile.preferred_work_mode || nextState.preferredWorkMode,
         experienceYears: chatRes.updated_profile.experience_years ?? nextState.experienceYears,
+        experienceProvided: chatRes.updated_profile.experience_provided ?? nextState.experienceProvided,
+        profileCompleted: chatRes.updated_profile.profile_completed ?? chatRes.profile_status?.completed ?? nextState.profileCompleted,
       };
     }
 
@@ -665,18 +695,11 @@ export async function handleJobFetchText(
         ],
       };
     }
-    // Graceful fallback to search feed if network issue occurs
-    try {
-      const withFeed = await loadFeed(state, { q: trimmed });
-      return {
-        state: withFeed,
-        messages: [feedMessage(withFeed.feed, withFeed.planTier, `Here are matching jobs for "${trimmed}":`)],
-      };
-    } catch {
-      return {
-        state,
-        messages: [{ text: "Unable to load matching jobs right now. Please try again in a moment." }],
-      };
-    }
+    // A failed conversation is not consent to search the user's words as a
+    // job query. Keep their profile and feed unchanged and surface the error.
+    return {
+      state: { ...state, pendingChat },
+      messages: [{ text: "I couldn't confirm a reply from the Job Agent right now. I haven't searched for jobs. Please resend your message in a moment." }],
+    };
   }
 }

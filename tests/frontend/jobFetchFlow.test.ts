@@ -13,6 +13,8 @@ jest.mock("../../src/lib/jobFetchApi", () => ({
 function workModeState(): JobFetchFlowState {
   return {
     step: "collecting_work_mode",
+    profileCompleted: false,
+    experienceProvided: false,
     fullName: "Test User",
     skills: ["Python"],
     preferredTitles: ["Developer"],
@@ -45,6 +47,8 @@ function sampleJob(overrides: Partial<JobFeedItem> = {}): JobFeedItem {
 function browsingState(feed: JobFeedItem[]): JobFetchFlowState {
   return {
     step: "browsing",
+    profileCompleted: true,
+    experienceProvided: true,
     fullName: "Test User",
     skills: ["Python"],
     preferredTitles: ["Developer"],
@@ -113,7 +117,7 @@ describe("Job Fetching Agent flow", () => {
     });
     const result = await handleJobFetchText({ ...browsingState([]), contextualSearch: true }, "Show me more jobs");
     expect(getJobFeed).not.toHaveBeenCalled();
-    expect(chatWithJobAgent).toHaveBeenCalledWith("Show me more jobs", [], undefined, undefined);
+    expect(chatWithJobAgent).toHaveBeenCalledWith("Show me more jobs", [], undefined, undefined, expect.stringMatching(/^m_/));
     expect(result.state.contextualSearch).toBe(true);
     expect(result.state.preferredLocations).toEqual(["Bengaluru"]);
   });
@@ -152,6 +156,85 @@ describe("Job Fetching Agent flow", () => {
     expect(result.messages[0].text).not.toContain("from your DigiDARA account");
     expect(result.messages[0].text).not.toContain("What name or nickname");
     expect(result.state.step).toBe("browsing");
+    expect(result.state.profileCompleted).toBe(false);
+    expect(getJobFeed).not.toHaveBeenCalled();
+  });
+
+  test("an incomplete account profile never becomes a completed browsing profile", async () => {
+    jest.mocked(ensureJobFetchProfile).mockResolvedValue({ user_id: "user-1" } as Awaited<ReturnType<typeof ensureJobFetchProfile>>);
+    jest.mocked(getJobFetchProfile).mockResolvedValue({
+      user_id: "user-1", full_name: "", skills: [], preferred_titles: [],
+      preferred_locations: [], preferred_work_mode: "", experience_years: 0,
+      experience_provided: false, resume_url: "", resume_original_name: null,
+      profile_completed: false, plan_tier: "free", onboarding_step: "full_name",
+      onboarding_prompt: "Please enter a name or nickname.",
+    });
+    const opened = await openJobFetchChat({ name: "Dhanush Lakshman" } as User);
+    expect(opened.messages[0].text).toContain("Hi Dhanush");
+    expect(opened.state.fullName).toBe("");
+    expect(opened.state.profileCompleted).toBe(false);
+    expect(opened.state.experienceProvided).toBe(false);
+  });
+
+  test("a failed initial feed does not erase an already loaded profile", async () => {
+    jest.mocked(ensureJobFetchProfile).mockResolvedValue({ user_id: "user-1" } as Awaited<ReturnType<typeof ensureJobFetchProfile>>);
+    jest.mocked(getJobFetchProfile).mockResolvedValue({
+      user_id: "user-1", full_name: "Dhanush", skills: ["Python"], preferred_titles: ["AI Engineer"],
+      preferred_locations: ["Chennai"], preferred_work_mode: "office", experience_years: 1.6,
+      experience_provided: true, resume_url: "", resume_original_name: null,
+      profile_completed: true, plan_tier: "free", onboarding_step: "completed",
+    });
+    jest.mocked(getJobFeed).mockRejectedValueOnce(new Error("feed timeout"));
+    const opened = await openJobFetchChat({ name: "Account Name" } as User);
+    expect(opened.state.fullName).toBe("Dhanush");
+    expect(opened.state.profileCompleted).toBe(true);
+    expect(opened.state.feed).toEqual([]);
+    expect(opened.messages[0].text).toContain("couldn't load your job feed");
+    expect(opened.messages[0].text).not.toContain("could not connect");
+  });
+
+  test.each(["how are you", "send Python jobs"])('failed chat never turns "%s" into a feed search', async (message) => {
+    const state = { ...browsingState([]), profileCompleted: false, fullName: "", skills: [],
+      preferredTitles: [], experienceProvided: false };
+    jest.mocked(chatWithJobAgent).mockRejectedValueOnce(new Error("upstream failure"));
+    jest.mocked(getJobFeed).mockClear();
+    const result = await handleJobFetchText(state, message);
+    expect(getJobFeed).not.toHaveBeenCalled();
+    expect(result.state).toEqual({ ...state, pendingChat: {
+      message, clientMessageId: expect.stringMatching(/^m_/),
+    } });
+    expect(result.messages[0].text).toContain("couldn't confirm a reply");
+    expect(result.messages[0].text).not.toContain("matching jobs for");
+    expect(result.messages[0].options).toBeUndefined();
+  });
+
+  test("resending a failed message reuses its idempotency key and clears it on success", async () => {
+    const state = { ...browsingState([]), profileCompleted: false };
+    jest.mocked(chatWithJobAgent).mockRejectedValueOnce(new Error("response lost"));
+    const failed = await handleJobFetchText(state, "how are you");
+    jest.mocked(chatWithJobAgent).mockResolvedValueOnce({
+      reply: "I'm here and ready to help. What name would you like me to use?",
+      show_jobs: false, suggested_actions: [], matched_jobs: [],
+      updated_profile: { full_name: "", skills: [], preferred_titles: [], preferred_locations: [],
+        preferred_work_mode: "", experience_years: 0, experience_provided: false,
+        profile_completed: false, changed_fields: [] },
+    });
+    const retried = await handleJobFetchText(failed.state, "how are you");
+    const firstId = jest.mocked(chatWithJobAgent).mock.calls.at(-2)?.[4];
+    const secondId = jest.mocked(chatWithJobAgent).mock.calls.at(-1)?.[4];
+    expect(firstId).toMatch(/^m_/);
+    expect(secondId).toBe(firstId);
+    expect(retried.state.pendingChat).toBeUndefined();
+    expect(retried.messages[0].text).toContain("ready to help");
+    expect(getJobFeed).not.toHaveBeenCalled();
+  });
+
+  test.each(["refresh", "show me more jobs"])("an incomplete empty profile routes '%s' to chat, not the feed", async (message) => {
+    const state = { ...browsingState([]), profileCompleted: false };
+    jest.mocked(chatWithJobAgent).mockRejectedValueOnce(new Error("chat unavailable"));
+    jest.mocked(getJobFeed).mockClear();
+    await handleJobFetchText(state, message);
+    expect(chatWithJobAgent).toHaveBeenCalled();
     expect(getJobFeed).not.toHaveBeenCalled();
   });
   test.each([
@@ -249,7 +332,7 @@ describe("Job Fetching Agent flow", () => {
     const state = { ...browsingState([]), conversationId: "chat-123" };
     const result = await handleJobFetchText(state, "How can I improve my resume?");
     expect(chatWithJobAgent).toHaveBeenCalledWith(
-      "How can I improve my resume?", [], undefined, "chat-123",
+      "How can I improve my resume?", [], undefined, "chat-123", expect.stringMatching(/^m_/),
     );
     expect(result.state.conversationId).toBe("chat-123");
     expect(result.state.fullName).toBe("Dhanush");

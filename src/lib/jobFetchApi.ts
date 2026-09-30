@@ -128,6 +128,7 @@ export interface JobAgentChatResponse {
     preferred_work_mode: string;
     experience_years: number;
     experience_provided?: boolean;
+    profile_completed?: boolean;
     changed_fields: string[];
   };
   suggested_actions: Array<{ label: string; value: string }>;
@@ -200,7 +201,8 @@ export function chatWithJobAgent(
   message: string,
   history: Array<{ role: string; content: string }> = [],
   selectedJobId?: number,
-    conversationId?: string,
+  conversationId?: string,
+  clientMessageId?: string,
 ) {
   const randomPart = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`;
   return invoke<JobAgentChatResponse>("chat", {
@@ -208,7 +210,7 @@ export function chatWithJobAgent(
     history,
     selected_job_id: selectedJobId,
     conversation_id: conversationId,
-    client_message_id: `m_${randomPart}`,
+    client_message_id: clientMessageId || `m_${randomPart}`,
   });
 }
 

@@ -4,8 +4,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from job_agent.chat_service import (
-    _handle_onboarding_step, _profile_clarification, _profile_completion_status, chat_with_job_agent,
+    _build_profile_response_dict, _handle_onboarding_step, _profile_clarification,
+    _profile_completion_status, chat_with_job_agent,
 )
+
+
+def test_profile_response_exposes_server_completion_status():
+    assert _build_profile_response_dict({"profile_completed": 0}, [])["profile_completed"] is False
+    assert _build_profile_response_dict({"profile_completed": 1}, [])["profile_completed"] is True
 
 
 def profile(**overrides):
