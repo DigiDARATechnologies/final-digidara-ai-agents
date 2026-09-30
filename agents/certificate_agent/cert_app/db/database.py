@@ -198,6 +198,20 @@ def init_db():
         INDEX idx_topic_diff (topic, difficulty)
     )""")
 
+    # Every question a learner has been given, so later exams never repeat one.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_question_history (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id INT NOT NULL,
+        topic VARCHAR(255) NOT NULL,
+        question_hash CHAR(64) NOT NULL,
+        question_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_user_question (user_id, question_hash),
+        INDEX idx_user_question_topic (user_id, topic),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""")
+
     # ---- Conversational Exam Session & Chat History Schema ----
 
     cursor.execute("""

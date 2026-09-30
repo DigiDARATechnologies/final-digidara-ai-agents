@@ -37,6 +37,7 @@ Return only JSON. For phase 'request', intent must be one of:
 - email_certificate (they want the PDF sent by email)
 - download_certificate
 - list_certificates
+- start_new_exam (they want to take another / the next exam, retry, or name a new topic to be tested on)
 - unknown
 
 For a name or email confirmation phase, intent must be one of:
@@ -57,7 +58,8 @@ Schema: {{"intent":"...","reply":"..."}}"""
         record_llm_usage("certificate_concierge", response)
         result = _json_object(str(response.content))
         allowed = {"confirm", "revise", "cancel"} if phase.endswith("confirmation") else {
-            "rename_certificate", "email_certificate", "download_certificate", "list_certificates", "unknown"
+            "rename_certificate", "email_certificate", "download_certificate", "list_certificates",
+            "start_new_exam", "unknown"
         }
         if result.get("intent") in allowed:
             return result
@@ -65,5 +67,5 @@ Schema: {{"intent":"...","reply":"..."}}"""
         pass
     return {
         "intent": "unknown",
-        "reply": "I can help you update the name on a certificate, download it, or email it. What would you like to do?",
+        "reply": "I can help you download or email a certificate, or start your next exam. What would you like to do?",
     }

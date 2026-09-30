@@ -169,6 +169,25 @@ def get_chat_session_questions(session_id: str, user=Depends(get_current_user)):
         conn.close()
 
 
+@router.get("/{exam_id}/report")
+def report(exam_id: int, user=Depends(get_current_user)):
+    """PDF report of a finished form exam (passed or failed)."""
+    from fastapi.responses import Response
+    from cert_app.services.exam_report import build_form_exam_report
+
+    try:
+        pdf, filename = build_form_exam_report(exam_id, int(user["sub"]))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/{exam_id}")
 def detail(exam_id: int, user=Depends(get_current_user)):
     try:

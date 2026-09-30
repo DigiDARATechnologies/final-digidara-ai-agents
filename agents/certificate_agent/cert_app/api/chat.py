@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from cert_app.schemas.chat import StartChatRequest, SendMessageRequest
@@ -12,6 +12,7 @@ from cert_app.db import chat_repository
 from cert_app.services import chat_orchestrator
 from cert_app.services.chat_orchestrator import _sanitize_message_for_client
 from cert_app.services.exam_service import ensure_certificate_for_completed_chat_session
+from cert_app.services.exam_report import build_chat_exam_report
 
 router = APIRouter()
 security = HTTPBearer()
@@ -103,7 +104,9 @@ def send_chat_message(
     # 3. Handle Message & Stream SSE Events
     def sse_event_generator():
         try:
-            turn_result = chat_orchestrator.handle_message(request.session_id, request.message)
+            turn_result = chat_orchestrator.handle_message(
+                request.session_id, request.message, question_index=request.question_index
+            )
             
             # Emit individual message events
             for msg in turn_result.messages:
@@ -117,6 +120,8 @@ def send_chat_message(
                 "total_questions": turn_result.total_questions,
                 "score_percentage": turn_result.score_percentage,
                 "passed": turn_result.passed,
+                "correct_answers": turn_result.correct_answers,
+                "stale": turn_result.stale,
                 "is_final": True
             })
             yield f"event: status\ndata: {status_payload}\n\n"
@@ -151,6 +156,26 @@ def get_chat_session(
         "session": session,
         "messages": clean_history
     }
+
+
+@router.get("/session/{session_id}/report")
+def download_chat_exam_report(
+    session_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """PDF report of a finished chat exam (passed or failed): every question,
+    the learner's answer, the correct answer and whether it was right."""
+    try:
+        pdf, filename = build_chat_exam_report(session_id, int(user["sub"]))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/session/{session_id}/certificate")

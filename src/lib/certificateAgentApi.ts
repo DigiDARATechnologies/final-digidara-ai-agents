@@ -85,7 +85,7 @@ export async function getMyCertificates(token: string) {
 }
 
 export interface CertificateRequestInterpretation {
-  intent: "rename_certificate" | "email_certificate" | "download_certificate" | "list_certificates" | "confirm" | "revise" | "cancel" | "unknown";
+  intent: "rename_certificate" | "email_certificate" | "download_certificate" | "list_certificates" | "start_new_exam" | "confirm" | "revise" | "cancel" | "unknown";
   reply?: string;
 }
 
@@ -162,6 +162,43 @@ export async function downloadCertificatePdf(token: string, certId: number) {
   };
 }
 
+/** PDF report of a finished exam (pass or fail): each question, the learner's
+ * answer, the correct answer and whether it was right. Chat exams are looked
+ * up by session, form exams by exam id. */
+export async function downloadExamReportPdf(
+  token: string,
+  target: { sessionId: string } | { examId: number },
+) {
+  const platformToken = localStorage.getItem("digidara_token");
+  const [action, payload] = "sessionId" in target
+    ? ["download_chat_exam_report", { session_id: target.sessionId }]
+    : ["download_exam_report", { exam_id: target.examId }];
+  const response = await fetch(INVOKE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}),
+    },
+    body: JSON.stringify({ action, payload: { sessionToken: token, ...payload } }),
+  });
+
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("application/pdf")) {
+    let msg = "The exam report could not be downloaded";
+    try {
+      const err = await response.json();
+      msg = err.error || err.detail || err.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const disposition = response.headers.get("content-disposition");
+  const filenameMatch = disposition?.match(/filename="?([^";]+)"?/);
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch ? filenameMatch[1] : "exam_report.pdf",
+  };
+}
+
 export async function startCertificateChat(token: string, topic?: string) {
   return invokeAgent<{ session_id: string }>(INVOKE_URL, "start_chat", {
     sessionToken: token,
@@ -198,6 +235,9 @@ export interface ChatStatusData {
   total_questions: number;
   score_percentage?: number | null;
   passed?: boolean | null;
+  correct_answers?: number | null;
+  /** The answer was for an already-answered question and was ignored. */
+  stale?: boolean;
   is_final?: boolean;
 }
 
@@ -210,7 +250,8 @@ export interface ChatTurnResponse {
 export async function sendCertificateChatMessage(
   token: string,
   sessionId: string,
-  message: string
+  message: string,
+  questionIndex?: number,
 ): Promise<ChatTurnResponse> {
   const platformToken = localStorage.getItem("digidara_token");
   const controller = new AbortController();
@@ -229,6 +270,7 @@ export async function sendCertificateChatMessage(
           sessionToken: token,
           session_id: sessionId,
           message,
+          ...(questionIndex !== undefined ? { question_index: questionIndex } : {}),
         },
       }),
       signal: controller.signal,
