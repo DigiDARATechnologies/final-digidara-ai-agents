@@ -372,10 +372,10 @@ class TestChatOrchestrator(unittest.TestCase):
 
 
     @patch("cert_app.services.chat_orchestrator.generate_questions", side_effect=_mock_mcq_questions)
-    def test_no_right_or_wrong_during_the_exam_and_a_report_at_the_end(self, mock_gen):
-        """12. While the exam runs only the next question is shown; right/wrong
-        first appears in the report at the end, which lists every question to
-        review with the learner's answer and the correct one."""
+    def test_no_right_or_wrong_during_the_exam(self, mock_gen):
+        """12. While the exam runs only the next question is shown -- no
+        "Correct!" / "Incorrect" after each answer. The end-of-exam message is
+        unchanged; the full answers are in the downloadable exam report."""
         session_id = chat_repository.create_session(self.user_id, "")
         chat_orchestrator.handle_message(session_id, "Python Data Structures")
         chat_orchestrator.handle_message(session_id, "Yes")
@@ -384,7 +384,6 @@ class TestChatOrchestrator(unittest.TestCase):
 
         answered = 0
         while res.session_status == "in_exam":
-            # Every other answer is wrong, so the report has questions to review.
             res = chat_orchestrator.handle_message(session_id, "Option A" if answered % 2 == 0 else "Option B")
             answered += 1
             if res.session_status == "in_exam":
@@ -395,14 +394,11 @@ class TestChatOrchestrator(unittest.TestCase):
 
         card = res.messages[-1]
         self.assertEqual(card["message_type"], "certificate_card")
-        self.assertIn("Exam Report", card["content"])
-        self.assertIn("Questions to review", card["content"])
-        self.assertIn("Your answer: Option B", card["content"])
-        self.assertIn("Correct answer: **Option A**", card["content"])
-        self.assertIn("Download Exam Report", card["content"])
+        self.assertIn("Correct answers:", card["content"])
+        self.assertNotIn("Questions to review", card["content"])
 
-        # The grading records are still stored (they score the exam) but the
-        # history sent to the browser leaves them out.
+        # The grading records are still stored (they score the exam and the
+        # downloadable report) but the history sent to the browser leaves them out.
         history = chat_repository.get_message_history(session_id)
         grading = [m for m in history if chat_orchestrator.is_hidden_grading_record(m)]
         self.assertEqual(len(grading), answered)
