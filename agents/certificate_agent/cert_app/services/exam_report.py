@@ -118,6 +118,51 @@ def _rows_from_chat_session(session: Dict) -> List[Dict]:
     return rows
 
 
+_REPORT_REVIEW_LIMIT = 15
+_REPORT_TEXT_LIMIT = 180
+
+
+def _short(text: str, limit: int = _REPORT_TEXT_LIMIT) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= limit else f"{text[:limit - 1].rstrip()}…"
+
+
+def chat_exam_report_text(session: Dict, score_pct: float, passed: bool) -> str:
+    """The end-of-exam report shown in the chat: the result, the counts, and
+    every question to review (wrong or unanswered) with the learner's answer
+    and the correct one. No right/wrong is shown while the exam runs, so this
+    is where the learner first sees how each answer went. The downloadable
+    PDF (build_chat_exam_report) keeps the full list of every question."""
+    rows = _rows_from_chat_session(session)
+    if not rows:
+        return ""
+    unanswered = [r for r in rows if not r["user_answer"] or r["user_answer"].startswith("No answer")]
+    correct = [r for r in rows if r["is_correct"] and r not in unanswered]
+    wrong = [r for r in rows if r not in correct and r not in unanswered]
+
+    lines = [
+        f"📊 **Exam Report - {session.get('topic', '')}**",
+        "",
+        f"Result: {'✅ **Passed**' if passed else '❌ **Not passed**'} - score **{score_pct}%** (pass mark {settings.PASS_SCORE}%)",
+        f"✅ Correct: **{len(correct)}**  ·  ❌ Wrong: **{len(wrong)}**  ·  ⏱ Unanswered: **{len(unanswered)}**  ·  Total: **{len(rows)}**",
+    ]
+    to_review = [(index, row) for index, row in enumerate(rows, start=1) if row in wrong or row in unanswered]
+    if to_review:
+        lines += ["", "**Questions to review**"]
+        for number, row in to_review[:_REPORT_REVIEW_LIMIT]:
+            answer = row["user_answer"] or "No answer"
+            lines.append(
+                f"{number}. {_short(row['question'])}\n"
+                f"   Your answer: {_short(answer, 80)}  ·  Correct answer: **{_short(row['correct_answer'], 120)}**"
+            )
+        if len(to_review) > _REPORT_REVIEW_LIMIT:
+            lines.append(f"…and {len(to_review) - _REPORT_REVIEW_LIMIT} more in the full report.")
+    else:
+        lines += ["", "You answered every question correctly - well done!"]
+    lines += ["", "Choose **Download Exam Report** for the full report with every question and explanation."]
+    return "\n".join(lines)
+
+
 def _chat_closed_reason(session_id: str) -> Optional[str]:
     for msg in reversed(chat_repository.get_message_history(session_id)):
         meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
