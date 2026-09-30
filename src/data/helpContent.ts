@@ -45,7 +45,7 @@ export const FAQ: FaqItem[] = [
   {
     topic: "Agents",
     q: "Which agents help me learn and practise?",
-    a: "The LeetCode / DSA Agent for coding practice, the Aptitude Trainer Agent for timed practice sets, the Communication Coach Agent for pronunciation, speaking and writing, the Capstone Project Agent for a guided project, and the AI Certification Agent for exams and certificates.",
+    a: "The LeetCode Agent for coding practice, the Aptitude Trainer Agent for timed practice sets, the Communication Coach Agent for pronunciation, speaking and writing, the Capstone Project Agent for a guided project, and the AI Certification Agent for exams and certificates.",
   },
   {
     topic: "Files & uploads",

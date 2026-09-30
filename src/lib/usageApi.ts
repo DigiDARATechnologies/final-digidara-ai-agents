@@ -51,7 +51,7 @@ const TARGETS: AgentUsageTarget[] = [
   },
   {
     id: "codeforge_agent",
-    label: "LeetCode / DSA Agent",
+    label: "LeetCode Agent",
     icon: "⌨️",
     color: "#eab308",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CODEFORGE_AGENT_NAME, "codeforge_agent"),
