@@ -96,6 +96,9 @@ def test_users_search_sort_and_page(api, seeded):
     assert everyone["total"] == 3 and [u["id"] for u in everyone["users"]] == ["asha", "ravi", "boss"]     # newest first
     asha = everyone["users"][0]
     assert asha["paid_total"] == 599.0 and asha["chats"] == 2 and asha["agents_used"] == 2 and asha["token_balance"] == 120_000
+    # The billing plan, so the Job Agent's Users & plans tab can show it: a top-up
+    # is not a plan, and an unpaid order does not make Ravi a Standard user.
+    assert {u["id"]: u["plan_name"] for u in everyone["users"]} == {"asha": "Basic", "ravi": "Free", "boss": "Free"}
     assert [u["id"] for u in get(search="RAVI")["users"]] == ["ravi"]
     assert [u["id"] for u in get(search="99999")["users"]] == ["asha"]
     assert [u["id"] for u in get(sort="spent")["users"]][0] == "asha"

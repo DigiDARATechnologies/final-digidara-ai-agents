@@ -9,6 +9,15 @@ jest.mock("../../src/lib/jobFetchApi", () => ({
   ] }),
   adminListCategories: jest.fn().mockResolvedValue({ categories: [] }),
   adminGetAutomation: jest.fn().mockResolvedValue({ automation: null }),
+  adminListUsers: jest.fn().mockResolvedValue({ users: [
+    { user_id: "4b8045260dbe4129856ae74c6aeeb784", plan_tier: "free", profile_completed: 1, created_at: "2026-10-01T09:00:00" },
+    { user_id: "unknown-id", plan_tier: "pro", profile_completed: 0, created_at: null },
+  ] }),
+}));
+jest.mock("../../src/lib/adminApi", () => ({
+  fetchUsers: jest.fn().mockResolvedValue({ total: 1, page: 1, limit: 100, users: [
+    { id: "4b8045260dbe4129856ae74c6aeeb784", name: "Rubesh Kanna", email: "rubesh@example.com", plan_name: "Standard" },
+  ] }),
 }));
 
 test("admin source badges and filter use stored provider metadata and tolerate a missing source", async () => {
@@ -23,4 +32,17 @@ test("admin source badges and filter use stored provider metadata and tolerate a
   expect(screen.getByText("JSearch role")).toBeInTheDocument();
   expect(screen.queryByText("Adzuna role")).not.toBeInTheDocument();
   expect(screen.queryByText("Manual role")).not.toBeInTheDocument();
+});
+
+test("users & plans names each user and shows their billing plan beside the job feed tier", async () => {
+  render(<JobsAdminPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: "Users & plans" }));
+  const rubesh = await screen.findByText("Rubesh Kanna");
+  const row = within(rubesh.closest("tr")!);
+  expect(row.getByText("rubesh@example.com")).toBeInTheDocument();
+  expect(row.getByText("Standard")).toBeInTheDocument();
+  expect(row.getByText("free")).toBeInTheDocument();
+  expect(screen.queryByText("4b8045260dbe4129856ae74c6aeeb784")).not.toBeInTheDocument();
+  // An id the platform list does not know still shows, rather than vanishing.
+  expect(screen.getByText("unknown-id")).toBeInTheDocument();
 });
