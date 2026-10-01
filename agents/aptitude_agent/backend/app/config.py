@@ -49,6 +49,13 @@ class Config:
     # 503s with ALLOW_DEMO_QUESTIONS off, instead of getting the one more
     # independently-varied retry that would likely have succeeded.
     BATCH_GENERATION_MAX_ATTEMPTS = max(1, min(3, int(os.getenv("BATCH_GENERATION_MAX_ATTEMPTS", "3"))))
+    # A large Mixed Test (up to 60 questions) used to be ONE provider request:
+    # ~15,000 output tokens against a 120 s timeout and a 16,000-token cap, so
+    # big tests timed out or came back truncated and the learner got a 503.
+    # Tests larger than this many questions are generated as chunks of this
+    # size, in parallel, each with its own validation retries.
+    QUESTION_GENERATION_CHUNK_SIZE = max(5, min(30, int(os.getenv("QUESTION_GENERATION_CHUNK_SIZE", "10"))))
+    QUESTION_GENERATION_PARALLEL_CHUNKS = max(1, min(8, int(os.getenv("QUESTION_GENERATION_PARALLEL_CHUNKS", "6"))))
     HINT_TIMEOUT_SECONDS = float(os.getenv("HINT_TIMEOUT_SECONDS", "5"))
     RECOMMENDATION_TIMEOUT_SECONDS = max(1.0, min(8.0, float(os.getenv("RECOMMENDATION_TIMEOUT_SECONDS", "7"))))
     HINT_MAX_COMPLETION_TOKENS = max(64, min(128, int(os.getenv("HINT_MAX_COMPLETION_TOKENS", "96"))))
