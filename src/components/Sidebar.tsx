@@ -1,3 +1,4 @@
+import { formatChatTime } from "../lib/chatTitles";
 import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
@@ -264,7 +265,11 @@ export default function Sidebar({
                   ) : (
                     <>
                       {c.pinned && <span className="history-pin-icon" title="Pinned">📌</span>}
-                      <span className="history-title">{c.title}</span>
+                      <span className="history-text">
+                        <span className="history-title">{c.title}</span>
+                        {/* Tells apart chats on the same subject. */}
+                        <span className="history-time">{formatChatTime(c.updatedAt)}</span>
+                      </span>
                     </>
                   )}
                 </button>
