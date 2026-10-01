@@ -162,7 +162,15 @@ def invoke():
     if action in {"export_user_data", "delete_user_data"}:
         return _personal_data(action, payload)
     if action == "usage_summary":
+        empty = {"agent_name": "aptitude_agent", "total_requests": 0, "total_tokens": 0,
+                 "prompt_tokens": 0, "completion_tokens": 0, "by_request_type": {}}
+        # A learner who has not practised yet has no aptitude session: their
+        # usage is simply zero, not an unreachable agent.
+        if not str(payload.get("sessionToken") or "").strip():
+            return jsonify(empty)
         response = _invoke_internal(action, payload)
+        if response.status_code == 401:
+            return jsonify(empty)
         if response.status_code != 200:
             return response
         raw = response.get_json() or {}

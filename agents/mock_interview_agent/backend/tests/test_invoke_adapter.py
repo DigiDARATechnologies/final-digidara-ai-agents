@@ -25,16 +25,28 @@ class InvokeAdapterTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["agent_name"], "mock_interview_agent")
 
-    def test_usage_summary_reports_platform_totals_without_a_session(self):
-        totals = {"total_requests": 3, "total_tokens": 900, "prompt_tokens": 600, "completion_tokens": 300}
-        by_type = [{"request_type": "answer_evaluation", "request_count": 2}, {"request_type": "role_decomposition", "request_count": 1}]
-        with patch.object(db, "query", side_effect=[(totals, None), (by_type, None)]):
+    def test_usage_summary_is_zero_without_a_session(self):
+        # A brand-new user has no session yet: never show other learners' totals.
+        with patch.object(db, "query") as query:
             response = self.invoke("usage_summary")
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
         self.assertEqual(body["agent_name"], "mock_interview_agent")
+        self.assertEqual((body["total_tokens"], body["total_requests"], body["by_request_type"]), (0, 0, {}))
+        query.assert_not_called()
+
+    def test_usage_summary_counts_only_the_session_student(self):
+        totals = {"total_requests": 3, "total_tokens": 900, "prompt_tokens": 600, "completion_tokens": 300}
+        by_type = [{"request_type": "answer_evaluation", "request_count": 2}, {"request_type": "role_decomposition", "request_count": 1}]
+        with patch.object(db, "query", side_effect=[(totals, None), (by_type, None)]) as query:
+            response = self.invoke("usage_summary", {"sessionToken": issue_session_token(7)})
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
         self.assertEqual(body["total_tokens"], 900)
         self.assertEqual(body["by_request_type"], {"answer_evaluation": 2, "role_decomposition": 1})
+        for call in query.call_args_list:
+            self.assertIn("WHERE student_id = %s", call.args[0])
+            self.assertEqual(call.args[1], (7,))
 
     def test_ensure_session_requires_verified_identity(self):
         response = self.invoke("ensure_session", {"user_id": "u1", "email": "a@b.com"})

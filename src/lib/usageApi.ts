@@ -1,10 +1,34 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 
+interface SignedInUser { id?: string; name?: string; email?: string }
+
+function signedInUser(): SignedInUser | null {
+  try {
+    return JSON.parse(localStorage.getItem("digidara_user") || "null") as SignedInUser | null;
+  } catch { return null; }
+}
+
 function aptitudeSessionToken(): string {
   try {
-    const user = JSON.parse(localStorage.getItem("digidara_user") || "null") as { email?: string } | null;
+    const user = signedInUser();
     return user?.email ? localStorage.getItem(`digidara_aptitude_token_${user.email.toLowerCase()}`) || "" : "";
   } catch { return ""; }
+}
+
+const MOCK_INTERVIEW_URL = gatewayInvokeUrl(import.meta.env.VITE_MOCK_INTERVIEW_AGENT_NAME, "mock_interview_agent");
+
+// Mock Interview reports usage for the student behind a session token, so
+// the signed-in user's own session is fetched first. Without one the agent
+// reports zero -- never another learner's numbers.
+async function mockInterviewUsagePayload(): Promise<Record<string, unknown>> {
+  const user = signedInUser();
+  if (!user?.id || !user.email) return {};
+  try {
+    const session = await invokeAgent<{ sessionToken: string }>(MOCK_INTERVIEW_URL, "ensure_session", {
+      user_id: user.id, name: user.name || "Learner", email: user.email,
+    });
+    return { sessionToken: session.sessionToken };
+  } catch { return {}; }
 }
 
 export interface UsageSummary {
@@ -33,7 +57,7 @@ interface AgentUsageTarget {
   icon: string;
   color: string;
   invokeUrl: string;
-  payload?: Record<string, unknown>;
+  payload?: Record<string, unknown> | (() => Promise<Record<string, unknown>>);
   /** Agents whose backend does not record token usage yet. */
   untracked?: boolean;
 }
@@ -62,7 +86,8 @@ const TARGETS: AgentUsageTarget[] = [
     icon: "🧮",
     color: "#f97316",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_APTITUDE_AGENT_NAME, "aptitude_agent"),
-    payload: { sessionToken: aptitudeSessionToken() },
+    // Read at fetch time, so a different user signing in never reuses the last one's token.
+    payload: async () => ({ sessionToken: aptitudeSessionToken() }),
   },
   {
     id: "communication_agent",
@@ -83,7 +108,8 @@ const TARGETS: AgentUsageTarget[] = [
     label: "Mock Interview Agent",
     icon: "🎤",
     color: "#8b5cf6",
-    invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_MOCK_INTERVIEW_AGENT_NAME, "mock_interview_agent"),
+    invokeUrl: MOCK_INTERVIEW_URL,
+    payload: mockInterviewUsagePayload,
   },
   {
     id: "job_agent",
@@ -109,7 +135,8 @@ export async function fetchAllUsageSummaries(): Promise<AgentUsageResult[]> {
       const base = { id: target.id, label: target.label, icon: target.icon, color: target.color };
       if (target.untracked) return { ...base, online: true, tracked: false, usage: null };
       try {
-        const usage = await invokeAgent<UsageSummary>(target.invokeUrl, "usage_summary", target.payload);
+        const payload = typeof target.payload === "function" ? await target.payload() : target.payload;
+        const usage = await invokeAgent<UsageSummary>(target.invokeUrl, "usage_summary", payload);
         return { ...base, online: true, tracked: true, usage };
       } catch {
         return { ...base, online: false, tracked: true, usage: null };
