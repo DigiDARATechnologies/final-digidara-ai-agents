@@ -159,7 +159,7 @@ def deduct_tokens(user_id: str, amount: int) -> bool:
         session.close()
 
 
-def settle_tokens(user_id: str, amount: int) -> None:
+def settle_tokens(user_id: str, amount: int, agent_name: str = "", action: str = "") -> None:
     """
     Post-hoc charge for real, already-incurred usage (the actual LLM cost
     an agent reports back after the call already happened). Unlike
@@ -170,6 +170,7 @@ def settle_tokens(user_id: str, amount: int) -> None:
     """
     from sqlalchemy import text
     from app.db import get_session
+    from app.models import TokenUsageEvent
 
     session = get_session()
     try:
@@ -177,6 +178,9 @@ def settle_tokens(user_id: str, amount: int) -> None:
             text("UPDATE users SET token_balance = token_balance - :amount WHERE id = :user_id"),
             {"amount": amount, "user_id": user_id},
         )
+        # Recorded in the same transaction as the charge, so the monthly
+        # usage in Settings always matches what was taken from the balance.
+        session.add(TokenUsageEvent(user_id=user_id, agent_name=(agent_name or "")[:255], action=(action or "")[:100], tokens=amount))
         session.commit()
     finally:
         session.close()
