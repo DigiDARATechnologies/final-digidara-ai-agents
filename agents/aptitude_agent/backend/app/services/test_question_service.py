@@ -2,6 +2,7 @@
 
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
 
@@ -9,12 +10,92 @@ from ..extensions import db
 from ..models import AptitudeTestQuestion, RecentQuestionHash
 from .audit_service import record_event
 from .question_timing import question_time_seconds
+from .ai_service import empty_usage, merge_usage
+from .question_validation import questions_are_near_duplicates
 from .test_generation import generate_questions
 from .usage_service import record_usage
 
 
 DIFFICULTIES = ("Easy", "Medium", "Hard")
 DIFFICULTY_LEVEL = {"Easy": 1, "Medium": 2, "Hard": 3}
+
+
+def _chunks(items, size):
+    return [items[start:start + size] for start in range(0, len(items), size)]
+
+
+def _cross_chunk_duplicates(generated):
+    """Positions of questions repeating an earlier one from another chunk."""
+    duplicates = []
+    for index, item in enumerate(generated):
+        for earlier in generated[:index]:
+            if item["content_hash"] == earlier["content_hash"] or questions_are_near_duplicates(item["question"], earlier["question"]):
+                duplicates.append(index)
+                break
+    return duplicates
+
+
+def generate_question_set(slots, *, avoid_questions, deadline):
+    """Generate every slot's question; large tests as parallel chunks.
+
+    A test of up to QUESTION_GENERATION_CHUNK_SIZE questions keeps the single
+    request. A larger one is split into chunks generated side by side, so no
+    single provider request has to write a whole 60-question test before its
+    timeout; a chunk that still fails is tried once more while the deadline
+    allows; and a question that repeats one from another chunk is replaced.
+    Returns (questions in slot order, model, merged usage)."""
+    config = current_app.config
+    options = {
+        "allow_demo_fallback": config["ALLOW_DEMO_QUESTIONS"],
+        "deadline": deadline,
+        "max_validation_attempts": config["BATCH_GENERATION_MAX_ATTEMPTS"],
+        "request_timeout": config["OPENAI_BATCH_TIMEOUT_SECONDS"],
+    }
+    size = config["QUESTION_GENERATION_CHUNK_SIZE"]
+    if len(slots) <= size:
+        return generate_questions(slots, avoid_questions=avoid_questions, **options)
+
+    app = current_app._get_current_object()
+
+    def run(chunk, avoid):
+        with app.app_context():
+            return generate_questions(chunk, avoid_questions=avoid, **options)
+
+    chunks = _chunks(list(slots), size)
+    workers = min(len(chunks), config["QUESTION_GENERATION_PARALLEL_CHUNKS"])
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="aptitude-chunk") as pool:
+        futures = [pool.submit(run, chunk, avoid_questions) for chunk in chunks]
+        outcomes = []
+        for future in futures:
+            try:
+                outcomes.append(future.result())
+            except Exception as exc:  # noqa: BLE001 - retried below, then re-raised
+                outcomes.append(exc)
+
+    generated, model, usage = [], None, empty_usage()
+    for chunk, outcome in zip(chunks, outcomes):
+        if isinstance(outcome, Exception):
+            if time.monotonic() >= deadline:
+                raise outcome
+            current_app.logger.warning("Question chunk of %s failed (%s); retrying it once", len(chunk), outcome)
+            outcome = run(chunk, list(avoid_questions) + [item["question"] for item in generated])
+        questions, chunk_model, chunk_usage = outcome
+        if len(questions) != len(chunk):
+            raise ValueError(f"Expected {len(chunk)} generated questions in a chunk")
+        generated.extend(questions)
+        model = model or chunk_model
+        usage = merge_usage(usage, chunk_usage)
+
+    # Chunks are written independently, so two can land on the same question.
+    for index in _cross_chunk_duplicates(generated):
+        others = [item["question"] for position, item in enumerate(generated) if position != index]
+        replacement, _, repair_usage = run([slots[index]], list(avoid_questions) + others)
+        generated[index] = replacement[0]
+        usage = merge_usage(usage, repair_usage)
+    if _cross_chunk_duplicates(generated):
+        raise ValueError("Generated chunks still contain a repeated question")
+    current_app.logger.info("Generated %s questions in %s parallel chunk(s)", len(generated), len(chunks))
+    return generated, model, usage
 
 
 def _recent_question_texts(student_id):
@@ -52,13 +133,8 @@ def generate_and_store_question_batch(test, slots):
     started = time.perf_counter()
     deadline = time.monotonic() + current_app.config["BATCH_GENERATION_DEADLINE_SECONDS"]
     try:
-        generated, model, usage = generate_questions(
-            slots,
-            avoid_questions=_recent_question_texts(test.student_id),
-            allow_demo_fallback=current_app.config["ALLOW_DEMO_QUESTIONS"],
-            deadline=deadline,
-            max_validation_attempts=current_app.config["BATCH_GENERATION_MAX_ATTEMPTS"],
-            request_timeout=current_app.config["OPENAI_BATCH_TIMEOUT_SECONDS"],
+        generated, model, usage = generate_question_set(
+            slots, avoid_questions=_recent_question_texts(test.student_id), deadline=deadline,
         )
         if len(generated) != len(slots):
             raise ValueError(f"Expected {len(slots)} generated questions")

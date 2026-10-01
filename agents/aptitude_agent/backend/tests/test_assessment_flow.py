@@ -1,4 +1,6 @@
+import hashlib
 import importlib
+import itertools
 import threading
 import time
 import uuid
@@ -48,11 +50,23 @@ def _assert_diagnostics_absent(payload):
             _assert_diagnostics_absent(value)
 
 
+_SERIAL = itertools.count(1)
+
+
+def _unique_wording(prefix):
+    """Distinct wording and hashes across calls: a large Mixed Test is now
+    generated as several chunks, and a question repeated across chunks is
+    replaced, so fakes that restart their numbering per call would collide."""
+    serial = next(_SERIAL)
+    digest = hashlib.sha256(f"{prefix}-{serial}".encode()).hexdigest()
+    return serial, f"{prefix} " + " ".join(digest[i:i + 8] for i in range(0, 48, 8)) + "?"
+
+
 def _generated_batch(slots, prefix="batch"):
     return [
         {
             **slot,
-            "question": f"{prefix} question {index} for {slot['topic']}?",
+            "question": text,
             "options": {
                 "A": "Correct response",
                 "B": "Second response",
@@ -64,7 +78,7 @@ def _generated_batch(slots, prefix="batch"):
             "content_hash": f"{prefix}-content-{index}",
             "structural_hash": f"{prefix}-structure-{index}",
         }
-        for index, slot in enumerate(slots, 1)
+        for slot, (index, text) in ((slot, _unique_wording(prefix)) for slot in slots)
     ]
 
 
@@ -221,8 +235,8 @@ def test_mixed_test_batch_has_fixed_weighted_difficulties(
     )
     assert created.status_code == 201, created.get_json()
     test_id = created.get_json()["test_id"]
-    assert len(calls) == 1
-    assert len(calls[0]["slots"]) == 21
+    # 21 questions are generated as chunks of 10: 10 + 10 + 1.
+    assert sorted(len(call["slots"]) for call in calls) == [1, 10, 10]
 
     with app.app_context():
         questions = AptitudeTestQuestion.query.filter_by(test_id=test_id).all()
@@ -248,7 +262,7 @@ def test_mixed_test_batch_has_fixed_weighted_difficulties(
         assert answered.status_code == 200
         assert answered.get_json()["complete"] is (sequence == 21)
     assert answered.get_json()["is_correct"] is True
-    assert len(calls) == 1
+    assert len(calls) == 3
     with app.app_context():
         assert db.session.get(AptitudeTest, test_id).status == "completed"
         current = [
