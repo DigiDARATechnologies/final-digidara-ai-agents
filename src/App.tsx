@@ -1,3 +1,4 @@
+import { autoChatTitle, nextChatTitle, type AgentStates } from "./lib/chatTitles";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
@@ -486,10 +487,32 @@ export default function App() {
     saveChats(next);
   }
 
+  // Name each agent chat after what it is about once that is known
+  // ("Resume · Python Developer", "Python Programming Exam · 76% ✓"), instead
+  // of the button text every chat with that agent starts with. A title the
+  // user renamed is never touched (lib/chatTitles.ts).
+  useEffect(() => {
+    const states: AgentStates = {
+      aptitude: aptitudeStates, capstone: capstoneStates, certificate: certificateStates, codeforge: codeforgeStates,
+      communication: communicationStates, mockInterview: mockInterviewStates, resumeBuilder: resumeBuilderStates,
+    };
+    let changed = false;
+    const named = chats.map((chat) => {
+      const agent = findAgent(chat.agentId);
+      const update = nextChatTitle(chat, agent, autoChatTitle(agent, chat.id, states));
+      if (!update) return chat;
+      changed = true;
+      return { ...chat, ...update };
+    });
+    if (changed) persistChats(named);
+    // persistChats is recreated each render; the effect reacts to the data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats, aptitudeStates, capstoneStates, certificateStates, codeforgeStates, communicationStates, mockInterviewStates, resumeBuilderStates]);
+
   function handleRenameChat(chatId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
-    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed, updatedAt: Date.now() } : c)));
+    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed, titleSource: "manual" as const, updatedAt: Date.now() } : c)));
   }
 
   function handleTogglePinChat(chatId: string) {
@@ -821,6 +844,7 @@ export default function App() {
       id: newChatId(),
       agentId: agent.id,
       title: agent.name,
+      titleSource: "default",
       messages: [{ role: "agent", text: agent.greeting, time: nowStr() }],
       updatedAt: Date.now(),
     };
@@ -961,6 +985,7 @@ export default function App() {
       id: newChatId(),
       agentId: agent.id,
       title: agent.name,
+      titleSource: "default",
       messages: initialText === "start_exam" ? [] : [{ role: "user", text: initialText, time: nowStr() }],
       updatedAt: Date.now(),
     };
