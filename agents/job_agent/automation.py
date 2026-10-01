@@ -7,7 +7,7 @@ Apify because those providers remain administrator-triggered only.
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE
+from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE, JOBS_RETENTION_DAYS
 from .db import get_db
 from .providers.sync import queue_adzuna_collection, queue_jsearch_collection
 from .service import prune_expired_jobs
@@ -107,7 +107,7 @@ def queue_due_automation(now=None):
         return {"due": False, "reason": "disabled_or_already_run"}
     try:
         # 1. 30-Day Automated Retention Pruning
-        prune_outcome = prune_expired_jobs(max_age_days=30)
+        prune_outcome = prune_expired_jobs(max_age_days=JOBS_RETENTION_DAYS)
 
         # 2. Daily Automated Ingestion from Adzuna & JSearch (RapidAPI)
         total_queued = 0

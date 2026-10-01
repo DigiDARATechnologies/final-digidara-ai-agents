@@ -61,6 +61,18 @@ except Exception as exc:
 PLAN_TIERS = ("free", "pro")
 DEFAULT_PLAN_TIER = "free"
 
+# Job freshness: listings are fetched only when posted within this many days,
+# and removed this many days after posting (saved / applied jobs are kept).
+JOBS_RETENTION_DAYS = max(1, int(os.getenv("JOBS_RETENTION_DAYS", "7")))
+
+# How many IT role x city searches the daily automation runs per provider. The
+# full catalogue (providers.yaml `it_coverage`) rotates through these slices, so
+# every search runs at least once a week while staying inside API quotas:
+# Adzuna's free tier allows a few hundred calls a day, RapidAPI JSearch's free
+# tier about 200 requests a month (6 a day). Raise these on a paid plan.
+JOBS_ADZUNA_DAILY_QUERIES = max(0, int(os.getenv("JOBS_ADZUNA_DAILY_QUERIES", "40")))
+JOBS_JSEARCH_DAILY_QUERIES = max(0, int(os.getenv("JOBS_JSEARCH_DAILY_QUERIES", "6")))
+
 # Dynamic SaaS Token & Daily Free Quota Defaults (can be overridden by DB or .env)
 DEFAULT_FREE_DAILY_FEED_LIMIT = int(os.getenv("JOBS_FREE_DAILY_FEED_LIMIT", "20"))
 DEFAULT_FREE_DAILY_CHAT_TURNS = int(os.getenv("JOBS_FREE_DAILY_CHAT_TURNS", "10"))

@@ -491,8 +491,10 @@ export default function JobsAdminPanel() {
                 )}
               </div>
               <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
-                When enabled, the server automatically fetches fresh entry-level &amp; fresher jobs every day at{" "}
-                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), and prunes listings older than 30 days.
+                When enabled, the server automatically fetches fresher jobs for every IT role every day at{" "}
+                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), taking only jobs posted in the last 7 days.
+                Each day runs a different slice of the role and city searches, so all of them run every week.
+                Jobs are removed 7 days after posting, except ones a user saved or applied to.
               </p>
               <div
                 style={{

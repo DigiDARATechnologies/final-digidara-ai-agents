@@ -1,6 +1,9 @@
 import json
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from ..config import JOBS_ADZUNA_DAILY_QUERIES, JOBS_AUTOMATION_TIMEZONE, JOBS_JSEARCH_DAILY_QUERIES, JOBS_RETENTION_DAYS
 from ..db import get_db
 from ..service import process_run, queue_source_run, queue_source_run_once
 from .apify import get_apify_status
@@ -422,6 +425,23 @@ def run_apify_collection(admin_id=None, platform=None):
     return {"ready": True, "reason": "", "totals": totals, "actors": actors_report}
 
 
+def todays_slice(sources, budget, today=None):
+    """The part of the search list to run today.
+
+    Searches are taken in a fixed order, `budget` a day, continuing where
+    yesterday stopped and wrapping around, so each one runs at least once
+    every ceil(len / budget) days. A budget of 0 runs nothing; a budget at
+    or above the list size runs everything."""
+    sources = list(sources)
+    if budget <= 0 or not sources:
+        return []
+    if budget >= len(sources):
+        return sources
+    day = (today or datetime.now(ZoneInfo(JOBS_AUTOMATION_TIMEZONE)).date()).toordinal()
+    offset = (day * budget) % len(sources)
+    return [sources[(offset + i) % len(sources)] for i in range(budget)]
+
+
 def _adzuna_source_name(what, where):
     clean_what = what.strip().lower().replace(" ", "_")
     clean_where = where.strip().lower().replace(" ", "_")
@@ -442,7 +462,10 @@ def sync_adzuna_sources(config=None):
             name = _adzuna_source_name(what, where)
             active_names.append(name)
             source_url = f"https://api.adzuna.com/v1/api/jobs/in/search?what={what}&where={where}"
-            parser_config = json.dumps({"what": what, "where": where, "page": 1, "results_per_page": 20})
+            # 50 is Adzuna's page maximum (one call either way); only jobs
+            # posted within the retention window are fetched.
+            parser_config = json.dumps({"what": what, "where": where, "page": 1, "results_per_page": 50,
+                                        "max_days_old": JOBS_RETENTION_DAYS})
             cursor.execute(
                 """INSERT INTO job_sources (name, source_type, source_url, parser_config, is_active, scraping_authorized)
                    VALUES (%s, 'adzuna', %s, %s, 1, 1)
@@ -483,12 +506,12 @@ def _active_adzuna_sources():
         db.close()
 
 
-def queue_adzuna_collection(admin_id=None):
+def queue_adzuna_collection(admin_id=None, today=None):
     from .adzuna import is_configured as is_adzuna_configured
     if not is_adzuna_configured():
         return {"ready": False, "reason": "ADZUNA_APP_ID or ADZUNA_APP_KEY is not configured"}
     sync_adzuna_sources()
-    sources = _active_adzuna_sources()
+    sources = todays_slice(_active_adzuna_sources(), JOBS_ADZUNA_DAILY_QUERIES, today)
     return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
 
 
@@ -510,7 +533,7 @@ def sync_jsearch_sources(config=None):
             name = _jsearch_source_name(query_str)
             active_names.append(name)
             source_url = f"https://jsearch.p.rapidapi.com/search?query={query_str}"
-            parser_config = json.dumps({"query": query_str, "page": 1, "num_pages": 1})
+            parser_config = json.dumps({"query": query_str, "page": 1, "num_pages": 1, "date_posted": "week"})
             cursor.execute(
                 """INSERT INTO job_sources (name, source_type, source_url, parser_config, is_active, scraping_authorized)
                    VALUES (%s, 'jsearch', %s, %s, 1, 1)
@@ -551,11 +574,11 @@ def _active_jsearch_sources():
         db.close()
 
 
-def queue_jsearch_collection(admin_id=None):
+def queue_jsearch_collection(admin_id=None, today=None):
     from .jsearch import is_configured as is_jsearch_configured
     if not is_jsearch_configured():
         return {"ready": False, "reason": "RAPIDAPI_KEY is not configured"}
     sync_jsearch_sources()
-    sources = _active_jsearch_sources()
+    sources = todays_slice(_active_jsearch_sources(), JOBS_JSEARCH_DAILY_QUERIES, today)
     return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
 

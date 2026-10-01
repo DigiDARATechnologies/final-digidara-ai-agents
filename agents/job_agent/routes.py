@@ -14,7 +14,7 @@ from .auth import admin_required, user_required
 from .automation import get_automation_settings, set_automation_enabled
 from .categories import OTHER_CATEGORY, OTHER_LABEL, load_categories, related_category_ids
 from .compensation import extract_salary_text
-from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
+from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, JOBS_RETENTION_DAYS, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
 from .db import get_db
 from .matching import parse_list, score_job
 from .memory import (
@@ -1338,7 +1338,7 @@ def admin_jobs_bulk_status():
 @admin_required
 def admin_prune_jobs():
     data = request.get_json(silent=True) or {}
-    max_age_days = _bounded_int(data.get("max_age_days"), default=30, minimum=1, maximum=365)
+    max_age_days = _bounded_int(data.get("max_age_days"), default=JOBS_RETENTION_DAYS, minimum=1, maximum=365)
     from .service import prune_expired_jobs
     outcome = prune_expired_jobs(max_age_days=max_age_days)
     return jsonify({
