@@ -138,9 +138,11 @@ def init_db():
         input_tokens INT NOT NULL DEFAULT 0,
         output_tokens INT NOT NULL DEFAULT 0,
         total_tokens INT NOT NULL DEFAULT 0,
+        digidara_user_id VARCHAR(64) NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_certificate_usage_created (created_at),
-        INDEX idx_certificate_usage_action (action_name)
+        INDEX idx_certificate_usage_action (action_name),
+        INDEX idx_certificate_usage_user (digidara_user_id)
     )""")
 
     # Upgrade ledgers created by the original estimate-only tracker. Existing
@@ -150,6 +152,9 @@ def init_db():
         "ALTER TABLE certificate_usage_events ADD COLUMN input_tokens INT NOT NULL DEFAULT 0",
         "ALTER TABLE certificate_usage_events ADD COLUMN output_tokens INT NOT NULL DEFAULT 0",
         "ALTER TABLE certificate_usage_events ADD COLUMN total_tokens INT NOT NULL DEFAULT 0",
+        # Usage is reported per user; older rows have no owner and count for nobody.
+        "ALTER TABLE certificate_usage_events ADD COLUMN digidara_user_id VARCHAR(64) NULL",
+        "CREATE INDEX idx_certificate_usage_user ON certificate_usage_events (digidara_user_id)",
     ):
         try:
             cursor.execute(statement)

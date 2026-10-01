@@ -12,7 +12,7 @@ from cert_app.config import get_settings
 from cert_app.db import chat_repository, question_history
 from cert_app.agents.question_agent import generate_questions
 from cert_app.agents.evaluation_agent import evaluate_answer
-from cert_app.services.usage_service import record_llm_usage
+from cert_app.services.usage_service import carry_usage_user, record_llm_usage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -306,7 +306,7 @@ def bg_generate_questions(session_id: str, topic: str, choice: str):
 
 def default_bg_runner(fn: Callable, *args, **kwargs) -> None:
     """Default background task runner: spawns a daemon thread."""
-    thread = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
+    thread = threading.Thread(target=carry_usage_user(fn), args=args, kwargs=kwargs, daemon=True)
     thread.start()
 
 
