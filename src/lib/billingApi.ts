@@ -32,6 +32,9 @@ export function loadRazorpay(): Promise<void> {
 
 export interface TopupOrder extends RazorpayOrder { tokens: number }
 export const fetchTokenBalance = () => request<{ balance: number }>("/billing/token-balance");
+export interface MonthlyUsage { month_start: string; tokens_used: number; requests: number; balance: number; limit: number; agents: Array<{ agent_name: string; tokens: number; requests: number }>; }
+/** This calendar month's billed usage (in the user's own timezone) and the dynamic limit: used + balance left. */
+export const fetchMonthlyUsage = () => request<MonthlyUsage>(`/billing/usage-month?offset_minutes=${-new Date().getTimezoneOffset()}`);
 export const createTopupOrder = (amount_inr: number) => request<TopupOrder>("/billing/topup-order", { method: "POST", body: JSON.stringify({ amount_inr }) });
 
 /** Downloads a paid payment's PDF invoice. The endpoint needs the bearer

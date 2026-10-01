@@ -219,7 +219,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
                 pass
         # Real usage when the agent reports it; otherwise the flat fallback
         # rate, so billing still works for agents not yet upgraded.
-        auth_service.settle_tokens(user_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL)
+        auth_service.settle_tokens(user_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL, agent_name, action_name or "")
     elif user_id:
         # For actions in FREE_ACTIONS that dynamically report token usage when free quota is exceeded
         header_value = upstream.headers.get("x-tokens-used")
@@ -227,7 +227,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             try:
                 parsed = int(header_value)
                 if parsed > 0:
-                    auth_service.settle_tokens(user_id, parsed)
+                    auth_service.settle_tokens(user_id, parsed, agent_name, action_name or "")
             except ValueError:
                 pass
 

@@ -1,12 +1,12 @@
 import hashlib
 import hmac
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import func, update
 
 from app.auth import service as auth_service
 from app.auth.security import get_current_user_id
@@ -22,7 +22,7 @@ from app.billing.plans import (
     tokens_for_plan_id,
 )
 from app.db import get_session
-from app.models import Payment
+from app.models import Payment, TokenUsageEvent
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -108,6 +108,52 @@ def token_balance(user_id: str = Depends(get_current_user_id)) -> dict:
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
     return {"balance": user.token_balance}
+
+
+def month_start_utc(now_utc: datetime, offset_minutes: int) -> datetime:
+    """The first moment of the user's current calendar month, as naive UTC.
+
+    ``offset_minutes`` is the user's local time minus UTC (IST is +330), so the
+    month turns over at the user's midnight, not the server's."""
+    local = now_utc + timedelta(minutes=offset_minutes)
+    return local.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(minutes=offset_minutes)
+
+
+@router.get("/usage-month")
+def usage_this_month(
+    offset_minutes: int = Query(0, ge=-14 * 60, le=14 * 60),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """This calendar month's billed usage, overall and per agent.
+
+    There is no fixed monthly quota: tokens are a balance. The limit is what
+    the user had to spend this month -- what they used plus what is left --
+    so it follows plans, top-ups and spending instead of a hardcoded number."""
+    user = auth_service.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    since = month_start_utc(datetime.utcnow(), offset_minutes)
+    session = get_session()
+    try:
+        rows = (
+            session.query(TokenUsageEvent.agent_name, func.coalesce(func.sum(TokenUsageEvent.tokens), 0), func.count(TokenUsageEvent.id))
+            .filter(TokenUsageEvent.user_id == user_id, TokenUsageEvent.created_at >= since)
+            .group_by(TokenUsageEvent.agent_name)
+            .all()
+        )
+    finally:
+        session.close()
+    agents = [{"agent_name": name, "tokens": int(tokens), "requests": int(count)} for name, tokens, count in rows]
+    used = sum(agent["tokens"] for agent in agents)
+    balance = max(0, int(user.token_balance))
+    return {
+        "month_start": since.isoformat() + "Z",
+        "tokens_used": used,
+        "requests": sum(agent["requests"] for agent in agents),
+        "balance": balance,
+        "limit": used + balance,
+        "agents": agents,
+    }
 
 
 @router.post("/orders", status_code=201)

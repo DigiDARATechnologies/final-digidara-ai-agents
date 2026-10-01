@@ -161,3 +161,17 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(24), default="created", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TokenUsageEvent(Base):
+    """One charge the gateway made against a user's token balance -- what
+    lets Settings > Usage show this month's usage instead of all-time totals."""
+
+    __tablename__ = "token_usage_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_name: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(100), default="")
+    tokens: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)

@@ -268,3 +268,48 @@ def test_catalog_helpers():
     assert plan_catalog.payment_label("mystery") == "mystery"
     assert plan_catalog.tokens_for_plan_id("pro_monthly") is None
     assert plan_catalog.tokens_for_plan_id("topup_1234") == 1234
+
+
+def add_usage(env, tokens, *, agent="certificate_agent", user=None, days_ago=0, at=None):
+    from app.models import TokenUsageEvent
+    session = env.database()
+    try:
+        session.add(TokenUsageEvent(user_id=(user or env.user).id, agent_name=agent, action="x", tokens=tokens,
+                                    created_at=at or datetime.utcnow() - timedelta(days=days_ago)))
+        session.commit()
+    finally:
+        session.close()
+
+
+def test_a_new_user_has_no_usage_this_month_and_their_balance_is_the_limit(env):
+    body = env.client.get("/billing/usage-month").json()
+    assert (body["tokens_used"], body["requests"], body["agents"]) == (0, 0, [])
+    assert body["limit"] == body["balance"] == balance(env)
+
+
+def test_usage_this_month_counts_only_this_user_and_this_month(env, monkeypatch):
+    monkeypatch.setattr(billing, "month_start_utc", lambda now, offset: datetime.utcnow() - timedelta(days=5))
+    add_usage(env, 300)
+    add_usage(env, 200)
+    add_usage(env, 50, agent="mock_interview_agent")
+    add_usage(env, 9999, days_ago=10)            # last month
+    add_usage(env, 7777, user=env.other)         # someone else
+    body = env.client.get("/billing/usage-month").json()
+    assert (body["tokens_used"], body["requests"]) == (550, 3)
+    assert sorted((a["agent_name"], a["tokens"], a["requests"]) for a in body["agents"]) == [
+        ("certificate_agent", 500, 2), ("mock_interview_agent", 50, 1)]
+    # The limit is dynamic: this month's usage plus what is left to spend.
+    assert body["limit"] == 550 + balance(env)
+
+
+def test_the_limit_never_counts_a_negative_balance(env):
+    auth_service.settle_tokens(env.user.id, balance(env) + 40, "certificate_agent", "send_chat_message")
+    body = env.client.get("/billing/usage-month").json()
+    assert body["balance"] == 0 and body["limit"] == body["tokens_used"]
+
+
+def test_the_month_turns_over_at_the_users_midnight():
+    # 1 Oct 01:00 IST is still 30 Sep in UTC; for an IST user that is October.
+    now = datetime(2026, 9, 30, 19, 30)
+    assert billing.month_start_utc(now, 330) == datetime(2026, 9, 30, 18, 30)
+    assert billing.month_start_utc(now, 0) == datetime(2026, 9, 1)

@@ -13,7 +13,7 @@ from app import config
 from app.auth import service_auth
 from app.auth.security import create_access_token
 from app.gateway import routes as gateway
-from app.models import AgentRegistry, User
+from app.models import AgentRegistry, TokenUsageEvent, User
 from app.registry import service
 from app.schemas import AgentRegisterRequest
 
@@ -196,6 +196,9 @@ def test_billing_and_binary_response_forwarding(client, upstream, database, repo
     assert upstream.calls[0][0] == PAYLOAD["endpoint"]
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000 - cost
+        # Each charge is recorded for the monthly usage in Settings.
+        events = session.query(TokenUsageEvent).filter_by(user_id="learner").all()
+        assert [(e.agent_name, e.tokens) for e in events] == [("test-agent", cost)]
 
 
 def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
