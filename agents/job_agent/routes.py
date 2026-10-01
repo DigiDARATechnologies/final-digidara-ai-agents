@@ -11,10 +11,10 @@ from flask import Blueprint, g, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from .auth import admin_required, user_required
-from .automation import get_automation_settings, set_automation_enabled
+from .automation import free_plan_overview, get_automation_settings, set_automation_enabled
 from .categories import OTHER_CATEGORY, OTHER_LABEL, load_categories, related_category_ids
 from .compensation import extract_salary_text
-from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
+from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, JOBS_RETENTION_DAYS, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
 from .db import get_db
 from .matching import parse_list, score_job
 from .memory import (
@@ -1137,7 +1137,8 @@ def admin_sources():
 @admin_required
 def admin_automation():
     if request.method == "GET":
-        return jsonify({"automation": _serialize(get_automation_settings())})
+        # The free-plan usage and the coming week's searches ride along.
+        return jsonify({"automation": _serialize(get_automation_settings()), "free_plan": free_plan_overview()})
     data = request.get_json(silent=True) or {}
     if not isinstance(data.get("enabled"), bool):
         return jsonify({"error": "enabled must be true or false"}), 400
@@ -1338,7 +1339,7 @@ def admin_jobs_bulk_status():
 @admin_required
 def admin_prune_jobs():
     data = request.get_json(silent=True) or {}
-    max_age_days = _bounded_int(data.get("max_age_days"), default=30, minimum=1, maximum=365)
+    max_age_days = _bounded_int(data.get("max_age_days"), default=JOBS_RETENTION_DAYS, minimum=1, maximum=365)
     from .service import prune_expired_jobs
     outcome = prune_expired_jobs(max_age_days=max_age_days)
     return jsonify({

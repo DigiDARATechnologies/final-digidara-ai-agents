@@ -120,7 +120,7 @@ def normalize_job(raw_job):
     }
 
 
-def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None):
+def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None, max_days_old=None, before_request=None):
     """Query Adzuna's India job search endpoint and return normalized jobs."""
     app_id, app_key = _credentials()
     session = session or requests.Session()
@@ -134,11 +134,15 @@ def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None):
         "results_per_page": min(50, max(1, results_per_page)),
         "content-type": "application/json",
     }
+    if max_days_old:
+        params["max_days_old"] = int(max_days_old)
     headers = {
         "User-Agent": SCRAPER_USER_AGENT,
         "Accept": "application/json",
     }
 
+    if before_request:
+        before_request()  # free-plan guard: may refuse before any call is made
     try:
         response = session.get(url, params=params, headers=headers, timeout=SCRAPER_TIMEOUT_SECONDS)
     except requests.Timeout as exc:
