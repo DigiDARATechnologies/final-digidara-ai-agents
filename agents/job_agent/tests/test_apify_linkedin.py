@@ -38,6 +38,22 @@ class LinkedInApifyNormalizerTests(unittest.TestCase):
 
         self.assertIn("artificially~linkedin-jobs-scraper", session.post.call_args.args[0])
 
+    @patch("job_agent.providers.apify._token", return_value="test-token")
+    def test_a_failed_run_reports_apifys_reason_not_just_the_status(self, _token):
+        from job_agent.providers.apify import ApifyAPIError
+        response = MagicMock(status_code=400)
+        response.json.return_value = {"error": {"type": "run-failed", "message": "Actor run did not succeed (run ID: x, status: FAILED)"}}
+        session = MagicMock()
+        session.post.return_value = response
+        with self.assertRaises(ApifyAPIError) as raised:
+            run_actor_and_fetch_items("crawloop/naukri-jobs-scraper", {"position": "Software Engineer"}, session=session)
+        self.assertIn("HTTP 400 (run-failed: Actor run did not succeed", str(raised.exception))
+
+        response.json.side_effect = ValueError("not json")
+        with self.assertRaises(ApifyAPIError) as raised:
+            run_actor_and_fetch_items("crawloop/naukri-jobs-scraper", {}, session=session)
+        self.assertTrue(str(raised.exception).endswith("returned HTTP 400"))
+
     @patch.dict("os.environ", {"APIFY_LINKEDIN_ACTOR_ID": "owner/selected-by-env"}, clear=False)
     def test_linkedin_actor_id_can_be_selected_by_environment(self):
         config = get_apify_config({"apify": {"enabled": True, "actors": [

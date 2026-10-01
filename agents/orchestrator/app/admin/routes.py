@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 from app import config
 from app.auth.security import get_current_user_id
-from app.billing.plans import payment_label, tokens_for_plan_id
+from app.billing.plans import active_plan, payment_label, plan_name, tokens_for_plan_id
 from app.db import get_session
 from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
 
@@ -48,6 +48,20 @@ def _rupees(paise) -> float:
 def _paid_by_user(session) -> dict[str, int]:
     rows = session.query(Payment.user_id, func.sum(Payment.amount)).filter(Payment.status == "paid").group_by(Payment.user_id).all()
     return {user_id: int(total or 0) for user_id, total in rows}
+
+
+def _plans_by_user(session) -> dict[str, str]:
+    """Each paying user's current billing plan name (Basic/Standard/...);
+    users without an active plan are left out and shown as Free."""
+    paid = defaultdict(list)
+    for payment in session.query(Payment).filter(Payment.status == "paid").order_by(Payment.paid_at.desc()):
+        paid[payment.user_id].append(payment)
+    plans = {}
+    for user_id, payments in paid.items():
+        plan_id, _ = active_plan(payments)
+        if plan_id != "free":
+            plans[user_id] = plan_name(plan_id)
+    return plans
 
 
 def _chat_usage(session) -> list[dict]:
@@ -171,12 +185,14 @@ def list_users(
             query = query.filter(or_(func.lower(User.name).like(like), func.lower(User.email).like(like), func.lower(User.mobile).like(like)))
         users = query.all()
         paid = _paid_by_user(session)
+        plans = _plans_by_user(session)
         chat_rows = session.query(Conversation.user_id, func.count(), func.max(Conversation.updated_at), func.count(func.distinct(Conversation.agent_id))) \
             .filter(Conversation.deleted_at.is_(None)).group_by(Conversation.user_id).all()
         chats = {user_id: (int(count), last, int(agents)) for user_id, count, last, agents in chat_rows}
         rows = [{
             "id": u.id, "name": u.name, "email": u.email, "mobile": u.mobile or "", "is_admin": bool(u.is_admin), "google": bool(u.google_id),
             "created_at": _iso(u.created_at), "token_balance": u.token_balance, "paid_total": _rupees(paid.get(u.id, 0)),
+            "plan_name": plans.get(u.id, "Free"),
             "chats": chats.get(u.id, (0, None, 0))[0], "agents_used": chats.get(u.id, (0, None, 0))[2],
             "last_active": _iso(chats.get(u.id, (0, None, 0))[1]),
         } for u in users]

@@ -19,6 +19,7 @@ import {
   type IngestionRun,
   type JobAutomationSettings,
 } from "../../lib/jobFetchApi";
+import { fetchUsers, type AdminUserRow } from "../../lib/adminApi";
 
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -27,6 +28,21 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 type Tab = "jobs" | "sources" | "users";
+
+/** The Job Agent stores only platform user ids; names, emails and the billing
+ * plan come from the platform's own user list. Best effort: ids still show if
+ * it cannot be read. */
+async function platformUsersById(): Promise<Record<string, AdminUserRow>> {
+  const byId: Record<string, AdminUserRow> = {};
+  try {
+    for (let page = 1; page <= 20; page += 1) {
+      const result = await fetchUsers({ page, limit: 100 });
+      result.users.forEach((user) => { byId[user.id] = user; });
+      if (page * result.limit >= result.total) break;
+    }
+  } catch { /* keep whatever was read */ }
+  return byId;
+}
 
 const STATUS_BADGE_CLASS: Record<string, string> = {
   pending: "badge-pending",
@@ -75,6 +91,7 @@ export default function JobsAdminPanel() {
 
   const [sources, setSources] = useState<Array<Record<string, any>>>([]);
   const [users, setUsers] = useState<Array<Record<string, any>>>([]);
+  const [people, setPeople] = useState<Record<string, AdminUserRow>>({});
   const [apifyActors, setApifyActors] = useState<ApifyActor[]>([]);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [runningPlatform, setRunningPlatform] = useState<string | null>(null);
@@ -103,7 +120,10 @@ export default function JobsAdminPanel() {
               setRuns(r.runs);
               setAutomation(auto.automation);
             })
-          : adminListUsers().then((r) => setUsers(r.users));
+          : Promise.all([adminListUsers(), platformUsersById()]).then(([r, people]) => {
+              setUsers(r.users);
+              setPeople(people);
+            });
     request.catch((err) => setError((err as Error).message)).finally(() => setLoading(false));
   }
 
@@ -635,11 +655,14 @@ export default function JobsAdminPanel() {
         <div className="admin-section">
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>User</th><th>Plan</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
+              <thead><tr><th>User</th><th>Billing plan</th><th>Job feed tier</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
               <tbody>
-                {users.map((u) => (
+                {users.map((u) => {
+                  const person = people[u.user_id];
+                  return (
                   <tr key={u.user_id}>
-                    <td className="admin-table-primary">{u.user_id}</td>
+                    <td className="admin-table-primary">{person ? <>{person.name || "—"}<br /><small>{person.email}</small></> : u.user_id}</td>
+                    <td>{person?.plan_name ?? "—"}</td>
                     <td><span className={`admin-badge ${u.plan_tier === "pro" ? "badge-active" : "badge-expired"}`}>{u.plan_tier}</span></td>
                     <td>{u.profile_completed ? "Yes" : "No"}</td>
                     <td>{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
@@ -649,8 +672,9 @@ export default function JobsAdminPanel() {
                       </button>
                     </td>
                   </tr>
-                ))}
-                {!users.length && <tr><td colSpan={5} className="admin-table-empty">No user profiles yet.</td></tr>}
+                  );
+                })}
+                {!users.length && <tr><td colSpan={6} className="admin-table-empty">No user profiles yet.</td></tr>}
               </tbody>
             </table>
           </div>

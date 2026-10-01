@@ -20,7 +20,7 @@ export interface Overview {
 }
 export interface AdminUserRow {
   id: string; name: string; email: string; mobile: string; is_admin: boolean; google: boolean; created_at: string | null;
-  token_balance: number; paid_total: number; chats: number; agents_used: number; last_active: string | null;
+  token_balance: number; paid_total: number; plan_name?: string; chats: number; agents_used: number; last_active: string | null;
 }
 export interface UserList { total: number; page: number; limit: number; users: AdminUserRow[] }
 export interface UserPayment {

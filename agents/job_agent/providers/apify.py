@@ -54,6 +54,19 @@ def _token():
     return token
 
 
+def _apify_reason(response):
+    """Apify's own explanation of a failed call (e.g. "run-failed: Actor run
+    did not succeed"), so the admin Sources tab says why, not just the code."""
+    try:
+        error = (response.json() or {}).get("error") or {}
+    except (ValueError, AttributeError):
+        return ""
+    if not isinstance(error, dict):
+        return ""
+    reason = ": ".join(str(part).strip() for part in (error.get("type"), error.get("message")) if part)
+    return f" ({reason[:300]})" if reason else ""
+
+
 def run_actor_and_fetch_items(actor_id, run_input=None, session=None):
     """Run an Apify actor synchronously and return its raw dataset items.
 
@@ -87,7 +100,7 @@ def run_actor_and_fetch_items(actor_id, run_input=None, session=None):
     if response.status_code == 401:
         raise ApifyAPIError("Apify rejected the configured API token")
     if response.status_code >= 400:
-        raise ApifyAPIError(f"Apify actor '{actor_id}' returned HTTP {response.status_code}")
+        raise ApifyAPIError(f"Apify actor '{actor_id}' returned HTTP {response.status_code}{_apify_reason(response)}")
 
     try:
         items = response.json()
