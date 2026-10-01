@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 from app import config
 from app.auth.security import get_current_user_id
-from app.billing.plans import active_plan, payment_label, plan_name, tokens_for_plan_id
+from app.billing.plans import active_plan, payment_label, plan_name, tokens_for_payment
 from app.db import get_session
 from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
 
@@ -135,7 +135,7 @@ def overview(_admin: str = Depends(require_admin)) -> dict:
 
         tokens = {
             "outstanding_balance": int(session.query(func.sum(User.token_balance)).scalar() or 0),
-            "credited_by_payments": sum(tokens_for_plan_id(p.plan_id) or 0 for p in paid),
+            "credited_by_payments": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
             "users_out_of_tokens": session.query(func.count(User.id)).filter(User.token_balance <= 0).scalar() or 0,
         }
 
@@ -232,14 +232,14 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
             },
             "totals": {
                 "paid": _rupees(sum(p.amount for p in paid)), "payments": len(payments), "paid_payments": len(paid),
-                "tokens_bought": sum(tokens_for_plan_id(p.plan_id) or 0 for p in paid),
+                "tokens_bought": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
                 "conversations": len([c for c in conversations if c.deleted_at is None]),
                 "messages": sum(counts.values()),
             },
             "payments": [{
                 "id": p.id, "label": payment_label(p.plan_id), "plan_id": p.plan_id, "amount": _rupees(p.amount), "currency": p.currency,
                 "status": p.status, "razorpay_order_id": p.razorpay_order_id, "razorpay_payment_id": p.razorpay_payment_id,
-                "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at), "tokens": tokens_for_plan_id(p.plan_id) or 0,
+                "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at), "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
             } for p in payments],
             "conversations": [{
                 "id": c.id, "agent_id": c.agent_id, "title": c.title, "messages": counts.get(c.id, 0), "pinned": bool(c.pinned),
@@ -297,7 +297,7 @@ def list_payments(
                 "id": p.id, "user_id": p.user_id, "email": email or "(deleted account)", "name": name or "", "label": payment_label(p.plan_id),
                 "amount": _rupees(p.amount), "currency": p.currency, "status": p.status, "razorpay_order_id": p.razorpay_order_id,
                 "razorpay_payment_id": p.razorpay_payment_id, "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at),
-                "tokens": tokens_for_plan_id(p.plan_id) or 0,
+                "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
             } for p, email, name in rows],
         }
     finally:

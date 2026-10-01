@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -13,26 +14,21 @@ from app.auth.security import get_current_user_id
 from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
-    TOKENS_PER_RUPEE,
     active_plan,
-    custom_plan,
     offered_plans,
     payment_label,
     plan_name,
-    tokens_for_plan_id,
+    tokens_for_payment,
 )
 from app.db import get_session
 from app.models import Payment, TokenUsageEvent
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
 class OrderRequest(BaseModel):
     plan_id: str
-
-
-class TopupOrderRequest(BaseModel):
-    amount_inr: int
 
 
 class VerifyRequest(BaseModel):
@@ -67,7 +63,7 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
 
 
 def _credit_for_payment(payment: Payment) -> None:
-    tokens = tokens_for_plan_id(payment.plan_id)
+    tokens = tokens_for_payment(payment.plan_id, payment.amount)
     if tokens:
         auth_service.credit_tokens(payment.user_id, tokens)
 
@@ -75,7 +71,7 @@ def _credit_for_payment(payment: Payment) -> None:
 @router.get("/plans")
 def plans() -> dict:
     """The plans on sale, so prices live in one place (app/billing/plans.py)."""
-    return {"plans": offered_plans(), "custom": custom_plan()}
+    return {"plans": offered_plans()}
 
 
 @router.get("/summary")
@@ -161,6 +157,8 @@ def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id))
     plan = PLANS.get(req.plan_id)
     if not plan:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown billing plan.")
+    if plan.get("payment_page_url"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This plan is paid on its Razorpay payment page.")
     key_id, key_secret = _credentials()
     receipt = f"dd_{user_id[:10]}_{int(datetime.utcnow().timestamp())}"
     try:
@@ -177,31 +175,6 @@ def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id))
     finally:
         session.close()
     return {"key_id": key_id, "order_id": order["id"], "amount": plan["amount"], "currency": plan["currency"], "name": f"{plan['name']} plan"}
-
-
-@router.post("/topup-order", status_code=201)
-def create_topup_order(req: TopupOrderRequest, user_id: str = Depends(get_current_user_id)) -> dict:
-    if req.amount_inr < 1:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Minimum top-up amount is ₹1.")
-    tokens = req.amount_inr * TOKENS_PER_RUPEE
-    amount_paise = req.amount_inr * 100  # Razorpay amounts are in the smallest currency unit.
-    plan_id = f"topup_{tokens}"
-    key_id, key_secret = _credentials()
-    receipt = f"dd_topup_{user_id[:10]}_{int(datetime.utcnow().timestamp())}"
-    try:
-        response = httpx.post("https://api.razorpay.com/v1/orders", auth=(key_id, key_secret), json={"amount": amount_paise, "currency": "INR", "receipt": receipt, "notes": {"user_id": user_id, "plan_id": plan_id, "tokens": tokens}}, timeout=15)
-        response.raise_for_status()
-        order = response.json()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Unable to create payment order.") from exc
-    session = get_session()
-    try:
-        payment = Payment(user_id=user_id, plan_id=plan_id, amount=amount_paise, currency="INR", razorpay_order_id=order["id"])
-        session.add(payment)
-        session.commit()
-    finally:
-        session.close()
-    return {"key_id": key_id, "order_id": order["id"], "amount": amount_paise, "currency": "INR", "name": f"{tokens:,} tokens", "tokens": tokens}
 
 
 @router.post("/verify")
@@ -250,15 +223,54 @@ def download_invoice(payment_id: str, user_id: str = Depends(get_current_user_id
         session.close()
 
 
+def _webhook_secrets() -> list[str]:
+    """The in-app checkout's webhook and the payment page's (a different
+    Razorpay account or mode can sign with its own secret)."""
+    names = ("RAZORPAY_WEBHOOK_SECRET", "RAZORPAY_PAGE_WEBHOOK_SECRET")
+    return [value for value in (os.environ.get(name, "").strip() for name in names) if value]
+
+
+def _page_plan_for(amount: int, currency: str) -> str | None:
+    for plan_id, plan in PLANS.items():
+        if plan.get("payment_page_url") and plan["amount"] == amount and plan["currency"] == currency:
+            return plan_id
+    return None
+
+
+def _credit_payment_page(session, entity: dict) -> None:
+    """A captured payment the app did not create: one made on a plan's
+    Razorpay payment page. Credit the account whose email was entered there,
+    exactly once per Razorpay payment id."""
+    plan_id = _page_plan_for(entity.get("amount"), entity.get("currency"))
+    payment_id = str(entity.get("id") or "")
+    if not plan_id or not payment_id:
+        return
+    if session.query(Payment).filter_by(razorpay_payment_id=payment_id).first():
+        return  # already credited (Razorpay retries webhooks)
+    email = str(entity.get("email") or "").strip().lower()
+    user = auth_service.get_by_email(email) if email else None
+    if user is None:
+        logger.warning(
+            "Razorpay page payment %s for plan %s has no matching account (email %r); credit it by hand",
+            payment_id, plan_id, email,
+        )
+        return
+    payment = Payment(user_id=user.id, plan_id=plan_id, amount=entity["amount"], currency=entity["currency"],
+                      razorpay_order_id=str(entity.get("order_id") or f"page_{payment_id}"))
+    session.add(payment)
+    session.commit()
+    if _mark_paid(session, payment, payment_id):
+        _credit_for_payment(payment)
+
+
 @router.post("/webhook")
 async def webhook(request: Request) -> dict:
-    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
-    if not secret:
+    secrets = _webhook_secrets()
+    if not secrets:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook is not configured.")
     body = await request.body()
     signature = request.headers.get("x-razorpay-signature", "")
-    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature):
+    if not any(hmac.compare_digest(hmac.new(secret.encode(), body, hashlib.sha256).hexdigest(), signature) for secret in secrets):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature.")
     payload = await request.json()
     if payload.get("event") == "payment.captured":
@@ -269,6 +281,8 @@ async def webhook(request: Request) -> dict:
             if payment and entity.get("amount") == payment.amount and entity.get("currency") == payment.currency:
                 if _mark_paid(session, payment, entity.get("id")):
                     _credit_for_payment(payment)
+            elif payment is None:
+                _credit_payment_page(session, entity)
         finally:
             session.close()
     return {"ok": True}
