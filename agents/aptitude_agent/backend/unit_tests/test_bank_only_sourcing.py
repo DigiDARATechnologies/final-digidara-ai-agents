@@ -18,7 +18,7 @@ def test_assessment_creation_uses_one_batch_service_and_navigation_is_stored_onl
     assert "AptitudeTestQuestion.query.filter_by" in question
 
 
-def test_batch_service_calls_generator_once_for_the_complete_slot_list():
+def test_batch_service_generates_the_complete_slot_list_through_one_entry_point():
     source = (ROOT / "app" / "services" / "test_question_service.py").read_text(
         encoding="utf-8"
     )
@@ -26,7 +26,12 @@ def test_batch_service_calls_generator_once_for_the_complete_slot_list():
         source.index("def generate_and_store_question_batch"):
         source.index("def difficulty_metrics")
     ]
-    assert batch.count("generate_questions(") == 1
+    # One call for the whole slot list; generate_question_set sends a small
+    # test as one request and a large one as parallel chunks.
+    assert batch.count("generate_question_set(") == 1
+    assert "generate_questions(" not in batch
+    question_set = source[source.index("def generate_question_set"):source.index("def _recent_question_texts")]
+    assert "generate_questions(" in question_set
     assert "for sequence, item in enumerate(generated" in batch
     assert "db.session.flush()" in batch
     assert "question_batch_generation" in batch
