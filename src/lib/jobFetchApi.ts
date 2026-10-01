@@ -346,8 +346,14 @@ export interface JobAutomationSettings {
   last_error: string | null;
 }
 
+/** Free-plan API usage per provider and the coming week's planned searches. */
+export interface FreePlanOverview {
+  usage: Record<string, Array<{ window: string; used: number; limit: number }>>;
+  upcoming: Array<{ date: string; adzuna: Array<{ city: string; roles: string[] }>; jsearch: string[] }>;
+}
+
 export function adminGetAutomation() {
-  return invoke<{ automation: JobAutomationSettings }>("admin_get_automation");
+  return invoke<{ automation: JobAutomationSettings; free_plan?: FreePlanOverview | null }>("admin_get_automation");
 }
 
 export function adminUpdateAutomation(enabled: boolean) {

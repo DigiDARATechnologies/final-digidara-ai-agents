@@ -4,6 +4,7 @@ This module only queues work through the established queue pipeline. It never
 scrapes inside the scheduler or an HTTP request, and it intentionally excludes
 Apify because those providers remain administrator-triggered only.
 """
+import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,19 @@ from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE, JOBS_RETENTI
 from .db import get_db
 from .providers.sync import queue_adzuna_collection, queue_jsearch_collection
 from .service import prune_expired_jobs
+
+logger = logging.getLogger(__name__)
+
+
+def free_plan_overview():
+    """Free-plan usage per provider and the next 7 days' searches (admin only)."""
+    from .free_plan import usage_summary
+    from .providers.sync import upcoming_plan
+    try:
+        return {"usage": usage_summary(), "upcoming": upcoming_plan(7)}
+    except Exception:
+        logger.exception("Could not build the free-plan overview")
+        return None
 
 
 def get_automation_settings():

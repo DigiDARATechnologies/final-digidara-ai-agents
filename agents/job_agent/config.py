@@ -65,12 +65,13 @@ DEFAULT_PLAN_TIER = "free"
 # and removed this many days after posting (saved / applied jobs are kept).
 JOBS_RETENTION_DAYS = max(1, int(os.getenv("JOBS_RETENTION_DAYS", "7")))
 
-# How many IT role x city searches the daily automation runs per provider. The
-# full catalogue (providers.yaml `it_coverage`) rotates through these slices, so
-# every search runs at least once a week while staying inside API quotas:
-# Adzuna's free tier allows a few hundred calls a day, RapidAPI JSearch's free
-# tier about 200 requests a month (6 a day). Raise these on a paid plan.
-JOBS_ADZUNA_DAILY_QUERIES = max(0, int(os.getenv("JOBS_ADZUNA_DAILY_QUERIES", "40")))
+# How many IT role x city searches the daily automation runs per provider,
+# sized for the FREE plans over a 31-day month (free_plan.py enforces the caps):
+# - Adzuna: 70 a day = 2,170 a month (free: 2,500 a month, 1,000 a week, 250 a
+#   day), leaving room for manual "Queue run" clicks.
+# - JSearch: 6 a day = 186 a month (free: 200 a month).
+# The catalogue (providers.yaml `it_coverage`) rotates through these slices.
+JOBS_ADZUNA_DAILY_QUERIES = max(0, int(os.getenv("JOBS_ADZUNA_DAILY_QUERIES", "70")))
 JOBS_JSEARCH_DAILY_QUERIES = max(0, int(os.getenv("JOBS_JSEARCH_DAILY_QUERIES", "6")))
 
 # Dynamic SaaS Token & Daily Free Quota Defaults (can be overridden by DB or .env)

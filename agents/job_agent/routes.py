@@ -11,7 +11,7 @@ from flask import Blueprint, g, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from .auth import admin_required, user_required
-from .automation import get_automation_settings, set_automation_enabled
+from .automation import free_plan_overview, get_automation_settings, set_automation_enabled
 from .categories import OTHER_CATEGORY, OTHER_LABEL, load_categories, related_category_ids
 from .compensation import extract_salary_text
 from .config import ALLOWED_RESUME_EXTENSIONS, FREE_TIER_DAILY_FEED_LIMIT, JOBS_RETENTION_DAYS, PLAN_TIERS, RESUME_MAX_BYTES, UPLOAD_DIR
@@ -1137,7 +1137,8 @@ def admin_sources():
 @admin_required
 def admin_automation():
     if request.method == "GET":
-        return jsonify({"automation": _serialize(get_automation_settings())})
+        # The free-plan usage and the coming week's searches ride along.
+        return jsonify({"automation": _serialize(get_automation_settings()), "free_plan": free_plan_overview()})
     data = request.get_json(silent=True) or {}
     if not isinstance(data.get("enabled"), bool):
         return jsonify({"error": "enabled must be true or false"}), 400

@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from ..config import JOBS_ADZUNA_DAILY_QUERIES, JOBS_AUTOMATION_TIMEZONE, JOBS_JSEARCH_DAILY_QUERIES, JOBS_RETENTION_DAYS
@@ -11,6 +11,7 @@ from .config_loader import (
     get_adzuna_config,
     get_apify_config,
     get_greenhouse_companies,
+    get_it_coverage,
     get_jsearch_config,
     load_providers_config,
 )
@@ -425,21 +426,86 @@ def run_apify_collection(admin_id=None, platform=None):
     return {"ready": True, "reason": "", "totals": totals, "actors": actors_report}
 
 
-def todays_slice(sources, budget, today=None):
+def todays_slice(sources, budget, today=None, take=None):
     """The part of the search list to run today.
 
     Searches are taken in a fixed order, `budget` a day, continuing where
     yesterday stopped and wrapping around, so each one runs at least once
-    every ceil(len / budget) days. A budget of 0 runs nothing; a budget at
-    or above the list size runs everything."""
+    every ceil(len / budget) days. `take` (at most `budget`) runs fewer today
+    -- when the free plan has less left -- without shifting the rotation.
+    A budget of 0 runs nothing; a budget at or above the list size runs all."""
     sources = list(sources)
-    if budget <= 0 or not sources:
+    take = budget if take is None else max(0, min(take, budget))
+    if budget <= 0 or not sources or take == 0:
         return []
     if budget >= len(sources):
-        return sources
+        return sources[:take]
     day = (today or datetime.now(ZoneInfo(JOBS_AUTOMATION_TIMEZONE)).date()).toordinal()
     offset = (day * budget) % len(sources)
-    return [sources[(offset + i) % len(sources)] for i in range(budget)]
+    return [sources[(offset + i) % len(sources)] for i in range(take)]
+
+
+def _search_terms(source):
+    """{what, where} or {query} for a job_sources row or a config query."""
+    if "parser_config" in source:
+        try:
+            return json.loads(source.get("parser_config") or "{}")
+        except ValueError:
+            return {}
+    return source
+
+
+def rotation_order(searches):
+    """Order searches so each day mixes roles AND cities.
+
+    Adzuna searches are laid out diagonally: one block visits every city, each
+    with a different role, and the next block shifts every city to its next
+    role. A daily slice of 70 therefore searches all 7 cities with 10 different
+    roles each, and every role reaches every city within about 3 days. JSearch
+    searches follow the catalogue's role order. Searches outside the catalogue
+    go last, by name."""
+    coverage = get_it_coverage()
+    roles = [role.lower() for role in coverage["roles"]]
+    cities = [city.lower() for city in coverage["cities"]]
+
+    def key(search):
+        terms = _search_terms(search)
+        what, where = str(terms.get("what") or "").lower(), str(terms.get("where") or "").lower()
+        if what in roles and where in cities:
+            r, c = roles.index(what), cities.index(where)
+            return (0, (r - c) % len(roles), c, "")
+        query = str(terms.get("query") or "").lower()
+        for r, role in enumerate(roles):
+            if query.startswith(role + " "):
+                return (0, r, 0, query)
+        return (1, 0, 0, str(search.get("name") or what + where + query))
+
+    return sorted(searches, key=key)
+
+
+def daily_take(provider, budget):
+    """Today's searches: the planned budget, cut to what the free plan has left."""
+    from ..free_plan import remaining_calls
+    return min(budget, remaining_calls(provider))
+
+
+def upcoming_plan(days=7, start=None):
+    """The next `days` days of planned searches, for the admin page."""
+    start = start or datetime.now(ZoneInfo(JOBS_AUTOMATION_TIMEZONE)).date()
+    adzuna = rotation_order(get_adzuna_config()["queries"]) if get_adzuna_config()["enabled"] else []
+    jsearch = rotation_order(get_jsearch_config()["queries"]) if get_jsearch_config()["enabled"] else []
+    plan = []
+    for offset in range(days):
+        day = date.fromordinal(start.toordinal() + offset)
+        by_city = {}
+        for search in todays_slice(adzuna, JOBS_ADZUNA_DAILY_QUERIES, day):
+            by_city.setdefault(search["where"], []).append(search["what"])
+        plan.append({
+            "date": day.isoformat(),
+            "adzuna": [{"city": city, "roles": roles} for city, roles in by_city.items()],
+            "jsearch": [search["query"] for search in todays_slice(jsearch, JOBS_JSEARCH_DAILY_QUERIES, day)],
+        })
+    return plan
 
 
 def _adzuna_source_name(what, where):
@@ -511,7 +577,8 @@ def queue_adzuna_collection(admin_id=None, today=None):
     if not is_adzuna_configured():
         return {"ready": False, "reason": "ADZUNA_APP_ID or ADZUNA_APP_KEY is not configured"}
     sync_adzuna_sources()
-    sources = todays_slice(_active_adzuna_sources(), JOBS_ADZUNA_DAILY_QUERIES, today)
+    sources = todays_slice(rotation_order(_active_adzuna_sources()), JOBS_ADZUNA_DAILY_QUERIES, today,
+                           take=daily_take("adzuna", JOBS_ADZUNA_DAILY_QUERIES))
     return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
 
 
@@ -579,6 +646,7 @@ def queue_jsearch_collection(admin_id=None, today=None):
     if not is_jsearch_configured():
         return {"ready": False, "reason": "RAPIDAPI_KEY is not configured"}
     sync_jsearch_sources()
-    sources = todays_slice(_active_jsearch_sources(), JOBS_JSEARCH_DAILY_QUERIES, today)
+    sources = todays_slice(rotation_order(_active_jsearch_sources()), JOBS_JSEARCH_DAILY_QUERIES, today,
+                           take=daily_take("jsearch", JOBS_JSEARCH_DAILY_QUERIES))
     return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
 

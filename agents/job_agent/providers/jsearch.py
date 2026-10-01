@@ -107,7 +107,7 @@ def normalize_job(raw_job):
     }
 
 
-def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=None):
+def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=None, before_request=None):
     """Search Google Jobs / LinkedIn / Indeed via RapidAPI JSearch."""
     token = _token()
     session = session or requests.Session()
@@ -125,10 +125,14 @@ def fetch_and_normalize(query, page=1, num_pages=1, date_posted="all", session=N
     }
 
     timeout_seconds = max(SCRAPER_TIMEOUT_SECONDS * 2, 30)
+    # Each HTTP call counts against the free plan, the fallback included.
+    before_request = before_request or (lambda: None)
     try:
+        before_request()
         response = session.get(JSEARCH_API_BASE, params=params, headers=headers, timeout=timeout_seconds)
         if response.status_code == 404:
             # Try legacy endpoint only if search-v2 returned 404
+            before_request()
             response = session.get(JSEARCH_API_FALLBACK, params=params, headers=headers, timeout=timeout_seconds)
     except requests.Timeout as exc:
         raise JSearchAPIError(f"Timed out contacting RapidAPI JSearch ({JSEARCH_API_BASE})") from exc

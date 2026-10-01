@@ -8,7 +8,13 @@ jest.mock("../../src/lib/jobFetchApi", () => ({
     { id: 3, title: "Manual role", company: "Example", external_id: "manual:1", source_type: null, status: "active" },
   ] }),
   adminListCategories: jest.fn().mockResolvedValue({ categories: [] }),
-  adminGetAutomation: jest.fn().mockResolvedValue({ automation: null }),
+  adminGetAutomation: jest.fn().mockResolvedValue({ automation: null, free_plan: {
+    usage: { adzuna: [{ window: "month", used: 312, limit: 2500 }], jsearch: [{ window: "month", used: 40, limit: 200 }] },
+    upcoming: [{ date: "2026-10-02", adzuna: [{ city: "Chennai", roles: ["Java Developer", "React Developer"] }], jsearch: ["QA Engineer fresher in Tamil Nadu"] }],
+  } }),
+  adminListSources: jest.fn().mockResolvedValue({ sources: [] }),
+  adminApifyActors: jest.fn().mockResolvedValue({ actors: [] }),
+  adminListRuns: jest.fn().mockResolvedValue({ runs: [] }),
   adminListUsers: jest.fn().mockResolvedValue({ users: [
     { user_id: "4b8045260dbe4129856ae74c6aeeb784", plan_tier: "free", profile_completed: 1, created_at: "2026-10-01T09:00:00" },
     { user_id: "unknown-id", plan_tier: "pro", profile_completed: 0, created_at: null },
@@ -45,4 +51,14 @@ test("users & plans names each user and shows their billing plan beside the job 
   expect(screen.queryByText("4b8045260dbe4129856ae74c6aeeb784")).not.toBeInTheDocument();
   // An id the platform list does not know still shows, rather than vanishing.
   expect(screen.getByText("unknown-id")).toBeInTheDocument();
+});
+
+test("sources tab shows free-plan usage and the next days' role and city plan", async () => {
+  render(<JobsAdminPanel />);
+  fireEvent.click(await screen.findByRole("button", { name: /Sources & Automation/ }));
+  expect(await screen.findByText("Free plan: API calls used")).toBeInTheDocument();
+  expect(screen.getByText("month: 312 / 2,500")).toBeInTheDocument();
+  expect(screen.getByText("month: 40 / 200")).toBeInTheDocument();
+  expect(screen.getByText(/2 Adzuna \+ 1 JSearch searches/)).toBeInTheDocument();
+  expect(screen.getByText("Java Developer, React Developer")).toBeInTheDocument();
 });
