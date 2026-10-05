@@ -89,20 +89,91 @@ def validate_fenced_code(value, expected_language=None):
 
 
 def canonicalize_unlabelled_fences(value, language):
-    """Label complete, unlabeled Markdown blocks with the selected language.
+    """Label complete, unlabeled Markdown blocks with the selected language,
+    and fence bare program lines (see fence_bare_code).
 
-    This is deliberately narrow: unmatched fences and unfenced program text
-    remain invalid, while a structurally complete block is made compatible
-    with the learner-facing fenced-code contract.
+    This is deliberately narrow: unmatched fences remain invalid, while a
+    structurally complete block is made compatible with the learner-facing
+    fenced-code contract.
     """
     raw=decode_literal_layout(value)
     label=str(language or "python").strip().lower()
     if not LANGUAGE_PATTERN.fullmatch(label):
         label="python"
-    return UNLABELLED_FENCE_PATTERN.sub(
+    labelled=UNLABELLED_FENCE_PATTERN.sub(
         lambda match:f"```{label}\n{match.group('code').strip(chr(10))}\n```",
         raw,
     )
+    return fence_bare_code(labelled,label)
+
+
+# A line that reads like code rather than prose: indented, a keyword or call
+# at the start, an assignment, or ending in a block/statement delimiter.
+CODE_LINE_HINT=re.compile(
+    r"^\s{2,}\S|^\t+\S|"
+    r"^\s*(?:return|elif|else\b|try\s*:|except|finally\s*:|while|for|if|def|class|import|from|print|"
+    r"console\.log|System\.out|#include|public|private|static|int\s|var\s|let\s|const\s|#)|"
+    r"[;{}]\s*$|:\s*$|"
+    r"^\s*[A-Za-z_][\w\[\].\"']*\s*(?:[+\-*/%]?=)(?!=)|"
+    r"^\s*[})\]]"
+)
+# A sentence: capitalised word followed by at least three more words.
+PROSE_LINE=re.compile(r"^\s*[A-Z][a-z]+(?:\s+\S+){3,}")
+BARE_CODE_ERROR="technical code must be inside a language-labelled fenced code block"
+
+
+def _is_code_line(line):
+    if not line.strip():
+        return False
+    if PROSE_LINE.match(line) and not LIKELY_CODE_PATTERN.search(line):
+        return False
+    return bool(LIKELY_CODE_PATTERN.search(line) or CODE_LINE_HINT.search(line))
+
+
+def fence_bare_code(value, language):
+    """Wrap program lines the model wrote without a code block.
+
+    Models sometimes put a question's code on plain lines ("What is the
+    output?" then `print(type([]) == list)`) despite being asked for a fenced
+    block, and repeat it on every retry, so one such question used to fail a
+    whole test. This repairs only text that has no fences at all AND is
+    rejected for bare code: consecutive code lines become one fenced block in
+    the selected language. The result must still pass validate_fenced_code,
+    otherwise the original text is returned and rejected as before.
+    """
+    raw=str(value or "")
+    if "```" in raw or "\n" not in raw.strip():
+        return raw
+    try:
+        validate_fenced_code(raw,language)
+        return raw
+    except ValueError as exc:
+        if str(exc)!=BARE_CODE_ERROR:
+            return raw
+    lines=raw.strip("\n").split("\n")
+    flags=[_is_code_line(line) for line in lines]
+    # A blank line between two code lines belongs to the block.
+    for index,line in enumerate(lines):
+        if not line.strip() and 0<index<len(lines)-1 and flags[index-1] and any(flags[index+1:]) and flags[index+1]:
+            flags[index]=True
+    out=[]
+    block=[]
+    for line,is_code in zip(lines,flags):
+        if is_code:
+            block.append(line)
+            continue
+        if block:
+            out.append(f"```{language}\n"+"\n".join(block).strip("\n")+"\n```")
+            block=[]
+        out.append(line)
+    if block:
+        out.append(f"```{language}\n"+"\n".join(block).strip("\n")+"\n```")
+    repaired="\n".join(out)
+    try:
+        validate_fenced_code(repaired,language)
+    except ValueError:
+        return raw
+    return repaired
 
 
 def apply_structured_code_fields(item, category, expected_language=None):
