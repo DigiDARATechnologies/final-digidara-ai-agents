@@ -18,9 +18,9 @@ const mocked = jest.mocked(api);
 const plan = (id: string, name: string, amount: number, tokens: number, points: number, extra = {}) => ({
   id, name, amount, currency: 'INR', period: 'month', tokens, points, bonus_percent: 0, description: `${name} plan`, features: [`${points} points credited instantly`], popular: false, ...extra,
 });
-const PAGE = 'https://rzp.io/rzp/6ypplegm';
+const PAGE = 'https://rzp.io/rzp/j6YPZzy8';
 const catalog = {
-  plans: [plan('basic', 'Basic', 39900, 300000, 100), plan('standard', 'Standard', 79900, 700000, 250, { popular: true }), plan('premium', 'Premium', 99900, 900000, 500, { payment_page_url: PAGE })],
+  plans: [plan('basic', 'Basic', 39900, 300000, 100), plan('standard', 'Standard', 79900, 700000, 250, { popular: true }), plan('premium', 'Premium', 99900, 900000, 500, { payment_page_url: PAGE, page_amount: 117882 })],
 };
 const payments = [
   { id: 'paid-1', plan_id: 'standard', label: 'Standard plan', amount: 99900, currency: 'INR', status: 'paid', payment_id: 'pay_1', created_at: '2026-09-14T10:00:00Z', invoice_available: true },
@@ -60,6 +60,7 @@ test('the 999 plan opens the Razorpay payment page and asks for the account emai
   setup();
   const premium = (await screen.findByRole('button', { name: 'Buy Premium' })).closest('article') as HTMLElement;
   expect(within(premium).getByText('asha@example.com')).toBeInTheDocument();
+  expect(within(premium).getByText(/1,178\.82 incl\. GST/)).toBeInTheDocument();
   fireEvent.click(within(premium).getByRole('button', { name: 'Buy Premium' }));
   expect(open).toHaveBeenCalledWith(PAGE, '_blank', 'noopener,noreferrer');
   expect(mocked.createBillingOrder).not.toHaveBeenCalled();

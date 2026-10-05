@@ -116,7 +116,7 @@ export default function BillingPanel({ open, user, onToast }: Props) {
               <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the points reach this account.</p>}
+              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab{plan.page_amount && plan.page_amount !== plan.amount ? <> ({money(plan.page_amount, plan.currency)} incl. GST)</> : null}. Pay with <b>{user.email}</b> so the points reach this account.</p>}
               <button disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
             </article>
           ))}
