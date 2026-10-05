@@ -65,6 +65,10 @@ PLANS: dict[str, dict] = {
         "points": 500,
         "description": "For regular learners who use several agents each week.",
         "popular": True,
+        # Paid on DigiDARA's Razorpay payment page, like Premium below.
+        "payment_page_url": os.getenv("RAZORPAY_STANDARD_PAGE_URL", "https://rzp.io/rzp/mKDSePpB"),
+        # What that page charges: INR 799 + 18% GST = INR 942.82.
+        "page_amount": int(os.getenv("RAZORPAY_STANDARD_PAGE_AMOUNT", "94282")),
     },
     "premium": {
         "name": "Premium",
@@ -93,8 +97,9 @@ def is_full_price(plan: dict, amount_paise: int) -> bool:
 def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, int] | None:
     """The one place that decides what a payment credits: exactly the plan's
     tokens and points, and only for exactly its price -- INR 399 -> 500,000,
-    INR 799 -> 1,000,000, INR 999 (or the INR 1,178.82 its Razorpay page
-    charges with GST) -> 1,500,000. Never scaled, never rounded up.
+    INR 799 (or the INR 942.82 its Razorpay page charges with GST) ->
+    1,000,000, INR 999 (or the INR 1,178.82 its page charges) -> 1,500,000.
+    Never scaled, never rounded up.
 
     Anything else credits nothing: a different amount, a plan no longer sold,
     a legacy top-up, another currency. The caller logs it so a person can
