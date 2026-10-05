@@ -53,10 +53,23 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, session_version: int = 0) -> str:
     now = int(time.time())
-    payload = {"sub": user_id, "iat": now, "exp": now + JWT_EXPIRES_MINUTES * 60}
+    payload = {"sub": user_id, "sv": session_version, "iat": now, "exp": now + JWT_EXPIRES_MINUTES * 60}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def _current_session_version(user_id: str) -> int | None:
+    """None when the account doesn't exist; callers already answer that case."""
+    from app import db
+    from app.models import User
+
+    session = db.get_session()
+    try:
+        user = session.get(User, user_id)
+        return None if user is None else int(user.session_version or 0)
+    finally:
+        session.close()
 
 
 def decode_access_token(token: str) -> str:
@@ -64,7 +77,14 @@ def decode_access_token(token: str) -> str:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.") from exc
-    return payload["sub"]
+    user_id = payload["sub"]
+    # Tokens issued before "sv" existed count as version 0, so this change
+    # logs nobody out; a later bump (see auth/service.py:link_google_id)
+    # still revokes them.
+    current = _current_session_version(user_id)
+    if current is not None and int(payload.get("sv", 0)) != current:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.")
+    return user_id
 
 
 def get_current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme)) -> str:

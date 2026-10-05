@@ -72,6 +72,15 @@ class User(Base):
     # Platform operator status. The gateway derives the Job Agent admin
     # header from this server-side value, never from browser input.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # True once someone has proven they control `email`: Google sign-in, or
+    # the operator's own ADMIN_EMAIL / ADMIN_PASSWORD. Password signup does
+    # not verify the address, so anyone can register an account under an
+    # email they don't own; see auth/service.py:link_google_id for why that
+    # matters when the real owner later signs in with Google.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Embedded in every session token as "sv"; bumping it revokes every token
+    # issued before (see auth/security.py:decode_access_token).
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.

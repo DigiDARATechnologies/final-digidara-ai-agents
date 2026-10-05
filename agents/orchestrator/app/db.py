@@ -56,6 +56,21 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        if "email_verified" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0"))
+                # Existing Google-linked accounts and operators already proved
+                # their address; everyone else stays unverified.
+                connection.execute(text("UPDATE users SET email_verified = 1 WHERE google_id IS NOT NULL OR is_admin = 1"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        if "session_version" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
         # Widen last_heartbeat to microsecond precision -- a plain DATETIME
         # (fsp=0) truncates every value to the whole second, so two agent
         # versions that register or heartbeat within the same second could

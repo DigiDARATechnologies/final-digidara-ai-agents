@@ -65,6 +65,7 @@ def create_google_user(name: str, email: str, google_id: str, consent_policy_ver
             name=name,
             email=email,
             google_id=google_id,
+            email_verified=True,
             consent_accepted_at=datetime.utcnow(),
             consent_policy_version=consent_policy_version,
         )
@@ -205,11 +206,24 @@ def credit_tokens(user_id: str, amount: int) -> None:
 def link_google_id(user_id: str, google_id: str) -> User:
     """A password account signing in with Google for the first time under
     the same email — attach the Google identity rather than creating a
-    second account."""
+    second account.
+
+    Google has just proven this person owns the address. If the account was
+    never verified, whoever chose its password never proved that, and may be
+    someone who registered the victim's email in advance to keep a way in
+    after the real owner arrives. So their password is dropped and every
+    existing session is revoked. The owner keeps signing in with Google, and
+    PUT /auth/password accepts a new password with no current one once it's
+    gone.
+    """
     session = get_session()
     try:
         user = session.get(User, user_id)
         user.google_id = google_id
+        if not user.email_verified:
+            user.password_hash = None
+            user.session_version = (user.session_version or 0) + 1
+        user.email_verified = True
         session.commit()
         session.refresh(user)
         return user
@@ -232,7 +246,11 @@ def set_password(user_id: str, password_hash: str) -> None:
 def seed_admin_from_env() -> None:
     """Create or promote the configured platform administrator once.
 
-    Existing passwords are deliberately never reset during startup.
+    An existing admin's password is deliberately never reset during startup.
+    Promoting an existing account is different: signup doesn't verify email,
+    so an unverified account under ADMIN_EMAIL may have been registered by
+    someone else to be handed admin here. Such an account takes the operator's
+    ADMIN_PASSWORD and loses every earlier session before it is promoted.
     """
     email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "")
@@ -242,9 +260,13 @@ def seed_admin_from_env() -> None:
     try:
         user = session.query(User).filter_by(email=email).first()
         if user is None:
-            session.add(User(name="Admin", email=email, password_hash=hash_password(password), is_admin=True))
+            session.add(User(name="Admin", email=email, password_hash=hash_password(password), is_admin=True, email_verified=True))
             session.commit()
         elif not user.is_admin:
+            if not user.email_verified:
+                user.password_hash = hash_password(password)
+                user.session_version = (user.session_version or 0) + 1
+                user.email_verified = True
             user.is_admin = True
             session.commit()
     finally:

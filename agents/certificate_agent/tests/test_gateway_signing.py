@@ -116,10 +116,18 @@ def test_wrong_secret_is_rejected(monkeypatch):
     assert verify(headers) == "bad_signature"
 
 
-def test_mode_defaults_to_warn_and_rejects_garbage(monkeypatch):
-    assert signing.mode() == "warn"
-    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "enforce")
+def test_mode_defaults_to_enforce_when_a_secret_is_configured(monkeypatch):
     assert signing.mode() == "enforce"
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "warn")
+    assert signing.mode() == "warn"
+    # A typo must never weaken verification.
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "sometimes")
+    assert signing.mode() == "enforce"
+
+
+def test_mode_defaults_to_warn_only_without_a_secret(monkeypatch):
+    monkeypatch.delenv("AGENT_SHARED_SECRET", raising=False)
+    assert signing.mode() == "warn"
     monkeypatch.setenv("AGENT_SIGNATURE_MODE", "sometimes")
     assert signing.mode() == "warn"
 
@@ -166,7 +174,8 @@ def make_client():
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_warn_mode_serves_unsigned_requests_but_logs_them(caplog):
+def test_warn_mode_serves_unsigned_requests_but_logs_them(monkeypatch, caplog):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "warn")
     with caplog.at_level("WARNING", logger="digidara.signing"):
         response = make_client().post("/api/invoke", json={"action": "x"}, headers={"x-digidara-is-admin": "true"})
     assert response.status_code == 200
@@ -254,7 +263,8 @@ def test_reentry_exemption_is_cleared_even_when_the_handler_raises(monkeypatch):
     assert client.get("/internal").status_code == 401
 
 
-def test_warn_mode_logs_one_warning_per_outer_request_not_per_internal_call(caplog):
+def test_warn_mode_logs_one_warning_per_outer_request_not_per_internal_call(monkeypatch, caplog):
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "warn")
     with caplog.at_level("WARNING", logger="digidara.signing"):
         assert make_client().post("/api/reenter", json={}).status_code == 200
     assert caplog.text.count("gateway_signature_invalid") == 1

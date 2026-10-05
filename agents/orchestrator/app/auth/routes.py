@@ -43,7 +43,7 @@ def signup(req: SignupRequest, request: Request) -> TokenResponse:
     if service.get_by_email(email):
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists.")
     user = service.create_user(req.name.strip(), email, req.mobile, hash_password(req.password), CONSENT_POLICY_VERSION)
-    return TokenResponse(access_token=create_access_token(user.id), user=_to_out(user))
+    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -52,7 +52,7 @@ def login(req: LoginRequest, request: Request) -> TokenResponse:
     user = service.get_by_email(req.email.strip().lower())
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password.")
-    return TokenResponse(access_token=create_access_token(user.id), user=_to_out(user))
+    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -77,7 +77,7 @@ def google_auth(req: GoogleAuthRequest) -> TokenResponse:
                 )
             user = service.create_google_user(profile.name, profile.email, profile.sub, CONSENT_POLICY_VERSION)
 
-    return TokenResponse(access_token=create_access_token(user.id), user=_to_out(user))
+    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
 
 
 @router.get("/me", response_model=UserOut)
