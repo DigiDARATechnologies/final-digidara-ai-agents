@@ -5,7 +5,7 @@ PyMySQL==1.1.1
 cryptography==50.0.0
 reportlab==4.2.5
 Pillow==12.3.0
-pypdf==6.16.1
+pypdf==6.19.0
 anthropic==0.69.0
 # Long-term chat memory (app/services/memory.py). Off unless MEM0_ENABLED=true.
 mem0ai==2.2.1
