@@ -109,9 +109,11 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
     assert [i for i in offered if offered[i]["popular"]] == ["standard"]
     assert "custom" not in body
     assert "pro_monthly" not in offered and "pro_yearly" not in offered
-    # Only the 999 plan is paid on the Razorpay payment page.
-    assert [i for i in offered if offered[i]["payment_page_url"]] == ["premium"]
+    # The 799 and 999 plans are paid on their Razorpay payment pages; 399 in-app.
+    assert [i for i in offered if offered[i]["payment_page_url"]] == ["standard", "premium"]
+    assert offered["standard"]["payment_page_url"] == "https://rzp.io/rzp/mKDSePpB"
     assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8"
+    assert (offered["standard"]["page_amount"], offered["premium"]["page_amount"]) == (94282, 117882)
 
 
 def test_plans_sell_fixed_tokens_shown_as_points():
@@ -127,12 +129,14 @@ def test_only_an_exact_plan_price_credits_and_only_exactly_its_tokens():
     credit = plan_catalog.exact_credit
     assert credit("basic", 39900, "INR") == (500_000, 250)
     assert credit("standard", 79900, "INR") == (1_000_000, 500)
+    assert credit("standard", 94282, "INR") == (1_000_000, 500)       # its Razorpay page: 799 + GST
     assert credit("premium", 99900, "INR") == (1_500_000, 750)
     assert credit("premium", 117882, "INR") == (1_500_000, 750)      # the Razorpay page: 999 + GST, no extra tokens
     # Anything else credits nothing -- never scaled, never rounded up.
     for plan_id, amount, currency in [
         ("basic", 39901, "INR"), ("basic", 39899, "INR"), ("basic", 45000, "INR"), ("basic", 79900, "INR"),
         ("premium", 117883, "INR"), ("premium", 199900, "INR"), ("basic", 49900, "INR"),
+        ("standard", 94283, "INR"), ("standard", 117882, "INR"), ("premium", 94282, "INR"),
         ("basic", 39900, "USD"), ("topup_500000", 50000, "INR"), ("pro_monthly", 99900, "INR"), ("nope", 39900, "INR"),
     ]:
         assert credit(plan_id, amount, currency) is None, (plan_id, amount, currency)
@@ -188,12 +192,13 @@ def test_a_recent_legacy_pro_plan_keeps_its_active_status(env):
 
 def test_ordering_a_plan_charges_the_catalog_price(env, monkeypatch):
     calls = razorpay_ok(monkeypatch)
-    body = env.client.post("/billing/orders", json={"plan_id": "standard"}).json()
-    assert calls["orders"][0]["amount"] == 79900 and calls["orders"][0]["currency"] == "INR"
-    assert body["amount"] == 79900 and body["name"] == "Standard plan"
+    body = env.client.post("/billing/orders", json={"plan_id": "basic"}).json()
+    assert calls["orders"][0]["amount"] == 39900 and calls["orders"][0]["currency"] == "INR"
+    assert body["amount"] == 39900 and body["name"] == "Basic plan"
 
 
-@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", "", "premium"])
+# Standard and Premium are paid on their Razorpay pages, never in-app.
+@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", "", "standard", "premium"])
 def test_plans_that_are_not_on_sale_cannot_be_ordered(env, monkeypatch, plan_id):
     calls = razorpay_ok(monkeypatch)
     assert env.client.post("/billing/orders", json={"plan_id": plan_id}).status_code == 400
@@ -361,6 +366,15 @@ def page_payment(env, payment_id="pay_page_1", email="ASHA@example.com", amount=
         "id": payment_id, "order_id": f"order_{payment_id}", "amount": amount, "currency": "INR", "email": email}}}}).encode()
     return env.client.post("/billing/webhook", content=event,
                            headers={"x-razorpay-signature": hmac.new(secret, event, hashlib.sha256).hexdigest()})
+
+
+def test_the_799_page_charges_gst_and_still_credits_exactly_the_799_plan(env):
+    # The Razorpay page charges INR 799 + 18% GST = INR 942.82.
+    set_balance(env, 0)
+    assert page_payment(env, amount=94282).status_code == 200
+    assert balance(env) == 1_000_000 and points(env) == 500
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["plan_id"], payment["amount"], payment["points"]) == ("standard", 94282, 500)
 
 
 def test_the_999_page_charges_gst_and_still_credits_exactly_the_999_plan(env):
