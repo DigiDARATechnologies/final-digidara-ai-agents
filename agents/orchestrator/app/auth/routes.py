@@ -22,6 +22,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # falls back to per-IP — exactly what a credential-stuffing / signup-spam
 # guard on these two routes needs.
 _LOGIN_RATE_LIMIT = "5/minute"
+_GOOGLE_RATE_LIMIT = "10/minute"
 
 
 def _to_out(user: User) -> UserOut:
@@ -56,7 +57,11 @@ def login(req: LoginRequest, request: Request) -> TokenResponse:
 
 
 @router.post("/google", response_model=TokenResponse)
-def google_auth(req: GoogleAuthRequest) -> TokenResponse:
+# Each call makes two outbound requests to Google with our client secret;
+# unthrottled, it lets anyone burn that quota or hammer the code exchange.
+# A little looser than password login: a failed Google redirect is retried.
+@limiter.limit(_GOOGLE_RATE_LIMIT)
+def google_auth(req: GoogleAuthRequest, request: Request) -> TokenResponse:
     profile = google_oauth.exchange_code(req.code, req.redirect_uri)
 
     user = service.get_by_google_id(profile.sub)

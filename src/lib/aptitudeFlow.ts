@@ -9,7 +9,8 @@ const categoryOptions = categories.map((value) => ({ label: value, value }));
 const levelOptions = ["Beginner", "Intermediate", "Advanced"].map((value) => ({ label: value, value }));
 const languageOptions = ["Python", "Java", "C", "SQL"].map((value) => ({ label: value, value }));
 const optionMap = (options: Record<string, string>): ChatOption[] => Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
-const isTokenInterruption = (error: unknown) => /insufficient token balance|token balance/i.test((error as Error)?.message || "");
+// The gateway answers 402 "Not enough points" (formerly "Insufficient token balance").
+const isTokenInterruption = (error: unknown) => /not enough points|insufficient token balance|token balance/i.test((error as Error)?.message || "");
 const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
 /** Starting a test can occasionally fail validation on the AI provider's side (a
  * transient generation defect, not a real outage) -- retried once silently before ever
@@ -100,7 +101,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       return { state, messages: [{ text: "Your Aptitude test report has been downloaded." }] };
     }
     if (state.tokenInterrupted) {
-      if (!/continue|resume/i.test(value)) return { state, messages: [{ text: "Top up your token balance, then choose Continue Test to restore the current question and timer.", options: resumeOptions }] };
+      if (!/continue|resume/i.test(value)) return { state, messages: [{ text: "Top up your points, then choose Continue Test to restore the current question and timer.", options: resumeOptions }] };
       const question = await getAptitudeQuestion(state.sessionToken!, state.testId!);
       return { state: { ...state, step: "awaiting_question" as const, question, tokenInterrupted: false, hintsRemaining: question.hints_remaining, hintText: undefined }, messages: [questionMessage(question)] };
     }
@@ -135,7 +136,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
           const result = await requestAptitudeHint(state.sessionToken!, state.testId!);
           return { state: { ...state, hintsRemaining: result.hints_remaining, hintText: result.hint }, messages: [{ text: `Hint (${result.hints_remaining} remaining): ${result.hint}`, options: optionMap(state.question!.options) }] };
         } catch (error) {
-          if (isTokenInterruption(error)) return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "Your token balance is insufficient. Top up your balance, then continue this test to restore the current question and timer.", options: resumeOptions }] };
+          if (isTokenInterruption(error)) return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "You don't have enough points. Top up your points, then continue this test to restore the current question and timer.", options: resumeOptions }] };
           return { state, messages: [{ text: `I could not generate a safe hint right now: ${(error as Error).message}`, options: optionMap(state.question!.options) }] };
         }
       }
@@ -167,7 +168,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
     return { state, messages: [{ text: "This test is complete. Start a new Aptitude chat for another attempt." }] };
   } catch (error) {
     if (isTokenInterruption(error) && state.testId && state.question) {
-      return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "Your token balance is insufficient. Top up your balance, then continue this test to restore the current question and timer.", options: resumeOptions }] };
+      return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "You don't have enough points. Top up your points, then continue this test to restore the current question and timer.", options: resumeOptions }] };
     }
     return { state, messages: [{ text: `Aptitude request failed: ${(error as Error).message}` }] };
   }

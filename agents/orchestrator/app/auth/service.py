@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 
 from app.auth.security import hash_password
+from app.billing.plans import points_for_tokens
 from app.agent_state import service as agent_state_service
 from app.chat_history import service as chat_history_service
 from app.db import get_session
@@ -114,6 +115,7 @@ def export_user_data(user_id: str) -> dict | None:
                 "google_linked": user.google_id is not None,
                 "created_at": user.created_at.isoformat(),
                 "token_balance": user.token_balance,
+                "points_balance": points_for_tokens(max(0, user.token_balance), user.tokens_per_point),
                 "consent_accepted_at": user.consent_accepted_at.isoformat() if user.consent_accepted_at else None,
                 "consent_policy_version": user.consent_policy_version,
             },
@@ -187,17 +189,32 @@ def settle_tokens(user_id: str, amount: int, agent_name: str = "", action: str =
         session.close()
 
 
-def credit_tokens(user_id: str, amount: int) -> None:
-    """Add tokens to a balance -- used after a verified top-up payment."""
-    from sqlalchemy import text
-    from app.db import get_session
+def credit_tokens(user_id: str, amount: int, points: float | None = None) -> None:
+    """Add tokens to a balance -- used after a verified top-up payment.
+
+    `points` is what the purchase was sold as. The account's tokens-per-point
+    rate is re-blended so the shown balance becomes exactly the points it
+    showed before plus the points just bought (100 + 250 = 350), even though
+    each plan has its own rate. Without `points` the tokens are added at the
+    account's existing rate. The row is locked so a concurrent charge
+    (settle_tokens) can't land between reading and writing the balance.
+    """
+    from app.billing.plans import FREE_TOKENS_PER_POINT
 
     session = get_session()
     try:
-        session.execute(
-            text("UPDATE users SET token_balance = token_balance + :amount WHERE id = :user_id"),
-            {"amount": amount, "user_id": user_id},
-        )
+        user = session.get(User, user_id, with_for_update=True)
+        if user is None:
+            return
+        rate = user.tokens_per_point or FREE_TOKENS_PER_POINT
+        balance = user.token_balance or 0
+        new_balance = balance + amount
+        if points and new_balance > 0:
+            # A negative balance (the last call overshot) is a debt in tokens;
+            # it shows as 0 points, and is paid off out of the new tokens.
+            new_points = max(0, balance) / rate + points
+            user.tokens_per_point = new_balance / new_points
+        user.token_balance = new_balance
         session.commit()
     finally:
         session.close()

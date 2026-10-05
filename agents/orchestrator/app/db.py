@@ -65,6 +65,14 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        if "tokens_per_point" not in user_columns:
+            try:
+                # Every existing balance counts at the free rate, so nobody's
+                # shown points jump or shrink when points are introduced.
+                connection.execute(text("ALTER TABLE users ADD COLUMN tokens_per_point DOUBLE NOT NULL DEFAULT 3000"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
         if "session_version" not in user_columns:
             try:
                 connection.execute(text("ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0"))

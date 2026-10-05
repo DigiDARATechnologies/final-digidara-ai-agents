@@ -18,6 +18,27 @@ dist-ssr
 !.env.example
 !.env.*.example
 
+# Server backups and dumps. A tarball of the server directory holds every
+# production .env (OpenAI, Google, Razorpay, JWT and database secrets), so
+# none of these may ever be committed. Keep such copies outside the repo.
+*.tar
+*.tar.gz
+*.tgz
+*.tar.bz2
+*.tar.xz
+# (Not *.sql: agents keep their real migrations and schemas as .sql files.)
+/*.sql
+*dump*.sql
+*backup*.sql
+*.sql.gz
+*.dump
+*.bak
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+judge0.conf
+
 # Python virtual environments, bytecode, and test caches
 __pycache__/
 *.py[cod]

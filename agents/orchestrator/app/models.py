@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.billing.plans import FREE_TOKENS_PER_POINT, free_signup_tokens
 from app.db import Base
 
 
@@ -84,7 +85,11 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.
-    token_balance: Mapped[int] = mapped_column(Integer, default=50000, server_default="50000")
+    token_balance: Mapped[int] = mapped_column(Integer, default=free_signup_tokens, server_default="50000")
+    # How many of this account's tokens make one displayed point. Accounts
+    # from before points, and free accounts, use FREE_TOKENS_PER_POINT; each
+    # purchase blends in its plan's rate (auth/service.py:credit_tokens).
+    tokens_per_point: Mapped[float] = mapped_column(Float, default=FREE_TOKENS_PER_POINT, server_default="3000")
     # DPDP Act 2023 consent record: the timestamp/policy-version pair the
     # user affirmatively agreed to at signup (see app/auth/consent.py). Not
     # nullable in practice for new rows -- signup rejects a missing

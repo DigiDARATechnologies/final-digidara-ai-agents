@@ -114,8 +114,8 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
   };
 
   if (state.step === "awaiting_question" && state.question && state.tokenInterrupted) {
-    return <section className="aptitude-practice-panel aptitude-live-panel" aria-label="Aptitude test paused for token replenishment">
-      <div className="aptitude-live-details"><span className="aptitude-panel-eyebrow">TEST PAUSED</span><strong>Question {state.question.sequence} of {state.question.total_questions}</strong><p>Top up your token balance to continue this attempt.</p><ExitTestControl onExit={() => onChoose("exit test")} pending={exitPending} /></div>
+    return <section className="aptitude-practice-panel aptitude-live-panel" aria-label="Aptitude test paused until points are topped up">
+      <div className="aptitude-live-details"><span className="aptitude-panel-eyebrow">TEST PAUSED</span><strong>Question {state.question.sequence} of {state.question.total_questions}</strong><p>Top up your points to continue this attempt.</p><ExitTestControl onExit={() => onChoose("exit test")} pending={exitPending} /></div>
       <div className="aptitude-live-actions"><Timer seconds={seconds} total={state.question.total_duration_seconds || state.question.allowed_time_seconds} /><button type="button" className="aptitude-hint-button" onClick={() => onChoose("continue test")}>Continue Test</button></div>
     </section>;
   }
