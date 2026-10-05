@@ -9,10 +9,33 @@ nothing is hardcoded twice.
 Change the numbers below to change pricing. Amounts are in paise (Razorpay's
 smallest unit), so 49900 = INR 499.00.
 """
+import os
 from datetime import datetime, timedelta
 
-# Rupees paid -> tokens credited for a custom amount. INR 1 = 1,000 tokens.
+# Rupees paid -> tokens credited for a legacy custom top-up (no longer sold;
+# kept so old top-up payments still have a name and credit correctly).
 TOKENS_PER_RUPEE = 1000
+
+# Plans give exactly the tokens the same money buys from OpenAI itself, at
+# the rate of gpt-4o-mini, the model most agents run on (checked 1 Oct 2026):
+# $0.15 per million input tokens and $0.60 per million output tokens,
+# blended 3 input : 1 output (the usual blend), converted at ~INR 96.25 per
+# USD. That is INR ~25.27 per million tokens. Override with the env vars
+# below when OpenAI's price or the exchange rate moves.
+OPENAI_INPUT_USD_PER_MILLION = float(os.getenv("OPENAI_INPUT_USD_PER_MILLION", "0.15"))
+OPENAI_OUTPUT_USD_PER_MILLION = float(os.getenv("OPENAI_OUTPUT_USD_PER_MILLION", "0.60"))
+OPENAI_INPUT_SHARE = float(os.getenv("OPENAI_INPUT_SHARE", "0.75"))
+USD_TO_INR = float(os.getenv("USD_TO_INR", "96.25"))
+
+
+def inr_per_million_tokens() -> float:
+    usd = OPENAI_INPUT_SHARE * OPENAI_INPUT_USD_PER_MILLION + (1 - OPENAI_INPUT_SHARE) * OPENAI_OUTPUT_USD_PER_MILLION
+    return usd * USD_TO_INR
+
+
+def tokens_for_rupees(rupees: float) -> int:
+    """What `rupees` buys from OpenAI, to the nearest thousand tokens."""
+    return round(rupees / inr_per_million_tokens() * 1_000) * 1000
 
 # A paid plan is shown as "active" for this long after payment. Plans are
 # one-time payments, not auto-renewing subscriptions.
@@ -21,25 +44,29 @@ PLAN_PERIOD_DAYS = 30
 PLANS: dict[str, dict] = {
     "basic": {
         "name": "Basic",
-        "amount": 49900,
+        "amount": 39900,
         "currency": "INR",
-        "tokens": 500_000,
+        "tokens": tokens_for_rupees(399),
         "description": "For getting started and light, occasional use.",
     },
     "standard": {
         "name": "Standard",
-        "amount": 99900,
+        "amount": 79900,
         "currency": "INR",
-        "tokens": 1_200_000,
+        "tokens": tokens_for_rupees(799),
         "description": "For regular learners who use several agents each week.",
         "popular": True,
     },
     "premium": {
         "name": "Premium",
-        "amount": 199900,
+        "amount": 99900,
         "currency": "INR",
-        "tokens": 2_600_000,
+        "tokens": tokens_for_rupees(999),
         "description": "For heavy daily use across every agent.",
+        # Paid on DigiDARA's own Razorpay payment page instead of the in-app
+        # checkout; the webhook credits the account whose email was entered
+        # there (routes.py `_credit_payment_page`).
+        "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", "https://rzp.io/rzp/6ypplegm"),
     },
 }
 
@@ -53,9 +80,9 @@ LEGACY_PLANS: dict[str, dict] = {
 
 
 def bonus_percent(plan: dict) -> int:
-    """How many percent more tokens the plan gives than a plain top-up of the same price."""
-    baseline = plan["amount"] / 100 * TOKENS_PER_RUPEE
-    return max(0, round((plan["tokens"] / baseline - 1) * 100))
+    """How many percent more tokens the plan gives than OpenAI's own rate for its price."""
+    baseline = tokens_for_rupees(plan["amount"] / 100)
+    return max(0, round((plan["tokens"] / baseline - 1) * 100)) if baseline else 0
 
 
 def offered_plans() -> list[dict]:
@@ -63,13 +90,13 @@ def offered_plans() -> list[dict]:
     result = []
     for plan_id, plan in PLANS.items():
         bonus = bonus_percent(plan)
+        page = plan.get("payment_page_url")
         features = [
-            f"{plan['tokens']:,} tokens credited instantly",
+            f"{plan['tokens']:,} tokens" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
+            "The same tokens this money buys from OpenAI",
             "Tokens never expire",
             "Works across every agent",
         ]
-        if bonus >= 1:
-            features.insert(1, f"{bonus}% more tokens than a top-up of the same price")
         result.append({
             "id": plan_id,
             "name": plan["name"],
@@ -81,18 +108,30 @@ def offered_plans() -> list[dict]:
             "description": plan["description"],
             "features": features,
             "popular": bool(plan.get("popular")),
+            "payment_page_url": page,
         })
     return result
 
 
-def custom_plan() -> dict:
-    return {
-        "id": "custom",
-        "name": "Custom",
-        "description": "Choose your own amount and pay only for what you need.",
-        "tokens_per_rupee": TOKENS_PER_RUPEE,
-        "min_amount_inr": 1,
-    }
+# Plans as sold before 1 Oct 2026: (plan id, price in paise) -> tokens. Old
+# payments keep the tokens they actually bought (history, admin totals), and
+# an order created at an old price but paid after the change gets those.
+PREVIOUS_PLAN_TOKENS = {
+    ("basic", 49900): 500_000,
+    ("standard", 99900): 1_200_000,
+    ("premium", 199900): 2_600_000,
+}
+
+
+def tokens_for_payment(plan_id: str, amount_paise: int) -> int | None:
+    """Tokens for a paid payment: the plan's tokens at the price actually
+    paid. A plan paid at an older price gets what that price bought."""
+    if (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS:
+        return PREVIOUS_PLAN_TOKENS[(plan_id, amount_paise)]
+    plan = PLANS.get(plan_id)
+    if plan and amount_paise != plan["amount"]:
+        return tokens_for_rupees(amount_paise / 100)
+    return tokens_for_plan_id(plan_id)
 
 
 def tokens_for_plan_id(plan_id: str) -> int | None:
