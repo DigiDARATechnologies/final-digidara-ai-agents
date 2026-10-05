@@ -76,9 +76,18 @@ PLANS: dict[str, dict] = {
         # Paid on DigiDARA's own Razorpay payment page instead of the in-app
         # checkout; the webhook credits the account whose email was entered
         # there (routes.py `_credit_payment_page`).
-        "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", "https://rzp.io/rzp/6ypplegm"),
+        "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", "https://rzp.io/rzp/j6YPZzy8"),
+        # What that page actually charges: INR 999 + 18% GST = INR 1,178.82.
+        # The webhook only credits a page payment of exactly this amount (or
+        # the plan price), so keep it in step with the page.
+        "page_amount": int(os.getenv("RAZORPAY_PREMIUM_PAGE_AMOUNT", "117882")),
     },
 }
+
+
+def is_full_price(plan: dict, amount_paise: int) -> bool:
+    """The plan's price, or what its Razorpay page charges (price + GST)."""
+    return amount_paise in (plan["amount"], plan.get("page_amount"))
 
 # Every plan sells points at 2,000 tokens a point, and new free accounts use
 # the same rate. (Accounts created before this kept the rate stored on their
@@ -131,7 +140,7 @@ def points_for_payment(plan_id: str, amount_paise: int) -> float | None:
     plan = PLANS.get(plan_id)
     if not plan or (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS or amount_paise <= 0:
         return None
-    if amount_paise == plan["amount"]:
+    if is_full_price(plan, amount_paise):
         return plan["points"]
     return round(plan["points"] * amount_paise / plan["amount"], 2)
 
@@ -175,6 +184,7 @@ def offered_plans() -> list[dict]:
             "features": features,
             "popular": bool(plan.get("popular")),
             "payment_page_url": page,
+            "page_amount": plan.get("page_amount") if page else None,
         })
     return result
 
@@ -198,7 +208,7 @@ def tokens_for_payment(plan_id: str, amount_paise: int) -> int | None:
     if (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS:
         return PREVIOUS_PLAN_TOKENS[(plan_id, amount_paise)]
     plan = PLANS.get(plan_id)
-    if plan and amount_paise != plan["amount"]:
+    if plan and not is_full_price(plan, amount_paise):
         return max(0, round(plan["tokens"] * amount_paise / plan["amount"]))
     return tokens_for_plan_id(plan_id)
 

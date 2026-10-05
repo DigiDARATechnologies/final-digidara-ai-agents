@@ -111,7 +111,7 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
     assert "pro_monthly" not in offered and "pro_yearly" not in offered
     # Only the 999 plan is paid on the Razorpay payment page.
     assert [i for i in offered if offered[i]["payment_page_url"]] == ["premium"]
-    assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/6ypplegm"
+    assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8"
 
 
 def test_plans_sell_fixed_tokens_shown_as_points():
@@ -350,6 +350,15 @@ def page_payment(env, payment_id="pay_page_1", email="ASHA@example.com", amount=
         "id": payment_id, "order_id": f"order_{payment_id}", "amount": amount, "currency": "INR", "email": email}}}}).encode()
     return env.client.post("/billing/webhook", content=event,
                            headers={"x-razorpay-signature": hmac.new(secret, event, hashlib.sha256).hexdigest()})
+
+
+def test_the_999_page_charges_gst_and_still_credits_exactly_the_999_plan(env):
+    # The Razorpay page charges INR 999 + 18% GST = INR 1,178.82.
+    set_balance(env, 0)
+    assert page_payment(env, amount=117882).status_code == 200
+    assert balance(env) == 1_500_000 and points(env) == 750
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["plan_id"], payment["amount"], payment["points"]) == ("premium", 117882, 750)
 
 
 def test_a_999_payment_page_payment_credits_the_account_with_that_email(env):

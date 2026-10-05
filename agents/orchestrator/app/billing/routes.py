@@ -16,6 +16,7 @@ from app.billing.plans import (
     PLANS,
     active_plan,
     credited_points,
+    is_full_price,
     offered_plans,
     payment_label,
     plan_name,
@@ -266,7 +267,7 @@ def _webhook_secrets() -> list[str]:
 
 def _page_plan_for(amount: int, currency: str) -> str | None:
     for plan_id, plan in PLANS.items():
-        if plan.get("payment_page_url") and plan["amount"] == amount and plan["currency"] == currency:
+        if plan.get("payment_page_url") and is_full_price(plan, amount) and plan["currency"] == currency:
             return plan_id
     return None
 
