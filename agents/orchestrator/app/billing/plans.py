@@ -123,7 +123,7 @@ def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, i
 # mock interview, a Communication Coach session and a resume, say); tune with
 # these env vars.
 FREE_TOKENS_PER_POINT = float(os.getenv("FREE_TOKENS_PER_POINT", "2000"))
-FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "100"))
+FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "25"))
 
 
 # The rate every balance had before 6 Oct 2026 (stored on those users' rows
