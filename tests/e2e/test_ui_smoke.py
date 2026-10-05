@@ -97,6 +97,19 @@ def click_switch_link(driver, wait, label):
     wait.until(lambda d: d.execute_script(_CLICK_SWITCH_LINK_JS, label))
 
 
+def open_login(driver, wait):
+    """Signed-out visitors land on the public home page; the login screen is
+    reached through its navbar "Login" button. Clicked in one JS call for the
+    same reason as click_switch_link above."""
+    driver.get(BASE_URL)
+    wait.until(
+        lambda d: d.execute_script(
+            "const b = document.querySelector('.lp-nav-actions .lp-btn-ghost');"
+            "if (!b) return false; b.click(); return true;"
+        )
+    )
+
+
 def heading_text(driver):
     return driver.execute_script("return document.querySelector('#loginOverlay h1')?.textContent ?? ''")
 
@@ -125,9 +138,21 @@ def wait_for_heading(driver, wait, expected_text, debug_name):
         )
 
 
-def test_digidara_login_page_loads(driver):
+def test_landing_page_loads(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
+
+    wait.until(EC.title_contains("DigiDARA"))
+    h1 = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".lp h1")))
+    assert "AI agents" in h1.text
+    assert driver.find_element(By.CSS_SELECTOR, ".lp-nav-actions .lp-btn-ghost").text.strip() == "Login"
+
+    save(driver, "landing")
+
+
+def test_digidara_login_page_loads(driver):
+    wait = WebDriverWait(driver, 20)
+    open_login(driver, wait)
 
     wait.until(EC.title_contains("DigiDARA"))
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
@@ -144,8 +169,8 @@ def test_digidara_login_page_loads(driver):
 
 
 def test_login_signup_tabs_work(driver):
-    driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
+    open_login(driver, wait)
 
     # Mode switching is a plain link in the ".login-switch" footer line, not
     # a tab bar — see LoginOverlay.tsx's "First time here?"/"Already have an
@@ -161,8 +186,8 @@ def test_login_signup_tabs_work(driver):
 
 def test_mobile_viewport_renders(driver):
     driver.set_window_size(390, 844)
-    driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
+    open_login(driver, wait)
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
     assert overlay.is_displayed()
     heading = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "#loginOverlay h1")))

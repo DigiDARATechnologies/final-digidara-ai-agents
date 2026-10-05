@@ -8,6 +8,7 @@ import whiteThemeLogo from "../assets/White_theme_logo.png";
 interface LoginOverlayProps {
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  onBack?: () => void;
   onAuthenticate: (
     mode: "login" | "signup",
     details: { name: string; email: string; mobile: string; password: string; consent: boolean },
@@ -86,7 +87,7 @@ function BrandPanel() {
   );
 }
 
-export default function LoginOverlay({ theme, onToggleTheme, onAuthenticate }: LoginOverlayProps) {
+export default function LoginOverlay({ theme, onToggleTheme, onAuthenticate, onBack }: LoginOverlayProps) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -153,6 +154,9 @@ export default function LoginOverlay({ theme, onToggleTheme, onAuthenticate }: L
           </svg>
         )}
       </button>
+      {onBack && (
+        <button type="button" className="login-back-btn" onClick={onBack}>← Back to home</button>
+      )}
       <div className="login-shell">
         <BrandPanel />
 

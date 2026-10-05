@@ -1,0 +1,16 @@
+# DigiDARA AI Agents
+
+> DigiDARA AI Agents (https://digidaraaiagents.com) is an AI agent platform by DigiDARA Technologies. It offers specialized AI agents for education, careers, communication, travel, construction and other industries, and builds custom AI agents for businesses worldwide.
+
+## What it offers
+- Ready-made agents: Capstone Project, Coding Practice, Communication Coach, Aptitude Trainer, Mock Interview, Resume Builder, Job Fetching, AI Certification.
+- Custom AI agents designed around a customer's industry workflow (travel, construction, healthcare, finance, education and more).
+- One account for all agents, with chat history across devices, free to start.
+
+## Audience
+Individuals, students, job seekers, teams and companies anywhere in the world.
+
+## Links
+- Home: https://digidaraaiagents.com/
+- Login / sign up: https://digidaraaiagents.com/login
+- Contact: support@digidaraaiagents.com

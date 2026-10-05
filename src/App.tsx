@@ -29,6 +29,7 @@ import {
   MENU_OPTIONS as COMMUNICATION_MENU_OPTIONS,
   type CommunicationFlowState,
 } from "./lib/communicationFlow";
+import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
@@ -123,6 +124,22 @@ export default function App() {
     saveAppearance(appearance);
   }, [appearance]);
   const [user, setUser] = useState<User | null>(() => loadUser());
+  // Signed-out visitors land on the public home page; "Login" swaps to the
+  // existing login screen and mirrors it in the URL (/login) so it is linkable.
+  const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login");
+  useEffect(() => {
+    const onPop = () => setShowLogin(window.location.pathname === "/login");
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  function openLogin() {
+    window.history.pushState({}, "", "/login");
+    setShowLogin(true);
+  }
+  function closeLogin() {
+    window.history.pushState({}, "", "/");
+    setShowLogin(false);
+  }
   const [googleAuthPending, setGoogleAuthPending] = useState(() => isGoogleOAuthCallback());
   const [view, setView] = useState<View>("chat");
   const [activeTab, setActiveTab] = useState("All");
@@ -1524,7 +1541,9 @@ export default function App() {
         </div>
       );
     }
-    return <LoginOverlay theme={theme} onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")} onAuthenticate={handleAuthenticate} />;
+    const toggleTheme = () => setThemePref(theme === "dark" ? "light" : "dark");
+    if (!showLogin) return <LandingPage theme={theme} onToggleTheme={toggleTheme} onLogin={openLogin} />;
+    return <LoginOverlay theme={theme} onToggleTheme={toggleTheme} onAuthenticate={handleAuthenticate} onBack={closeLogin} />;
   }
 
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
