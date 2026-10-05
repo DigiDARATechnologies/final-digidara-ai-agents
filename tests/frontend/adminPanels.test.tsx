@@ -28,7 +28,7 @@ const overview = {
     by_plan: [{ plan_id: 'basic', label: 'Basic plan', count: 5, amount: 2495 }],
     daily: [day('2026-09-25', 0), day('2026-09-26', 999)],
   },
-  tokens: { outstanding_balance: 1500000, credited_by_payments: 3000000, users_out_of_tokens: 2 },
+  tokens: { outstanding_balance: 1500000, credited_by_payments: 3000000, users_out_of_tokens: 2, outstanding_points: 500, points_sold: 1250 },
   activity: { conversations: 80, messages: 900, active_users_7d: 17, by_agent: [{ agent_id: 'capstone-project', chats: 15, users: 8, messages: 300, last_active: null }] },
   agents: { registered: 8, healthy: 7 },
   recent_signups: [{ id: 'u1', name: 'Asha Rao', email: 'asha@x.io', created_at: '2026-09-25T08:00:00' }],
@@ -37,15 +37,16 @@ const overview = {
 
 beforeEach(() => { [mockOverview, mockUsers, mockUserDetail, mockConversation, mockPayments, mockAgents].forEach((m) => m.mockReset()); });
 
-test('the dashboard shows money, users, tokens, agents online and usage per agent', async () => {
+test('the dashboard shows money, users, points, agents online and usage per agent', async () => {
   mockOverview.mockResolvedValue(overview);
   render(<DashboardPanel />);
   expect(await screen.findByText('Total revenue')).toBeInTheDocument();
   expect(screen.getByText(/12,345\.50/)).toBeInTheDocument();
   expect(screen.getByText('9 paid payments')).toBeInTheDocument();
   expect(screen.getByText('7 / 8')).toBeInTheDocument();
-  expect(screen.getByText('30,00,000')).toBeInTheDocument();          // Indian digit grouping
-  expect(screen.getByText('2 users out of tokens')).toBeInTheDocument();
+  expect(screen.getByText('1,250')).toBeInTheDocument();              // points sold, not tokens
+  expect(screen.getByText('500')).toBeInTheDocument();                // points left with users
+  expect(screen.getByText('2 users out of points')).toBeInTheDocument();
   expect(screen.getAllByText('Basic plan', { selector: 'td' })).toHaveLength(2);      // the by-plan table and the latest payments
   expect(screen.getByText(/Capstone Project Agent/)).toBeInTheDocument();
   expect(screen.getByRole('img', { name: /Daily revenue/ })).toBeInTheDocument();
@@ -59,11 +60,11 @@ test('a dashboard failure is shown with a retry, not a blank page', async () => 
   expect(await screen.findByText('Total revenue')).toBeInTheDocument();
 });
 
-const userRow = { id: 'asha', name: 'Asha Rao', email: 'asha@x.io', mobile: '99999', is_admin: false, google: false, created_at: '2026-09-20T08:00:00', token_balance: 120000, paid_total: 599, chats: 2, agents_used: 2, last_active: '2026-09-26T08:00:00' };
+const userRow = { id: 'asha', name: 'Asha Rao', email: 'asha@x.io', mobile: '99999', is_admin: false, google: false, created_at: '2026-09-20T08:00:00', token_balance: 120000, points: 40, paid_total: 599, chats: 2, agents_used: 2, last_active: '2026-09-26T08:00:00' };
 const detail = {
-  user: { id: 'asha', name: 'Asha Rao', email: 'asha@x.io', mobile: '99999', is_admin: false, google: false, created_at: '2026-09-20T08:00:00', token_balance: 120000, consent_accepted_at: null, consent_policy_version: null },
-  totals: { paid: 599, payments: 2, paid_payments: 2, tokens_bought: 600000, conversations: 1, messages: 2 },
-  payments: [{ id: 'p1', label: 'Basic plan', plan_id: 'basic', amount: 499, currency: 'INR', status: 'paid', razorpay_order_id: 'o1', razorpay_payment_id: 'pay_1', created_at: '2026-09-24T08:00:00', paid_at: '2026-09-24T08:01:00', tokens: 500000 }],
+  user: { id: 'asha', name: 'Asha Rao', email: 'asha@x.io', mobile: '99999', is_admin: false, google: false, created_at: '2026-09-20T08:00:00', token_balance: 120000, points: 40, consent_accepted_at: null, consent_policy_version: null },
+  totals: { paid: 599, payments: 2, paid_payments: 2, tokens_bought: 600000, points_bought: 200, conversations: 1, messages: 2 },
+  payments: [{ id: 'p1', label: 'Basic plan', plan_id: 'basic', amount: 499, currency: 'INR', status: 'paid', razorpay_order_id: 'o1', razorpay_payment_id: 'pay_1', created_at: '2026-09-24T08:00:00', paid_at: '2026-09-24T08:01:00', tokens: 500000, points: 166.67 }],
   conversations: [{ id: 'c1', agent_id: 'capstone-project', title: 'my python project', messages: 2, pinned: false, created_at: null, updated_at: '2026-09-26T08:00:00', deleted: false }],
   agent_progress: [{ agent_id: 'capstone', chat_id: 'c1', step: 'awaiting_submission', updated_at: '2026-09-26T08:00:00' }],
 };
@@ -103,12 +104,12 @@ test('users: paging asks the server for the next page', async () => {
 });
 
 test('payments: shows every payment and filters by status on the server', async () => {
-  const payment = { id: 'p1', user_id: 'asha', email: 'asha@x.io', name: 'Asha Rao', label: 'Basic plan', amount: 499, currency: 'INR', status: 'paid', razorpay_order_id: 'o1', razorpay_payment_id: 'pay_1', created_at: '2026-09-24T08:00:00', paid_at: '2026-09-24T08:01:00', tokens: 500000 };
+  const payment = { id: 'p1', user_id: 'asha', email: 'asha@x.io', name: 'Asha Rao', label: 'Basic plan', amount: 499, currency: 'INR', status: 'paid', razorpay_order_id: 'o1', razorpay_payment_id: 'pay_1', created_at: '2026-09-24T08:00:00', paid_at: '2026-09-24T08:01:00', tokens: 500000, points: 166.67 };
   mockPayments.mockResolvedValue({ total: 1, page: 1, limit: 25, summary: { paid: { count: 1, amount: 499 } }, payments: [payment] });
   render(<PaymentsPanel />);
   const table = within(await screen.findByRole('table'));
   expect(table.getByText('asha@x.io')).toBeInTheDocument();
-  expect(table.getByText('5,00,000')).toBeInTheDocument();
+  expect(table.getByText('166')).toBeInTheDocument();       // points, not the 5,00,000 tokens
   fireEvent.change(screen.getByLabelText('Filter by status'), { target: { value: 'failed' } });
   await waitFor(() => expect(mockPayments).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', page: 1 })));
 });

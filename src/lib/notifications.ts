@@ -99,7 +99,7 @@ export function buildPendingNotifications(sources: NotificationSources, now: num
       case "aptitude": {
         const state = sources.aptitude[id];
         if (state && (state.step === "awaiting_question" || state.step === "awaiting_next_question") && state.testId) {
-          body = state.tokenInterrupted ? "Your aptitude test is paused — top up tokens to continue." : "Your aptitude test is in progress. Continue.";
+          body = state.tokenInterrupted ? "Your aptitude test is paused — top up points to continue." : "Your aptitude test is in progress. Continue.";
         }
         break;
       }

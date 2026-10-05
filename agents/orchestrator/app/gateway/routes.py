@@ -154,7 +154,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # balance has already run out. The real, accurate charge for this
         # specific request happens after the response comes back below.
         if user.token_balance <= 0:
-            raise HTTPException(402, "Insufficient token balance. Please top up to continue.")
+            raise HTTPException(402, "Not enough points. Please top up to continue.")
 
     headers: dict[str, str] = {}
     if content_type := request.headers.get("content-type"):

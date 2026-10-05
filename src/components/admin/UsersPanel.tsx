@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchConversation, fetchUserDetail, fetchUsers } from "../../lib/adminApi";
 import { agentLabel, formatDate, formatMoney, formatNumber, PAYMENT_BADGE } from "./adminFormat";
+import { formatPoints } from "../../lib/points";
 import { useLoad } from "./useLoad";
 
 const PAGE = 25;
@@ -45,18 +46,18 @@ function UserDetail({ userId, onBack }: { userId: string; onBack: () => void }) 
       </div>
       <div className="admin-kpis">
         <div className="admin-kpi"><span>Paid so far</span><strong>{formatMoney(totals.paid)}</strong><small>{totals.paid_payments} of {totals.payments} payments paid</small></div>
-        <div className="admin-kpi"><span>Token balance</span><strong>{formatNumber(user.token_balance)}</strong><small>{formatNumber(totals.tokens_bought)} bought</small></div>
+        <div className="admin-kpi"><span>Points balance</span><strong>{formatPoints(user.points)}</strong><small>{formatPoints(totals.points_bought)} bought</small></div>
         <div className="admin-kpi"><span>Chats</span><strong>{formatNumber(totals.conversations)}</strong><small>{formatNumber(totals.messages)} messages</small></div>
       </div>
 
       <h4>Payments</h4>
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>For</th><th>Amount</th><th>Tokens</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
+          <thead><tr><th>For</th><th>Amount</th><th>Points</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
           <tbody>
             {data.payments.map((p) => (
               <tr key={p.id}>
-                <td className="admin-table-primary">{p.label}</td><td>{formatMoney(p.amount)}</td><td>{p.tokens ? formatNumber(p.tokens) : "—"}</td>
+                <td className="admin-table-primary">{p.label}</td><td>{formatMoney(p.amount)}</td><td>{p.points ? formatPoints(p.points) : "—"}</td>
                 <td><span className={`admin-badge ${PAYMENT_BADGE[p.status] || "badge-expired"}`}>{p.status}</span></td>
                 <td>{formatDate(p.created_at)}</td><td>{formatDate(p.paid_at)}</td><td><small>{p.razorpay_payment_id || "—"}</small></td>
               </tr>
@@ -117,20 +118,20 @@ export default function UsersPanel() {
         <input className="admin-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or mobile" aria-label="Search users" />
         <select value={sort} onChange={(event) => { setSort(event.target.value); setPage(1); }} aria-label="Sort users">
           <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="spent">Most paid</option>
-          <option value="active">Recently active</option><option value="balance">Lowest tokens</option>
+          <option value="active">Recently active</option><option value="balance">Lowest points</option>
         </select>
         <button className="btn btn-outline btn-sm" type="submit">Search</button>
       </form>
       {error && <div className="admin-error">{error} <button className="btn btn-outline btn-sm" onClick={reload}>Retry</button></div>}
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>User</th><th>Joined</th><th>Tokens</th><th>Paid</th><th>Chats</th><th>Agents used</th><th>Last active</th></tr></thead>
+          <thead><tr><th>User</th><th>Joined</th><th>Points</th><th>Paid</th><th>Chats</th><th>Agents used</th><th>Last active</th></tr></thead>
           <tbody>
             {data?.users.map((u) => (
               <tr key={u.id} className="admin-row-click" onClick={() => setSelected(u.id)} tabIndex={0}
                 onKeyDown={(event) => { if (event.key === "Enter") setSelected(u.id); }}>
                 <td className="admin-table-primary">{u.name}{u.is_admin && <span className="admin-badge badge-pending">admin</span>}<br /><small>{u.email}</small></td>
-                <td>{formatDate(u.created_at)}</td><td>{formatNumber(u.token_balance)}</td><td>{formatMoney(u.paid_total)}</td>
+                <td>{formatDate(u.created_at)}</td><td>{formatPoints(u.points)}</td><td>{formatMoney(u.paid_total)}</td>
                 <td>{u.chats}</td><td>{u.agents_used}</td><td>{formatDate(u.last_active)}</td>
               </tr>
             ))}

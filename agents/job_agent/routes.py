@@ -481,7 +481,7 @@ def my_chat():
         if usage_res.get("insufficient_tokens"):
             return jsonify({
                 "error": "insufficient_tokens",
-                "message": f"Daily free chat quota of {usage_res['free_daily_turns']} messages reached. Please top up tokens to continue chatting.",
+                "message": f"Daily free chat quota of {usage_res['free_daily_turns']} messages reached. Please top up points to continue chatting.",
                 "required_tokens": usage_res["required_tokens"],
                 "current_balance": usage_res.get("current_balance", 0),
                 "free_daily_turns": usage_res["free_daily_turns"],
@@ -775,7 +775,7 @@ def my_feed():
         if usage_res.get("insufficient_tokens"):
             return jsonify({
                 "error": "insufficient_tokens",
-                "message": f"You have reached your daily free limit of {usage_res['free_daily_limit']} jobs. Please top up your tokens to unlock more opportunities.",
+                "message": f"You have reached your daily free limit of {usage_res['free_daily_limit']} jobs. Please top up your points to unlock more opportunities.",
                 "required_tokens": usage_res["required_tokens"],
                 "current_balance": usage_res.get("current_balance", 0),
                 "free_daily_limit": usage_res["free_daily_limit"],

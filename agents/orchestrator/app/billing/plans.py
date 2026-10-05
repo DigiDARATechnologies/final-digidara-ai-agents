@@ -6,6 +6,12 @@ fixed number of tokens, at the same instant a verified top-up would. Prices
 and token amounts live only here; the API serves them to the frontend so
 nothing is hardcoded twice.
 
+Users never see tokens: they see points. Each plan sells a fixed number of
+points for its tokens, so each plan has its own tokens-per-point rate, and
+every account stores the rate of what it holds (users.tokens_per_point; see
+auth/service.py:credit_tokens for how a purchase blends it). Balance and
+usage are always kept in tokens and only converted for display.
+
 Change the numbers below to change pricing. Amounts are in paise (Razorpay's
 smallest unit), so 49900 = INR 499.00.
 """
@@ -16,8 +22,9 @@ from datetime import datetime, timedelta
 # kept so old top-up payments still have a name and credit correctly).
 TOKENS_PER_RUPEE = 1000
 
-# Plans give exactly the tokens the same money buys from OpenAI itself, at
-# the rate of gpt-4o-mini, the model most agents run on (checked 1 Oct 2026):
+# Plans now sell fixed amounts (see PLANS). This OpenAI rate only prices a
+# payment made at an amount no plan sells, at what that money buys from
+# OpenAI at the rate of gpt-4o-mini, the model most agents run on (checked 1 Oct 2026):
 # $0.15 per million input tokens and $0.60 per million output tokens,
 # blended 3 input : 1 output (the usual blend), converted at ~INR 96.25 per
 # USD. That is INR ~25.27 per million tokens. Override with the env vars
@@ -46,14 +53,16 @@ PLANS: dict[str, dict] = {
         "name": "Basic",
         "amount": 39900,
         "currency": "INR",
-        "tokens": tokens_for_rupees(399),
+        "tokens": 300_000,
+        "points": 100,
         "description": "For getting started and light, occasional use.",
     },
     "standard": {
         "name": "Standard",
         "amount": 79900,
         "currency": "INR",
-        "tokens": tokens_for_rupees(799),
+        "tokens": 700_000,
+        "points": 250,
         "description": "For regular learners who use several agents each week.",
         "popular": True,
     },
@@ -61,7 +70,8 @@ PLANS: dict[str, dict] = {
         "name": "Premium",
         "amount": 99900,
         "currency": "INR",
-        "tokens": tokens_for_rupees(999),
+        "tokens": 900_000,
+        "points": 500,
         "description": "For heavy daily use across every agent.",
         # Paid on DigiDARA's own Razorpay payment page instead of the in-app
         # checkout; the webhook credits the account whose email was entered
@@ -69,6 +79,34 @@ PLANS: dict[str, dict] = {
         "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", "https://rzp.io/rzp/6ypplegm"),
     },
 }
+
+# Free accounts, and every account that existed before points, count at the
+# cheapest plan's rate. New accounts start with enough points to finish full
+# flows in at least four agents (one Aptitude test, one mock interview, a
+# Communication Coach session and a resume, say); tune with these env vars.
+FREE_TOKENS_PER_POINT = float(os.getenv("FREE_TOKENS_PER_POINT", "3000"))
+FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "60"))
+
+
+def free_signup_tokens() -> int:
+    return int(FREE_SIGNUP_POINTS * FREE_TOKENS_PER_POINT)
+
+
+def points_for_tokens(tokens: float, tokens_per_point: float | None) -> float:
+    """Tokens shown as points at an account's rate, to two decimals."""
+    rate = tokens_per_point if tokens_per_point and tokens_per_point > 0 else FREE_TOKENS_PER_POINT
+    return round(tokens / rate, 2)
+
+
+def points_for_payment(plan_id: str, amount_paise: int) -> float | None:
+    """The points a payment sold: the plan's points at its current price.
+    None for anything else (legacy plans, old prices, top-ups), which is
+    credited at the account's existing rate instead."""
+    plan = PLANS.get(plan_id)
+    if plan and amount_paise == plan["amount"]:
+        return plan["points"]
+    return None
+
 
 # Sold before token plans existed. Not offered any more, but old payments must
 # keep a proper name and a paying customer must not silently lose their
@@ -92,9 +130,8 @@ def offered_plans() -> list[dict]:
         bonus = bonus_percent(plan)
         page = plan.get("payment_page_url")
         features = [
-            f"{plan['tokens']:,} tokens" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
-            "The same tokens this money buys from OpenAI",
-            "Tokens never expire",
+            f"{plan['points']:,} points" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
+            "Points never expire",
             "Works across every agent",
         ]
         result.append({
@@ -104,6 +141,7 @@ def offered_plans() -> list[dict]:
             "currency": plan["currency"],
             "period": "month",
             "tokens": plan["tokens"],
+            "points": plan["points"],
             "bonus_percent": bonus,
             "description": plan["description"],
             "features": features,
@@ -149,7 +187,7 @@ def payment_label(plan_id: str) -> str:
     """Human-readable name for a payment row, whatever kind of payment it was."""
     if plan_id.startswith("topup_"):
         tokens = tokens_for_plan_id(plan_id)
-        return f"Token top-up ({tokens:,} tokens)" if tokens else "Token top-up"
+        return "Points top-up"
     if plan_id in PLANS:
         return f"{PLANS[plan_id]['name']} plan"
     if plan_id in LEGACY_PLANS:

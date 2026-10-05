@@ -686,9 +686,9 @@ export async function handleJobFetchText(
         state,
         messages: [
           {
-            text: `💡 **You've reached your free daily quota!**\n\nTo discover more verified fresher opportunities or continue chatting with DigiDARA Job Agent, you can top up tokens on the platform (**₹1.00 = 1,000 tokens**).\n\nTap below to top up your balance:`,
+            text: `💡 **You've reached your free daily quota!**\n\nTo discover more verified fresher opportunities or continue chatting with DigiDARA Job Agent, you can top up points on the platform.\n\nTap below to top up your points:`,
             options: [
-              { label: "💳 Top Up Tokens", value: "action:open_billing" },
+              { label: "💳 Top Up Points", value: "action:open_billing" },
               { label: "🔙 View My Saved Jobs", value: "Show me my saved jobs" },
             ],
           },

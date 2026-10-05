@@ -18,6 +18,8 @@ from app.billing.plans import (
     offered_plans,
     payment_label,
     plan_name,
+    points_for_payment,
+    points_for_tokens,
     tokens_for_payment,
 )
 from app.db import get_session
@@ -65,7 +67,7 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
 def _credit_for_payment(payment: Payment) -> None:
     tokens = tokens_for_payment(payment.plan_id, payment.amount)
     if tokens:
-        auth_service.credit_tokens(payment.user_id, tokens)
+        auth_service.credit_tokens(payment.user_id, tokens, points_for_payment(payment.plan_id, payment.amount))
 
 
 @router.get("/plans")
@@ -89,6 +91,7 @@ def summary(user_id: str = Depends(get_current_user_id)) -> dict:
                 {
                     "id": p.id, "plan_id": p.plan_id, "label": payment_label(p.plan_id), "amount": p.amount,
                     "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id,
+                    "points": points_for_payment(p.plan_id, p.amount),
                     "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid",
                 }
                 for p in payments
@@ -103,7 +106,12 @@ def token_balance(user_id: str = Depends(get_current_user_id)) -> dict:
     user = auth_service.get_by_id(user_id)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
-    return {"balance": user.token_balance}
+    # Users see points; tokens stay the unit everything is charged in.
+    return {
+        "balance": user.token_balance,
+        "points": points_for_tokens(max(0, user.token_balance), user.tokens_per_point),
+        "tokens_per_point": user.tokens_per_point,
+    }
 
 
 def month_start_utc(now_utc: datetime, offset_minutes: int) -> datetime:
@@ -139,15 +147,25 @@ def usage_this_month(
         )
     finally:
         session.close()
-    agents = [{"agent_name": name, "tokens": int(tokens), "requests": int(count)} for name, tokens, count in rows]
+    rate = user.tokens_per_point
+    agents = [
+        {"agent_name": name, "tokens": int(tokens), "points": points_for_tokens(int(tokens), rate), "requests": int(count)}
+        for name, tokens, count in rows
+    ]
     used = sum(agent["tokens"] for agent in agents)
     balance = max(0, int(user.token_balance))
+    # Points use the account's current rate. A month that spans a purchase at
+    # a different plan's rate is shown approximately; tokens stay exact.
     return {
         "month_start": since.isoformat() + "Z",
         "tokens_used": used,
         "requests": sum(agent["requests"] for agent in agents),
         "balance": balance,
         "limit": used + balance,
+        "points_used": points_for_tokens(used, rate),
+        "points_balance": points_for_tokens(balance, rate),
+        "points_limit": points_for_tokens(used + balance, rate),
+        "tokens_per_point": rate,
         "agents": agents,
     }
 

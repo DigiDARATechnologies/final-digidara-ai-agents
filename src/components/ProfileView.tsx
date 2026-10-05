@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { Chat, User } from "../types";
 import { LIVE_AGENTS, DEFAULT_AGENT, findAgent } from "../data/agents";
 import { fetchAllUsageSummaries } from "../lib/usageApi";
+import { fetchTokenBalance } from "../lib/billingApi";
+import { formatPoints, tokensToPoints } from "../lib/points";
 import EditProfileModal from "./EditProfileModal";
 import type { ProfilePrefs } from "../lib/profilePrefs";
 
@@ -31,11 +33,6 @@ function startOfDay(ts: number) {
   return d;
 }
 
-function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
 
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -44,16 +41,18 @@ function plural(n: number, word: string) {
 export default function ProfileView({ user, chats, planName, onBack, onUpgrade, prefs, onSaveProfile }: Props) {
   const [editing, setEditing] = useState(false);
   const [range, setRange] = useState<Range>("daily");
-  const [lifetimeTokens, setLifetimeTokens] = useState<number | null>(null);
+  const [lifetimePoints, setLifetimePoints] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetchAllUsageSummaries()
-      .then((results) => {
-        if (active) setLifetimeTokens(results.reduce((sum, a) => sum + (a.usage?.total_tokens ?? 0), 0));
+    // Agents report tokens; shown as points at this account's own rate.
+    Promise.all([fetchAllUsageSummaries(), fetchTokenBalance().catch(() => null)])
+      .then(([results, balance]) => {
+        const tokens = results.reduce((sum, a) => sum + (a.usage?.total_tokens ?? 0), 0);
+        if (active) setLifetimePoints(tokensToPoints(tokens, balance?.tokens_per_point));
       })
       .catch(() => {
-        if (active) setLifetimeTokens(null);
+        if (active) setLifetimePoints(null);
       });
     return () => {
       active = false;
@@ -180,8 +179,8 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
 
         <div className="pv-stats">
           <div>
-            <b>{lifetimeTokens === null ? "—" : formatCount(lifetimeTokens)}</b>
-            <span>Lifetime Tokens</span>
+            <b>{lifetimePoints === null ? "—" : formatPoints(lifetimePoints)}</b>
+            <span>Lifetime Points</span>
           </div>
           <div>
             <b>{stats.totalChats}</b>

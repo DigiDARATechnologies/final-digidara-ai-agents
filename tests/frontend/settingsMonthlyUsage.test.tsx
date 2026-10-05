@@ -19,27 +19,30 @@ const openUsage = () => render(
     onClearHistory={jest.fn()} onToast={jest.fn()} onExportData={jest.fn()} onDeleteAccount={jest.fn()} />,
 );
 
-test('shows this month only, against the dynamic limit (used + balance), not a fixed 1M', async () => {
+test('shows this month only, in points, against the dynamic limit (used + balance), not a fixed 1M', async () => {
   jest.mocked(billing.fetchMonthlyUsage).mockResolvedValue({
     month_start: '2026-10-01T00:00:00Z', tokens_used: 30000, requests: 12, balance: 90000, limit: 120000,
-    agents: [{ agent_name: 'certificate_agent', tokens: 30000, requests: 12 }],
+    points_used: 10, points_balance: 30, points_limit: 40, tokens_per_point: 3000,
+    agents: [{ agent_name: 'certificate_agent', tokens: 30000, points: 10, requests: 12 }],
   });
   openUsage();
-  expect(await screen.findByText('30.0K of 120.0K tokens used this month')).toBeInTheDocument();
+  expect(await screen.findByText('10 of 40 points used this month')).toBeInTheDocument();
   expect(screen.getByText('75% remaining')).toBeInTheDocument();
-  expect(screen.getByText('30.0K tokens')).toBeInTheDocument();
+  expect(screen.getByText('10 points')).toBeInTheDocument();
   // Per agent: this month's numbers, not the agents' all-time totals.
-  expect(await screen.findByText('30.0K tokens · 12 requests')).toBeInTheDocument();
-  expect(screen.getByText('0 tokens · 0 requests')).toBeInTheDocument();
+  expect(await screen.findByText('10 points · 12 requests')).toBeInTheDocument();
+  expect(screen.getByText('0 points · 0 requests')).toBeInTheDocument();
+  expect(screen.queryByText(/tokens/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/2937/)).not.toBeInTheDocument();
   expect(screen.queryByText(/1\.0M/)).not.toBeInTheDocument();
 });
 
 test('a new user starts the month at zero with their whole balance remaining', async () => {
   jest.mocked(billing.fetchMonthlyUsage).mockResolvedValue({
-    month_start: '2026-10-01T00:00:00Z', tokens_used: 0, requests: 0, balance: 50000, limit: 50000, agents: [],
+    month_start: '2026-10-01T00:00:00Z', tokens_used: 0, requests: 0, balance: 180000, limit: 180000,
+    points_used: 0, points_balance: 60, points_limit: 60, tokens_per_point: 3000, agents: [],
   });
   openUsage();
-  expect(await screen.findByText('0 of 50.0K tokens used this month')).toBeInTheDocument();
+  expect(await screen.findByText('0 of 60 points used this month')).toBeInTheDocument();
   expect(screen.getByText('100% remaining')).toBeInTheDocument();
 });

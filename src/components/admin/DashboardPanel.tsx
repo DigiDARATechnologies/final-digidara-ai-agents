@@ -1,5 +1,6 @@
 import { fetchOverview } from "../../lib/adminApi";
 import { agentLabel, formatDate, formatMoney, formatNumber, PAYMENT_BADGE } from "./adminFormat";
+import { formatPoints } from "../../lib/points";
 import { useLoad } from "./useLoad";
 
 function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
@@ -35,12 +36,12 @@ export default function DashboardPanel() {
         <Kpi label="Awaiting payment" value={formatNumber(revenue.by_status.created ?? 0)} note={`${formatNumber(revenue.by_status.failed ?? 0)} failed`} />
       </div>
 
-      <h4>Users and tokens</h4>
+      <h4>Users and points</h4>
       <div className="admin-kpis">
         <Kpi label="Users" value={formatNumber(users.total)} note={`${users.new_7d} new this week · ${users.new_30d} this month`} />
         <Kpi label="Active this week" value={formatNumber(activity.active_users_7d)} note={`${formatNumber(activity.conversations)} chats · ${formatNumber(activity.messages)} messages`} />
-        <Kpi label="Tokens sold" value={formatNumber(tokens.credited_by_payments)} note="credited by payments" />
-        <Kpi label="Tokens left with users" value={formatNumber(tokens.outstanding_balance)} note={`${tokens.users_out_of_tokens} user${tokens.users_out_of_tokens === 1 ? "" : "s"} out of tokens`} />
+        <Kpi label="Points sold" value={formatPoints(tokens.points_sold)} note="credited by payments" />
+        <Kpi label="Points left with users" value={formatPoints(tokens.outstanding_points)} note={`${tokens.users_out_of_tokens} user${tokens.users_out_of_tokens === 1 ? "" : "s"} out of points`} />
         <Kpi label="Agents online" value={`${agents.healthy} / ${agents.registered}`} note="by heartbeat" />
       </div>
 

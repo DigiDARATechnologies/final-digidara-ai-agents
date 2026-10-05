@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 from app import config
 from app.auth.security import get_current_user_id
-from app.billing.plans import active_plan, payment_label, plan_name, tokens_for_payment
+from app.billing.plans import active_plan, payment_label, plan_name, points_for_payment, points_for_tokens, tokens_for_payment
 from app.db import get_session
 from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
 
@@ -34,6 +34,16 @@ def require_admin(user_id: str = Depends(get_current_user_id)) -> str:
         return user_id
     finally:
         session.close()
+
+
+def _payment_points(payment: Payment) -> float:
+    """Points a payment sold; payments from before points count at the free rate."""
+    sold = points_for_payment(payment.plan_id, payment.amount)
+    return sold if sold is not None else points_for_tokens(tokens_for_payment(payment.plan_id, payment.amount) or 0, None)
+
+
+def _user_points(user: User) -> float:
+    return points_for_tokens(max(0, user.token_balance or 0), user.tokens_per_point)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -137,6 +147,12 @@ def overview(_admin: str = Depends(require_admin)) -> dict:
             "outstanding_balance": int(session.query(func.sum(User.token_balance)).scalar() or 0),
             "credited_by_payments": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
             "users_out_of_tokens": session.query(func.count(User.id)).filter(User.token_balance <= 0).scalar() or 0,
+            # What the admin screens show: each account's balance at its own rate.
+            "outstanding_points": round(sum(
+                points_for_tokens(max(0, balance or 0), rate)
+                for balance, rate in session.query(User.token_balance, User.tokens_per_point)
+            ), 2),
+            "points_sold": round(sum(_payment_points(p) for p in paid), 2),
         }
 
         usage = _chat_usage(session)
@@ -191,14 +207,14 @@ def list_users(
         chats = {user_id: (int(count), last, int(agents)) for user_id, count, last, agents in chat_rows}
         rows = [{
             "id": u.id, "name": u.name, "email": u.email, "mobile": u.mobile or "", "is_admin": bool(u.is_admin), "google": bool(u.google_id),
-            "created_at": _iso(u.created_at), "token_balance": u.token_balance, "paid_total": _rupees(paid.get(u.id, 0)),
+            "created_at": _iso(u.created_at), "token_balance": u.token_balance, "points": _user_points(u), "paid_total": _rupees(paid.get(u.id, 0)),
             "plan_name": plans.get(u.id, "Free"),
             "chats": chats.get(u.id, (0, None, 0))[0], "agents_used": chats.get(u.id, (0, None, 0))[2],
             "last_active": _iso(chats.get(u.id, (0, None, 0))[1]),
         } for u in users]
         keys = {
             "newest": (lambda r: r["created_at"] or "", True), "oldest": (lambda r: r["created_at"] or "", False),
-            "balance": (lambda r: r["token_balance"], False), "spent": (lambda r: r["paid_total"], True),
+            "balance": (lambda r: (r["points"], r["token_balance"]), False), "spent": (lambda r: r["paid_total"], True),
             "active": (lambda r: r["last_active"] or "", True),
         }
         key, reverse = keys[sort]
@@ -227,12 +243,13 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
         return {
             "user": {
                 "id": user.id, "name": user.name, "email": user.email, "mobile": user.mobile or "", "is_admin": bool(user.is_admin),
-                "google": bool(user.google_id), "created_at": _iso(user.created_at), "token_balance": user.token_balance,
+                "google": bool(user.google_id), "created_at": _iso(user.created_at), "token_balance": user.token_balance, "points": _user_points(user),
                 "consent_accepted_at": _iso(user.consent_accepted_at), "consent_policy_version": user.consent_policy_version,
             },
             "totals": {
                 "paid": _rupees(sum(p.amount for p in paid)), "payments": len(payments), "paid_payments": len(paid),
                 "tokens_bought": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
+                "points_bought": round(sum(_payment_points(p) for p in paid), 2),
                 "conversations": len([c for c in conversations if c.deleted_at is None]),
                 "messages": sum(counts.values()),
             },
@@ -240,6 +257,7 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
                 "id": p.id, "label": payment_label(p.plan_id), "plan_id": p.plan_id, "amount": _rupees(p.amount), "currency": p.currency,
                 "status": p.status, "razorpay_order_id": p.razorpay_order_id, "razorpay_payment_id": p.razorpay_payment_id,
                 "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at), "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
+                "points": _payment_points(p),
             } for p in payments],
             "conversations": [{
                 "id": c.id, "agent_id": c.agent_id, "title": c.title, "messages": counts.get(c.id, 0), "pinned": bool(c.pinned),
@@ -298,6 +316,7 @@ def list_payments(
                 "amount": _rupees(p.amount), "currency": p.currency, "status": p.status, "razorpay_order_id": p.razorpay_order_id,
                 "razorpay_payment_id": p.razorpay_payment_id, "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at),
                 "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
+                "points": _payment_points(p),
             } for p, email, name in rows],
         }
     finally:

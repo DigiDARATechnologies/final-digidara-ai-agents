@@ -74,7 +74,7 @@ function TermsContent() {
 
       <h3>5. Payments</h3>
       <p>
-        Paid plans and token top-ups are processed via Razorpay. Fees are
+        Paid plans and points top-ups are processed via Razorpay. Fees are
         described at the time of purchase; refunds, where applicable, follow
         the policy shown at checkout.
       </p>
@@ -131,7 +131,7 @@ function PrivacyContent() {
       <ul>
         <li>To operate each agent's core functionality (eligibility checks, code execution, scoring, certificate/exam generation, resume export).</li>
         <li>To bridge your DigiDARA identity into each agent's own session so your progress persists across visits.</li>
-        <li>To process payments and token top-ups via Razorpay.</li>
+        <li>To process payments and points top-ups via Razorpay.</li>
         <li>To improve reliability (error monitoring, health checks) and enforce rate limits / prevent abuse.</li>
       </ul>
       <p>We only use personal data for the purposes described here. We don't sell personal data or use it for third-party advertising.</p>
