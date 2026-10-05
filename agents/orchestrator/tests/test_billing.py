@@ -109,8 +109,11 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
     assert [i for i in offered if offered[i]["popular"]] == ["standard"]
     assert "custom" not in body
     assert "pro_monthly" not in offered and "pro_yearly" not in offered
-    # The 799 and 999 plans are paid on their Razorpay payment pages; 399 in-app.
-    assert [i for i in offered if offered[i]["payment_page_url"]] == ["standard", "premium"]
+    # Every plan is paid on its own Razorpay payment page.
+    assert [i for i in offered if offered[i]["payment_page_url"]] == ["basic", "standard", "premium"]
+    assert offered["basic"]["payment_page_url"] == "https://rzp.io/rzp/6OOfhsv"
+    assert offered["basic"]["page_amount"] == 47082
+    assert "test_page" not in offered["basic"]
     assert offered["standard"]["payment_page_url"] == "https://rzp.io/rzp/mKDSePpB"
     assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8"
     assert (offered["standard"]["page_amount"], offered["premium"]["page_amount"]) == (94282, 117882)
@@ -128,13 +131,14 @@ def test_plans_sell_fixed_tokens_shown_as_points():
 def test_only_an_exact_plan_price_credits_and_only_exactly_its_tokens():
     credit = plan_catalog.exact_credit
     assert credit("basic", 39900, "INR") == (500_000, 250)
+    assert credit("basic", 47082, "INR") == (500_000, 250)          # its Razorpay page: 399 + GST
     assert credit("standard", 79900, "INR") == (1_000_000, 500)
     assert credit("standard", 94282, "INR") == (1_000_000, 500)       # its Razorpay page: 799 + GST
     assert credit("premium", 99900, "INR") == (1_500_000, 750)
     assert credit("premium", 117882, "INR") == (1_500_000, 750)      # the Razorpay page: 999 + GST, no extra tokens
     # Anything else credits nothing -- never scaled, never rounded up.
     for plan_id, amount, currency in [
-        ("basic", 39901, "INR"), ("basic", 39899, "INR"), ("basic", 45000, "INR"), ("basic", 79900, "INR"),
+        ("basic", 39901, "INR"), ("basic", 39899, "INR"), ("basic", 47083, "INR"), ("basic", 100, "INR"), ("basic", 45000, "INR"), ("basic", 79900, "INR"),
         ("premium", 117883, "INR"), ("premium", 199900, "INR"), ("basic", 49900, "INR"),
         ("standard", 94283, "INR"), ("standard", 117882, "INR"), ("premium", 94282, "INR"),
         ("basic", 39900, "USD"), ("topup_500000", 50000, "INR"), ("pro_monthly", 99900, "INR"), ("nope", 39900, "INR"),
@@ -190,15 +194,22 @@ def test_a_recent_legacy_pro_plan_keeps_its_active_status(env):
 
 # --- ordering ---------------------------------------------------------------
 
+def in_app_basic(monkeypatch):
+    """Every plan is sold on a Razorpay page now; the in-app checkout path is
+    still there, so its tests take Basic off its page."""
+    monkeypatch.delitem(plan_catalog.PLANS["basic"], "payment_page_url")
+
+
 def test_ordering_a_plan_charges_the_catalog_price(env, monkeypatch):
+    in_app_basic(monkeypatch)
     calls = razorpay_ok(monkeypatch)
     body = env.client.post("/billing/orders", json={"plan_id": "basic"}).json()
     assert calls["orders"][0]["amount"] == 39900 and calls["orders"][0]["currency"] == "INR"
     assert body["amount"] == 39900 and body["name"] == "Basic plan"
 
 
-# Standard and Premium are paid on their Razorpay pages, never in-app.
-@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", "", "standard", "premium"])
+# Plans paid on their Razorpay pages are never sold in-app.
+@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", "", "basic", "standard", "premium"])
 def test_plans_that_are_not_on_sale_cannot_be_ordered(env, monkeypatch, plan_id):
     calls = razorpay_ok(monkeypatch)
     assert env.client.post("/billing/orders", json={"plan_id": plan_id}).status_code == 400
@@ -368,6 +379,26 @@ def page_payment(env, payment_id="pay_page_1", email="ASHA@example.com", amount=
                            headers={"x-razorpay-signature": hmac.new(secret, event, hashlib.sha256).hexdigest()})
 
 
+def test_the_399_page_charges_gst_and_still_credits_exactly_the_399_plan(env):
+    # The Razorpay page charges INR 399 + 18% GST = INR 470.82.
+    set_balance(env, 0)
+    assert page_payment(env, amount=47082).status_code == 200
+    assert balance(env) == 500_000 and points(env) == 250
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["plan_id"], payment["amount"], payment["points"]) == ("basic", 47082, 250)
+
+
+def test_the_old_1_rupee_test_page_amount_credits_nobody_now(env, monkeypatch):
+    from app.models import User
+    session = env.database()
+    session.get(User, env.user.id).is_admin = True                 # not even an admin
+    session.commit()
+    session.close()
+    before = balance(env)
+    assert page_payment(env, amount=100).status_code == 200
+    assert balance(env) == before
+
+
 def test_the_799_page_charges_gst_and_still_credits_exactly_the_799_plan(env):
     # The Razorpay page charges INR 799 + 18% GST = INR 942.82.
     set_balance(env, 0)
@@ -509,7 +540,7 @@ def test_monthly_usage_reports_points(env, monkeypatch):
 def test_the_catalog_and_history_show_points(env):
     offered = {plan["id"]: plan for plan in env.client.get("/billing/plans").json()["plans"]}
     assert [offered[i]["points"] for i in ("basic", "standard", "premium")] == [250, 500, 750]
-    assert offered["basic"]["features"][0] == "250 points credited instantly"
+    assert offered["basic"]["features"][0] == "250 points added after Razorpay confirms the payment"
     assert not any("token" in feature.lower() for plan in offered.values() for feature in plan["features"])
     add_payment(env, "premium", order="o1")
     assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 750
@@ -531,6 +562,7 @@ def test_a_paid_payment_records_what_it_credited_and_a_later_price_change_cannot
 
 
 def test_order_creation_is_rate_limited_per_account(env, monkeypatch):
+    in_app_basic(monkeypatch)
     made = iter(range(100))
     monkeypatch.setattr(billing.httpx, "post", lambda *a, **k: SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"id": f"order_{next(made)}"}))
     codes = [env.client.post("/billing/orders", json={"plan_id": "basic"}).status_code for _ in range(11)]
@@ -538,76 +570,8 @@ def test_order_creation_is_rate_limited_per_account(env, monkeypatch):
 
 
 def test_the_browser_cannot_choose_what_a_plan_credits(env, monkeypatch):
+    in_app_basic(monkeypatch)
     # Only plan_id is accepted; amount and tokens come from the server's catalog.
     calls = razorpay_ok(monkeypatch)
     env.client.post("/billing/orders", json={"plan_id": "basic", "amount": 100, "tokens": 99_999_999, "points": 99_999})
     assert calls["orders"][0]["amount"] == 39900
-
-
-# --- the admin-only INR 1 test page for Basic -------------------------------
-
-def make_admin(env, user=None):
-    from app.models import User
-    session = env.database()
-    try:
-        session.get(User, (user or env.user).id).is_admin = True
-        session.commit()
-    finally:
-        session.close()
-
-
-def plans_as(env, user=None):
-    from app.auth.security import create_access_token
-    headers = {"authorization": "Bearer " + create_access_token((user or env.user).id)} if user is not False else {}
-    return {plan["id"]: plan for plan in env.client.get("/billing/plans", headers=headers).json()["plans"]}
-
-
-def test_learners_never_see_the_test_page(env):
-    for offered in (plans_as(env), plans_as(env, user=False)):
-        assert offered["basic"]["payment_page_url"] is None and offered["basic"]["test_page"] is False
-        assert offered["basic"]["amount"] == 39900
-
-
-def test_an_admin_gets_the_1_rupee_test_page_on_basic_only(env):
-    make_admin(env)
-    offered = plans_as(env)
-    assert offered["basic"]["payment_page_url"] == "https://rzp.io/rzp/fAamOYc"
-    assert (offered["basic"]["page_amount"], offered["basic"]["test_page"]) == (100, True)
-    # The other plans keep their real pages.
-    assert offered["standard"]["payment_page_url"] == "https://rzp.io/rzp/mKDSePpB" and offered["standard"]["test_page"] is False
-    assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8" and offered["premium"]["test_page"] is False
-
-
-def test_the_test_amount_credits_only_an_admin_and_only_exactly_the_basic_plan():
-    credit = plan_catalog.exact_credit
-    assert credit("basic", 100, "INR") is None                                   # a learner
-    assert credit("basic", 100, "INR", admin=True) == (500_000, 250)
-    assert credit("basic", 101, "INR", admin=True) is None
-    assert credit("standard", 100, "INR", admin=True) is None                    # no test page there
-    assert credit("premium", 100, "INR", admin=True) is None
-
-
-def test_an_admin_paying_the_test_page_gets_exactly_the_basic_plan(env):
-    make_admin(env)
-    set_balance(env, 0)
-    assert page_payment(env, amount=100).status_code == 200
-    assert balance(env) == 500_000 and points(env) == 250
-    payment = env.client.get("/billing/summary").json()["payments"][0]
-    assert (payment["plan_id"], payment["amount"], payment["points"]) == ("basic", 100, 250)
-
-
-def test_a_learner_paying_the_test_page_gets_nothing_and_it_is_logged(env, caplog):
-    before = balance(env)
-    assert page_payment(env, amount=100).status_code == 200
-    assert balance(env) == before
-    assert env.client.get("/billing/summary").json()["payments"] == []
-    assert "matches no plan price; nothing credited" in caplog.text
-
-
-def test_switching_the_test_page_off_stops_it_for_admins_too(env, monkeypatch):
-    make_admin(env)
-    monkeypatch.setitem(plan_catalog.PLANS["basic"], "test_page_url", "")
-    assert plans_as(env)["basic"]["payment_page_url"] is None
-    before = balance(env)
-    page_payment(env, amount=100)
-    assert balance(env) == before

@@ -56,13 +56,10 @@ PLANS: dict[str, dict] = {
         "tokens": 500_000,
         "points": 250,
         "description": "For getting started and light, occasional use.",
-        # TEST ONLY: an INR 1 Razorpay page that buys this plan, so the whole
-        # page -> webhook -> points flow can be tried on production. Shown to,
-        # and credited for, platform admins only -- anyone else paying it gets
-        # nothing (exact_credit's `admin`). Set RAZORPAY_BASIC_TEST_PAGE_URL
-        # to an empty value to switch it off.
-        "test_page_url": os.getenv("RAZORPAY_BASIC_TEST_PAGE_URL", "https://rzp.io/rzp/fAamOYc"),
-        "test_page_amount": int(os.getenv("RAZORPAY_BASIC_TEST_PAGE_AMOUNT", "100")),
+        # Paid on DigiDARA's Razorpay payment page, like Standard and Premium.
+        "payment_page_url": os.getenv("RAZORPAY_BASIC_PAGE_URL", "https://rzp.io/rzp/6OOfhsv"),
+        # What that page charges: INR 399 + 18% GST = INR 470.82.
+        "page_amount": int(os.getenv("RAZORPAY_BASIC_PAGE_AMOUNT", "47082")),
     },
     "standard": {
         "name": "Standard",
@@ -101,31 +98,21 @@ def is_full_price(plan: dict, amount_paise: int) -> bool:
     return amount_paise in (plan["amount"], plan.get("page_amount"))
 
 
-def is_admin_test_price(plan: dict, amount_paise: int) -> bool:
-    """The plan's admin-only test page amount (INR 1 for Basic)."""
-    return bool(plan.get("test_page_url")) and amount_paise == plan.get("test_page_amount")
-
-
-def exact_credit(plan_id: str, amount_paise: int, currency: str, *, admin: bool = False) -> tuple[int, int] | None:
+def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, int] | None:
     """The one place that decides what a payment credits: exactly the plan's
-    tokens and points, and only for exactly its price -- INR 399 -> 500,000,
-    INR 799 (or the INR 942.82 its Razorpay page charges with GST) ->
-    1,000,000, INR 999 (or the INR 1,178.82 its page charges) -> 1,500,000.
+    tokens and points, and only for exactly its price -- INR 399 (or the
+    INR 470.82 its Razorpay page charges with GST) -> 500,000, INR 799 (or its
+    page's INR 942.82) -> 1,000,000, INR 999 (or its page's INR 1,178.82) ->
+    1,500,000.
     Never scaled, never rounded up.
 
     Anything else credits nothing: a different amount, a plan no longer sold,
     a legacy top-up, another currency. The caller logs it so a person can
     review it and credit by hand; an unexpected payment must never turn into
     tokens on its own.
-
-    `admin` (the paying account is a platform admin) additionally accepts a
-    plan's test page amount, so admins can test with INR 1. It is never true
-    for anyone else, so a learner paying INR 1 gets nothing.
     """
     plan = PLANS.get(plan_id)
-    if plan is None or currency != plan["currency"]:
-        return None
-    if not (is_full_price(plan, amount_paise) or (admin and is_admin_test_price(plan, amount_paise))):
+    if plan is None or currency != plan["currency"] or not is_full_price(plan, amount_paise):
         return None
     return plan["tokens"], plan["points"]
 
@@ -194,14 +181,12 @@ def bonus_percent(plan: dict) -> int:
     return max(0, round((plan["tokens"] / baseline - 1) * 100)) if baseline else 0
 
 
-def offered_plans(admin: bool = False) -> list[dict]:
-    """The catalog as the API returns it, in display order. An admin also
-    gets a plan's test page in place of its normal checkout."""
+def offered_plans() -> list[dict]:
+    """The catalog as the API returns it, in display order."""
     result = []
     for plan_id, plan in PLANS.items():
         bonus = bonus_percent(plan)
-        test_page = admin and bool(plan.get("test_page_url"))
-        page = plan["test_page_url"] if test_page else plan.get("payment_page_url")
+        page = plan.get("payment_page_url")
         features = [
             f"{plan['points']:,} points" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
             "Points never expire",
@@ -220,8 +205,7 @@ def offered_plans(admin: bool = False) -> list[dict]:
             "features": features,
             "popular": bool(plan.get("popular")),
             "payment_page_url": page,
-            "page_amount": (plan["test_page_amount"] if test_page else plan.get("page_amount")) if page else None,
-            "test_page": test_page,
+            "page_amount": plan.get("page_amount") if page else None,
         })
     return result
 
