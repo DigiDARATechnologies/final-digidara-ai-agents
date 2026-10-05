@@ -145,6 +145,37 @@ seed_mock_interview_env() {
 
 seed_mock_interview_env
 
+# Judge0 runs learner code in privileged containers on the same network as
+# every agent. Both callers always send enable_network=false, but Judge0's own
+# default lets a submission ask for network access, so pin it off server-side
+# too. Edited in place (sed -i keeps the file's owner and mode, which the
+# Judge0 containers need to read it); Judge0 only reads it at start-up.
+harden_judge0_conf() {
+  local conf="$PROJECT_ROOT/agents/codeforge_agent/judge0/judge0.conf"
+  local key changed=false
+  [ -f "$conf" ] || return 0
+  for key in ALLOW_ENABLE_NETWORK ENABLE_NETWORK; do
+    if grep -q "^$key=false\$" "$conf"; then
+      continue
+    elif grep -q "^$key=" "$conf"; then
+      sed -i "s/^$key=.*/$key=false/" "$conf"
+    else
+      printf '\n%s=false\n' "$key" >> "$conf"
+    fi
+    changed=true
+  done
+  if [ "$changed" = true ]; then
+    echo "updated agents/codeforge_agent/judge0/judge0.conf (sandbox network off)"
+    if command -v docker >/dev/null 2>&1; then
+      (cd "$PROJECT_ROOT" && docker compose restart server worker >/dev/null 2>&1) || true
+    fi
+  else
+    echo "kept    agents/codeforge_agent/judge0/judge0.conf"
+  fi
+}
+
+harden_judge0_conf
+
 if [ -f "$JOB_ENV" ]; then
   current_job_agent_url=$(read_env_value "$JOB_ENV" AGENT_PUBLIC_URL || true)
   if [ "$current_job_agent_url" = "$CANONICAL_JOB_AGENT_URL" ]; then
