@@ -82,6 +82,13 @@ class User(Base):
     # Embedded in every session token as "sv"; bumping it revokes every token
     # issued before (see auth/security.py:decode_access_token).
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # The pending email verification code (auth/email_verification.py): only
+    # its keyed hash is stored, with when it expires, when it was last sent
+    # (resend cooldown) and how many wrong guesses it has had.
+    email_code_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    email_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_code_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_code_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.

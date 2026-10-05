@@ -54,6 +54,14 @@ class UserOut(BaseModel):
     is_admin: bool = False
     consent_accepted_at: datetime | None = None
     consent_policy_version: str | None = None
+    email_verified: bool = True
+    # Whether this account must verify its email before using the agents
+    # (password accounts, when email verification is switched on).
+    verification_required: bool = False
+
+
+class VerifyEmailRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=12)
 
 
 class TokenResponse(BaseModel):

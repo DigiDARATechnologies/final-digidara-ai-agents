@@ -19,7 +19,7 @@ AUDIO = base64.b64encode(b"\x1a\x45\xdf\xa3fake-webm-audio").decode()
 
 
 @pytest.fixture
-def api(database, monkeypatch):
+def api(learner, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     app = FastAPI()
     app.state.limiter = limiter

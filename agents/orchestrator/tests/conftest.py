@@ -46,3 +46,16 @@ def client(database):
     app.include_router(gateway.router)
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture
+def learner(database):
+    """A signed-up account whose email is verified, id "learner"."""
+    from app.models import User
+    session = database()
+    try:
+        session.add(User(id="learner", name="Learner", email="learner@example.com", email_verified=True))
+        session.commit()
+    finally:
+        session.close()
+    return "learner"

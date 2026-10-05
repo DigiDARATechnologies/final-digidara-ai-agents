@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.auth import google_oauth, service
+import logging
+
+from app.auth import email_verification, google_oauth, service
 from app.auth.consent import CONSENT_POLICY_VERSION
 from app.auth.schemas import (
     AccountDeleteRequest,
@@ -10,12 +12,14 @@ from app.auth.schemas import (
     SignupRequest,
     TokenResponse,
     UserOut,
+    VerifyEmailRequest,
 )
 from app.auth.security import create_access_token, get_current_user_id, hash_password, verify_password
 from app.models import User
 from app.rate_limit import limiter
 from app import agent_data, job_data
 
+logger = logging.getLogger("orchestrator.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # Neither route carries a bearer token yet, so `limiter`'s key function
@@ -23,6 +27,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # guard on these two routes needs.
 _LOGIN_RATE_LIMIT = "5/minute"
 _GOOGLE_RATE_LIMIT = "10/minute"
+# Per account. Each send is an email; each verify is a guess at a 6-digit code
+# (which also locks after 5 wrong tries).
+_SEND_CODE_RATE_LIMIT = "5/hour"
+_VERIFY_CODE_RATE_LIMIT = "10/minute"
 
 
 def _to_out(user: User) -> UserOut:
@@ -34,6 +42,8 @@ def _to_out(user: User) -> UserOut:
         is_admin=user.is_admin,
         consent_accepted_at=user.consent_accepted_at,
         consent_policy_version=user.consent_policy_version,
+        email_verified=bool(user.email_verified),
+        verification_required=not email_verification.is_verified(user),
     )
 
 
@@ -44,7 +54,38 @@ def signup(req: SignupRequest, request: Request) -> TokenResponse:
     if service.get_by_email(email):
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists.")
     user = service.create_user(req.name.strip(), email, req.mobile, hash_password(req.password), CONSENT_POLICY_VERSION)
+    if email_verification.verification_required():
+        # Best effort: the account exists either way, and the verify screen
+        # can always send another code.
+        try:
+            email_verification.send_code(user.id)
+        except email_verification.VerificationError as exc:
+            logger.warning("signup verification email not sent (%s)", exc.status_code)
     return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
+
+
+@router.post("/email/send-code")
+@limiter.limit(_SEND_CODE_RATE_LIMIT)
+def send_email_code(request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+    """Email a new 6-digit verification code to the signed-in account."""
+    try:
+        email_verification.send_code(user_id)
+    except email_verification.VerificationError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"message": "We've sent a 6-digit code to your email."}
+
+
+@router.post("/email/verify", response_model=UserOut)
+@limiter.limit(_VERIFY_CODE_RATE_LIMIT)
+def verify_email_code(req: VerifyEmailRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> UserOut:
+    try:
+        email_verification.verify_code(user_id, req.code)
+    except email_verification.VerificationError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    user = service.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    return _to_out(user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -117,8 +158,9 @@ def change_password(req: ChangePasswordRequest, request: Request, user_id: str =
     if user.password_hash:
         if not req.current_password or not verify_password(req.current_password, user.password_hash):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect.")
-    service.set_password(user.id, hash_password(req.new_password))
-    return {"message": "Password updated"}
+    session_version = service.set_password(user.id, hash_password(req.new_password))
+    # Every other device is now signed out; this one gets a fresh token.
+    return {"message": "Password updated", "access_token": create_access_token(user.id, session_version or 0)}
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
