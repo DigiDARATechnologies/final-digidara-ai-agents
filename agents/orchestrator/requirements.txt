@@ -16,6 +16,8 @@ langgraph==1.0.10
 bcrypt>=4.2,<5
 PyJWT>=2.9,<3
 slowapi>=0.1.9,<1
+# Rate-limit counters shared by all workers (RATE_LIMIT_STORAGE_URI=redis://...).
+redis>=5.2,<9
 # Production process manager target (see ecosystem.config.js) — not used by
 # `uvicorn --reload` in local dev, and doesn't run as a server on Windows.
 gunicorn>=23.0,<24

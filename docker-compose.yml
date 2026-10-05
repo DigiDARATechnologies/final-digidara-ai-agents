@@ -39,9 +39,27 @@ services:
     restart: unless-stopped
     env_file:
       - ./agents/orchestrator/.env
+    environment:
+      # One set of rate-limit counters for all gunicorn workers (see
+      # app/rate_limit.py); without it every limit was effectively 4x.
+      RATE_LIMIT_STORAGE_URI: redis://ratelimit-redis:6379/0
     depends_on:
       mysql:
         condition: service_healthy
+      ratelimit-redis:
+        condition: service_healthy
+
+  # Rate-limit counters only: nothing persisted, memory capped, and no port
+  # published, so only containers on this network can reach it.
+  ratelimit-redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   capstone-agent:
     build:
