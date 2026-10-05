@@ -70,6 +70,10 @@ def compose_config(init_file, agents=None):
                 'JWT_SECRET': 'local-test-jwt-secret-at-least-32-characters',
                 'JWT_SECRET_KEY': 'local-test-jwt-secret-at-least-32-characters',
                 'AGENT_SHARED_SECRET': 'local-test-agent-secret',
+                # A configured secret now defaults agents to enforce. These suites
+                # call agents directly with unsigned identity headers to test
+                # business logic; enforce itself is covered by test_gateway_signing.
+                'AGENT_SIGNATURE_MODE': 'warn',
                 'LMS_API_SHARED_SECRET': 'local-test-agent-secret',
                 'CODING_PRACTICE_ENABLED': 'true',
                 'OPENAI_API_KEY': 'local-test-unused-key',
