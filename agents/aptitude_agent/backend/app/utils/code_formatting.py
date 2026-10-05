@@ -130,32 +130,25 @@ def _is_code_line(line):
     return bool(LIKELY_CODE_PATTERN.search(line) or CODE_LINE_HINT.search(line))
 
 
-def fence_bare_code(value, language):
-    """Wrap program lines the model wrote without a code block.
-
-    Models sometimes put a question's code on plain lines ("What is the
-    output?" then `print(type([]) == list)`) despite being asked for a fenced
-    block, and repeat it on every retry, so one such question used to fail a
-    whole test. This repairs only text that has no fences at all AND is
-    rejected for bare code: consecutive code lines become one fenced block in
-    the selected language. The result must still pass validate_fenced_code,
-    otherwise the original text is returned and rejected as before.
-    """
-    raw=str(value or "")
-    if "```" in raw or "\n" not in raw.strip():
-        return raw
-    try:
-        validate_fenced_code(raw,language)
-        return raw
-    except ValueError as exc:
-        if str(exc)!=BARE_CODE_ERROR:
-            return raw
-    lines=raw.strip("\n").split("\n")
+def _code_line_flags(lines):
     flags=[_is_code_line(line) for line in lines]
     # A blank line between two code lines belongs to the block.
     for index,line in enumerate(lines):
-        if not line.strip() and 0<index<len(lines)-1 and flags[index-1] and any(flags[index+1:]) and flags[index+1]:
+        if not line.strip() and 0<index<len(lines)-1 and flags[index-1] and flags[index+1]:
             flags[index]=True
+    return flags
+
+
+def _fence_lines(text, language):
+    """Wrap each run of code lines in `text` (which has no fences) in a block."""
+    if not text.strip():
+        return text
+    lead=text[:len(text)-len(text.lstrip("\n"))]
+    trail=text[len(text.rstrip("\n")):]
+    lines=text.strip("\n").split("\n")
+    flags=_code_line_flags(lines)
+    if not any(flags):
+        return text
     out=[]
     block=[]
     for line,is_code in zip(lines,flags):
@@ -168,12 +161,62 @@ def fence_bare_code(value, language):
         out.append(line)
     if block:
         out.append(f"```{language}\n"+"\n".join(block).strip("\n")+"\n```")
-    repaired="\n".join(out)
+    return lead+"\n".join(out)+trail
+
+
+def _rejected_for_bare_code(text, language):
+    try:
+        validate_fenced_code(text,language)
+    except ValueError as exc:
+        return str(exc)==BARE_CODE_ERROR
+    return False
+
+
+def fence_bare_code(value, language):
+    """Wrap program lines the model wrote without a code block.
+
+    Models sometimes put a question's code on plain lines ("What is the
+    output?" then `print(type([]) == list)`) despite being asked for a fenced
+    block, and repeat it on every retry, so one such question used to fail a
+    whole test. This repairs only text that is rejected for bare code: each
+    run of consecutive code lines outside any existing (complete) fence
+    becomes one fenced block in the selected language. The result must still
+    pass validate_fenced_code, otherwise the original text is returned and
+    rejected as before.
+    """
+    raw=str(value or "")
+    if "\n" not in raw.strip() or not _rejected_for_bare_code(raw,language):
+        return raw
+    pieces=[]
+    cursor=0
+    for match in FENCE_PATTERN.finditer(raw):
+        pieces.append(_fence_lines(raw[cursor:match.start()],language))
+        pieces.append(match.group(0))
+        cursor=match.end()
+    pieces.append(_fence_lines(raw[cursor:],language))
+    repaired="".join(pieces)
     try:
         validate_fenced_code(repaired,language)
     except ValueError:
         return raw
     return repaired
+
+
+def strip_bare_code_lines(prose, language):
+    """Drop code lines from prose that sits next to an authoritative code
+    block (a structured question_code / explanation_code / option_code field).
+
+    The model sometimes sends the code in the structured field AND pastes it
+    again as plain lines in the prose; fencing the copy would show the code
+    twice, so the copy is removed instead. Only done when the prose would be
+    rejected for bare code; anything else is returned unchanged.
+    """
+    if not _rejected_for_bare_code(prose,language):
+        return prose
+    lines=prose.split("\n")
+    flags=_code_line_flags(lines)
+    kept="\n".join(line for line,is_code in zip(lines,flags) if not is_code)
+    return re.sub(r"\n{3,}","\n\n",kept).strip()
 
 
 def apply_structured_code_fields(item, category, expected_language=None):
@@ -214,6 +257,7 @@ def apply_structured_code_fields(item, category, expected_language=None):
             prose=FENCE_PATTERN.sub("",canonicalize_unlabelled_fences(prose,expected or "python")).strip()
             if "```" in prose:
                 raise ValueError("technical prose contains an incomplete code fence")
+            prose=strip_bare_code_lines(prose,expected or "python")
             prepared[field]=f"{prose}\n\n{block}" if prose else block
 
     option_code=prepared.get("option_code") or {}
@@ -228,5 +272,6 @@ def apply_structured_code_fields(item, category, expected_language=None):
             prose=FENCE_PATTERN.sub("",canonicalize_unlabelled_fences(prose,expected or "python")).strip()
             if "```" in prose:
                 raise ValueError("technical option contains an incomplete code fence")
+            prose=strip_bare_code_lines(prose,expected or "python")
             prepared["options"][key]=f"{prose}\n\n{block}" if prose else block
     return prepared

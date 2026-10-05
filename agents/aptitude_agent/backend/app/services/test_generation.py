@@ -84,12 +84,32 @@ def _extract_question_items(payload,expected_count):
     return [],"unsupported_wrapper"
 
 
-def _retry_context(base_prompt,error,rejected_questions,attempt):
+def _code_layout_correction(error,final):
+    """Extra retry instruction when a question failed only on code layout.
+
+    The model kept writing a question's program inline in the 280-character
+    question field (often squashed onto one line) and repeating it on every
+    retry, which failed the whole test. The retry spells out where code goes;
+    the final retry asks for a question with no code at all, which cannot
+    fail this rule.
+    """
+    if "fenced code block" not in str(error):
+        return ""
+    if final:
+        return ("\nCODE LAYOUT, FINAL: for every question still needed, ask a conceptual question about its topic "
+                "written in plain words with NO program code anywhere (question_code, explanation_code and "
+                "option_code must be null).")
+    return ("\nCODE LAYOUT: never put program code in the question, option or explanation text. Put it in "
+            "question_code (or explanation_code / option_code) with its language, one statement per line with real "
+            "newlines and indentation; keep the question text to plain words.")
+
+
+def _retry_context(base_prompt,error,rejected_questions,attempt,final=False):
     direction=RETRY_VARIATION_DIRECTIONS[(attempt-1)%len(RETRY_VARIATION_DIRECTIONS)]
     retry_seed=f"{secrets.randbelow(900000)+100000}-{str(uuid.uuid4())[:8]}"
     return f"""{base_prompt}
 
-RETRY CORRECTION {attempt}: The previous response was rejected because {clean_text(str(error),240)}.
+RETRY CORRECTION {attempt}: The previous response was rejected because {clean_text(str(error),240)}.{_code_layout_correction(error,final)}
 Return the complete exact-count array again. Use a {direction} variation and private retry seed {retry_seed}.
 Never mention the retry, rejected output, or seed."""
 
@@ -476,8 +496,9 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                     # aptitude questions, not user input.
                     current_app.logger.error(
                         "Question validation failed reason=%s attempt=%s item_index=%s category=%s topic=%s "
-                        "explanation=%r correct_answer=%r options=%r",
+                        "question=%r question_code=%r explanation=%r correct_answer=%r options=%r",
                         str(exc),attempt,slot_index+1,slot.get("category"),slot.get("topic"),
+                        str(item.get("question",""))[:600],str(item.get("question_code") or "")[:400],
                         str(item.get("explanation",""))[:400],item.get("correct_answer"),item.get("options"),
                     )
                     if first_failure is None:
@@ -566,7 +587,8 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                     [prompt_slots[index] for index in pending_now],blocked_patterns,
                     forbidden_questions+_normalized_exclusions([accepted[index]["question"] for index in sorted(accepted)]),batch_id,
                 )
-            retry_prompt=_retry_context(retry_base,exc,rejected_questions,attempt)
+            # The prompt being built is for attempt+1; flag it when that is the last one.
+            retry_prompt=_retry_context(retry_base,exc,rejected_questions,attempt,final=attempt+1>=max_validation_attempts)
             if deadline is not None and time.monotonic()>=deadline and last_minimal:
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
