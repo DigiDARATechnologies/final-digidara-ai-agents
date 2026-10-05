@@ -1,3 +1,4 @@
+jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
 import { fireEvent, render, screen } from '@testing-library/react';
 import NewChatLanding from '../../src/components/NewChatLanding';
 

@@ -133,8 +133,12 @@ export function mergeCumulativeText(existing: string, incoming: string): string 
  *   stops. Live recognition is unreliable on phones -- see voiceCapture.ts.
  *   With `preview` as well, the recording so far is re-transcribed about
  *   every 3 seconds and reported (not final) so the text appears as the
- *   student speaks; the text reported as final is still `transcribe`'s. */
-export default function useSpeechRecognition(locale = "en-US", transcribe?: AudioTranscriber, preview?: AudioTranscriber) {
+ *   student speaks; the text reported as final is still `transcribe`'s.
+ * - `alwaysRecord` (with `transcribe`): use the record-then-transcribe path on
+ *   every device, not just phones -- the general chat sends all voice to the
+ *   server's OpenAI transcription, which also works in browsers that have no
+ *   live speech recognition (Firefox, Safari on desktop). */
+export default function useSpeechRecognition(locale = "en-US", transcribe?: AudioTranscriber, preview?: AudioTranscriber, alwaysRecord = false) {
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [error, setError] = useState("");
@@ -146,7 +150,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
   transcribeRef.current = transcribe;
   const previewRef = useRef(preview);
   previewRef.current = preview;
-  const recordingMode = Boolean(transcribe) && isMobileVoiceDevice() && audioRecordingSupported();
+  const recordingMode = Boolean(transcribe) && (alwaysRecord || isMobileVoiceDevice()) && audioRecordingSupported();
   // Recording mode: every start() is a new session; finishing an older one is ignored.
   const recordSessionRef = useRef(0);
   const finishRecordingRef = useRef<((deliver: boolean) => void) | null>(null);

@@ -30,7 +30,7 @@ from langgraph.graph import END, StateGraph
 from app import config
 from app.auth.agent_signing import sign_headers
 from app.llm.client import call_text, call_with_tools
-from app.orchestrator import prompts
+from app.orchestrator import guard, prompts
 from app.orchestrator.tools import build_tools, endpoint_for
 from app.registry import service as registry_service
 
@@ -61,16 +61,29 @@ def load_registry_node(state: OrchestratorState) -> dict:
 # --- Node 2: LLM decides whether a tool fits, or answers directly ----------
 
 def route_node(state: OrchestratorState) -> dict:
+    # An obvious injection attempt never reaches the model.
+    if guard.looks_like_injection(state["message"]):
+        logger.warning("general chat: blocked a prompt-injection attempt (%d chars)", len(state["message"]))
+        return {"tool_name": None, "reply": guard.OFF_LIMITS_REPLY}
     tools = state.get("tools") or []
     result = call_with_tools(
         system=prompts.router_system_prompt(has_tools=bool(tools)),
         user=state["message"],
         tools=tools,
-        history=state.get("history"),
+        history=guard.safe_history(state.get("history")),
     )
     if "tool_name" in result:
-        return {"tool_name": result["tool_name"], "tool_args": result.get("tool_args", {})}
-    return {"tool_name": None, "reply": result.get("text", "")}
+        # Only an agent that is registered and live right now; a made-up or
+        # stale name is treated as no match rather than handed to the app.
+        if result["tool_name"] in {tool["function"]["name"] for tool in tools}:
+            return {"tool_name": result["tool_name"], "tool_args": result.get("tool_args", {})}
+        logger.warning("general chat: model chose an unknown agent %r", result["tool_name"])
+        return {"tool_name": None, "reply": guard.OFF_LIMITS_REPLY}
+    reply = result.get("text", "")
+    if guard.leaks_instructions(reply):
+        logger.warning("general chat: replaced a reply that leaked the instructions")
+        reply = guard.OFF_LIMITS_REPLY
+    return {"tool_name": None, "reply": reply}
 
 
 def _route_after_selection(state: OrchestratorState) -> str:

@@ -1,3 +1,4 @@
+import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
 const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
 
 export interface RouteResult {
@@ -21,6 +22,23 @@ export interface RouteTurn {
  * vague opener followed by several turns of the user adding detail never
  * accumulates enough signal to route, and the router just keeps re-asking
  * the same clarifying question forever. */
+/** The general chat's microphone: the recorded question, transcribed by the
+ * orchestrator with OpenAI. The text is then sent like a typed message. */
+export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
+  const token = localStorage.getItem("digidara_token");
+  const response = await fetch(`${ORCHESTRATOR_BASE}/chat/transcribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ audio_base64: await audioBlobToBase64(audio), mime_type: baseAudioType(audio) }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "Voice input could not be processed. Please type your question.");
+  }
+  const body = await response.json();
+  return String(body.transcript ?? "");
+}
+
 export async function routeMessage(message: string, history: RouteTurn[] = []): Promise<RouteResult> {
   const token = localStorage.getItem("digidara_token");
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/route`, {
