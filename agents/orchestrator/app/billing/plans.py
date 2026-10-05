@@ -89,6 +89,23 @@ def is_full_price(plan: dict, amount_paise: int) -> bool:
     """The plan's price, or what its Razorpay page charges (price + GST)."""
     return amount_paise in (plan["amount"], plan.get("page_amount"))
 
+
+def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, int] | None:
+    """The one place that decides what a payment credits: exactly the plan's
+    tokens and points, and only for exactly its price -- INR 399 -> 500,000,
+    INR 799 -> 1,000,000, INR 999 (or the INR 1,178.82 its Razorpay page
+    charges with GST) -> 1,500,000. Never scaled, never rounded up.
+
+    Anything else credits nothing: a different amount, a plan no longer sold,
+    a legacy top-up, another currency. The caller logs it so a person can
+    review it and credit by hand; an unexpected payment must never turn into
+    tokens on its own.
+    """
+    plan = PLANS.get(plan_id)
+    if plan is None or currency != plan["currency"] or not is_full_price(plan, amount_paise):
+        return None
+    return plan["tokens"], plan["points"]
+
 # Every plan sells points at 2,000 tokens a point, and new free accounts use
 # the same rate. (Accounts created before this kept the rate stored on their
 # row, so their shown balance never jumps.) New accounts start with enough
@@ -133,16 +150,10 @@ def points_for_tokens(tokens: float, tokens_per_point: float | None) -> float:
 
 
 def points_for_payment(plan_id: str, amount_paise: int) -> float | None:
-    """The points a payment sold: the plan's points, scaled to the amount
-    actually paid if that differs from the current price. None for anything
-    else (legacy plans, top-ups), which is credited at the account's
-    existing rate instead."""
+    """The points a plan sells at exactly its price; None for any other
+    amount or plan. For showing a payment -- crediting uses exact_credit."""
     plan = PLANS.get(plan_id)
-    if not plan or (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS or amount_paise <= 0:
-        return None
-    if is_full_price(plan, amount_paise):
-        return plan["points"]
-    return round(plan["points"] * amount_paise / plan["amount"], 2)
+    return plan["points"] if plan and is_full_price(plan, amount_paise) else None
 
 
 # Sold before token plans existed. Not offered any more, but old payments must
@@ -200,16 +211,14 @@ PREVIOUS_PLAN_TOKENS = {
 
 
 def tokens_for_payment(plan_id: str, amount_paise: int) -> int | None:
-    """Tokens for a paid payment: the plan's tokens at the price actually
-    paid. A plan paid at an older price gets what that price bought; any
-    other amount gets the plan's own tokens scaled to it. (It used to get
-    OpenAI's raw rate, ~30x what a plan now gives per rupee, so an order
-    left over from a price change would have credited far too much.)"""
+    """What an old payment (paid before credits were recorded on the row)
+    bought, for history and admin totals only: the plan's tokens at the
+    price it was sold at then. Crediting uses exact_credit, never this."""
     if (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS:
         return PREVIOUS_PLAN_TOKENS[(plan_id, amount_paise)]
     plan = PLANS.get(plan_id)
     if plan and not is_full_price(plan, amount_paise):
-        return max(0, round(plan["tokens"] * amount_paise / plan["amount"]))
+        return None
     return tokens_for_plan_id(plan_id)
 
 

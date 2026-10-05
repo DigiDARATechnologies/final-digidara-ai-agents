@@ -123,15 +123,21 @@ def test_plans_sell_fixed_tokens_shown_as_points():
     assert plan_catalog.inr_per_million_tokens() == pytest.approx(25.265625)
 
 
-def test_an_order_paid_at_an_older_price_gets_what_it_paid_for():
-    assert plan_catalog.tokens_for_payment("basic", 39900) == plan_catalog.PLANS["basic"]["tokens"]
-    assert plan_catalog.tokens_for_payment("basic", 49900) == 500_000        # the old Basic price bought 500,000
-    # Any other amount gets the plan's own tokens scaled to it -- never
-    # OpenAI's raw per-rupee rate, which is ~30x what a plan gives.
-    assert plan_catalog.tokens_for_payment("basic", 45000) == round(500_000 * 45000 / 39900)
-    assert plan_catalog.points_for_payment("basic", 45000) == round(250 * 45000 / 39900, 2)
-    assert plan_catalog.points_for_payment("basic", 49900) is None          # an old-price order: it sold tokens, not points
-    assert plan_catalog.tokens_for_payment("topup_500000", 50000) == 500_000
+def test_only_an_exact_plan_price_credits_and_only_exactly_its_tokens():
+    credit = plan_catalog.exact_credit
+    assert credit("basic", 39900, "INR") == (500_000, 250)
+    assert credit("standard", 79900, "INR") == (1_000_000, 500)
+    assert credit("premium", 99900, "INR") == (1_500_000, 750)
+    assert credit("premium", 117882, "INR") == (1_500_000, 750)      # the Razorpay page: 999 + GST, no extra tokens
+    # Anything else credits nothing -- never scaled, never rounded up.
+    for plan_id, amount, currency in [
+        ("basic", 39901, "INR"), ("basic", 39899, "INR"), ("basic", 45000, "INR"), ("basic", 79900, "INR"),
+        ("premium", 117883, "INR"), ("premium", 199900, "INR"), ("basic", 49900, "INR"),
+        ("basic", 39900, "USD"), ("topup_500000", 50000, "INR"), ("pro_monthly", 99900, "INR"), ("nope", 39900, "INR"),
+    ]:
+        assert credit(plan_id, amount, currency) is None, (plan_id, amount, currency)
+    # Old payments still show what they bought, for history only.
+    assert plan_catalog.tokens_for_payment("basic", 49900) == 500_000
 
 
 def test_higher_plans_never_give_meaningfully_fewer_points_per_rupee(env):
@@ -197,22 +203,27 @@ def test_plans_that_are_not_on_sale_cannot_be_ordered(env, monkeypatch, plan_id)
 # --- crediting --------------------------------------------------------------
 
 def test_verifying_a_plan_payment_credits_its_tokens_exactly_once(env, monkeypatch):
-    add_payment(env, "standard", status="created", order="order_1")
-    captured(monkeypatch, "order_1", 99900)
+    add_payment(env, "standard", status="created", amount=79900, order="order_1")
+    captured(monkeypatch, "order_1", 79900)
     before = balance(env)
     body = {"razorpay_order_id": "order_1", "razorpay_payment_id": "pay_1", "razorpay_signature": signature("order_1", "pay_1")}
     assert env.client.post("/billing/verify", json=body).json() == {"verified": True, "plan": "standard"}
     assert env.client.post("/billing/verify", json=body).status_code == 200  # client retry
-    assert balance(env) == before + 1_200_000
+    assert balance(env) == before + 1_000_000                               # exactly, once
 
 
-def test_a_custom_topup_still_credits_the_rupee_rate(env, monkeypatch):
-    add_payment(env, "topup_500000", status="created", amount=50000, order="order_1")
-    captured(monkeypatch, "order_1", 50000)
+@pytest.mark.parametrize("plan_id,amount", [("topup_500000", 50000), ("standard", 99900), ("basic", 49900)])
+def test_a_payment_that_matches_no_plan_price_credits_nothing_and_is_logged(env, monkeypatch, caplog, plan_id, amount):
+    # A legacy top-up, a plan paid at the wrong amount, an order from an old price.
+    add_payment(env, plan_id, status="created", amount=amount, order="order_1")
+    captured(monkeypatch, "order_1", amount)
     before = balance(env)
     body = {"razorpay_order_id": "order_1", "razorpay_payment_id": "pay_1", "razorpay_signature": signature("order_1", "pay_1")}
-    env.client.post("/billing/verify", json=body)
-    assert balance(env) == before + 500_000
+    assert env.client.post("/billing/verify", json=body).status_code == 200
+    assert balance(env) == before
+    assert "matches no plan price; nothing credited" in caplog.text
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["status"], payment["points"]) == ("paid", 0)
 
 
 def test_verify_and_the_webhook_together_credit_only_once(env, monkeypatch):

@@ -16,13 +16,13 @@ from app.billing.plans import (
     PLANS,
     active_plan,
     credited_points,
+    exact_credit,
     is_full_price,
     offered_plans,
     payment_label,
     plan_name,
     points_for_payment,
     points_for_tokens,
-    tokens_for_payment,
 )
 from app.db import get_session
 from app.models import Payment, TokenUsageEvent
@@ -64,13 +64,14 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
     credit. The same UPDATE records what the payment credits, so the record
     and the flip can never disagree.
     """
+    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
     result = session.execute(
         update(Payment)
         .where(Payment.id == payment.id, Payment.status != "paid")
         .values(
             status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow(),
-            credited_tokens=tokens_for_payment(payment.plan_id, payment.amount),
-            credited_points=points_for_payment(payment.plan_id, payment.amount),
+            credited_tokens=credit[0] if credit else 0,
+            credited_points=credit[1] if credit else 0,
         )
     )
     session.commit()
@@ -78,11 +79,18 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
 
 
 def _credit_for_payment(payment: Payment) -> None:
-    # Always derived from the server's own catalog and the amount Razorpay
-    # confirmed -- never from anything the browser sent.
-    tokens = tokens_for_payment(payment.plan_id, payment.amount)
-    if tokens:
-        auth_service.credit_tokens(payment.user_id, tokens, points_for_payment(payment.plan_id, payment.amount))
+    # Exactly the plan's tokens and points, from the server's own catalog and
+    # the amount Razorpay confirmed -- never from anything the browser sent,
+    # never scaled. A payment that matches no plan price credits nothing.
+    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
+    if credit is None:
+        logger.warning(
+            "payment %s (plan %s, %s %s paise) matches no plan price; nothing credited -- review and credit by hand",
+            payment.id, payment.plan_id, payment.currency, payment.amount,
+        )
+        return
+    tokens, points = credit
+    auth_service.credit_tokens(payment.user_id, tokens, points)
 
 
 @router.get("/plans")
