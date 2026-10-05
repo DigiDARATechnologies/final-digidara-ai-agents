@@ -82,12 +82,11 @@ PLANS: dict[str, dict] = {
 
 # Every plan sells points at 2,000 tokens a point, and new free accounts use
 # the same rate. (Accounts created before this kept the rate stored on their
-# row, so their shown balance never jumps.) New accounts start with enough
-# points to finish full flows in at least four agents (one Aptitude test, one
-# mock interview, a Communication Coach session and a resume, say); tune with
-# these env vars.
+# row, so their shown balance never jumps.) The free plan is 50,000 tokens:
+# new accounts start with 25 points, a taste of the agents before buying a
+# plan; tune with these env vars.
 FREE_TOKENS_PER_POINT = float(os.getenv("FREE_TOKENS_PER_POINT", "2000"))
-FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "100"))
+FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "25"))
 
 
 # The rate every balance had before 6 Oct 2026 (stored on those users' rows
