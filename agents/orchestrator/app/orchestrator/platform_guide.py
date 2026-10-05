@@ -15,7 +15,7 @@ A learning and career platform with specialised AI agents. Open an agent from th
 
 POINTS AND PLANS
 - Agents use points. Every new account starts with 25 free points. Points never expire.
-- Plans (one-time payments): Basic Rs 399 = 250 points; Standard Rs 799 = 500 points; Premium Rs 999 = 750 points. The Standard and Premium pages show the price plus GST.
+- Plans (one-time payments): Basic Rs 399 = 250 points; Standard Rs 799 = 500 points; Premium Rs 999 = 750 points. Each plan is paid on a Razorpay page that adds 18% GST (Rs 470.82, Rs 942.82 and Rs 1,178.82). Pay with the same email as your DigiDARA account so the points reach you.
 - Buy points: Settings -> Billing -> choose a plan. When points run low, a "Buy points" popup appears.
 - See points used per agent: Settings -> Usage.
 

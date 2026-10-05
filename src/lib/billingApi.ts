@@ -6,9 +6,7 @@ export interface BillingSummary { plan: string; plan_name: string; plan_expires_
 /** `payment_page_url`: the plan is paid on DigiDARA's Razorpay payment page
  * (points are added by the server once Razorpay confirms), not in-app.
  * `tokens` is what the plan really credits; learners are only shown `points`. */
-export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; payment_page_url?: string | null; page_amount?: number | null;
-  /** Admins only: `payment_page_url` is a test page (₹1) that credits this whole plan. */
-  test_page?: boolean; }
+export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; payment_page_url?: string | null; page_amount?: number | null; }
 export interface BillingPlans { plans: PlanOffer[]; }
 export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; }
 

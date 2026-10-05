@@ -8,7 +8,7 @@ jest.mock('../../src/lib/billingApi', () => ({
   verifyBillingPayment: jest.fn(),
 }));
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import BillingPanel from '../../src/components/BillingPanel';
 import * as api from '../../src/lib/billingApi';
 
@@ -20,8 +20,9 @@ const plan = (id: string, name: string, amount: number, tokens: number, points: 
 });
 const PAGE = 'https://rzp.io/rzp/j6YPZzy8';
 const PAGE_799 = 'https://rzp.io/rzp/mKDSePpB';
+const PAGE_399 = 'https://rzp.io/rzp/6OOfhsv';
 const catalog = {
-  plans: [plan('basic', 'Basic', 39900, 300000, 100), plan('standard', 'Standard', 79900, 1000000, 500, { popular: true, payment_page_url: PAGE_799, page_amount: 94282 }), plan('premium', 'Premium', 99900, 900000, 500, { payment_page_url: PAGE, page_amount: 117882 })],
+  plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: PAGE_399, page_amount: 47082 }), plan('standard', 'Standard', 79900, 1000000, 500, { popular: true, payment_page_url: PAGE_799, page_amount: 94282 }), plan('premium', 'Premium', 99900, 900000, 500, { payment_page_url: PAGE, page_amount: 117882 })],
 };
 const payments = [
   { id: 'paid-1', plan_id: 'standard', label: 'Standard plan', amount: 99900, currency: 'INR', status: 'paid', payment_id: 'pay_1', created_at: '2026-09-14T10:00:00Z', invoice_available: true },
@@ -72,9 +73,13 @@ test('the 999 plan opens the Razorpay payment page and asks for the account emai
   open.mockRestore();
 });
 
-test('buying a plan orders that plan id', async () => {
+test('a plan with no payment page is bought in-app by its plan id', async () => {
   mocked.createBillingOrder.mockRejectedValue(new Error('stop here'));
   const toast = setup();
+  // Every live plan uses a Razorpay page; the in-app checkout still works for one that doesn't.
+  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250)] });
+  cleanup();
+  render(<BillingPanel open user={user} onToast={toast} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Buy Basic' }));
   await waitFor(() => expect(mocked.createBillingOrder).toHaveBeenCalledWith('basic'));
   await waitFor(() => expect(toast).toHaveBeenCalledWith('stop here'));
@@ -125,18 +130,13 @@ test('the 799 plan opens its own Razorpay page and shows what it charges', async
   open.mockRestore();
 });
 
-test('an admin sees the Basic test page clearly marked, and it opens that page', async () => {
+test('the 399 plan opens its own Razorpay page and shows what it charges', async () => {
   const open = jest.spyOn(window, 'open').mockReturnValue(null);
-  const TEST_PAGE = 'https://rzp.io/rzp/fAamOYc';
-  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: TEST_PAGE, page_amount: 100, test_page: true }), ...catalog.plans.slice(1)] });
-  mocked.fetchBillingSummary.mockResolvedValue({ plan: 'free', plan_name: 'Free', plan_expires_at: null, payments: [] });
-  mocked.fetchTokenBalance.mockResolvedValue({ balance: 0, points: 0, tokens_per_point: 2000 });
-  render(<BillingPanel open user={user} onToast={jest.fn()} />);
+  setup();
   const basic = (await screen.findByRole('button', { name: 'Buy Basic' })).closest('article') as HTMLElement;
-  expect(within(basic).getByText('Admin test page:')).toBeInTheDocument();
-  expect(within(basic).getByText(/charges ₹1\.00 and credits this whole plan/)).toBeInTheDocument();
+  expect(within(basic).getByText(/470\.82 incl\. GST/)).toBeInTheDocument();
   fireEvent.click(within(basic).getByRole('button', { name: 'Buy Basic' }));
-  expect(open).toHaveBeenCalledWith(TEST_PAGE, '_blank', 'noopener,noreferrer');
+  expect(open).toHaveBeenCalledWith(PAGE_399, '_blank', 'noopener,noreferrer');
   expect(mocked.createBillingOrder).not.toHaveBeenCalled();
   open.mockRestore();
 });
