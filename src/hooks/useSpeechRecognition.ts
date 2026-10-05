@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { joinSpeechSegments, updateSpeechResultSlots, type SpeechResultSnapshot } from "../lib/speechTranscript";
+import {
+  joinSpeechSegments,
+  removeMobileTranscriptLoops,
+  updateSpeechResultSlots,
+  type SpeechResultSnapshot,
+} from "../lib/speechTranscript";
 import {
   audioRecordingSupported,
   isMobileVoiceDevice,
@@ -40,6 +45,10 @@ type VoiceCaptureOptions = {
   /** Recording mode: whole seconds left before a pause ends the recording
    * (only in its last 3 seconds), or null once speech resumes. */
   onSilenceCountdown?: (seconds: number | null) => void;
+  /** Recording mode: the student was heard (by the level meter, or new words
+   * in a live preview when the meter is not measuring). Arrives before any
+   * transcript, so "has the student spoken yet?" never waits for text. */
+  onVoiceDetected?: () => void;
 };
 
 /** Sends a recorded answer to the server and resolves with its transcript. */
@@ -170,6 +179,15 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
     }
   }, []);
 
+  const cancel = useCallback(() => {
+    // Also cancels a recording whose microphone is still opening.
+    if (recordingMode || finishRecordingRef.current) {
+      endRecording(false);
+      return;
+    }
+    stop();
+  }, [endRecording, recordingMode, stop]);
+
   useEffect(() => () => {
     endRecording(false);
     stop();
@@ -248,7 +266,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           }
           setTranscribing(true);
           try {
-            const text = (await transcribeRef.current?.(audio))?.trim() ?? "";
+            const rawText = (await transcribeRef.current?.(audio))?.trim() ?? "";
+            const text = removeMobileTranscriptLoops(rawText);
             if (session !== recordSessionRef.current) return;
             if (!text) setError("I couldn't hear any words in that recording. Tap the microphone and speak a little closer to the phone.");
             onResult(text, true);
@@ -308,6 +327,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
                 speechDetected = true;
                 quietSince = 0;
                 reportCountdown(null);
+                options.onVoiceDetected?.();
                 if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
               } else if (speechDetected && options.autoStopOnSilence) {
                 if (!quietSince) quietSince = now;
@@ -351,12 +371,13 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
             previewTranscribe(audio)
               .then((text) => {
                 if (finished || session !== recordSessionRef.current) return;
-                const trimmed = text.trim();
+                const trimmed = removeMobileTranscriptLoops(text);
                 if (!trimmed || trimmed === lastText) return;
                 lastText = trimmed;
                 if (!meterRunning()) {
                   speechDetected = true;
                   quietSince = performance.now();
+                  options.onVoiceDetected?.();
                 }
                 onResult(trimmed, false);
               })
@@ -414,7 +435,10 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         const assembled = updateSpeechResultSlots(resultSlots, event);
         finalText = assembled.finalText;
         latestText = assembled.displayText;
-        const runningText = joinSpeechSegments([completedSessionsText, latestText]);
+        const unfilteredRunningText = joinSpeechSegments([completedSessionsText, latestText]);
+        const runningText = isMobileDevice
+          ? removeMobileTranscriptLoops(unfilteredRunningText)
+          : unfilteredRunningText;
         if (speechDebugEnabled()) {
           console.debug("[DigiDARA speech result]", {
             resultIndex: event.resultIndex,
@@ -509,7 +533,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         vadCleanupRef.current?.();
         vadCleanupRef.current = null;
         recognitionRef.current = null;
-        onResult(completedSessionsText.trim(), true);
+        const completedText = completedSessionsText.trim();
+        onResult(isMobileDevice ? removeMobileTranscriptLoops(completedText) : completedText, true);
       };
 
       recognitionRef.current = recognition;
@@ -603,5 +628,8 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
     error,
     start,
     stop,
+    /** Ends listening without using what was heard. In recording mode the
+     * recording is thrown away (not transcribed); otherwise it is stop(). */
+    cancel,
   };
 }

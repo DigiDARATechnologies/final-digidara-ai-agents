@@ -70,13 +70,13 @@ describe('pending notifications', () => {
     expect(list.map((n) => [n.agentName, n.body])).toEqual(expect.arrayContaining([
       ['Aptitude Trainer Agent', 'Your aptitude test is in progress. Continue.'],
       ['Resume Builder Agent', 'Your ATS resume is ready to download.'],
-      ['LeetCode / DSA Agent', 'Continue solving “Two Sum”.'],
+      ['LeetCode Agent', 'Continue solving “Two Sum”.'],
     ]));
     expect(new Set(list.map((n) => n.icon)).size).toBe(3);
   });
 
   test('a paused aptitude test says why', () => {
-    expect(bodies(sources({ chats: [chat('a', 'aptitude')], aptitude: { a: { step: 'awaiting_next_question', testId: 't', tokenInterrupted: true } } }))[0]).toContain('top up tokens');
+    expect(bodies(sources({ chats: [chat('a', 'aptitude')], aptitude: { a: { step: 'awaiting_next_question', testId: 't', tokenInterrupted: true } } }))[0]).toContain('top up points');
   });
 
   test('chats of a general agent, or with no saved progress, are ignored', () => {

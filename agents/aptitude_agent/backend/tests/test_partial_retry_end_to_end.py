@@ -71,6 +71,10 @@ def test_one_degenerate_question_is_replaced_alone_and_the_test_is_created(app, 
     monkeypatch.setitem(app.config, "OPENAI_API_KEY", "test-key")
     monkeypatch.setitem(app.config, "ALLOW_DEMO_QUESTIONS", False)
     monkeypatch.setitem(app.config, "BATCH_GENERATION_MAX_ATTEMPTS", 2)
+    # Keep the 21-question test as one request: this checks the retry inside a
+    # single batch (large tests are otherwise split into chunks of 10; see
+    # test_chunked_generation.py).
+    monkeypatch.setitem(app.config, "QUESTION_GENERATION_CHUNK_SIZE", 21)
 
     created = client.post("/api/aptitude/tests", headers=auth_headers, json={"mode": "mixed"})
 
@@ -96,6 +100,10 @@ def test_two_duplicate_questions_replace_only_the_later_one_and_the_test_is_crea
     monkeypatch.setitem(app.config, "OPENAI_API_KEY", "test-key")
     monkeypatch.setitem(app.config, "ALLOW_DEMO_QUESTIONS", False)
     monkeypatch.setitem(app.config, "BATCH_GENERATION_MAX_ATTEMPTS", 2)
+    # Keep the 21-question test as one request: this checks the retry inside a
+    # single batch (large tests are otherwise split into chunks of 10; see
+    # test_chunked_generation.py).
+    monkeypatch.setitem(app.config, "QUESTION_GENERATION_CHUNK_SIZE", 21)
 
     created = client.post("/api/aptitude/tests", headers=auth_headers, json={"mode": "mixed"})
 

@@ -24,4 +24,10 @@ EXPOSE 8100
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8100/health', timeout=3).read()" || exit 1
 
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8100", "app.main:app"]
+# --forwarded-allow-ips: take the client address from X-Forwarded-For, which
+# the frontend nginx overwrites with the real visitor IP (see nginx.conf).
+# Without it every request looks like it comes from the nginx container, so
+# the per-IP login/signup rate limits were one bucket shared by all users.
+# Safe to trust any hop: this port is never published to the host, so only
+# containers on the Compose network can reach it.
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8100", "--forwarded-allow-ips", "*", "app.main:app"]

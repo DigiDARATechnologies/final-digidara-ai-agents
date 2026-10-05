@@ -10,6 +10,9 @@ import {
   listResumeTemplates,
   selectResumeTemplate,
   suggestResumeEdit,
+  resumeChatTurn,
+  suggestResumeWording,
+  type WordingField,
   updateResume,
   type ResumeEditProposal,
   type ResumeCreateInput,
@@ -22,7 +25,26 @@ interface ResumeDraft {
   skills?: string[]; experience?: ResumeCreateInput["experience"]; education?: ResumeCreateInput["education"]; projects?: ResumeCreateInput["projects"]; certifications?: NonNullable<ResumeCreateInput["certifications"]>; achievements?: NonNullable<ResumeCreateInput["achievements"]>; links?: string[];
   skipEducation?: boolean;
 }
-export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: ResumeDraft; resumeId?: number; resumeTitle?: string; atsScore?: number; templateChoice?: string; pendingField?: "education.ug"; pendingEdit?: ResumeEditProposal; pendingUploadFile?: File; error?: string; }
+export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: ResumeDraft; resumeId?: number; resumeTitle?: string; atsScore?: number; templateChoice?: string; pendingField?: "education.ug"; pendingEdit?: ResumeEditProposal; pendingUploadFile?: File; error?: string;
+  /** The recent conversation, sent with every AI chat turn so "change that" or
+   * "the second one" can be resolved. */
+  history?: ResumeChatTurnHistory;
+  /** The last message shown (with its buttons), so a jump to edit one field
+   * can come back to exactly this question. */
+  lastMessage?: ResumeBuilderMessage;
+  /** Set by "change my <field>": where the chat was, to return to once that
+   * one field is saved -- instead of re-asking every question after it. */
+  returnTo?: { step: ResumeBuilderStep; message?: ResumeBuilderMessage };
+  /** A stronger wording offered for what the candidate just wrote, waiting
+   * for "Use this", "Keep mine" or their own typed version. `next` is what the
+   * chat would have said next, shown once they decide. */
+  pendingSuggestion?: { field: WordingField; index: number; suggestion: string; next: ResumeBuilderMessage[] };
+  /** Text typed at a project question that reads like a request ("i want my
+   * resume"), held while the candidate says whether it really is a project. */
+  pendingProjectText?: string;
+}
+type ResumeChatTurnHistory = Array<{ role: "student" | "agent"; text: string }>;
+const HISTORY_LIMIT = 16;
 export interface ResumeBuilderMessage { text: string; options?: ChatOption[]; }
 export interface ResumeBuilderFlowResult { state: ResumeBuilderFlowState; messages: ResumeBuilderMessage[]; }
 export const createInitialResumeBuilderState = (): ResumeBuilderFlowState => ({ step: "choose_workflow" });
@@ -93,11 +115,17 @@ export function isValidHumanCandidateName(text: string): boolean {
   if (academicTerms.test(trimmed)) return false;
   return true;
 }
+/** Undergraduate degrees, written with or without dots: B.Com, BCom, B.Sc, B.E., BTech, B.Pharm, MBBS, LLB... */
+const UG_DEGREE = /\b(b\.?\s?com|b\.?\s?sc|b\.?\s?c\.?\s?a|b\.?\s?tech|b\.?\s?e|b\.?\s?b\.?\s?a|b\.?\s?a|b\.?\s?pharm|b\.?\s?arch|b\.?\s?ed|b\.?\s?des|b\.?\s?voc|b\.?\s?lit|b\.?\s?s\.?\s?w|b\.?\s?h\.?\s?m|m\.?b\.?b\.?s|b\.?d\.?s|ll\.?b|bachelor(?:'?s)?)\b/i;
+/** Postgraduate degrees: M.Com, M.Sc, MCA, M.E., M.Tech, MBA, M.A., M.Phil, LLM, PGDM... */
+const PG_DEGREE = /\b(m\.?\s?com|m\.?\s?sc|m\.?\s?c\.?\s?a|m\.?\s?tech|m\.?\s?e|m\.?\s?b\.?\s?a|m\.?\s?a|m\.?\s?phil|m\.?\s?pharm|m\.?\s?arch|m\.?\s?ed|m\.?\s?s\.?\s?w|ll\.?m|pgdm|pgdca|master(?:'?s)?)\b/i;
+const OTHER_QUALIFICATION = /\b(diploma|ph\.?\s?d|doctorate|hsc|sslc|12th|10th|higher secondary)\b/i;
+const INSTITUTION = /\b(college|university|institute|institution|school|academy|polytechnic|iit|nit|iiit|campus)\b/i;
+
 function hasUndergraduateEducation(education: ResumeCreateInput["education"] | undefined) {
   return (education || []).some((item) => {
     const level = String(item.level || "").toUpperCase();
-    const degree = String(item.degree || "");
-    return level === "UG" || /\b(bca|b\.?sc|b\.?tech|b\.?e|bba|b\.?a|bachelor)\b/i.test(degree);
+    return level === "UG" || UG_DEGREE.test(String(item.degree || ""));
   });
 }
 function updateDraft(state: ResumeBuilderFlowState, draft: Partial<ResumeDraft>, step: ResumeBuilderStep): ResumeBuilderFlowState {
@@ -144,31 +172,51 @@ function splitFields(value: string, expected: number) {
   return fields.length >= expected && fields.slice(0, expected).every(Boolean) ? fields : null;
 }
 function educationLevel(degree: string, explicit = "") {
-  if (explicit) return explicit.toUpperCase();
-  if (/\b(mca|mba|m\.?sc|m\.?tech|master)/i.test(degree)) return "PG";
-  if (/\b(bca|b\.?sc|b\.?tech|b\.?e|bba|b\.?a|bachelor)/i.test(degree)) return "UG";
+  if (explicit) return /^diploma$/i.test(explicit) ? "Diploma" : /^doctorate$/i.test(explicit) ? "Doctorate" : explicit.toUpperCase();
+  if (PG_DEGREE.test(degree)) return "PG";
+  if (UG_DEGREE.test(degree)) return "UG";
   if (/diploma/i.test(degree)) return "Diploma";
   if (/ph\.?d|doctor/i.test(degree)) return "Doctorate";
   return "";
 }
 /** Parse concise, user-supplied education without supplying any missing fact. */
 export function parseEducationInput(value: string): ResumeCreateInput["education"] | { error: string } {
-  const entries = clean(value).split(/\s*;\s*/).filter(Boolean);
+  // One entry per ";" or line, and a new entry wherever a "UG"/"PG" label starts.
+  const entries = clean(value)
+    .split(/\s*(?:;|\n)\s*|\s+(?=(?:UG|PG)\s*[:\-]\s)/i)
+    .map(clean).filter(Boolean);
   const parsed: ResumeCreateInput["education"] = [];
+  const labelPattern = /^\s*(UG|PG|Diploma|Doctorate)\s*(?:[:\-]|\s)\s*/i;
   for (const raw of entries) {
-    const label = raw.match(/^\s*(UG|PG|Diploma|Doctorate)\s*:\s*/i)?.[1] || "";
-    const text = raw.replace(/^\s*(UG|PG|Diploma|Doctorate)\s*:\s*/i, "");
+    const label = raw.match(labelPattern)?.[1] || "";
+    const text = raw.replace(labelPattern, "")
+      // "BCA from Nandha College" / "B.Com at XYZ College" / "B.Com in XYZ University"
+      .replace(/\s+(?:from|at|in)\s+(?=[^,|]*\b(?:college|university|institute|school|academy|polytechnic)\b)/i, ", ");
     // Accept natural punctuation and either "college | degree" or
     // "degree | college". Candidate wording is retained verbatim.
-    const values = text.split(/\s*(?:\||,|\n|\s+-\s+)\s*/).map(clean).filter(Boolean);
-    const degreeIndex = values.findIndex((item) => /\b(bca|b\.?sc|b\.?tech|b\.?e|bba|b\.?a|mca|m\.?sc|m\.?tech|mba|m\.?a|bachelor|master|diploma|ph\.?d)\b/i.test(item));
+    let values = text.split(/\s*(?:\||,|\s+-\s+)\s*/).map(clean).filter(Boolean);
+    // "B.Com Nandha College 2019-2022" (no separators): split off the institution.
+    if (values.length === 1) {
+      const institution = values[0].match(/^(.*?)\s+((?:[A-Z][\w.&']*\s+)*?\S*\s*(?:college|university|institute|school|academy|polytechnic)\b.*)$/i);
+      if (institution && (UG_DEGREE.test(institution[1]) || PG_DEGREE.test(institution[1]) || OTHER_QUALIFICATION.test(institution[1]))) {
+        values = [institution[1], institution[2]].map(clean);
+      }
+    }
+    const degreeIndex = values.findIndex((item) => UG_DEGREE.test(item) || PG_DEGREE.test(item) || OTHER_QUALIFICATION.test(item));
     const degree = degreeIndex >= 0 ? values[degreeIndex] : "";
     const years = text.match(/\b(19\d{2}|20\d{2})\b/g) || [];
     const cgpa = text.match(/\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d+)?(?:\s*\/\s*\d+(?:\.\d+)?)?)/i)?.[1]?.replace(/\s/g, "");
     const namedPercentage = text.match(/\b(?:percentage|percent)\s*[:=\-]?\s*(\d+(?:\.\d+)?%?)/i)?.[1]?.replace(/\s/g, "");
     const percentage = namedPercentage ? (namedPercentage.endsWith("%") ? namedPercentage : `${namedPercentage}%`) : (/%/.test(text) ? text.match(/\b(\d+(?:\.\d+)?%)/)?.[1] : undefined);
-    const school = values.find((item, index) => index !== degreeIndex && !/\b(19\d{2}|20\d{2})\b|cgpa|gpa|percentage|percent|%/i.test(item)) || "";
-    if (!degree || !school) return { error: "Please include at least the degree and college/institution. For example: PG: MCA, KSR College, 2023-2025, CGPA: 8.5." };
+    const withoutYears = (item: string) => clean(item.replace(/\b(19\d{2}|20\d{2})\b(\s*(?:-|to|–)\s*\b(19\d{2}|20\d{2})\b)?/g, ""));
+    const school = values
+      .filter((item, index) => index !== degreeIndex && !/cgpa|gpa|percentage|percent|%/i.test(item))
+      .map(withoutYears)
+      .find((item) => item && (INSTITUTION.test(item) || !/^\d/.test(item))) || "";
+    if (!degree || !school) {
+      const understood = degree ? `I found the degree "${degree}" but not the college` : school ? `I found "${school}" but not the degree` : "I couldn't find a degree and college";
+      return { error: `${understood} in "${raw}". Please write each qualification as degree, college, years - for example: UG: B.Com, Nandha College, 2019-2022; PG: M.Com, KSR College, 2022-2024.` };
+    }
     const field = values.find((item, index) => index !== degreeIndex && item !== school && !/\b(19\d{2}|20\d{2})\b|cgpa|gpa|percent|%/i.test(item));
     parsed.push({
       school, degree, level: educationLevel(degree, label), field,
@@ -221,6 +269,24 @@ function optionalProfileUrl(value: string): { value?: string; error?: string } {
     return { error: "Please enter a valid URL such as https://example.com, or type Skip." };
   }
 }
+/** A phone number the way a recruiter can dial it: 10 digits (a leading 0 or
+ * 91 is allowed), or a "+" country code with 8 to 15 digits in all. Spaces,
+ * dashes, dots and brackets are fine. */
+export function checkPhoneNumber(value: string): { value: string } | { error: string } {
+  const text = clean(value);
+  if (/[^\d+\s().-]/.test(text) || (text.match(/\+/g) || []).length > 1 || (text.includes("+") && !text.startsWith("+"))) {
+    return { error: "A phone number can only contain digits (with an optional + country code). Please type it again, for example 98765 43210, or type Skip." };
+  }
+  const digits = text.replace(/\D/g, "");
+  const valid = text.startsWith("+")
+    ? digits.length >= 8 && digits.length <= 15
+    : digits.length === 10 || (digits.length === 11 && digits.startsWith("0")) || (digits.length === 12 && digits.startsWith("91"));
+  if (valid) return { value: text };
+  return {
+    error: `"${text}" has ${digits.length} digit${digits.length === 1 ? "" : "s"}, so it isn't a complete phone number. A mobile number needs 10 digits, for example 98765 43210 - or add the country code, like +91 98765 43210. Please type it again, or type Skip.`,
+  };
+}
+
 const draftFieldSteps: Record<string, ResumeBuilderStep> = {
   title: "awaiting_title", name: "awaiting_name", email: "awaiting_email",
   phone: "awaiting_phone", location: "awaiting_location", city: "awaiting_location",
@@ -704,6 +770,20 @@ function reviewMessage(draft: ResumeDraft): ResumeBuilderMessage {
   };
 }
 
+const WAIVE_UG = "waive_ug";
+
+/** A fresher resume needs a UG degree. Says what is already saved, shows the
+ * format, and offers a way on for a candidate who genuinely has none (for
+ * example a diploma holder) -- instead of a Skip button that led straight back
+ * here. */
+function ugRequiredMessage(education: ResumeCreateInput["education"] | undefined): ResumeBuilderMessage {
+  const saved = (education || []).map((item) => `${item.degree || item.level || "Qualification"} at ${item.school}`).join("; ");
+  return {
+    text: `A fresher resume needs your undergraduate (UG) degree.${saved ? ` I have saved: ${saved}, but no UG degree.` : ""}\n\nType it as degree, college, years - for example: UG: B.Com, Nandha College, 2019-2022. You can add your PG in the same message: UG: B.Com, Nandha College, 2019-2022; PG: M.Com, KSR College, 2022-2024.`,
+    options: [{ label: "Continue without a UG degree", value: WAIVE_UG, description: "Only if you do not have one (for example, a diploma holder)." }],
+  };
+}
+
 async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promise<ResumeBuilderFlowResult> {
   const candidateDraft = state.draft;
   const missing = missingRequiredDraftField(candidateDraft);
@@ -712,10 +792,10 @@ async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promi
   }
   const draft = candidateDraft as ResumeDraft & { title: string; name: string; email: string; targetRole: string; experienceLevel: "fresher" | "experienced" };
 
-  if (draft.experienceLevel === "fresher" && !hasUndergraduateEducation(draft.education)) {
+  if (draft.experienceLevel === "fresher" && !hasUndergraduateEducation(draft.education) && !draft.skipEducation) {
     return {
       state: { ...state, step: "awaiting_education", pendingField: "education.ug" },
-      messages: [{ text: "Undergraduate education is required to generate your resume. Add at least your UG degree and college; postgraduate education remains optional.", options: skipOption }],
+      messages: [ugRequiredMessage(draft.education)],
     };
   }
   if (!(draft.projects?.length || draft.experience?.length)) {
@@ -746,7 +826,7 @@ async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promi
     const id = Number(resume.id);
     return { state: { ...state, step: "reviewing", resumeId: id, resumeTitle: String(resume.title || draft.title) }, messages: [{ text: state.resumeId ? "Your enriched details were saved to the existing resume. You can continue editing or generate final wording." : "Your resume has been saved from the details you verified. You can edit it in plain language, then choose Generate final wording to create the complete target-role-focused version.", options: reviewOptions }] };
   } catch (error) {
-    return { state: { ...state, step: "confirming", error: (error as Error).message }, messages: [{ text: `I couldn’t create the resume: ${(error as Error).message}. Your details are still saved in this chat.`, options: [{ label: "Try creating again", value: "create_now" }, ...restartOption] }] };
+    return { state: { ...state, step: "confirming", error: (error as Error).message }, messages: [{ text: `I couldn’t create the resume: ${(error as Error).message}\n\nYour details are still saved. Type the correction here - for example "the start date for my internship is Jan 2022" - and I'll fix it, then choose Try creating again.`, options: [{ label: "Try creating again", value: "create_now" }, ...restartOption] }] };
   }
 }
 
@@ -904,7 +984,304 @@ export function isRetryUploadIntent(value: string): boolean {
   );
 }
 
+/** Steps where the candidate is still building the draft (before a resume
+ * exists): a typed correction is applied to the draft by the assistant. */
+const DRAFT_STEPS = new Set<ResumeBuilderStep>([
+  "awaiting_title", "awaiting_name", "awaiting_email", "awaiting_phone", "awaiting_location", "awaiting_role",
+  "awaiting_summary", "awaiting_skills", "awaiting_experience", "awaiting_experience_more", "awaiting_education",
+  "awaiting_education_more", "awaiting_project", "awaiting_project_more", "awaiting_linkedin", "awaiting_github",
+  "awaiting_portfolio", "awaiting_certifications", "awaiting_certifications_more", "awaiting_achievements",
+  "awaiting_achievements_more", "confirming", "awaiting_enrichment_choice",
+]);
+
+/** "change my college to ...", "the start date is Jan 2022", "my PG is MCA not MBA", "remove the second project". */
+const EDIT_REQUEST = /^(?:please\s+|pls\s+|can you\s+|could you\s+|i\s+(?:want|need|would like)\s+to\s+)*(?:change|edit|update|correct|fix|replace|rename|remove|delete)\b|\b(?:is wrong|was wrong|are wrong|typo|mistake|instead of)\b|^(?:my|the)\s+[\w\s]{2,40}?\s+(?:is|was|should be|are)\b/i;
+
+function lastAgentText(state: ResumeBuilderFlowState): string {
+  return [...(state.history || [])].reverse().find((turn) => turn.role === "agent")?.text || "";
+}
+
+async function askAssistant(state: ResumeBuilderFlowState, user: User, value: string) {
+  return resumeChatTurn(user.id, {
+    message: value,
+    step: state.step,
+    asked: lastAgentText(state),
+    draft: (state.draft || {}) as Record<string, unknown>,
+    history: state.history || [],
+  });
+}
+
+/** The assistant's reading of an education answer the parser could not read. */
+async function educationFromAssistant(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeCreateInput["education"] | undefined> {
+  try {
+    const turn = await askAssistant(state, user, value);
+    const education = turn.updates.education;
+    if (!Array.isArray(education) || !education.length) return undefined;
+    // The assistant returns the complete list: keep only what this message added.
+    const known = new Set((state.draft?.education || []).map((item) => `${item.degree}|${item.school}`.toLowerCase()));
+    const added = (education as ResumeCreateInput["education"]).filter((item) => !known.has(`${item.degree}|${item.school}`.toLowerCase()));
+    return added.length ? added : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A typed correction while the draft is being built, applied by the
+ * assistant. Returns undefined to fall through to the step's own handling. */
+async function applyTypedEdit(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult | undefined> {
+  if (!DRAFT_STEPS.has(state.step) || !EDIT_REQUEST.test(value) || value.length > 1500) return undefined;
+  // "change my education" on its own (no new value given): jump to that
+  // section, as before. "change my name to Prem" carries the value: apply it.
+  const request = clean(value).replace(/^i\s+(?:want|need)\s+to\s+/i, "");
+  if (requestedDraftField(value) && !/\s(?:to|is|as|into)\s/i.test(request)) return undefined;
+  let turn;
+  try {
+    turn = await askAssistant(state, user, value);
+  } catch (error) {
+    return { state, messages: [{ text: `I couldn't apply that change right now (${(error as Error).message}). Please try again in a moment - your details are still saved.` }] };
+  }
+  if (turn.intent !== "edit" && turn.intent !== "answer") {
+    return turn.reply ? { state, messages: [{ text: turn.reply }] } : undefined;
+  }
+  // An answer to the question being asked is saved by that step's own
+  // handling, which also moves the chat on to the next question.
+  if (turn.intent === "answer" && state.step !== "confirming" && state.step !== "awaiting_enrichment_choice") return undefined;
+  const updates = turn.updates as Partial<ResumeDraft>;
+  if (!Object.keys(updates).length) return turn.reply ? { state, messages: [{ text: turn.reply }] } : undefined;
+  if (updates.phone) {
+    const phone = checkPhoneNumber(updates.phone);
+    if ("error" in phone) return { state, messages: [{ text: phone.error }] };
+  }
+  const draft: ResumeDraft = { ...state.draft, ...updates };
+  const ugNowPresent = state.pendingField === "education.ug" && hasUndergraduateEducation(draft.education);
+  const next: ResumeBuilderFlowState = {
+    ...state,
+    draft,
+    error: undefined,
+    ...(ugNowPresent ? { step: "confirming" as const, pendingField: undefined } : {}),
+  };
+  const reply = turn.reply || "Done - I've updated your details.";
+  return {
+    state: next,
+    messages: next.step === "confirming" ? [{ text: reply }, reviewMessage(draft)] : [{ text: `${reply}\n\nYou can carry on from where we were.` }],
+  };
+}
+
+function withHistory(result: ResumeBuilderFlowResult, previous: ResumeChatTurnHistory, studentText: string): ResumeBuilderFlowResult {
+  const history: ResumeChatTurnHistory = [
+    ...previous,
+    { role: "student" as const, text: studentText },
+    ...result.messages.map((message) => ({ role: "agent" as const, text: message.text })),
+  ].slice(-HISTORY_LIMIT);
+  const lastMessage = result.messages.length ? result.messages[result.messages.length - 1] : result.state.lastMessage;
+  return { ...result, state: { ...result.state, history, lastMessage } };
+}
+
+/** After "change my <field>", once that field is saved the step handler moves
+ * on to the question after it. Go back to where the candidate was instead. */
+function returnAfterFieldEdit(previous: ResumeBuilderFlowState, value: string, result: ResumeBuilderFlowResult): ResumeBuilderFlowResult {
+  const returnTo = previous.returnTo;
+  if (!returnTo) return result;
+  // A jump to yet another field: keep the original place to come back to.
+  if (requestedDraftField(value)) return result;
+  // Still on the edited field (the answer was not accepted): keep waiting.
+  if (result.state.step === previous.step) return { ...result, state: { ...result.state, returnTo } };
+  // Anything other than simply moving on to another question (an error, a
+  // restart, a created resume) is left as it is, without the return.
+  if (!DRAFT_STEPS.has(result.state.step)) return { ...result, state: { ...result.state, returnTo: undefined } };
+  const draft = result.state.draft || {};
+  const back = returnTo.step === "confirming" || !returnTo.message ? reviewMessage(draft) : returnTo.message;
+  return {
+    state: { ...result.state, step: returnTo.step === "confirming" || !returnTo.message ? "confirming" : returnTo.step, returnTo: undefined },
+    messages: [{ text: "Saved. Now back to where we were:" }, back],
+  };
+}
+
+/** Text typed at a project question that is a request, not a project:
+ * "i want my resume", "create my resume", "done", "that's all". */
+const PROJECT_REQUEST = /^(?:i\s+(?:want|need|would like)|give me|can you|could you|please|show me)\b[^.]*\b(?:resume|cv|pdf|download|next|done|finish)\b|^(?:done|finish(?:ed)?|that'?s all|no more(?: projects?)?|nothing (?:else|more)|(?:generate|create|make|build|download)(?: my| the)? (?:resume|cv)(?: now)?|(?:i want )?my (?:resume|cv))\W*$/i;
+const CONFIRM_PROJECT = "confirm_project";
+
+function projectOrRequest(state: ResumeBuilderFlowState, value: string): ResumeBuilderFlowResult | undefined {
+  if (!PROJECT_REQUEST.test(clean(value))) return undefined;
+  const first = state.step === "awaiting_project";
+  return {
+    state: { ...state, pendingProjectText: clean(value) },
+    messages: [{
+      text: `Did you mean "${clean(value)}" as a project, or do you want to ${first ? "skip projects for now" : "move on and finish your resume"}?`,
+      options: [
+        first
+          ? { label: "Skip projects", value: "skip", description: "Continue without adding a project." }
+          : { label: "Move on to the next section", value: "next_section", description: "Stop adding projects and continue to your links." },
+        { label: "Add it as a project", value: CONFIRM_PROJECT, description: `Save "${clean(value)}" as a project.` },
+      ],
+    }],
+  };
+}
+
+type RemovableSection = "projects" | "experience" | "education" | "certifications" | "achievements";
+const SECTION_WORDS: Array<[RegExp, RemovableSection, string]> = [
+  [/\bprojects?\b/i, "projects", "project"],
+  [/\b(experiences?|internships?|jobs?|work)\b/i, "experience", "experience"],
+  [/\b(education|degrees?|college|qualifications?)\b/i, "education", "education"],
+  [/\bcertifications?|certificates?\b/i, "certifications", "certification"],
+  [/\bachievements?|awards?\b/i, "achievements", "achievement"],
+];
+const ORDINALS: Record<string, number> = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, last: -1 };
+
+/** Words too common in titles to identify one entry on their own. */
+const GENERIC_TITLE_WORDS = new Set(["project", "projects", "system", "application", "website", "using", "based", "management", "with", "from", "that", "this", "only", "delete", "remove"]);
+
+function entryTitle(entry: Record<string, unknown>) {
+  return String(entry.title || entry.name || [entry.role, entry.company].filter(Boolean).join(" at ") || [entry.degree, entry.school].filter(Boolean).join(", ") || "");
+}
+
+function words(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+}
+
+/** Two words match when equal, or when long enough and one typo apart ("resuem" / "resume"). */
+function similarWord(a: string, b: string) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4 || Math.abs(a.length - b.length) > 1) return false;
+  const sorted = (word: string) => word.split("").sort().join("");
+  if (a.length === b.length && sorted(a) === sorted(b)) return true;
+  let i = 0; let j = 0; let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i += 1; j += 1; continue; }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length > b.length) i += 1; else if (b.length > a.length) j += 1; else { i += 1; j += 1; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
+/** "delete the 2 project", "remove the second project", "delete the i want my
+ * resuem project only": exactly which one entry to remove, or undefined when
+ * the request does not say clearly (the AI edit handles it then). */
+function entryToRemove(value: string, resume: Record<string, unknown>): { section: RemovableSection; label: string; index: number; title: string } | undefined {
+  const text = clean(value);
+  if (!/\b(delete|remove|drop|take out|get rid of)\b/i.test(text)) return undefined;
+  const found = SECTION_WORDS.find(([pattern]) => pattern.test(text));
+  if (!found) return undefined;
+  const [, section, label] = found;
+  const entries = Array.isArray(resume[section]) ? resume[section] as Array<Record<string, unknown>> : [];
+  if (!entries.length) return undefined;
+
+  const numbered = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\b/)?.[1];
+  const ordinal = Object.entries(ORDINALS).find(([word]) => new RegExp(`\\b${word}\\b`, "i").test(text))?.[1];
+  const position = numbered ? Number(numbered) : ordinal;
+  if (position !== undefined) {
+    const index = position === -1 ? entries.length - 1 : position - 1;
+    return index >= 0 && index < entries.length ? { section, label, index, title: entryTitle(entries[index]) } : undefined;
+  }
+
+  // By name: the entry whose title words best appear in the request -- most
+  // of the title ("i want my resuem" for "I Want My Resume"), or one
+  // distinctive word that only that entry has ("parkinson").
+  const requestWords = words(text);
+  const scored = entries.map((entry, index) => {
+    const titleWords = words(entryTitle(entry));
+    const matched = titleWords.filter((word) => requestWords.some((candidate) => similarWord(word, candidate)));
+    return {
+      index,
+      score: titleWords.length ? matched.length / titleWords.length : 0,
+      distinctive: matched.filter((word) => word.length >= 4 && !GENERIC_TITLE_WORDS.has(word)).length,
+    };
+  });
+  const byScore = [...scored].sort((a, b) => b.score - a.score);
+  if (byScore[0].score >= 0.6 && byScore[0].score !== byScore[1]?.score) {
+    return { section, label, index: byScore[0].index, title: entryTitle(entries[byScore[0].index]) };
+  }
+  const distinctive = scored.filter((entry) => entry.distinctive > 0);
+  if (distinctive.length === 1) {
+    return { section, label, index: distinctive[0].index, title: entryTitle(entries[distinctive[0].index]) };
+  }
+  return undefined;
+}
+
+const USE_SUGGESTION = "use_suggestion";
+const KEEP_MINE = "keep_mine";
+const WORDING_LABEL: Record<WordingField, string> = { summary: "summary", project: "project description", experience: "experience description" };
+
+/** What the candidate just wrote in a summary, project or experience answer:
+ * the field, which entry, and the text -- or undefined when the step did not
+ * save exactly one new piece of free text. */
+function newlyWritten(previous: ResumeBuilderFlowState, result: ResumeBuilderFlowResult): { field: WordingField; index: number; text: string } | undefined {
+  const before = previous.draft || {};
+  const after = result.state.draft || {};
+  if (previous.step === "awaiting_summary" && after.summary && after.summary !== before.summary) {
+    return { field: "summary", index: 0, text: after.summary };
+  }
+  if (previous.step === "awaiting_project" && (after.projects?.length || 0) === (before.projects?.length || 0) + 1) {
+    const index = after.projects!.length - 1;
+    return { field: "project", index, text: String(after.projects![index].description || "") };
+  }
+  if (previous.step === "awaiting_experience" && (after.experience?.length || 0) === (before.experience?.length || 0) + 1) {
+    const index = after.experience!.length - 1;
+    return { field: "experience", index, text: String(after.experience![index].raw_input || "") };
+  }
+  return undefined;
+}
+
+/** After a summary, project or experience answer is saved, offer a stronger
+ * wording to use or ignore. Any failure just carries on without one. */
+async function offerWordingSuggestion(previous: ResumeBuilderFlowState, result: ResumeBuilderFlowResult, user: User): Promise<ResumeBuilderFlowResult> {
+  if (previous.returnTo || result.state.step === previous.step) return result;
+  const written = newlyWritten(previous, result);
+  if (!written || written.text.trim().length < 30) return result;
+  let suggestion: string | null = null;
+  try {
+    suggestion = await suggestResumeWording(user.id, written.field, written.text, result.state.draft?.targetRole);
+  } catch {
+    return result;
+  }
+  if (!suggestion) return result;
+  return {
+    state: { ...result.state, pendingSuggestion: { field: written.field, index: written.index, suggestion, next: result.messages } },
+    messages: [{
+      text: `💡 Here is a stronger way to write your ${WORDING_LABEL[written.field]}:\n\n"${suggestion}"\n\nUse it, keep yours, or type your own version.`,
+      options: [
+        { label: "Use this", value: USE_SUGGESTION, description: "Replace your text with this wording." },
+        { label: "Keep mine", value: KEEP_MINE, description: "Keep exactly what you wrote." },
+      ],
+    }],
+  };
+}
+
+function withWording(draft: ResumeDraft, field: WordingField, index: number, text: string): ResumeDraft {
+  if (field === "summary") return { ...draft, summary: text };
+  if (field === "project") {
+    return { ...draft, projects: (draft.projects || []).map((project, i) => i === index ? { ...project, description: text } : project) };
+  }
+  return { ...draft, experience: (draft.experience || []).map((entry, i) => i === index ? { ...entry, raw_input: text } : entry) };
+}
+
+/** "Use this", "Keep mine", or the candidate's own new version -- then on to
+ * whatever the chat was going to ask next. */
+function resolveWordingSuggestion(state: ResumeBuilderFlowState, value: string): ResumeBuilderFlowResult {
+  const pending = state.pendingSuggestion!;
+  const typed = clean(value);
+  const keep = value === KEEP_MINE || isSkip(value) || /^keep( mine| it| my (own|version))?$/i.test(typed);
+  const use = value === USE_SUGGESTION || /^(use( this| it)?|yes|ok(ay)?|accept)$/i.test(typed);
+  const next = { ...state, pendingSuggestion: undefined };
+  if (keep || !typed) return { state: next, messages: [{ text: "Okay - keeping your wording." }, ...pending.next] };
+  const text = use ? pending.suggestion : typed;
+  return {
+    state: { ...next, draft: withWording(state.draft || {}, pending.field, pending.index, text) },
+    messages: [{ text: use ? "Done - I've used the suggested wording." : "Saved your version." }, ...pending.next],
+  };
+}
+
 export async function handleResumeBuilderText(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult> {
+  const restarting = value === "restart" || clean(value).toLowerCase() === "start over";
+  if (state.pendingSuggestion && !restarting) return withHistory(resolveWordingSuggestion(state, value), state.history || [], value);
+  const edited = restarting ? undefined : await applyTypedEdit(state, user, value);
+  const result = edited ?? await offerWordingSuggestion(state, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value)), user);
+  return withHistory(result, restarting ? [] : state.history || [], value);
+}
+
+async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult> {
   if (value === "restart" || clean(value).toLowerCase() === "start over") return openResumeBuilderChat(user);
 
   if (isRetryUploadIntent(value)) {
@@ -1007,7 +1384,10 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
 
   const draftField = requestedDraftField(value);
   if (draftField && !["reviewing", "awaiting_edit_instruction", "awaiting_edit_confirmation"].includes(state.step)) {
-    return { state: { ...state, step: draftField }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
+    // Remember the question the candidate was on (unless they are already
+    // editing that same field), to come back to it once this field is saved.
+    const returnTo = state.returnTo ?? (state.step !== draftField ? { step: state.step, message: state.lastMessage } : undefined);
+    return { state: { ...state, step: draftField, returnTo }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
   }
   if (command === "back" && state.step.startsWith("awaiting_")) {
     const previousSteps: Partial<Record<ResumeBuilderStep, ResumeBuilderStep>> = {
@@ -1120,7 +1500,17 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     }
     try {
       const currentResume = await getResume(user.id, state.resumeId);
-      const proposal = await suggestResumeEdit(user.id, currentResume, clean(value));
+      // Removing one named or numbered entry is done exactly, not left to the
+      // AI (which removed the wrong project, or both, for such requests).
+      const removal = entryToRemove(value, currentResume);
+      const proposal = removal
+        ? {
+            resume: { ...currentResume, [removal.section]: (currentResume[removal.section] as unknown[]).filter((_, index) => index !== removal.index) },
+            changes: [`Removed ${removal.label} ${removal.index + 1}: "${removal.title}". Everything else is unchanged.`],
+            warnings: [],
+            requires_confirmation: true,
+          }
+        : await suggestResumeEdit(user.id, currentResume, clean(value));
       return {
         state: { ...state, step: "awaiting_edit_confirmation", pendingEdit: proposal },
         messages: [{ text: formatEditProposal(proposal), options: editConfirmationOptions }],
@@ -1171,7 +1561,13 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { state, messages: [{ text: "Please enter a valid email address, for example name@example.com." }] };
     return { state: updateDraft(state, { email }, "awaiting_phone"), messages: [{ text: "What is your phone number? Type Skip if you prefer not to include one.", options: skipOption }] };
   }
-  if (state.step === "awaiting_phone") return { state: updateDraft(state, { phone: isSkip(value) ? "" : clean(value) }, "awaiting_location"), messages: [{ text: "What city and country should appear on your resume? Type Skip to omit it.", options: skipOption }] };
+  if (state.step === "awaiting_phone") {
+    if (!isSkip(value)) {
+      const phone = checkPhoneNumber(value);
+      if ("error" in phone) return { state, messages: [{ text: phone.error, options: skipOption }] };
+    }
+    return { state: updateDraft(state, { phone: isSkip(value) ? "" : clean(value) }, "awaiting_location"), messages: [{ text: "What city and country should appear on your resume? Type Skip to omit it.", options: skipOption }] };
+  }
   if (state.step === "awaiting_location") return { state: updateDraft(state, { location: isSkip(value) ? "" : normalizeLocation(value) }, "awaiting_role"), messages: [{ text: "What role are you targeting? For example: Data Analyst or Frontend Developer." }] };
   if (state.step === "awaiting_role") {
     if (clean(value).length < 2) return { state, messages: [{ text: "Please enter the role you are targeting." }] };
@@ -1265,14 +1661,25 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     };
   }
   if (state.step === "awaiting_education") {
+    if (value === WAIVE_UG) {
+      const next = updateDraft({ ...state, pendingField: undefined }, { skipEducation: true }, "confirming");
+      return { state: next, messages: [{ text: "Okay - I'll create your resume without a UG degree." }, reviewMessage(next.draft || {})] };
+    }
     if (isSkip(value)) {
       if (state.pendingField === "education.ug") {
-        return { state, messages: [{ text: "UG education is required for a fresher resume. Please add at least your degree and college. Your other resume details are still saved.", options: skipOption }] };
+        return { state, messages: [ugRequiredMessage(state.draft?.education)] };
       }
       return { state: updateDraft(state, {}, "awaiting_project"), messages: [{ text: "Add one relevant project using normal text, for example: Sales Dashboard, built a Power BI dashboard for weekly reporting. Type Skip to omit it.", options: skipOption }] };
     }
-    const education = parseEducationInput(value);
-    if (!Array.isArray(education)) return { state, messages: [{ text: education.error, options: skipOption }] };
+    let education = parseEducationInput(value);
+    if (!Array.isArray(education)) {
+      // Written in a shape the parser does not know: let the assistant read it.
+      const understood = await educationFromAssistant(state, user, value);
+      if (!understood) {
+        return { state, messages: [state.pendingField === "education.ug" ? { text: education.error, options: ugRequiredMessage(state.draft?.education).options } : { text: education.error, options: skipOption }] };
+      }
+      education = understood;
+    }
     const mergedEducation = mergeEducation(state.draft?.education, education);
     if (state.pendingField === "education.ug") {
       const next = updateDraft({ ...state, pendingField: undefined }, { education: mergedEducation }, "confirming");
@@ -1336,7 +1743,14 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
     };
   }
   if (state.step === "awaiting_project") {
-    if (isSkip(value)) return { state: updateDraft(state, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
+    if (isSkip(value)) return { state: updateDraft({ ...state, pendingProjectText: undefined }, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
+    if (value === CONFIRM_PROJECT && state.pendingProjectText) return handleResumeBuilderStep({ ...state, pendingProjectText: undefined }, user, `${CONFIRM_PROJECT}:${state.pendingProjectText}`);
+    const confirmed = value.startsWith(`${CONFIRM_PROJECT}:`);
+    if (!confirmed) {
+      const request = projectOrRequest(state, value);
+      if (request) return request;
+    }
+    value = confirmed ? value.slice(CONFIRM_PROJECT.length + 1) : value;
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
       const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);
@@ -1378,6 +1792,13 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
       }
       return { state: updateDraft(state, {}, "awaiting_linkedin"), messages: [{ text: "Please provide your LinkedIn profile URL, or type Skip.", options: skipOption }] };
     }
+    if (value === CONFIRM_PROJECT && state.pendingProjectText) return handleResumeBuilderStep({ ...state, pendingProjectText: undefined }, user, `${CONFIRM_PROJECT}:${state.pendingProjectText}`);
+    const confirmed = value.startsWith(`${CONFIRM_PROJECT}:`);
+    if (!confirmed) {
+      const request = projectOrRequest(state, value);
+      if (request) return request;
+    }
+    value = confirmed ? value.slice(CONFIRM_PROJECT.length + 1) : value;
     const projects = clean(value).split(/\s*;\s*/).filter(Boolean).map((raw) => {
       const projectFields = splitFields(raw, 2);
       const commaFields = raw.match(/^([^,\n]{2,100}),\s*(.{3,})$/);

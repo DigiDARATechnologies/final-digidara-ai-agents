@@ -12,7 +12,8 @@ export interface Overview {
     by_status: Record<string, number>; by_plan: { plan_id: string; label: string; count: number; amount: number }[];
     daily: { date: string; amount: number; count: number }[];
   };
-  tokens: { outstanding_balance: number; credited_by_payments: number; users_out_of_tokens: number };
+  /** Tokens are the real unit; the panels show the `*_points` figures (each account at its own rate). */
+  tokens: { outstanding_balance: number; credited_by_payments: number; users_out_of_tokens: number; outstanding_points: number; points_sold: number };
   activity: { conversations: number; messages: number; active_users_7d: number; by_agent: AgentUsage[] };
   agents: { registered: number; healthy: number };
   recent_signups: { id: string; name: string; email: string; created_at: string | null }[];
@@ -20,16 +21,16 @@ export interface Overview {
 }
 export interface AdminUserRow {
   id: string; name: string; email: string; mobile: string; is_admin: boolean; google: boolean; created_at: string | null;
-  token_balance: number; paid_total: number; chats: number; agents_used: number; last_active: string | null;
+  token_balance: number; points: number; paid_total: number; plan_name?: string; chats: number; agents_used: number; last_active: string | null;
 }
 export interface UserList { total: number; page: number; limit: number; users: AdminUserRow[] }
 export interface UserPayment {
   id: string; label: string; plan_id: string; amount: number; currency: string; status: string; razorpay_order_id: string;
-  razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number;
+  razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number; points: number;
 }
 export interface UserDetail {
-  user: { id: string; name: string; email: string; mobile: string; is_admin: boolean; google: boolean; created_at: string | null; token_balance: number; consent_accepted_at: string | null; consent_policy_version: string | null };
-  totals: { paid: number; payments: number; paid_payments: number; tokens_bought: number; conversations: number; messages: number };
+  user: { id: string; name: string; email: string; mobile: string; is_admin: boolean; google: boolean; created_at: string | null; token_balance: number; points: number; consent_accepted_at: string | null; consent_policy_version: string | null };
+  totals: { paid: number; payments: number; paid_payments: number; tokens_bought: number; points_bought: number; conversations: number; messages: number };
   payments: UserPayment[];
   conversations: { id: string; agent_id: string; title: string; messages: number; pinned: boolean; created_at: string | null; updated_at: string | null; deleted: boolean }[];
   agent_progress: { agent_id: string; chat_id: string; step: string | null; updated_at: string | null }[];
@@ -37,7 +38,7 @@ export interface UserDetail {
 export interface ConversationView { id: string; agent_id: string; title: string; messages: { role: string; content: string; time: string; created_at: string | null }[] }
 export interface PaymentRow {
   id: string; user_id: string; email: string; name: string; label: string; amount: number; currency: string; status: string;
-  razorpay_order_id: string; razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number;
+  razorpay_order_id: string; razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number; points: number;
 }
 export interface PaymentList { total: number; page: number; limit: number; summary: Record<string, { count: number; amount: number }>; payments: PaymentRow[] }
 export interface RegistryAgent {

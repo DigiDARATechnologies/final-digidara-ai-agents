@@ -2,6 +2,7 @@ from datetime import datetime
 import os
 
 from app.auth.security import hash_password
+from app.billing.plans import points_for_tokens
 from app.agent_state import service as agent_state_service
 from app.chat_history import service as chat_history_service
 from app.db import get_session
@@ -65,6 +66,7 @@ def create_google_user(name: str, email: str, google_id: str, consent_policy_ver
             name=name,
             email=email,
             google_id=google_id,
+            email_verified=True,
             consent_accepted_at=datetime.utcnow(),
             consent_policy_version=consent_policy_version,
         )
@@ -113,6 +115,7 @@ def export_user_data(user_id: str) -> dict | None:
                 "google_linked": user.google_id is not None,
                 "created_at": user.created_at.isoformat(),
                 "token_balance": user.token_balance,
+                "points_balance": points_for_tokens(max(0, user.token_balance), user.tokens_per_point),
                 "consent_accepted_at": user.consent_accepted_at.isoformat() if user.consent_accepted_at else None,
                 "consent_policy_version": user.consent_policy_version,
             },
@@ -159,7 +162,7 @@ def deduct_tokens(user_id: str, amount: int) -> bool:
         session.close()
 
 
-def settle_tokens(user_id: str, amount: int) -> None:
+def settle_tokens(user_id: str, amount: int, agent_name: str = "", action: str = "") -> None:
     """
     Post-hoc charge for real, already-incurred usage (the actual LLM cost
     an agent reports back after the call already happened). Unlike
@@ -170,6 +173,7 @@ def settle_tokens(user_id: str, amount: int) -> None:
     """
     from sqlalchemy import text
     from app.db import get_session
+    from app.models import TokenUsageEvent
 
     session = get_session()
     try:
@@ -177,22 +181,40 @@ def settle_tokens(user_id: str, amount: int) -> None:
             text("UPDATE users SET token_balance = token_balance - :amount WHERE id = :user_id"),
             {"amount": amount, "user_id": user_id},
         )
+        # Recorded in the same transaction as the charge, so the monthly
+        # usage in Settings always matches what was taken from the balance.
+        session.add(TokenUsageEvent(user_id=user_id, agent_name=(agent_name or "")[:255], action=(action or "")[:100], tokens=amount))
         session.commit()
     finally:
         session.close()
 
 
-def credit_tokens(user_id: str, amount: int) -> None:
-    """Add tokens to a balance -- used after a verified top-up payment."""
-    from sqlalchemy import text
-    from app.db import get_session
+def credit_tokens(user_id: str, amount: int, points: float | None = None) -> None:
+    """Add tokens to a balance -- used after a verified top-up payment.
+
+    `points` is what the purchase was sold as. The account's tokens-per-point
+    rate is re-blended so the shown balance becomes exactly the points it
+    showed before plus the points just bought (100 + 250 = 350), even though
+    each plan has its own rate. Without `points` the tokens are added at the
+    account's existing rate. The row is locked so a concurrent charge
+    (settle_tokens) can't land between reading and writing the balance.
+    """
+    from app.billing.plans import FREE_TOKENS_PER_POINT
 
     session = get_session()
     try:
-        session.execute(
-            text("UPDATE users SET token_balance = token_balance + :amount WHERE id = :user_id"),
-            {"amount": amount, "user_id": user_id},
-        )
+        user = session.get(User, user_id, with_for_update=True)
+        if user is None:
+            return
+        rate = user.tokens_per_point or FREE_TOKENS_PER_POINT
+        balance = user.token_balance or 0
+        new_balance = balance + amount
+        if points and new_balance > 0:
+            # A negative balance (the last call overshot) is a debt in tokens;
+            # it shows as 0 points, and is paid off out of the new tokens.
+            new_points = max(0, balance) / rate + points
+            user.tokens_per_point = new_balance / new_points
+        user.token_balance = new_balance
         session.commit()
     finally:
         session.close()
@@ -201,11 +223,24 @@ def credit_tokens(user_id: str, amount: int) -> None:
 def link_google_id(user_id: str, google_id: str) -> User:
     """A password account signing in with Google for the first time under
     the same email — attach the Google identity rather than creating a
-    second account."""
+    second account.
+
+    Google has just proven this person owns the address. If the account was
+    never verified, whoever chose its password never proved that, and may be
+    someone who registered the victim's email in advance to keep a way in
+    after the real owner arrives. So their password is dropped and every
+    existing session is revoked. The owner keeps signing in with Google, and
+    PUT /auth/password accepts a new password with no current one once it's
+    gone.
+    """
     session = get_session()
     try:
         user = session.get(User, user_id)
         user.google_id = google_id
+        if not user.email_verified:
+            user.password_hash = None
+            user.session_version = (user.session_version or 0) + 1
+        user.email_verified = True
         session.commit()
         session.refresh(user)
         return user
@@ -228,7 +263,11 @@ def set_password(user_id: str, password_hash: str) -> None:
 def seed_admin_from_env() -> None:
     """Create or promote the configured platform administrator once.
 
-    Existing passwords are deliberately never reset during startup.
+    An existing admin's password is deliberately never reset during startup.
+    Promoting an existing account is different: signup doesn't verify email,
+    so an unverified account under ADMIN_EMAIL may have been registered by
+    someone else to be handed admin here. Such an account takes the operator's
+    ADMIN_PASSWORD and loses every earlier session before it is promoted.
     """
     email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "")
@@ -238,9 +277,13 @@ def seed_admin_from_env() -> None:
     try:
         user = session.query(User).filter_by(email=email).first()
         if user is None:
-            session.add(User(name="Admin", email=email, password_hash=hash_password(password), is_admin=True))
+            session.add(User(name="Admin", email=email, password_hash=hash_password(password), is_admin=True, email_verified=True))
             session.commit()
         elif not user.is_admin:
+            if not user.email_verified:
+                user.password_hash = hash_password(password)
+                user.session_version = (user.session_version or 0) + 1
+                user.email_verified = True
             user.is_admin = True
             session.commit()
     finally:

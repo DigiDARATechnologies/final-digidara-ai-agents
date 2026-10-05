@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.billing.plans import FREE_TOKENS_PER_POINT, free_signup_tokens
 from app.db import Base
 
 
@@ -72,10 +73,23 @@ class User(Base):
     # Platform operator status. The gateway derives the Job Agent admin
     # header from this server-side value, never from browser input.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # True once someone has proven they control `email`: Google sign-in, or
+    # the operator's own ADMIN_EMAIL / ADMIN_PASSWORD. Password signup does
+    # not verify the address, so anyone can register an account under an
+    # email they don't own; see auth/service.py:link_google_id for why that
+    # matters when the real owner later signs in with Google.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Embedded in every session token as "sv"; bumping it revokes every token
+    # issued before (see auth/security.py:decode_access_token).
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     # Starting free balance for every new account; consumed by gateway
     # calls and topped up via Razorpay. See app/billing/routes.py.
-    token_balance: Mapped[int] = mapped_column(Integer, default=50000, server_default="50000")
+    token_balance: Mapped[int] = mapped_column(Integer, default=free_signup_tokens, server_default="50000")
+    # How many of this account's tokens make one displayed point. Accounts
+    # from before points, and free accounts, use FREE_TOKENS_PER_POINT; each
+    # purchase blends in its plan's rate (auth/service.py:credit_tokens).
+    tokens_per_point: Mapped[float] = mapped_column(Float, default=FREE_TOKENS_PER_POINT, server_default="3000")
     # DPDP Act 2023 consent record: the timestamp/policy-version pair the
     # user affirmatively agreed to at signup (see app/auth/consent.py). Not
     # nullable in practice for new rows -- signup rejects a missing
@@ -161,3 +175,23 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(24), default="created", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Exactly what this payment credited, written in the same UPDATE that
+    # marks it paid (billing/routes.py:_mark_paid). History and the admin
+    # screens read these, so a later price or plan change can never rewrite
+    # what a past payment gave. NULL on payments from before they existed.
+    credited_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credited_points: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class TokenUsageEvent(Base):
+    """One charge the gateway made against a user's token balance -- what
+    lets Settings > Usage show this month's usage instead of all-time totals."""
+
+    __tablename__ = "token_usage_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_name: Mapped[str] = mapped_column(String(255), default="")
+    action: Mapped[str] = mapped_column(String(100), default="")
+    tokens: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)

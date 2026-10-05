@@ -426,37 +426,66 @@ apify:
           - full-time
         remoteFilter: any
 
-# Adzuna India Job Search API — Official REST API for regional postings.
+# Every IT role the portal collects, searched in every city below. Adzuna and
+# JSearch searches are generated from this list (role x city), and the daily
+# automation runs a rotating slice of them (JOBS_ADZUNA_DAILY_QUERIES /
+# JOBS_JSEARCH_DAILY_QUERIES), so the whole list is covered every week.
+# Add a role or a city here and it is picked up on the next run.
+it_coverage:
+  roles:
+    - Software Engineer
+    - Software Developer
+    - Python Developer
+    - Java Developer
+    - Full Stack Developer
+    - Frontend Developer
+    - React Developer
+    - Angular Developer
+    - Backend Developer
+    - Node.js Developer
+    - .NET Developer
+    - PHP Developer
+    - Web Developer
+    - Android Developer
+    - Flutter Developer
+    - iOS Developer
+    - Data Analyst
+    - Data Engineer
+    - Data Scientist
+    - Machine Learning Engineer
+    - AI Engineer
+    - DevOps Engineer
+    - Cloud Engineer
+    - QA Engineer
+    - Automation Tester
+    - UI UX Designer
+    - Cyber Security Analyst
+    - Network Engineer
+    - System Administrator
+    - Salesforce Developer
+    - Business Analyst
+    - Technical Support Engineer
+  # Adzuna: every role in each of these cities.
+  cities:
+    - Chennai
+    - Coimbatore
+    - Madurai
+    - Tiruchirappalli
+    - Salem
+    - Bengaluru
+    - Hyderabad
+  # JSearch has a much smaller free quota, so it searches each role once,
+  # as "<role> fresher in <region>".
+  jsearch_region: Tamil Nadu
+
+# Adzuna India Job Search API -- Official REST API for regional postings.
 # Credentials are read from ADZUNA_APP_ID and ADZUNA_APP_KEY in the environment.
+# Searches come from `it_coverage` above; a `queries:` list here would replace it.
 adzuna:
   enabled: true
-  queries:
-    - what: "Software Engineer"
-      where: "Chennai"
-    - what: "Junior Developer"
-      where: "Tamil Nadu"
-    - what: "Python Developer"
-      where: "Chennai"
-    - what: "Entry Level Developer"
-      where: "Coimbatore"
-    - what: "Web Developer"
-      where: "Madurai"
-    - what: "Junior Software Engineer"
-      where: "Bengaluru"
-    - what: "Junior Software Engineer"
-      where: "Hyderabad"
-    - what: "Data Analyst"
-      where: "Chennai"
 
-# RapidAPI JSearch — Unified real-time search across LinkedIn, Indeed, Glassdoor.
+# RapidAPI JSearch -- Unified real-time search across LinkedIn, Indeed, Glassdoor.
 # Token is read from RAPIDAPI_KEY in the environment.
+# Searches come from `it_coverage` above; a `queries:` list here would replace it.
 jsearch:
   enabled: true
-  queries:
-    - query: "Software Engineer Fresher in Chennai"
-    - query: "Junior Developer in Tamil Nadu"
-    - query: "Python Developer Fresher in Coimbatore"
-    - query: "Software Engineer Fresher in Bengaluru"
-    - query: "Junior Software Engineer in Hyderabad"
-
-

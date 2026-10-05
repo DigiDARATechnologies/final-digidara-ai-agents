@@ -22,7 +22,9 @@ _CHAT_RATE_LIMIT = f"{CHAT_RATE_LIMIT_PER_MIN}/minute"
 @limiter.limit(_CHAT_RATE_LIMIT)
 def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> ChatResponse:
     thread_id = req.thread_id or uuid.uuid4().hex
-    logger.info("=== POST /chat user=%s thread=%s message=%r", user_id, thread_id, req.message)
+    # Length only: a learner's message is personal data (DPDP Act 2023) and
+    # must not be copied into logs that outlive their account.
+    logger.info("=== POST /chat user=%s thread=%s message_chars=%d", user_id, thread_id, len(req.message))
     try:
         result = orchestrator_graph.invoke({"message": req.message})
     except Exception:
@@ -41,7 +43,7 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_c
     """Routing decision only (no agent call, no summarize) — the frontend
     uses this to hand a matched message off to that agent's own dedicated
     multi-turn flow instead of a single stateless tool invocation."""
-    logger.info("=== POST /chat/route user=%s message=%r history_turns=%d", user_id, req.message, len(req.history))
+    logger.info("=== POST /chat/route user=%s message_chars=%d history_turns=%d", user_id, len(req.message), len(req.history))
     try:
         result = route_message(req.message, [turn.model_dump() for turn in req.history])
     except Exception:

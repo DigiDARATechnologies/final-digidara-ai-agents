@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import mysql.connector
 
 from .categories import categorize_job
+from .config import JOBS_RETENTION_DAYS
 from .compensation import extract_salary_text
 from .db import get_db
 from .scraper import scrape_source
@@ -348,9 +349,12 @@ def process_run(run_id):
         db.close()
 
 
-def prune_expired_jobs_in_session(cursor, max_age_days: int = 30) -> dict:
-    """Marks past-due jobs as expired and permanently removes jobs exceeding the 30-day retention window."""
-    # 1. Mark active jobs whose 30-day lifecycle has ended as expired
+def prune_expired_jobs_in_session(cursor, max_age_days: int = JOBS_RETENTION_DAYS) -> dict:
+    """Marks jobs older than the retention window expired and removes them.
+
+    A job someone saved or applied to is only expired (it leaves the feed),
+    never deleted: deleting it would cascade away their Saved / Applied record."""
+    # 1. Mark active jobs older than the retention window as expired
     cursor.execute(
         """UPDATE jobs 
            SET status='expired' 
@@ -363,12 +367,16 @@ def prune_expired_jobs_in_session(cursor, max_age_days: int = 30) -> dict:
     )
     expired_count = cursor.rowcount
 
-    # 2. Automatically delete/purge expired and rejected jobs that exceed 30 days retention
+    # 2. Delete expired and rejected jobs past the window, except ones a user kept
     cursor.execute(
         """DELETE FROM jobs 
            WHERE status IN ('expired', 'rejected') AND (
                (published_at IS NOT NULL AND published_at < DATE_SUB(NOW(), INTERVAL %s DAY))
                OR (created_at < DATE_SUB(NOW(), INTERVAL %s DAY))
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM user_job_actions a
+               WHERE a.job_id = jobs.id AND (a.is_saved = 1 OR a.application_status IS NOT NULL)
            )""",
         (max_age_days, max_age_days),
     )
@@ -381,8 +389,8 @@ def prune_expired_jobs_in_session(cursor, max_age_days: int = 30) -> dict:
     return {"expired_count": expired_count, "deleted_count": deleted_count}
 
 
-def prune_expired_jobs(max_age_days: int = 30) -> dict:
-    """Standalone worker/API method to execute 30-day job lifecycle cleanup."""
+def prune_expired_jobs(max_age_days: int = JOBS_RETENTION_DAYS) -> dict:
+    """Standalone worker/API method to execute the job retention cleanup."""
     db = get_db()
     cursor = db.cursor()
     try:

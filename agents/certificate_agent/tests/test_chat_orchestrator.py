@@ -371,6 +371,40 @@ class TestChatOrchestrator(unittest.TestCase):
                          "Got a Q1 re-send instead of grading feedback — keyword guard falsely fired")
 
 
+    @patch("cert_app.services.chat_orchestrator.generate_questions", side_effect=_mock_mcq_questions)
+    def test_no_right_or_wrong_during_the_exam(self, mock_gen):
+        """12. While the exam runs only the next question is shown -- no
+        "Correct!" / "Incorrect" after each answer. The end-of-exam message is
+        unchanged; the full answers are in the downloadable exam report."""
+        session_id = chat_repository.create_session(self.user_id, "")
+        chat_orchestrator.handle_message(session_id, "Python Data Structures")
+        chat_orchestrator.handle_message(session_id, "Yes")
+        res = chat_orchestrator.handle_message(session_id, "mixed", bg_runner=sync_runner)
+        self.assertEqual(res.session_status, "in_exam")
+
+        answered = 0
+        while res.session_status == "in_exam":
+            res = chat_orchestrator.handle_message(session_id, "Option A" if answered % 2 == 0 else "Option B")
+            answered += 1
+            if res.session_status == "in_exam":
+                self.assertEqual([m["message_type"] for m in res.messages], ["mcq_question"])
+                for message in res.messages:
+                    self.assertNotIn("Correct", message["content"])
+                    self.assertNotIn("Incorrect", message["content"])
+
+        card = res.messages[-1]
+        self.assertEqual(card["message_type"], "certificate_card")
+        self.assertIn("Correct answers:", card["content"])
+        self.assertNotIn("Questions to review", card["content"])
+
+        # The grading records are still stored (they score the exam and the
+        # downloadable report) but the history sent to the browser leaves them out.
+        history = chat_repository.get_message_history(session_id)
+        grading = [m for m in history if chat_orchestrator.is_hidden_grading_record(m)]
+        self.assertEqual(len(grading), answered)
+        self.assertFalse(chat_orchestrator.is_hidden_grading_record({"message_type": "mcq_question", "metadata": {"phase": "exam"}}))
+
+
 if __name__ == "__main__":
     unittest.main()
 

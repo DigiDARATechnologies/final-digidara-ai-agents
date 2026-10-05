@@ -26,6 +26,7 @@ from app.models import (
     Language,
 )
 from app.services.pdf_export import VALID_TEMPLATES, render_resume_pdf
+from app.services.resume_style import normalize_style, style_options
 from app.services.import_review import (
     ImportValidationError,
     analyze_resume_text,
@@ -164,7 +165,9 @@ def clean_list(value, field, max_items=MAX_SECTION_ITEMS):
     return value
 
 
-def parse_date(value):
+def parse_date(value, label="date"):
+    """`label` names the entry in the error, e.g. "start date for Infosys",
+    so the candidate knows exactly which value to correct."""
     if not value:
         return None
     if isinstance(value, date):
@@ -174,13 +177,44 @@ def parse_date(value):
         return None
     if len(text) == 4 and text.isdigit():
         return date(int(text), 1, 1)
-    month_year = parse_month_year(text)
+    month_year = parse_month_year(text) or lenient_month_year(text)
     if month_year:
         return month_year
     try:
         return date.fromisoformat(text)
     except (TypeError, ValueError):
-        raise ValueError(f"Invalid date '{value}'. Use YYYY-MM-DD or Month YYYY.")
+        raise ValueError(
+            f"The {label} '{value}' isn't a date I can read. "
+            "Type it as a month and year, for example 'Jan 2022' (or 2022-01-15)."
+        )
+
+
+_MONTH_BY_PREFIX = {name[:3]: number for name, number in MONTH_NAMES.items()}
+
+
+def lenient_month_year(value):
+    """Everyday ways of writing a month and year, including small typos:
+    "janm2022", "Jan2022", "jan-2022", "Sept 2022", "01/2022", "2022-01"."""
+    text = value.strip().lower()
+    numeric = re.fullmatch(r"(\d{1,2})\s*[/\-.]\s*(\d{4})", text)
+    if numeric:
+        month, year = int(numeric.group(1)), int(numeric.group(2))
+    else:
+        numeric = re.fullmatch(r"(\d{4})\s*[/\-.]\s*(\d{1,2})", text)
+        if numeric:
+            year, month = int(numeric.group(1)), int(numeric.group(2))
+        else:
+            worded = re.fullmatch(r"([a-z]{3,})\.?\s*[,\-/'.]?\s*(\d{4})", text)
+            if not worded:
+                return None
+            word = worded.group(1)
+            month = MONTH_NAMES.get(word) or _MONTH_BY_PREFIX.get(word[:3])
+            year = int(worded.group(2))
+            if not month:
+                return None
+    if not 1 <= month <= 12 or not 1950 <= year <= 2100:
+        return None
+    return date(year, month, 1)
 
 
 def parse_month_year(value):
@@ -246,6 +280,7 @@ def serialize_resume_summary(resume):
         "target_role": resume.target_role,
         "experience_level": resume.experience_level,
         "template_choice": normalize_template_choice(resume.template_choice),
+        "style_settings": normalize_style(getattr(resume, "style_settings", None)),
         "status": effective_resume_status(resume, completion_percentage),
         "summary": resume.summary,
         "profile_photo": resume.profile_photo,
@@ -467,6 +502,8 @@ def apply_resume_payload(resume, payload):
                 f"Invalid template_choice. Use one of: {', '.join(sorted(VALID_TEMPLATES))}."
             )
         resume.template_choice = template_choice
+    if "style_settings" in payload:
+        resume.style_settings = normalize_style(payload.get("style_settings"), strict=True)
     if "summary" in payload:
         resume.summary = clean_text(payload.get("summary"), "summary", 12000)
     if "profile_photo" in payload:
@@ -669,8 +706,8 @@ def build_experience(payload):
     return Experience(
         company=clean_text(payload["company"], "experience.company", 255, required=True),
         role=clean_text(payload["role"], "experience.role", 255, required=True),
-        start_date=parse_date(payload.get("start_date")),
-        end_date=None if is_current else parse_date(payload.get("end_date")),
+        start_date=parse_date(payload.get("start_date"), f"start date for {payload['company']}"),
+        end_date=None if is_current else parse_date(payload.get("end_date"), f"end date for {payload['company']}"),
         is_current=is_current,
         raw_input=clean_text(payload.get("raw_input"), "experience.raw_input", 12000),
         ai_generated_bullets=[
@@ -723,7 +760,7 @@ def build_certification(payload):
     return Certification(
         name=clean_text(payload["name"], "certifications.name", 255, required=True),
         issuer=clean_text(payload.get("issuer"), "certifications.issuer", 255),
-        date=parse_date(payload.get("date")),
+        date=parse_date(payload.get("date"), f"date for the certification {payload['name']}"),
     )
 
 
@@ -758,7 +795,7 @@ def build_publication(payload):
     return Publication(
         title=clean_text(payload["title"], "publications.title", 255, required=True),
         description=clean_text(payload.get("description"), "publications.description", 12000),
-        date=parse_date(payload.get("date")),
+        date=parse_date(payload.get("date"), f"date for the publication {payload['title']}"),
     )
 
 
@@ -775,7 +812,7 @@ def build_achievement(payload):
     return Achievement(
         title=clean_text(payload["title"], "achievements.title", 255, required=True),
         description=clean_text(payload.get("description"), "achievements.description", 12000),
-        date=parse_date(payload.get("date")),
+        date=parse_date(payload.get("date"), f"date for the achievement {payload['title']}"),
     )
 
 
@@ -1072,7 +1109,8 @@ def export_resume(resume_id):
         )
 
     try:
-        pdf_bytes = render_resume_pdf(serialize_resume(resume), template_choice)
+        style = normalize_style(payload.get("style_settings") or getattr(resume, "style_settings", None))
+        pdf_bytes = render_resume_pdf(serialize_resume(resume), template_choice, style)
         resume.last_downloaded_at = datetime.now(timezone.utc).replace(tzinfo=None)
         resume.download_count = (resume.download_count or 0) + 1
         db.session.commit()
@@ -1093,6 +1131,12 @@ def export_resume(resume_id):
         as_attachment=True,
         download_name=filename,
     )
+
+
+@resumes_bp.get("/resume-styles")
+def list_resume_styles():
+    """The fonts, text sizes and line spacings the editor offers."""
+    return jsonify(style_options())
 
 
 @resumes_bp.post("/resumes/preview")
@@ -1123,7 +1167,8 @@ def preview_resume_pdf():
         )
 
     try:
-        pdf_bytes = render_resume_pdf(resume_data, template_choice)
+        style = normalize_style(payload.get("style_settings") or resume_data.get("style_settings"))
+        pdf_bytes = render_resume_pdf(resume_data, template_choice, style)
     except Exception:
         return error_response("PDF preview failed", 500)
 

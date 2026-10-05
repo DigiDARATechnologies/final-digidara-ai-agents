@@ -6,9 +6,12 @@ the x-digidara-user-id / x-digidara-is-admin headers trustworthy: without it,
 anything that can reach this container could claim to be any user or an admin.
 
 AGENT_SIGNATURE_MODE:
-  warn     (default) log an invalid or missing signature but still serve the request
-  enforce  reject it with 401
+  enforce  reject an invalid or missing signature with 401 (the default whenever
+           AGENT_SHARED_SECRET is set, i.e. every deployed environment)
+  warn     log it but still serve the request (the default only when no
+           AGENT_SHARED_SECRET is configured, i.e. a bare local dev checkout)
   off      skip verification
+An unrecognised value falls back to that same default, never to a weaker mode.
 
 Every agent carries an identical copy of this file. Keep the golden vector in
 the tests in step with orchestrator/tests/test_agent_signing.py.
@@ -44,8 +47,12 @@ OUTER_MARKER = "digidara.signing.outer"
 
 
 def mode() -> str:
-    value = os.environ.get("AGENT_SIGNATURE_MODE", "warn").strip().lower()
-    return value if value in {"off", "warn", "enforce"} else "warn"
+    # Enforce by default wherever a real shared secret exists: in warn mode the
+    # only thing stopping a forged x-digidara-is-admin header is Docker network
+    # isolation, and Judge0 runs untrusted code on that same network.
+    default = "enforce" if os.environ.get("AGENT_SHARED_SECRET") else "warn"
+    value = os.environ.get("AGENT_SIGNATURE_MODE", default).strip().lower()
+    return value if value in {"off", "warn", "enforce"} else default
 
 
 def _key() -> bytes:

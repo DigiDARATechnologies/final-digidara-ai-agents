@@ -99,19 +99,28 @@ def _personal_data(action: str, payload: dict):
     return jsonify(privacy.erase_student(email))
 
 
-def _usage_summary():
-    """Platform-wide AI usage, in the same shape every other agent returns for the
-    Settings > Usage screen."""
-    totals, _ = db.query(
-        "SELECT COUNT(*) AS total_requests, COALESCE(SUM(total_tokens), 0) AS total_tokens, "
-        "COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens "
-        "FROM ai_usage_records",
-        fetchone=True,
-    )
-    rows, _ = db.query(
-        "SELECT request_type, COUNT(*) AS request_count FROM ai_usage_records GROUP BY request_type",
-        fetch=True,
-    )
+def _usage_summary(payload: dict):
+    """The signed-in student's own AI usage, in the same shape every other agent
+    returns for the Settings > Usage screen. Without a valid session there is
+    no student to report on, so the totals are zero -- never other learners'."""
+    try:
+        student_id = student_id_from_token(str(payload.get("sessionToken") or ""))
+    except InvalidSessionToken:
+        student_id = None
+    totals, rows = {}, []
+    if student_id is not None:
+        totals, _ = db.query(
+            "SELECT COUNT(*) AS total_requests, COALESCE(SUM(total_tokens), 0) AS total_tokens, "
+            "COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens, COALESCE(SUM(completion_tokens), 0) AS completion_tokens "
+            "FROM ai_usage_records WHERE student_id = %s",
+            (student_id,),
+            fetchone=True,
+        )
+        rows, _ = db.query(
+            "SELECT request_type, COUNT(*) AS request_count FROM ai_usage_records WHERE student_id = %s GROUP BY request_type",
+            (student_id,),
+            fetch=True,
+        )
     totals = totals or {}
     return jsonify(
         agent_name=AGENT_NAME,
@@ -232,7 +241,7 @@ def invoke():
     if action == "health":
         return jsonify(status="ok", agent_name=AGENT_NAME)
     if action == "usage_summary":
-        return _usage_summary()
+        return _usage_summary(payload)
     if action == "ensure_session":
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:

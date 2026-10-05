@@ -12,7 +12,7 @@ from httpx import ASGITransport, AsyncClient
 
 from cert_app.db.database import get_connection
 from cert_app.services.auth_service import create_access_token, get_password_hash
-from cert_app.services.usage_service import get_usage_summary, record_request
+from cert_app.services.usage_service import get_usage_summary, record_request, reset_usage_user, set_usage_user
 
 logger = logging.getLogger("certificate.api.invoke")
 router = APIRouter()
@@ -97,6 +97,16 @@ def _ensure_profile(payload: dict) -> dict:
 
 @router.post("/api/invoke")
 async def invoke(request: Request) -> Response:
+    # Every usage event recorded while serving this call belongs to the
+    # gateway-verified user, so Settings > Usage shows only their own numbers.
+    usage_user = set_usage_user(request.headers.get("x-digidara-user-id"))
+    try:
+        return await _invoke(request)
+    finally:
+        reset_usage_user(usage_user)
+
+
+async def _invoke(request: Request) -> Response:
     """
     Common Strategy F dispatcher endpoint. Exempt from CSRF/cookie-based auth.
     Uses in-process test client re-entry to delegate calls to existing FastAPI routes.
@@ -118,7 +128,7 @@ async def invoke(request: Request) -> Response:
         return JSONResponse({"status": "ok", "agent_name": "certificate_agent", "version": "v1.0.0"})
 
     if action == "usage_summary":
-        return JSONResponse(get_usage_summary())
+        return JSONResponse(get_usage_summary(request.headers.get("x-digidara-user-id")))
 
     if action in ("ensure_profile", "ensure_session"):
         return JSONResponse(_ensure_profile(payload))

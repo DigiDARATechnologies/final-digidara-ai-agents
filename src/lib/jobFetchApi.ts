@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { reportPointsActivity } from "./points";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_JOB_AGENT_NAME, "job_agent");
 function invoke<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -231,6 +232,7 @@ export async function uploadJobFetchResume(file: File): Promise<{ message: strin
     body: form,
   });
   const body = await response.json().catch(() => ({}));
+  reportPointsActivity(response.status);
   if (!response.ok) throw new Error(body.error || body.message || response.statusText);
   return body;
 }
@@ -246,6 +248,7 @@ export async function downloadJobFetchResume(): Promise<Blob> {
     },
     body: JSON.stringify({ action: "download_resume", payload: {} }),
   });
+  reportPointsActivity(response.status);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || body.message || "Failed to download resume");
@@ -346,8 +349,14 @@ export interface JobAutomationSettings {
   last_error: string | null;
 }
 
+/** Free-plan API usage per provider and the coming week's planned searches. */
+export interface FreePlanOverview {
+  usage: Record<string, Array<{ window: string; used: number; limit: number }>>;
+  upcoming: Array<{ date: string; adzuna: Array<{ city: string; roles: string[] }>; jsearch: string[] }>;
+}
+
 export function adminGetAutomation() {
-  return invoke<{ automation: JobAutomationSettings }>("admin_get_automation");
+  return invoke<{ automation: JobAutomationSettings; free_plan?: FreePlanOverview | null }>("admin_get_automation");
 }
 
 export function adminUpdateAutomation(enabled: boolean) {

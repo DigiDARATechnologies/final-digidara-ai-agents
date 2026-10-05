@@ -1,4 +1,4 @@
-// PM2 process definition for the CodeForge (LeetCode/DSA) Agent. Local dev
+// PM2 process definition for the CodeForge (LeetCode) Agent. Local dev
 // runs this via `run.py` (waitress) — production uses gunicorn directly
 // against the Flask app factory instead. Real config
 // (MYSQL_*, LMS_API_SHARED_SECRET, AGENT_SHARED_SECRET, JUDGE0_URL, ...)

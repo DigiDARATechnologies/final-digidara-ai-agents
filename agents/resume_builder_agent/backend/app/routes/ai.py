@@ -1224,3 +1224,70 @@ Requirements:
         }), 200
     except (RuntimeError, json.JSONDecodeError) as exc:
         return error_response(str(exc), 500)
+
+
+_SERIF_ROLES = re.compile(r"\b(law|legal|lawyer|advocate|finance|financial|bank|banking|account|accountant|audit|research|academic|professor|lecturer|teacher|policy)\b", re.IGNORECASE)
+
+
+def rule_based_style_suggestion(resume):
+    """A sensible professional style without the AI: a clean sans-serif at the
+    template size for most roles, a slightly smaller size for a long
+    experienced resume, and a serif for traditional fields."""
+    role = str(resume.get("target_role") or "")
+    experienced = resume.get("experience_level") == "experienced"
+    entries = sum(len(resume.get(key) or []) for key in ("experience", "projects", "education", "certifications", "achievements"))
+    if _SERIF_ROLES.search(role):
+        return {"font_family": "liberation-serif", "font_scale": 1.0, "line_spacing": 1.0}, (
+            f"A classic serif (Times New Roman style) reads as formal and established, which suits {role or 'this field'}. "
+            "Keep the template's size and standard spacing so it stays easy to scan."
+        )
+    if experienced and entries > 8:
+        return {"font_family": "lato", "font_scale": 0.95, "line_spacing": 1.0}, (
+            "Lato at 95% fits a longer experienced resume into two pages without looking cramped, "
+            "and stays clear for recruiters and ATS software."
+        )
+    return {"font_family": "carlito", "font_scale": 1.0, "line_spacing": 1.0}, (
+        "Carlito (a Calibri look-alike) is the most common professional resume font: clean, modern and ATS-friendly. "
+        f"At the template's size it keeps a {'two-page' if experienced else 'one-page'} resume easy to read."
+    )
+
+
+@ai_bp.post("/ai/suggest-resume-style")
+@rate_limit(20)
+def suggest_resume_style():
+    """A professional font family, text size and line spacing for this resume,
+    chosen only from the options the editor offers."""
+    from app.services.resume_style import FONT_FAMILIES, FONT_SCALES, LINE_SPACINGS, TEMPLATE_DEFAULT, normalize_style
+
+    payload = request.get_json(silent=True) or {}
+    resume = payload.get("resume") if isinstance(payload.get("resume"), dict) else {}
+    fallback_style, fallback_reason = rule_based_style_suggestion(resume)
+    families = [key for key in FONT_FAMILIES if key != TEMPLATE_DEFAULT]
+    counts = {key: len(resume.get(key) or []) for key in ("experience", "projects", "education", "skills", "certifications")}
+    try:
+        parsed = get_ai_json_response(
+            f"""You are a professional resume designer. Recommend the font family, text size and line spacing
+for this resume so it looks professional, is easy to read and stays ATS-friendly.
+
+Target role: {resume.get("target_role") or "not given"}
+Career level: {resume.get("experience_level") or "not given"} (fresher = one page, experienced = up to two pages)
+Template: {payload.get("template_choice") or resume.get("template_choice") or "not given"}
+Content: {json.dumps(counts)}
+
+Choose ONLY from these values:
+- font_family: {", ".join(families)}
+- font_scale: {", ".join(str(value) for value in FONT_SCALES)}
+- line_spacing: {", ".join(str(value) for value in LINE_SPACINGS)}
+
+Return strict JSON: {{"font_family": "...", "font_scale": 1.0, "line_spacing": 1.0,
+"reason": "two short sentences for the candidate on why this suits their resume"}}""",
+            max_tokens=300,
+        )
+        if parsed.get("font_family") not in families:
+            raise ValueError("unknown font family")
+        style = normalize_style(parsed)
+        reason = str(parsed.get("reason") or "").strip()[:500] or fallback_reason
+        source = "ai"
+    except Exception:
+        style, reason, source = normalize_style(fallback_style), fallback_reason, "rules"
+    return jsonify({"style": style, "reason": reason, "source": source}), 200

@@ -12,7 +12,7 @@ from openai import OpenAI
 
 from cert_app.config import get_settings
 from cert_app.db.database import get_cached_web_search_questions, save_cached_web_search_questions
-from cert_app.services.usage_service import record_llm_usage
+from cert_app.services.usage_service import carry_usage_user, record_llm_usage
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -605,7 +605,7 @@ def _call_llm_once(topic: str, count: int, difficulties: str, existing_questions
     _get_llm()  # initialise the shared client once, before the worker threads start
     with ThreadPoolExecutor(max_workers=min(len(sizes), _MAX_PARALLEL_CHUNKS)) as pool:
         futures = [
-            pool.submit(_call_llm_chunk, topic, size, difficulties, avoid, _focus_for(topic, focus_offset + i))
+            pool.submit(carry_usage_user(_call_llm_chunk), topic, size, difficulties, avoid, _focus_for(topic, focus_offset + i))
             for i, size in enumerate(sizes)
         ]
         chunk_results = []
@@ -717,7 +717,7 @@ def generate_questions(
         # Not a context manager: exiting one would block on the web-search
         # thread and remove the whole point of the bounded wait below.
         web_pool = ThreadPoolExecutor(max_workers=1)
-        web_future = web_pool.submit(_call_web_search_llm, topic, web_count, diff_lower, excluded)
+        web_future = web_pool.submit(carry_usage_user(_call_web_search_llm), topic, web_count, diff_lower, excluded)
 
     try:
         # ── Phase 1: LLM fill (runs while the web search is in flight) ───────────

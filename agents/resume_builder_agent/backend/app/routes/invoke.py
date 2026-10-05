@@ -20,14 +20,16 @@ ACTION_ROUTE_MAP = {
     "get_resume": ("GET", "/api/resumes/{resume_id}"), "update_resume": ("PUT", "/api/resumes/{resume_id}"),
     "delete_resume": ("DELETE", "/api/resumes/{resume_id}"), "analyze_upload": ("POST", "/api/resumes/import/analyze"),
     "create_import_draft": ("POST", "/api/resumes/import/draft"), "analyze_resume": ("POST", "/api/resumes/{resume_id}/ats"),
-    "generate_resume": ("POST", "/api/ai/optimize-resume"), "suggest_resume_edit": ("POST", "/api/ai/suggest-resume-edit"), "generate_summary": ("POST", "/api/ai/generate-summary"),
+    "generate_resume": ("POST", "/api/ai/optimize-resume"), "resume_chat_turn": ("POST", "/api/ai/chat-turn"), "suggest_resume_edit": ("POST", "/api/ai/suggest-resume-edit"), "generate_summary": ("POST", "/api/ai/generate-summary"),
     "generate_bullets": ("POST", "/api/ai/generate-bullets"), "generate_project_bullets": ("POST", "/api/ai/generate-project-bullets"),
     "improve_bullet": ("POST", "/api/ai/improve-bullet"), "suggest_skills": ("POST", "/api/ai/suggest-skills"),
     "analyze_job_description": ("POST", "/api/ai/analyze-job-description"), "generate_declaration": ("POST", "/api/ai/generate-declaration"),
     "tailor_to_job": ("POST", "/api/ai/tailor-to-jd"), "select_template": ("PUT", "/api/resumes/{resume_id}"),
-    "list_templates": ("GET", "/api/templates"), "get_template": ("GET", "/api/templates/{template_id}"),
+    "list_templates": ("GET", "/api/templates"), "list_resume_styles": ("GET", "/api/resume-styles"), "suggest_resume_style": ("POST", "/api/ai/suggest-resume-style"), "get_template": ("GET", "/api/templates/{template_id}"),
     "preview_resume": ("POST", "/api/resumes/preview"), "export_pdf": ("POST", "/api/resumes/{resume_id}/download"),
 }
+# The chat's wording suggestions (app/routes/chat_turn.py).
+ACTION_ROUTE_MAP["suggest_wording"] = ("POST", "/api/ai/suggest-wording")
 
 
 def _identity_headers(payload: dict) -> dict[str, str]:

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchPayments } from "../../lib/adminApi";
 import { formatDate, formatMoney, formatNumber, PAYMENT_BADGE } from "./adminFormat";
+import { formatPoints } from "../../lib/points";
 import { useLoad } from "./useLoad";
 
 const PAGE = 25;
@@ -30,12 +31,12 @@ export default function PaymentsPanel() {
       {error && <div className="admin-error">{error} <button className="btn btn-outline btn-sm" onClick={reload}>Retry</button></div>}
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Tokens</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
+          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Points</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
           <tbody>
             {data?.payments.map((p) => (
               <tr key={p.id}>
                 <td className="admin-table-primary">{p.email}<br /><small>{p.name}</small></td>
-                <td>{p.label}</td><td>{formatMoney(p.amount)}</td><td>{p.tokens ? formatNumber(p.tokens) : "—"}</td>
+                <td>{p.label}</td><td>{formatMoney(p.amount)}</td><td>{p.points ? formatPoints(p.points) : "—"}</td>
                 <td><span className={`admin-badge ${PAYMENT_BADGE[p.status] || "badge-expired"}`}>{p.status}</span></td>
                 <td>{formatDate(p.created_at)}</td><td>{formatDate(p.paid_at)}</td>
                 <td><small>{p.razorpay_payment_id || "—"}<br />{p.razorpay_order_id}</small></td>

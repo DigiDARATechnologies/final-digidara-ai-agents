@@ -167,3 +167,22 @@ def test_provider_badges_are_neutral_in_candidate_cards_and_zero_match_is_not_in
                                             "match_percentage": 0, "match_score": 0}])
     assert "Adzuna" not in rendered and "RapidAPI" not in rendered
     assert "Match 0%" in rendered
+
+
+@pytest.mark.parametrize("message", ["find me jobs in chennai", "send me jobs in Chennai", "show me jobs in chennai"])
+def test_me_in_a_request_is_never_a_role(message):
+    # "find me jobs in Chennai" used to search for the role "Me", so every
+    # follow-up (Search related roles) found nothing in a city full of jobs.
+    context = _resolve_search_context(message, profile(), [])
+    assert context is not None
+    assert "Me" not in context["titles"] and "me" not in context["role_label"].lower().split()
+    assert context["titles"] == ["Data Analyst"]  # falls back to the saved role
+
+
+def test_a_bare_get_me_jobs_goes_to_the_profile_search_not_a_role_named_me():
+    assert _resolve_search_context("get me jobs", profile(), []) is None
+
+
+def test_me_before_a_real_role_keeps_the_role():
+    context = _resolve_search_context("show me react jobs", profile(), [])
+    assert context["titles"] == ["React Developer"] or context["titles"] == ["React"]

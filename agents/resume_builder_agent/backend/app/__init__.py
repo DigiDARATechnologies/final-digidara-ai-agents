@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from app.errors import database_error_response
 from app.extensions import db
 from app.routes.ai import ai_bp
+from app.routes.chat_turn import chat_turn_bp
 from app.routes.health import health_bp
 from app.routes.invoke import invoke_bp
 from app.routes.resumes import resumes_bp
@@ -102,6 +103,7 @@ def ensure_schema_updates(app):
                 "job_match_score": "ALTER TABLE resumes ADD COLUMN job_match_score INT",
                 "download_count": "ALTER TABLE resumes ADD COLUMN download_count INT NOT NULL DEFAULT 0",
                 "last_analyzed_at": "ALTER TABLE resumes ADD COLUMN last_analyzed_at DATETIME",
+                "style_settings": "ALTER TABLE resumes ADD COLUMN style_settings JSON",
             }
             with db.engine.begin() as connection:
                 for column_name, statement in resume_updates.items():
@@ -210,6 +212,7 @@ def create_app(config_object: str | None = None) -> Flask:
     app.register_blueprint(session_bp, url_prefix="/api")
     app.register_blueprint(resumes_bp, url_prefix="/api")
     app.register_blueprint(ai_bp, url_prefix="/api")
+    app.register_blueprint(chat_turn_bp, url_prefix="/api")
     app.before_request(verify_csrf)
 
     @app.after_request

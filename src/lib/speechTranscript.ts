@@ -15,6 +15,59 @@ function words(value: string): string[] {
   return value.trim().split(/\s+/).filter(Boolean);
 }
 
+function comparableWord(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
+}
+
+/**
+ * Removes the looping output occasionally produced by phone transcription,
+ * for example "batter, no. batter, no. batter, no.". Two repetitions are
+ * left alone because they are common in natural speech; only runs of three or
+ * more identical adjacent words/phrases are treated as recognizer artefacts.
+ */
+export function removeMobileTranscriptLoops(value: string): string {
+  const input = words(value);
+  if (input.length < 3) return value.trim();
+
+  const normalized = input.map(comparableWord);
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < input.length) {
+    let repeatedPhraseLength = 0;
+    let repeatedPhraseCount = 0;
+    const maximumPhraseLength = Math.min(12, Math.floor((input.length - index) / 3));
+
+    for (let phraseLength = maximumPhraseLength; phraseLength >= 1; phraseLength -= 1) {
+      const phrase = normalized.slice(index, index + phraseLength);
+      if (phrase.some((word) => !word)) continue;
+
+      let repeats = 1;
+      while (
+        index + (repeats + 1) * phraseLength <= input.length
+        && phrase.every((word, offset) => normalized[index + repeats * phraseLength + offset] === word)
+      ) {
+        repeats += 1;
+      }
+      if (repeats >= 3) {
+        repeatedPhraseLength = phraseLength;
+        repeatedPhraseCount = repeats;
+        break;
+      }
+    }
+
+    if (repeatedPhraseLength) {
+      output.push(...input.slice(index, index + repeatedPhraseLength));
+      index += repeatedPhraseLength * repeatedPhraseCount;
+    } else {
+      output.push(input[index]);
+      index += 1;
+    }
+  }
+
+  return output.join(" ").trim();
+}
+
 /**
  * Joins Web Speech result slots without compounding cumulative results.
  * Mobile implementations sometimes publish the complete phrase again in a

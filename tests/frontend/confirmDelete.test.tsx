@@ -4,6 +4,7 @@ import Sidebar from '../../src/components/Sidebar';
 import SettingsModal from '../../src/components/SettingsModal';
 
 jest.mock('../../src/lib/usageApi', () => ({ fetchAllUsageSummaries: jest.fn().mockResolvedValue([]) }));
+jest.mock('../../src/lib/billingApi', () => ({ fetchMonthlyUsage: jest.fn().mockResolvedValue({ month_start: '2026-10-01T00:00:00Z', tokens_used: 0, requests: 0, balance: 50000, limit: 50000, agents: [] }) }));
 jest.mock('../../src/components/BillingPanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../src/components/SettingsExtras', () => ({ AppearanceSettings: () => null, SecuritySettings: () => null }));
 jest.mock('../../src/lib/communicationApi', () => ({ bridgeIdentity: jest.fn(), getDashboard: jest.fn(), getHistory: jest.fn() }));
@@ -83,7 +84,7 @@ describe('Settings: agent chats list', () => {
       <SettingsModal open user={user} chats={[]} glowOn initialTab="agent-chats" onClose={jest.fn()} onOpenChat={jest.fn()} onGlowToggle={jest.fn()}
         onClearHistory={jest.fn()} onToast={jest.fn()} onExportData={jest.fn()} onDeleteAccount={jest.fn()} />,
     );
-    for (const name of ['Capstone Project Agent', 'LeetCode / DSA Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
+    for (const name of ['Capstone Project Agent', 'LeetCode Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
     for (const name of ['Research Agent', 'Career Guidance Agent', 'Content Writer Agent', 'Data Analyst Agent', 'Video AI Agent', 'Business Strategy Agent', 'Coding Assistant Agent']) {

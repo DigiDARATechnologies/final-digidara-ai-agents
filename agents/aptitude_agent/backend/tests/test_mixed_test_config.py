@@ -1,3 +1,6 @@
+import hashlib
+import itertools
+
 from backend.app.extensions import db
 from backend.app.models import AptitudeTest, LearnerMixedTestConfig
 from backend.app.services.test_generation import CATEGORIES, build_slots
@@ -13,16 +16,28 @@ DEFAULTS = {
 }
 
 
+_SERIAL = itertools.count(1)
+
+
+def _unique_wording(prefix):
+    """Distinct wording and hashes across calls: a large Mixed Test is now
+    generated as several chunks, and a question repeated across chunks is
+    replaced, so fakes that restart their numbering per call would collide."""
+    serial = next(_SERIAL)
+    digest = hashlib.sha256(f"{prefix}-{serial}".encode()).hexdigest()
+    return serial, f"{prefix} " + " ".join(digest[i:i + 8] for i in range(0, 48, 8)) + "?"
+
+
 def generated_batch(slots, prefix):
     return [{
         **slot,
-        "question": f"{prefix} question {index} for {slot['topic']}?",
+        "question": text,
         "options": {"A": "First", "B": "Second", "C": "Third", "D": "Fourth"},
         "correct_answer": "A",
         "explanation": "First is the configured correct response.",
         "content_hash": f"{prefix}-content-{index}",
         "structural_hash": f"{prefix}-structure-{index}",
-    } for index, slot in enumerate(slots, 1)]
+    } for slot, (index, text) in ((slot, _unique_wording(prefix)) for slot in slots)]
 
 
 def payload(counts):

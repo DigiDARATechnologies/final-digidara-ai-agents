@@ -2850,11 +2850,15 @@ def _resolve_search_context(message: str, profile: Dict[str, Any], history=None)
         custom_role = re.search(
             r"\b(?:send|show|find|list|get|want|need)\s+(?:me\s+)?(?:the\s+|some\s+|all\s+)?"
             r"([a-z][a-z /+-]{1,60}?)\s+(?:jobs?|roles?|openings?|positions?)\b", text)
-        if custom_role and custom_role.group(1).strip() not in {
+        # "find me jobs" / "send us jobs": the pronoun is who the jobs are
+        # for, never a role -- searching for the role "Me" finds nothing.
+        role_text = re.sub(r"^(?:me|us)\s+", "", custom_role.group(1).strip()) if custom_role else ""
+        if role_text and role_text not in {
             "my", "matching", "my matching", "more", "related", "similar", "same", "those", "these",
             "available", "active", "fresher", "entry level", "entry-level", "remote", "hybrid", "office",
+            "me", "us", "any", "new", "latest", "recent", "good", "best", "open", "current", "suitable", "relevant",
         }:
-            titles = [custom_role.group(1).strip().title()]
+            titles = [role_text.title()]
     previous = {}
     # Only a completed, server-saved assistant search may carry structured scope.
     for turn in reversed(list(history or [])[-12:]):

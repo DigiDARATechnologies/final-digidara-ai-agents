@@ -1,38 +1,44 @@
 import hashlib
 import hmac
+import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import func, update
 
 from app.auth import service as auth_service
 from app.auth.security import get_current_user_id
 from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
-    TOKENS_PER_RUPEE,
     active_plan,
-    custom_plan,
+    credited_points,
+    exact_credit,
+    is_full_price,
     offered_plans,
     payment_label,
     plan_name,
-    tokens_for_plan_id,
+    points_for_payment,
+    points_for_tokens,
 )
 from app.db import get_session
-from app.models import Payment
+from app.models import Payment, TokenUsageEvent
+from app.rate_limit import limiter
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+# Per account. Each order is a call to Razorpay with our key, and verify
+# re-checks a payment with Razorpay; neither needs more than a few a minute.
+_ORDER_RATE_LIMIT = "10/minute"
+_VERIFY_RATE_LIMIT = "30/minute"
 
 
 class OrderRequest(BaseModel):
     plan_id: str
-
-
-class TopupOrderRequest(BaseModel):
-    amount_inr: int
 
 
 class VerifyRequest(BaseModel):
@@ -55,27 +61,42 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
     A conditional UPDATE, not read-then-write: verify and the Razorpay webhook
     can arrive together for the same payment, and both used to see "created"
     and both credit tokens. Only the request whose UPDATE changes a row may
-    credit.
+    credit. The same UPDATE records what the payment credits, so the record
+    and the flip can never disagree.
     """
+    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
     result = session.execute(
         update(Payment)
         .where(Payment.id == payment.id, Payment.status != "paid")
-        .values(status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow())
+        .values(
+            status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow(),
+            credited_tokens=credit[0] if credit else 0,
+            credited_points=credit[1] if credit else 0,
+        )
     )
     session.commit()
     return result.rowcount == 1
 
 
 def _credit_for_payment(payment: Payment) -> None:
-    tokens = tokens_for_plan_id(payment.plan_id)
-    if tokens:
-        auth_service.credit_tokens(payment.user_id, tokens)
+    # Exactly the plan's tokens and points, from the server's own catalog and
+    # the amount Razorpay confirmed -- never from anything the browser sent,
+    # never scaled. A payment that matches no plan price credits nothing.
+    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
+    if credit is None:
+        logger.warning(
+            "payment %s (plan %s, %s %s paise) matches no plan price; nothing credited -- review and credit by hand",
+            payment.id, payment.plan_id, payment.currency, payment.amount,
+        )
+        return
+    tokens, points = credit
+    auth_service.credit_tokens(payment.user_id, tokens, points)
 
 
 @router.get("/plans")
 def plans() -> dict:
     """The plans on sale, so prices live in one place (app/billing/plans.py)."""
-    return {"plans": offered_plans(), "custom": custom_plan()}
+    return {"plans": offered_plans()}
 
 
 @router.get("/summary")
@@ -93,6 +114,7 @@ def summary(user_id: str = Depends(get_current_user_id)) -> dict:
                 {
                     "id": p.id, "plan_id": p.plan_id, "label": payment_label(p.plan_id), "amount": p.amount,
                     "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id,
+                    "points": credited_points(p) if p.status == "paid" else points_for_payment(p.plan_id, p.amount),
                     "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid",
                 }
                 for p in payments
@@ -107,14 +129,78 @@ def token_balance(user_id: str = Depends(get_current_user_id)) -> dict:
     user = auth_service.get_by_id(user_id)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
-    return {"balance": user.token_balance}
+    # Users see points; tokens stay the unit everything is charged in.
+    return {
+        "balance": user.token_balance,
+        "points": points_for_tokens(max(0, user.token_balance), user.tokens_per_point),
+        "tokens_per_point": user.tokens_per_point,
+    }
+
+
+def month_start_utc(now_utc: datetime, offset_minutes: int) -> datetime:
+    """The first moment of the user's current calendar month, as naive UTC.
+
+    ``offset_minutes`` is the user's local time minus UTC (IST is +330), so the
+    month turns over at the user's midnight, not the server's."""
+    local = now_utc + timedelta(minutes=offset_minutes)
+    return local.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(minutes=offset_minutes)
+
+
+@router.get("/usage-month")
+def usage_this_month(
+    offset_minutes: int = Query(0, ge=-14 * 60, le=14 * 60),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """This calendar month's billed usage, overall and per agent.
+
+    There is no fixed monthly quota: tokens are a balance. The limit is what
+    the user had to spend this month -- what they used plus what is left --
+    so it follows plans, top-ups and spending instead of a hardcoded number."""
+    user = auth_service.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    since = month_start_utc(datetime.utcnow(), offset_minutes)
+    session = get_session()
+    try:
+        rows = (
+            session.query(TokenUsageEvent.agent_name, func.coalesce(func.sum(TokenUsageEvent.tokens), 0), func.count(TokenUsageEvent.id))
+            .filter(TokenUsageEvent.user_id == user_id, TokenUsageEvent.created_at >= since)
+            .group_by(TokenUsageEvent.agent_name)
+            .all()
+        )
+    finally:
+        session.close()
+    rate = user.tokens_per_point
+    agents = [
+        {"agent_name": name, "tokens": int(tokens), "points": points_for_tokens(int(tokens), rate), "requests": int(count)}
+        for name, tokens, count in rows
+    ]
+    used = sum(agent["tokens"] for agent in agents)
+    balance = max(0, int(user.token_balance))
+    # Points use the account's current rate. A month that spans a purchase at
+    # a different plan's rate is shown approximately; tokens stay exact.
+    return {
+        "month_start": since.isoformat() + "Z",
+        "tokens_used": used,
+        "requests": sum(agent["requests"] for agent in agents),
+        "balance": balance,
+        "limit": used + balance,
+        "points_used": points_for_tokens(used, rate),
+        "points_balance": points_for_tokens(balance, rate),
+        "points_limit": points_for_tokens(used + balance, rate),
+        "tokens_per_point": rate,
+        "agents": agents,
+    }
 
 
 @router.post("/orders", status_code=201)
-def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id)) -> dict:
+@limiter.limit(_ORDER_RATE_LIMIT)
+def create_order(req: OrderRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
     plan = PLANS.get(req.plan_id)
     if not plan:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown billing plan.")
+    if plan.get("payment_page_url"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This plan is paid on its Razorpay payment page.")
     key_id, key_secret = _credentials()
     receipt = f"dd_{user_id[:10]}_{int(datetime.utcnow().timestamp())}"
     try:
@@ -133,33 +219,9 @@ def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id))
     return {"key_id": key_id, "order_id": order["id"], "amount": plan["amount"], "currency": plan["currency"], "name": f"{plan['name']} plan"}
 
 
-@router.post("/topup-order", status_code=201)
-def create_topup_order(req: TopupOrderRequest, user_id: str = Depends(get_current_user_id)) -> dict:
-    if req.amount_inr < 1:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Minimum top-up amount is ₹1.")
-    tokens = req.amount_inr * TOKENS_PER_RUPEE
-    amount_paise = req.amount_inr * 100  # Razorpay amounts are in the smallest currency unit.
-    plan_id = f"topup_{tokens}"
-    key_id, key_secret = _credentials()
-    receipt = f"dd_topup_{user_id[:10]}_{int(datetime.utcnow().timestamp())}"
-    try:
-        response = httpx.post("https://api.razorpay.com/v1/orders", auth=(key_id, key_secret), json={"amount": amount_paise, "currency": "INR", "receipt": receipt, "notes": {"user_id": user_id, "plan_id": plan_id, "tokens": tokens}}, timeout=15)
-        response.raise_for_status()
-        order = response.json()
-    except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Unable to create payment order.") from exc
-    session = get_session()
-    try:
-        payment = Payment(user_id=user_id, plan_id=plan_id, amount=amount_paise, currency="INR", razorpay_order_id=order["id"])
-        session.add(payment)
-        session.commit()
-    finally:
-        session.close()
-    return {"key_id": key_id, "order_id": order["id"], "amount": amount_paise, "currency": "INR", "name": f"{tokens:,} tokens", "tokens": tokens}
-
-
 @router.post("/verify")
-def verify_payment(req: VerifyRequest, user_id: str = Depends(get_current_user_id)) -> dict:
+@limiter.limit(_VERIFY_RATE_LIMIT)
+def verify_payment(req: VerifyRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
     key_id, key_secret = _credentials()
     session = get_session()
     try:
@@ -204,15 +266,54 @@ def download_invoice(payment_id: str, user_id: str = Depends(get_current_user_id
         session.close()
 
 
+def _webhook_secrets() -> list[str]:
+    """The in-app checkout's webhook and the payment page's (a different
+    Razorpay account or mode can sign with its own secret)."""
+    names = ("RAZORPAY_WEBHOOK_SECRET", "RAZORPAY_PAGE_WEBHOOK_SECRET")
+    return [value for value in (os.environ.get(name, "").strip() for name in names) if value]
+
+
+def _page_plan_for(amount: int, currency: str) -> str | None:
+    for plan_id, plan in PLANS.items():
+        if plan.get("payment_page_url") and is_full_price(plan, amount) and plan["currency"] == currency:
+            return plan_id
+    return None
+
+
+def _credit_payment_page(session, entity: dict) -> None:
+    """A captured payment the app did not create: one made on a plan's
+    Razorpay payment page. Credit the account whose email was entered there,
+    exactly once per Razorpay payment id."""
+    plan_id = _page_plan_for(entity.get("amount"), entity.get("currency"))
+    payment_id = str(entity.get("id") or "")
+    if not plan_id or not payment_id:
+        return
+    if session.query(Payment).filter_by(razorpay_payment_id=payment_id).first():
+        return  # already credited (Razorpay retries webhooks)
+    email = str(entity.get("email") or "").strip().lower()
+    user = auth_service.get_by_email(email) if email else None
+    if user is None:
+        logger.warning(
+            "Razorpay page payment %s for plan %s has no matching account (email %r); credit it by hand",
+            payment_id, plan_id, email,
+        )
+        return
+    payment = Payment(user_id=user.id, plan_id=plan_id, amount=entity["amount"], currency=entity["currency"],
+                      razorpay_order_id=str(entity.get("order_id") or f"page_{payment_id}"))
+    session.add(payment)
+    session.commit()
+    if _mark_paid(session, payment, payment_id):
+        _credit_for_payment(payment)
+
+
 @router.post("/webhook")
 async def webhook(request: Request) -> dict:
-    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "").strip()
-    if not secret:
+    secrets = _webhook_secrets()
+    if not secrets:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook is not configured.")
     body = await request.body()
     signature = request.headers.get("x-razorpay-signature", "")
-    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected, signature):
+    if not any(hmac.compare_digest(hmac.new(secret.encode(), body, hashlib.sha256).hexdigest(), signature) for secret in secrets):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid webhook signature.")
     payload = await request.json()
     if payload.get("event") == "payment.captured":
@@ -223,6 +324,8 @@ async def webhook(request: Request) -> dict:
             if payment and entity.get("amount") == payment.amount and entity.get("currency") == payment.currency:
                 if _mark_paid(session, payment, entity.get("id")):
                     _credit_for_payment(payment)
+            elif payment is None:
+                _credit_payment_page(session, entity)
         finally:
             session.close()
     return {"ok": True}

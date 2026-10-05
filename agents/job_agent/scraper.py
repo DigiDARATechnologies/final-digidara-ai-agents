@@ -306,7 +306,11 @@ def scrape_source(source):
         where = config.get("where") or ""
         page = int(config.get("page", 1))
         results_per_page = int(config.get("results_per_page", 20))
-        return adzuna_fetch_and_normalize(what=what, where=where, page=page, results_per_page=results_per_page)
+        max_days_old = config.get("max_days_old")
+        from .free_plan import reserve_call
+        return adzuna_fetch_and_normalize(what=what, where=where, page=page, results_per_page=results_per_page,
+                                          max_days_old=int(max_days_old) if max_days_old else None,
+                                          before_request=lambda: reserve_call("adzuna"))
 
     if source_type == "jsearch":
         from .providers.jsearch import fetch_and_normalize as jsearch_fetch_and_normalize
@@ -314,7 +318,10 @@ def scrape_source(source):
         query = config.get("query") or ""
         page = int(config.get("page", 1))
         num_pages = int(config.get("num_pages", 1))
-        return jsearch_fetch_and_normalize(query=query, page=page, num_pages=num_pages)
+        from .free_plan import reserve_call
+        return jsearch_fetch_and_normalize(query=query, page=page, num_pages=num_pages,
+                                           date_posted=str(config.get("date_posted") or "all"),
+                                           before_request=lambda: reserve_call("jsearch"))
 
     session = requests.Session()
     session.headers.update({"User-Agent": SCRAPER_USER_AGENT, "Accept": "text/html, application/rss+xml, application/xml"})

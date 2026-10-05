@@ -252,19 +252,51 @@ DEFAULT_JSEARCH_QUERIES = [
 ]
 
 
+def _names(values):
+    """A clean, de-duplicated list of names from a YAML list (order kept)."""
+    if not isinstance(values, list):
+        return []
+    seen, names = set(), []
+    for value in values:
+        name = str(value or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            names.append(name)
+    return names
+
+
+def get_it_coverage(config=None):
+    """The IT role catalogue: `{roles, cities, jsearch_region}`."""
+    config = load_providers_config() if config is None else config
+    coverage = config.get("it_coverage") or {}
+    if not isinstance(coverage, dict):
+        coverage = {}
+    return {
+        "roles": _names(coverage.get("roles")),
+        "cities": _names(coverage.get("cities")),
+        "jsearch_region": str(coverage.get("jsearch_region") or "").strip(),
+    }
+
+
 def get_adzuna_config(config=None):
-    """Return `{enabled, queries}` for Adzuna job search."""
+    """Return `{enabled, queries}` for Adzuna job search.
+
+    An explicit `adzuna.queries` list wins; otherwise every IT role in
+    `it_coverage` is searched in every listed city."""
     config = load_providers_config() if config is None else config
     adzuna = config.get("adzuna") or {}
     if not isinstance(adzuna, dict):
         return {"enabled": False, "queries": []}
 
     raw_queries = adzuna.get("queries")
+    coverage = get_it_coverage(config)
     if isinstance(raw_queries, list) and raw_queries:
         queries = [
             {"what": str(q.get("what", "")).strip(), "where": str(q.get("where", "")).strip()}
             for q in raw_queries if isinstance(q, dict) and (q.get("what") or q.get("where"))
         ]
+    elif coverage["roles"] and coverage["cities"]:
+        queries = [{"what": role, "where": city} for role in coverage["roles"] for city in coverage["cities"]]
     else:
         queries = list(DEFAULT_ADZUNA_QUERIES)
 
@@ -282,6 +314,7 @@ def get_jsearch_config(config=None):
         return {"enabled": False, "queries": []}
 
     raw_queries = jsearch.get("queries")
+    coverage = get_it_coverage(config)
     if isinstance(raw_queries, list) and raw_queries:
         queries = []
         for q in raw_queries:
@@ -289,6 +322,9 @@ def get_jsearch_config(config=None):
                 queries.append({"query": q.strip()})
             elif isinstance(q, dict) and q.get("query"):
                 queries.append({"query": str(q["query"]).strip()})
+    elif coverage["roles"]:
+        region = coverage["jsearch_region"] or "India"
+        queries = [{"query": f"{role} fresher in {region}"} for role in coverage["roles"]]
     else:
         queries = list(DEFAULT_JSEARCH_QUERIES)
 

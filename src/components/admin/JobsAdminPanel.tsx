@@ -16,9 +16,11 @@ import {
   adminBulkUpdateJobStatus,
   adminUpdatePlan,
   type ApifyActor,
+  type FreePlanOverview,
   type IngestionRun,
   type JobAutomationSettings,
 } from "../../lib/jobFetchApi";
+import { fetchUsers, type AdminUserRow } from "../../lib/adminApi";
 
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -27,6 +29,60 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 type Tab = "jobs" | "sources" | "users";
+
+const PROVIDER_LABELS: Record<string, string> = { adzuna: "Adzuna", jsearch: "RapidAPI JSearch" };
+
+/** Free-plan API usage (calls made in each rolling window, against the free
+ * limit) and the next 7 days' planned role and city searches. */
+function FreePlanPanel({ plan }: { plan: FreePlanOverview }) {
+  return (
+    <div className="admin-table-card" style={{ padding: "16px", marginBottom: "16px" }}>
+      <h3 style={{ margin: "0 0 4px 0", fontSize: "15px" }}>Free plan: API calls used</h3>
+      <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "var(--text-dim, #666)" }}>
+        Every call is counted before it is made and refused once a free limit is reached, so collection never needs a paid plan.
+      </p>
+      <table className="admin-table">
+        <thead><tr><th>Provider</th><th>Calls used / free limit</th></tr></thead>
+        <tbody>
+          {Object.entries(plan.usage).map(([provider, windows]) => (
+            <tr key={provider}>
+              <td className="admin-table-primary">{PROVIDER_LABELS[provider] ?? provider}</td>
+              <td>{windows.map((w) => `${w.window}: ${w.used.toLocaleString()} / ${w.limit.toLocaleString()}`).join(" · ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3 style={{ margin: "16px 0 8px 0", fontSize: "15px" }}>Next 7 days: roles and cities searched</h3>
+      {plan.upcoming.map((day) => (
+        <details key={day.date} style={{ marginBottom: "6px" }}>
+          <summary style={{ cursor: "pointer", fontSize: "13px" }}>
+            {new Date(`${day.date}T00:00:00`).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+            {" · "}{day.adzuna.reduce((sum, city) => sum + city.roles.length, 0)} Adzuna + {day.jsearch.length} JSearch searches
+          </summary>
+          <ul style={{ margin: "6px 0 0 0", fontSize: "12px", lineHeight: 1.5 }}>
+            {day.adzuna.map((city) => <li key={city.city}><strong>{city.city}:</strong> {city.roles.join(", ")}</li>)}
+            {day.jsearch.length > 0 && <li><strong>JSearch:</strong> {day.jsearch.join(", ")}</li>}
+          </ul>
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/** The Job Agent stores only platform user ids; names, emails and the billing
+ * plan come from the platform's own user list. Best effort: ids still show if
+ * it cannot be read. */
+async function platformUsersById(): Promise<Record<string, AdminUserRow>> {
+  const byId: Record<string, AdminUserRow> = {};
+  try {
+    for (let page = 1; page <= 20; page += 1) {
+      const result = await fetchUsers({ page, limit: 100 });
+      result.users.forEach((user) => { byId[user.id] = user; });
+      if (page * result.limit >= result.total) break;
+    }
+  } catch { /* keep whatever was read */ }
+  return byId;
+}
 
 const STATUS_BADGE_CLASS: Record<string, string> = {
   pending: "badge-pending",
@@ -75,10 +131,12 @@ export default function JobsAdminPanel() {
 
   const [sources, setSources] = useState<Array<Record<string, any>>>([]);
   const [users, setUsers] = useState<Array<Record<string, any>>>([]);
+  const [people, setPeople] = useState<Record<string, AdminUserRow>>({});
   const [apifyActors, setApifyActors] = useState<ApifyActor[]>([]);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [runningPlatform, setRunningPlatform] = useState<string | null>(null);
   const [automation, setAutomation] = useState<JobAutomationSettings | null>(null);
+  const [freePlan, setFreePlan] = useState<FreePlanOverview | null>(null);
   const [automationLoading, setAutomationLoading] = useState(false);
 
   function loadJobs(status = jobStatusFilter, category = jobCategoryFilter, location = jobLocationFilter) {
@@ -102,8 +160,12 @@ export default function JobsAdminPanel() {
               setApifyActors(a.actors);
               setRuns(r.runs);
               setAutomation(auto.automation);
+              setFreePlan(auto.free_plan ?? null);
             })
-          : adminListUsers().then((r) => setUsers(r.users));
+          : Promise.all([adminListUsers(), platformUsersById()]).then(([r, people]) => {
+              setUsers(r.users);
+              setPeople(people);
+            });
     request.catch((err) => setError((err as Error).message)).finally(() => setLoading(false));
   }
 
@@ -114,7 +176,7 @@ export default function JobsAdminPanel() {
 
   useEffect(() => {
     adminListCategories().then((r) => setCategories(r.categories)).catch(() => {});
-    adminGetAutomation().then((r) => setAutomation(r.automation)).catch(() => {});
+    adminGetAutomation().then((r) => { setAutomation(r.automation); setFreePlan(r.free_plan ?? null); }).catch(() => {});
   }, []);
 
   // Poll only while this tab has queued/running work. The HTTP request that
@@ -131,6 +193,7 @@ export default function JobsAdminPanel() {
           setApifyActors(a.actors);
           setRuns(r.runs);
           setAutomation(auto.automation);
+          setFreePlan(auto.free_plan ?? null);
         })
         .catch((err) => active && setError((err as Error).message));
     }, 3000);
@@ -471,8 +534,10 @@ export default function JobsAdminPanel() {
                 )}
               </div>
               <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
-                When enabled, the server automatically fetches fresh entry-level &amp; fresher jobs every day at{" "}
-                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), and prunes listings older than 30 days.
+                When enabled, the server automatically fetches fresher jobs for every IT role every day at{" "}
+                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), taking only jobs posted in the last 7 days.
+                Each day runs a different slice of the role and city searches, so all of them run every week.
+                Jobs are removed 7 days after posting, except ones a user saved or applied to.
               </p>
               <div
                 style={{
@@ -541,6 +606,8 @@ export default function JobsAdminPanel() {
               </small>
             </div>
           </div>
+
+          {freePlan && <FreePlanPanel plan={freePlan} />}
 
           <div className="admin-toolbar" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <button className="btn btn-primary btn-sm" onClick={syncAndRunAdzuna} disabled={loading}>
@@ -635,11 +702,14 @@ export default function JobsAdminPanel() {
         <div className="admin-section">
           <div className="admin-table-card">
             <table className="admin-table">
-              <thead><tr><th>User</th><th>Plan</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
+              <thead><tr><th>User</th><th>Billing plan</th><th>Job feed tier</th><th>Profile Complete</th><th>Joined</th><th>Actions</th></tr></thead>
               <tbody>
-                {users.map((u) => (
+                {users.map((u) => {
+                  const person = people[u.user_id];
+                  return (
                   <tr key={u.user_id}>
-                    <td className="admin-table-primary">{u.user_id}</td>
+                    <td className="admin-table-primary">{person ? <>{person.name || "—"}<br /><small>{person.email}</small></> : u.user_id}</td>
+                    <td>{person?.plan_name ?? "—"}</td>
                     <td><span className={`admin-badge ${u.plan_tier === "pro" ? "badge-active" : "badge-expired"}`}>{u.plan_tier}</span></td>
                     <td>{u.profile_completed ? "Yes" : "No"}</td>
                     <td>{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
@@ -649,8 +719,9 @@ export default function JobsAdminPanel() {
                       </button>
                     </td>
                   </tr>
-                ))}
-                {!users.length && <tr><td colSpan={5} className="admin-table-empty">No user profiles yet.</td></tr>}
+                  );
+                })}
+                {!users.length && <tr><td colSpan={6} className="admin-table-empty">No user profiles yet.</td></tr>}
               </tbody>
             </table>
           </div>

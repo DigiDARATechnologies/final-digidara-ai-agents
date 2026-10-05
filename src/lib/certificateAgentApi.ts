@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { reportPointsActivity } from "./points";
 
 const INVOKE_URL = gatewayInvokeUrl(
   import.meta.env.VITE_CERTIFICATE_AGENT_AGENT_NAME,
@@ -143,6 +144,7 @@ export async function downloadCertificatePdf(token: string, certId: number) {
     }),
   });
 
+  reportPointsActivity(response.status);
   if (!response.ok) {
     let msg = "Certificate download failed";
     try {
@@ -182,6 +184,7 @@ export async function downloadExamReportPdf(
     body: JSON.stringify({ action, payload: { sessionToken: token, ...payload } }),
   });
 
+  reportPointsActivity(response.status);
   if (!response.ok || !(response.headers.get("content-type") || "").includes("application/pdf")) {
     let msg = "The exam report could not be downloaded";
     try {
@@ -276,6 +279,7 @@ export async function sendCertificateChatMessage(
       signal: controller.signal,
     });
 
+    reportPointsActivity(response.status);
     if (!response.ok) {
       let detail = response.statusText;
       try {

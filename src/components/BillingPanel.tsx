@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { User } from "../types";
 import {
-  createBillingOrder, createTopupOrder, downloadInvoice, fetchBillingPlans, fetchBillingSummary, fetchTokenBalance,
-  loadRazorpay, verifyBillingPayment, type BillingPlans, type BillingSummary, type RazorpayOrder,
+  createBillingOrder, downloadInvoice, fetchBillingPlans, fetchBillingSummary, fetchTokenBalance,
+  loadRazorpay, verifyBillingPayment, type BillingPlans, type BillingSummary, type PlanOffer, type RazorpayOrder,
 } from "../lib/billingApi";
+import { formatPoints } from "../lib/points";
 
 interface Props { open: boolean; user: User; onToast: (message: string) => void; }
 type CheckoutResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
 type RazorpayConstructor = new (options: Record<string, unknown>) => { open: () => void; on: (event: string, callback: (response: { error?: { description?: string } }) => void) => void };
-
-const DEFAULT_CUSTOM_AMOUNT = "500";
-
-/** Fixed grouping (1,200,000), so counts match the plan text the server sends whatever the browser locale. */
-const tokens = (count: number) => count.toLocaleString("en-US");
 
 /** Whole rupees on price cards ("₹499"); two decimals where it is a record ("₹10.00"). */
 function money(amountMinor: number, currency = "INR", whole = false) {
@@ -22,18 +18,18 @@ function money(amountMinor: number, currency = "INR", whole = false) {
 export default function BillingPanel({ open, user, onToast }: Props) {
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [catalog, setCatalog] = useState<BillingPlans | null>(null);
-  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
+  const [pointsBalance, setPointsBalance] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
-  const [customInput, setCustomInput] = useState(DEFAULT_CUSTOM_AMOUNT);
+  const [pagePlan, setPagePlan] = useState<PlanOffer | null>(null);
 
   const refresh = useCallback(async () => {
     const [summary, balance] = await Promise.all([
       fetchBillingSummary().catch(() => ({ plan: "free", plan_name: "Free", plan_expires_at: null, payments: [] }) as BillingSummary),
-      fetchTokenBalance().then((result) => result.balance).catch(() => null),
+      fetchTokenBalance().then((result) => result.points).catch(() => null),
     ]);
     setBilling(summary);
-    setTokenBalance(balance);
+    setPointsBalance(balance);
   }, []);
 
   useEffect(() => {
@@ -42,7 +38,16 @@ export default function BillingPanel({ open, user, onToast }: Props) {
     fetchBillingPlans().then(setCatalog).catch(() => setCatalog(null));
   }, [open, refresh]);
 
-  async function pay(createOrder: () => Promise<RazorpayOrder & { tokens?: number }>, description: (order: RazorpayOrder) => string, tokensAdded: (order: RazorpayOrder & { tokens?: number }) => number | undefined) {
+  // A payment-page purchase finishes in another tab; pick up the new balance
+  // and history when the learner comes back.
+  useEffect(() => {
+    if (!open || !pagePlan) return;
+    const onFocus = () => { void refresh(); window.dispatchEvent(new Event("digidara:billing-updated")); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [open, pagePlan, refresh]);
+
+  async function pay(createOrder: () => Promise<RazorpayOrder>, description: (order: RazorpayOrder) => string, pointsAdded: () => number | undefined) {
     setBusy(true);
     try {
       const order = await createOrder();
@@ -56,8 +61,8 @@ export default function BillingPanel({ open, user, onToast }: Props) {
             await verifyBillingPayment(response);
             window.dispatchEvent(new Event("digidara:billing-updated"));
             await refresh();
-            const added = tokensAdded(order);
-            onToast(added ? `Payment verified. ${tokens(added)} tokens added.` : "Payment verified.");
+            const added = pointsAdded();
+            onToast(added ? `Payment verified. ${formatPoints(added)} points added.` : "Payment verified.");
           } catch (error) { onToast((error as Error).message); } finally { setBusy(false); }
         },
         modal: { ondismiss: () => setBusy(false) },
@@ -67,18 +72,22 @@ export default function BillingPanel({ open, user, onToast }: Props) {
     } catch (error) { onToast((error as Error).message); setBusy(false); }
   }
 
-  const buyPlan = (planId: string) => pay(() => createBillingOrder(planId), (order) => order.name, () => catalog?.plans.find((plan) => plan.id === planId)?.tokens);
-  const payCustom = () => pay(() => createTopupOrder(Math.max(catalog?.custom.min_amount_inr ?? 1, Math.floor(Number(customInput)) || 0)), (order) => `${order.name} top-up`, (order) => order.tokens);
+  const buyPlan = (plan: PlanOffer) => {
+    if (plan.payment_page_url) {
+      // Paid on DigiDARA's Razorpay page; the server credits the account whose
+      // email is entered there, once Razorpay confirms the payment.
+      window.open(plan.payment_page_url, "_blank", "noopener,noreferrer");
+      setPagePlan(plan);
+      return;
+    }
+    void pay(() => createBillingOrder(plan.id), (order) => order.name, () => plan.points);
+  };
 
   async function saveInvoice(paymentId: string) {
     setInvoiceBusy(paymentId);
     try { await downloadInvoice(paymentId); } catch (error) { onToast((error as Error).message); } finally { setInvoiceBusy(null); }
   }
 
-  const custom = catalog?.custom;
-  const rate = custom?.tokens_per_rupee ?? 1000;
-  // Keep the raw text so the field can be cleared and retyped; the amount is derived from it.
-  const customAmount = Math.max(custom?.min_amount_inr ?? 1, Math.floor(Number(customInput)) || 0);
   const hasPlan = !!billing && billing.plan !== "free";
   const expires = billing?.plan_expires_at ? new Date(billing.plan_expires_at).toLocaleDateString() : null;
 
@@ -89,13 +98,13 @@ export default function BillingPanel({ open, user, onToast }: Props) {
         <div>
           <small>Current Plan</small>
           <strong>{hasPlan ? `DigiDARA ${billing?.plan_name}` : "DigiDARA Free"}</strong>
-          <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more tokens, or pay any amount you like."}</span>
+          <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more points."}</span>
         </div>
         <span className="plan-badge">{hasPlan ? "Active" : "Free"}</span>
       </div>
 
-      <h3 className="settings-title">Token Balance</h3>
-      <div className="current-plan"><div><small>Available Tokens</small><strong>{tokenBalance === null ? "-" : tokens(tokenBalance)}</strong><span>Each agent request costs a small number of tokens. Tokens never expire.</span></div></div>
+      <h3 className="settings-title">Points Balance</h3>
+      <div className="current-plan"><div><small>Available Points</small><strong>{pointsBalance === null ? "-" : formatPoints(pointsBalance)}</strong><span>Each agent request uses a few points. Points never expire.</span></div></div>
 
       <h3 className="settings-title">Choose a Plan</h3>
       {!catalog ? <p>Loading plans...</p> : (
@@ -107,22 +116,17 @@ export default function BillingPanel({ open, user, onToast }: Props) {
               <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              <button disabled={busy} onClick={() => void buyPlan(plan.id)}>Buy {plan.name}</button>
+              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab{plan.page_amount && plan.page_amount !== plan.amount ? <> ({money(plan.page_amount, plan.currency)} incl. GST)</> : null}. Pay with <b>{user.email}</b> so the points reach this account.</p>}
+              <button disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
             </article>
           ))}
-          {custom && (
-            <article data-plan="custom">
-              <h3>{custom.name}</h3>
-              <strong>{money(customAmount * 100, "INR", true)} <small>you choose</small></strong>
-              <p>{custom.description}</p>
-              <label className="custom-amount">Amount (INR)
-                <input type="number" inputMode="numeric" min={custom.min_amount_inr} step={1} value={customInput} onChange={(event) => setCustomInput(event.target.value)} />
-              </label>
-              <ul className="plan-features"><li>{`${tokens(customAmount * rate)} tokens credited instantly`}</li><li>{`INR 1 = ${tokens(rate)} tokens`}</li></ul>
-              <button disabled={busy} onClick={() => void payCustom()}>Pay {money(customAmount * 100, "INR", true)}</button>
-            </article>
-          )}
         </div>
+      )}
+      {pagePlan && (
+        <p className="plan-page-status" role="status">
+          Finish the {money(pagePlan.amount, pagePlan.currency, true)} payment in the Razorpay tab using {user.email}. Your {formatPoints(pagePlan.points)} points appear here once Razorpay confirms it.{" "}
+          <button type="button" className="invoice-btn" onClick={() => void refresh()}>Refresh balance</button>
+        </p>
       )}
 
       <h3 className="settings-title">Transaction History</h3>

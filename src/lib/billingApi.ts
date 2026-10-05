@@ -1,11 +1,13 @@
 const RAW_BASE = (import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100");
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 
-export interface PaymentRecord { id: string; plan_id: string; label: string; amount: number; currency: string; status: string; payment_id: string | null; created_at: string; invoice_available: boolean; }
+export interface PaymentRecord { id: string; plan_id: string; label: string; amount: number; currency: string; status: string; payment_id: string | null; points?: number | null; created_at: string; invoice_available: boolean; }
 export interface BillingSummary { plan: string; plan_name: string; plan_expires_at: string | null; payments: PaymentRecord[]; }
-export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; bonus_percent: number; description: string; features: string[]; popular: boolean; }
-export interface CustomPlan { id: string; name: string; description: string; tokens_per_rupee: number; min_amount_inr: number; }
-export interface BillingPlans { plans: PlanOffer[]; custom: CustomPlan; }
+/** `payment_page_url`: the plan is paid on DigiDARA's Razorpay payment page
+ * (points are added by the server once Razorpay confirms), not in-app.
+ * `tokens` is what the plan really credits; learners are only shown `points`. */
+export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; payment_page_url?: string | null; page_amount?: number | null; }
+export interface BillingPlans { plans: PlanOffer[]; }
 export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; }
 
 function token() { return localStorage.getItem("digidara_token") || ""; }
@@ -30,9 +32,15 @@ export function loadRazorpay(): Promise<void> {
   });
 }
 
-export interface TopupOrder extends RazorpayOrder { tokens: number }
-export const fetchTokenBalance = () => request<{ balance: number }>("/billing/token-balance");
-export const createTopupOrder = (amount_inr: number) => request<TopupOrder>("/billing/topup-order", { method: "POST", body: JSON.stringify({ amount_inr }) });
+/** `balance` is in tokens; `points` is the same balance as the learner sees it, at `tokens_per_point`. */
+export const fetchTokenBalance = () => request<{ balance: number; points: number; tokens_per_point: number }>("/billing/token-balance");
+export interface MonthlyUsage {
+  month_start: string; tokens_used: number; requests: number; balance: number; limit: number;
+  points_used: number; points_balance: number; points_limit: number; tokens_per_point: number;
+  agents: Array<{ agent_name: string; tokens: number; points: number; requests: number }>;
+}
+/** This calendar month's billed usage (in the user's own timezone) and the dynamic limit: used + balance left. */
+export const fetchMonthlyUsage = () => request<MonthlyUsage>(`/billing/usage-month?offset_minutes=${-new Date().getTimezoneOffset()}`);
 
 /** Downloads a paid payment's PDF invoice. The endpoint needs the bearer
  * token, so this fetches the file and saves it, rather than linking to it. */

@@ -52,7 +52,8 @@ def call_with_tools(
         try:
             args = json.loads(call.function.arguments or "{}")
         except json.JSONDecodeError:
-            logger.warning("model returned non-JSON tool arguments: %r", call.function.arguments)
+            # Length only: the arguments echo the learner's own words.
+            logger.warning("model returned non-JSON tool arguments (%d chars)", len(call.function.arguments or ""))
             args = {}
         return {"tool_name": call.function.name, "tool_args": args}
 

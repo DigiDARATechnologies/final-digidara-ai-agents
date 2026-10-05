@@ -56,6 +56,37 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        if "email_verified" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0"))
+                # Existing Google-linked accounts and operators already proved
+                # their address; everyone else stays unverified.
+                connection.execute(text("UPDATE users SET email_verified = 1 WHERE google_id IS NOT NULL OR is_admin = 1"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        if "tokens_per_point" not in user_columns:
+            try:
+                # Every existing balance counts at the free rate, so nobody's
+                # shown points jump or shrink when points are introduced.
+                connection.execute(text("ALTER TABLE users ADD COLUMN tokens_per_point DOUBLE NOT NULL DEFAULT 3000"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        if "session_version" not in user_columns:
+            try:
+                connection.execute(text("ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
+        for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL")):
+            if column not in payment_columns:
+                try:
+                    connection.execute(text(f"ALTER TABLE payments ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         # Widen last_heartbeat to microsecond precision -- a plain DATETIME
         # (fsp=0) truncates every value to the whole second, so two agent
         # versions that register or heartbeat within the same second could

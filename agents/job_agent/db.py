@@ -221,6 +221,12 @@ def init_job_tables():
                 CONSTRAINT fk_job_memory_user FOREIGN KEY (user_id)
                     REFERENCES user_job_profiles(user_id) ON DELETE CASCADE
             )""",
+            """CREATE TABLE IF NOT EXISTS provider_api_calls (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                provider VARCHAR(20) NOT NULL,
+                called_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_provider_calls (provider, called_at)
+            )""",
             """CREATE TABLE IF NOT EXISTS job_automation_settings (
                 id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
                 is_enabled TINYINT(1) NOT NULL DEFAULT 0,

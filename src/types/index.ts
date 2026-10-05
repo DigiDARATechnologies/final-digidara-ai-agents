@@ -69,6 +69,13 @@ export interface Chat {
   messages: ChatMessage[];
   updatedAt: number;
   pinned?: boolean;
+  /** How the title was set: the first message / agent name ("default"), named
+   * automatically from what the chat is about ("auto", see lib/chatTitles),
+   * or renamed by the user ("manual" -- never changed automatically). */
+  titleSource?: "default" | "auto" | "manual";
+  /** For an automatic title: the subject it was named after, so later updates
+   * only add a result (a score) and never switch subjects. */
+  autoSubject?: string;
 }
 
 export type View = "store" | "chat" | "admin" | "profile" | "help-center" | "release-notes" | "contact" | "bug-report";

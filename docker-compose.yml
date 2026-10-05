@@ -117,11 +117,27 @@ services:
     restart: unless-stopped
     env_file:
       - ./agents/resume_builder_agent/backend/.env
+    environment:
+      # Long-term chat memory (mem0), stored in the qdrant service below.
+      # It uses the agent's OPENAI_API_KEY; without one it stays off.
+      MEM0_ENABLED: "true"
+      MEM0_QDRANT_HOST: qdrant
+      MEM0_QDRANT_PORT: "6333"
     depends_on:
       mysql:
         condition: service_healthy
       orchestrator:
         condition: service_healthy
+      qdrant:
+        condition: service_started
+
+  # Vector store for the Resume Builder's chat memory. Internal only: no port
+  # is published, so only the agents on this network can reach it.
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
 
   certificate-agent:
     build:
@@ -188,3 +204,4 @@ services:
 volumes:
   mysql_data:
   job_uploads:
+  qdrant_data:
