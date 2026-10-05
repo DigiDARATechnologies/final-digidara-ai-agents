@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
+import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
 
@@ -17,7 +18,9 @@ interface NewChatLandingProps {
 export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition();
+  // The DigiDARA Assistant's voice input: recorded, then transcribed with
+  // OpenAI on the server, on every device.
+  const speech = useSpeechRecognition("en-US", transcribeGeneralAudio, undefined, true);
   const voiceSessionRef = useRef(0);
 
   function handleSubmit(e: FormEvent) {
@@ -68,7 +71,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder="Ask anything"
+            placeholder={speech.transcribing ? "Transcribing…" : speech.listening ? "Listening… tap the mic again when you're done" : "Ask anything"}
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -84,6 +87,8 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
               title={speech.listening ? "Stop recording" : "Voice input"}
+              aria-label={speech.listening ? "Stop recording" : "Voice input"}
+              disabled={speech.transcribing}
               onClick={handleMicClick}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">

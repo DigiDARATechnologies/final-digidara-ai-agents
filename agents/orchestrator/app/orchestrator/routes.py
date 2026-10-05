@@ -3,8 +3,10 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from app.auth.security import get_current_user_id
+from app.llm import transcribe as speech
 from app.orchestrator.graph import orchestrator_graph, route_message
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
@@ -53,6 +55,28 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_c
             "The router could not complete this turn (check LLM_MODEL / API key configuration). Please retry.",
         )
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
+
+
+class TranscribeRequest(BaseModel):
+    audio_base64: str = Field(min_length=1, max_length=speech.MAX_AUDIO_BASE64_CHARS)
+    mime_type: str = Field(default="audio/webm", max_length=64)
+
+
+# Each call is a paid OpenAI request with up to a few minutes of audio.
+_TRANSCRIBE_RATE_LIMIT = "15/minute"
+
+
+@router.post("/chat/transcribe")
+@limiter.limit(_TRANSCRIBE_RATE_LIMIT)
+def transcribe(req: TranscribeRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+    """The general chat's microphone: a recorded question in, its text out
+    (OpenAI). The text is then sent like a typed message, so it passes the
+    same length limit and prompt-injection guard."""
+    try:
+        text = speech.transcribe(req.audio_base64, req.mime_type)
+    except speech.TranscriptionError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"transcript": text}
 
 
 @router.post("/role-profiles/generate", response_model=RoleProfileResponse)

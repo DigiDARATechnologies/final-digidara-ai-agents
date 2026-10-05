@@ -72,6 +72,9 @@ interface ChatViewProps {
   /** With transcribeAudio: transcribes the recording so far, so the text
    * appears in the input box while the student is still speaking. */
   previewAudio?: AudioTranscriber;
+  /** With transcribeAudio: record and transcribe on the server on every
+   * device, not only phones (the general chat's OpenAI voice input). */
+  alwaysRecordVoice?: boolean;
   /** Extra panel rendered inside the latest agent message, above its text ...
    * used by the Aptitude Trainer Agent for question controls. */
   /** Modal shown after a certificate exam is generated and before Question 1. */
@@ -136,6 +139,7 @@ export default function ChatView({
   autoStopVoiceOnSilence = false,
   transcribeAudio,
   previewAudio,
+  alwaysRecordVoice = false,
   certificateExamInstructions,
   certificateExamTimer,
   contextPanel,
@@ -151,7 +155,7 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio);
+  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio, alwaysRecordVoice);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);

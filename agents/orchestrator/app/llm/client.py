@@ -31,7 +31,8 @@ def call_with_tools(
     messages = [{"role": "system", "content": system}]
     messages.extend(history or [])
     messages.append({"role": "user", "content": user})
-    kwargs: dict[str, Any] = {"model": config.LLM_MODEL, "messages": messages, "temperature": 0.2}
+    # max_tokens bounds both cost and how much a manipulated reply can say.
+    kwargs: dict[str, Any] = {"model": config.LLM_MODEL, "messages": messages, "temperature": 0.2, "max_tokens": 700}
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"

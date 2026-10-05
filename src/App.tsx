@@ -71,7 +71,7 @@ import { createInitialMockInterviewState, handleMockInterviewText, openMockInter
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
-import { routeMessage, type RouteTurn } from "./lib/orchestratorApi";
+import { routeMessage, transcribeGeneralAudio, type RouteTurn } from "./lib/orchestratorApi";
 
 type OpenMenu = "user" | "notif" | null;
 
@@ -827,6 +827,12 @@ export default function App() {
    * and a vague opener followed by several turns of added detail never
    * accumulates enough signal to route; see orchestrator/graph.py. */
   async function routeGeneralMessage(chatId: string, text: string, history: RouteTurn[] = []) {
+    // The orchestrator refuses longer general-chat messages (schemas.py).
+    if (text.length > 2000) {
+      appendAgentMessages(chatId, [{ text: "That message is too long for me. Please ask your question in **under 2,000 characters**." }]);
+      setTyping(false);
+      return;
+    }
     try {
       const result = await routeMessage(text, history);
       const matched = result.agent_name ? findAgentByBackendName(result.agent_name) : undefined;
@@ -1534,6 +1540,8 @@ export default function App() {
   const isCertificateChat = currentAgent.kind === "certificate";
   const isJobFetchChat = currentAgent.kind === "job-fetch";
   const isMockInterviewChat = currentAgent.kind === "mock-interview";
+  // The DigiDARA Assistant (general chat): voice goes to OpenAI transcription.
+  const isGeneralChat = currentAgent.id === DEFAULT_AGENT.id;
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
   const codeforgeState = currentChat ? codeforgeStates[currentChat.id] : undefined;
   const aptitudeState = currentChat ? aptitudeStates[currentChat.id] : undefined;
@@ -1816,7 +1824,8 @@ export default function App() {
                 onSubmitCode={handleSubmitCode}
                 transcribeAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
-                  : undefined}
+                  : isGeneralChat ? transcribeGeneralAudio : undefined}
+                alwaysRecordVoice={isGeneralChat}
                 previewAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
                   : undefined}

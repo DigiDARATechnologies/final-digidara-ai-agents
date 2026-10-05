@@ -363,3 +363,22 @@ describe('auto-send after a pause (phone recording)', () => {
     expect(result.current.error).toBe('');
   });
 });
+
+test('the general chat records and transcribes on a desktop too (alwaysRecord), not with the browser recognizer', async () => {
+  setUserAgent(DESKTOP);
+  const transcribe = jest.fn().mockResolvedValue('how do I use the capstone agent');
+  const onResult = jest.fn();
+  const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe, undefined, true));
+  expect(result.current.recordingMode).toBe(true);
+  act(() => { result.current.start(onResult); });
+  await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+  expect(FakeSpeechRecognition.created).toBe(0);
+  act(() => { result.current.stop(); });
+  await waitFor(() => expect(onResult).toHaveBeenCalledWith('how do I use the capstone agent', true));
+});
+
+test('other agents on a desktop keep the browser recognizer', () => {
+  setUserAgent(DESKTOP);
+  const { result } = renderHook(() => useSpeechRecognition('en-US', jest.fn()));
+  expect(result.current.recordingMode).toBe(false);
+});
