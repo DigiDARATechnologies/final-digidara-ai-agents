@@ -79,6 +79,14 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
+        for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL")):
+            if column not in payment_columns:
+                try:
+                    connection.execute(text(f"ALTER TABLE payments ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         # Widen last_heartbeat to microsecond precision -- a plain DATETIME
         # (fsp=0) truncates every value to the whole second, so two agent
         # versions that register or heartbeat within the same second could

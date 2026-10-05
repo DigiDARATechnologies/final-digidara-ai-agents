@@ -53,16 +53,16 @@ PLANS: dict[str, dict] = {
         "name": "Basic",
         "amount": 39900,
         "currency": "INR",
-        "tokens": 300_000,
-        "points": 100,
+        "tokens": 500_000,
+        "points": 250,
         "description": "For getting started and light, occasional use.",
     },
     "standard": {
         "name": "Standard",
         "amount": 79900,
         "currency": "INR",
-        "tokens": 700_000,
-        "points": 250,
+        "tokens": 1_000_000,
+        "points": 500,
         "description": "For regular learners who use several agents each week.",
         "popular": True,
     },
@@ -70,8 +70,8 @@ PLANS: dict[str, dict] = {
         "name": "Premium",
         "amount": 99900,
         "currency": "INR",
-        "tokens": 900_000,
-        "points": 500,
+        "tokens": 1_500_000,
+        "points": 750,
         "description": "For heavy daily use across every agent.",
         # Paid on DigiDARA's own Razorpay payment page instead of the in-app
         # checkout; the webhook credits the account whose email was entered
@@ -80,12 +80,37 @@ PLANS: dict[str, dict] = {
     },
 }
 
-# Free accounts, and every account that existed before points, count at the
-# cheapest plan's rate. New accounts start with enough points to finish full
-# flows in at least four agents (one Aptitude test, one mock interview, a
-# Communication Coach session and a resume, say); tune with these env vars.
-FREE_TOKENS_PER_POINT = float(os.getenv("FREE_TOKENS_PER_POINT", "3000"))
-FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "60"))
+# Every plan sells points at 2,000 tokens a point, and new free accounts use
+# the same rate. (Accounts created before this kept the rate stored on their
+# row, so their shown balance never jumps.) New accounts start with enough
+# points to finish full flows in at least four agents (one Aptitude test, one
+# mock interview, a Communication Coach session and a resume, say); tune with
+# these env vars.
+FREE_TOKENS_PER_POINT = float(os.getenv("FREE_TOKENS_PER_POINT", "2000"))
+FREE_SIGNUP_POINTS = float(os.getenv("FREE_SIGNUP_POINTS", "100"))
+
+
+# The rate every balance had before 6 Oct 2026 (stored on those users' rows
+# by the migration), used to show pre-points payments as points.
+LEGACY_TOKENS_PER_POINT = 3000.0
+
+
+def credited_tokens(payment) -> int:
+    """What a payment credited: as recorded when it was marked paid, else
+    (payments from before that was recorded) from the catalog."""
+    if payment.credited_tokens is not None:
+        return payment.credited_tokens
+    return tokens_for_payment(payment.plan_id, payment.amount) or 0
+
+
+def credited_points(payment) -> float:
+    """Points a payment credited, recorded like credited_tokens. Older
+    payments are derived from the catalog, and ones that sold no points
+    count at the rate balances had then."""
+    if payment.credited_points is not None:
+        return payment.credited_points
+    sold = points_for_payment(payment.plan_id, payment.amount)
+    return sold if sold is not None else points_for_tokens(credited_tokens(payment), LEGACY_TOKENS_PER_POINT)
 
 
 def free_signup_tokens() -> int:
@@ -99,13 +124,16 @@ def points_for_tokens(tokens: float, tokens_per_point: float | None) -> float:
 
 
 def points_for_payment(plan_id: str, amount_paise: int) -> float | None:
-    """The points a payment sold: the plan's points at its current price.
-    None for anything else (legacy plans, old prices, top-ups), which is
-    credited at the account's existing rate instead."""
+    """The points a payment sold: the plan's points, scaled to the amount
+    actually paid if that differs from the current price. None for anything
+    else (legacy plans, top-ups), which is credited at the account's
+    existing rate instead."""
     plan = PLANS.get(plan_id)
-    if plan and amount_paise == plan["amount"]:
+    if not plan or (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS or amount_paise <= 0:
+        return None
+    if amount_paise == plan["amount"]:
         return plan["points"]
-    return None
+    return round(plan["points"] * amount_paise / plan["amount"], 2)
 
 
 # Sold before token plans existed. Not offered any more, but old payments must
@@ -163,12 +191,15 @@ PREVIOUS_PLAN_TOKENS = {
 
 def tokens_for_payment(plan_id: str, amount_paise: int) -> int | None:
     """Tokens for a paid payment: the plan's tokens at the price actually
-    paid. A plan paid at an older price gets what that price bought."""
+    paid. A plan paid at an older price gets what that price bought; any
+    other amount gets the plan's own tokens scaled to it. (It used to get
+    OpenAI's raw rate, ~30x what a plan now gives per rupee, so an order
+    left over from a price change would have credited far too much.)"""
     if (plan_id, amount_paise) in PREVIOUS_PLAN_TOKENS:
         return PREVIOUS_PLAN_TOKENS[(plan_id, amount_paise)]
     plan = PLANS.get(plan_id)
     if plan and amount_paise != plan["amount"]:
-        return tokens_for_rupees(amount_paise / 100)
+        return max(0, round(plan["tokens"] * amount_paise / plan["amount"]))
     return tokens_for_plan_id(plan_id)
 
 
@@ -186,7 +217,6 @@ def tokens_for_plan_id(plan_id: str) -> int | None:
 def payment_label(plan_id: str) -> str:
     """Human-readable name for a payment row, whatever kind of payment it was."""
     if plan_id.startswith("topup_"):
-        tokens = tokens_for_plan_id(plan_id)
         return "Points top-up"
     if plan_id in PLANS:
         return f"{PLANS[plan_id]['name']} plan"

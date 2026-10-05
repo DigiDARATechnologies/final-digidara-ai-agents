@@ -40,6 +40,8 @@ import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
+import LowPointsModal from "./components/LowPointsModal";
+import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import ProfileView from "./components/ProfileView";
 import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
@@ -160,6 +162,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
   const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  // "Buy points" popup when the balance runs low or out (signed-in users only).
+  const lowPoints = useLowPointsPrompt(!!user);
   const [planName, setPlanName] = useState("Free");
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
@@ -1880,6 +1884,15 @@ export default function App() {
         userId={user.id}
         onToast={showToast}
       />
+
+      {lowPoints.open && !settingsOpen && (
+        <LowPointsModal
+          points={lowPoints.points}
+          outOfPoints={lowPoints.outOfPoints}
+          onClose={lowPoints.dismiss}
+          onBuy={() => { lowPoints.dismiss(); setSettingsTab("billing"); setSettingsOpen(true); }}
+        />
+      )}
 
       <SettingsModal
         themePref={themePref}

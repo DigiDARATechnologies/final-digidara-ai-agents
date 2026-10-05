@@ -3,9 +3,9 @@
  * the helpers here only convert agent-reported token counts with that rate
  * and format the result. */
 
-/** Accounts without a purchase count at the cheapest plan's rate (see the
+/** New accounts, and every plan, count 2,000 tokens a point (see the
  * orchestrator's FREE_TOKENS_PER_POINT). */
-export const FREE_TOKENS_PER_POINT = 3000;
+export const FREE_TOKENS_PER_POINT = 2000;
 
 export function tokensToPoints(tokens: number, tokensPerPoint?: number | null): number {
   const rate = tokensPerPoint && tokensPerPoint > 0 ? tokensPerPoint : FREE_TOKENS_PER_POINT;
@@ -19,4 +19,15 @@ export function formatPoints(points: number): string {
   const value = Math.max(0, points);
   const shown = value >= 100 ? Math.floor(value) : Math.floor(value * 10) / 10;
   return shown.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+
+/** Fired after every agent call through the gateway, so the low-points
+ * prompt can re-check the balance; `outOfPoints` is set on the gateway's
+ * 402 "Not enough points". The server is what actually blocks a call
+ * without points -- this only decides when to show the prompt. */
+export const POINTS_CHECK_EVENT = "digidara:points-check";
+
+export function reportPointsActivity(status: number): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(POINTS_CHECK_EVENT, { detail: { outOfPoints: status === 402 } }));
 }

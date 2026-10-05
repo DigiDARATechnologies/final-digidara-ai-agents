@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { reportPointsActivity } from "./points";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
@@ -11,6 +12,7 @@ function invoke<T>(action: string, payload: Record<string, unknown> = {}, timeou
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
+  reportPointsActivity(response.status);
   if (!response.ok) {
     let detail = response.statusText;
     try {

@@ -5,6 +5,8 @@
  * brief registry gap (e.g. an agent process restarting) instead of
  * surfacing it to the user as a hard chat error. */
 
+import { reportPointsActivity } from "./points";
+
 export function gatewayInvokeUrl(envVarValue: string | undefined, fallbackAgentName: string): string {
   const gatewayBase = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
   const agentName = envVarValue || fallbackAgentName;
@@ -62,6 +64,7 @@ export async function invokeAgent<T>(
     } finally {
       window.clearTimeout(timeoutId);
     }
+    reportPointsActivity(response.status);
     if (response.ok) return response.json();
 
     const detail = await extractErrorDetail(response);
