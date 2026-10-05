@@ -124,3 +124,19 @@ test('the 799 plan opens its own Razorpay page and shows what it charges', async
   expect(mocked.createBillingOrder).not.toHaveBeenCalled();
   open.mockRestore();
 });
+
+test('an admin sees the Basic test page clearly marked, and it opens that page', async () => {
+  const open = jest.spyOn(window, 'open').mockReturnValue(null);
+  const TEST_PAGE = 'https://rzp.io/rzp/fAamOYc';
+  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: TEST_PAGE, page_amount: 100, test_page: true }), ...catalog.plans.slice(1)] });
+  mocked.fetchBillingSummary.mockResolvedValue({ plan: 'free', plan_name: 'Free', plan_expires_at: null, payments: [] });
+  mocked.fetchTokenBalance.mockResolvedValue({ balance: 0, points: 0, tokens_per_point: 2000 });
+  render(<BillingPanel open user={user} onToast={jest.fn()} />);
+  const basic = (await screen.findByRole('button', { name: 'Buy Basic' })).closest('article') as HTMLElement;
+  expect(within(basic).getByText('Admin test page:')).toBeInTheDocument();
+  expect(within(basic).getByText(/charges ₹1\.00 and credits this whole plan/)).toBeInTheDocument();
+  fireEvent.click(within(basic).getByRole('button', { name: 'Buy Basic' }));
+  expect(open).toHaveBeenCalledWith(TEST_PAGE, '_blank', 'noopener,noreferrer');
+  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
+  open.mockRestore();
+});

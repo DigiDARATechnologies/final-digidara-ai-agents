@@ -10,13 +10,14 @@ from pydantic import BaseModel
 from sqlalchemy import func, update
 
 from app.auth import service as auth_service
-from app.auth.security import get_current_user_id
+from app.auth.security import decode_access_token, get_current_user_id
 from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
     active_plan,
     credited_points,
     exact_credit,
+    is_admin_test_price,
     is_full_price,
     offered_plans,
     payment_label,
@@ -64,7 +65,7 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
     credit. The same UPDATE records what the payment credits, so the record
     and the flip can never disagree.
     """
-    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
+    credit = _exact_credit(payment)
     result = session.execute(
         update(Payment)
         .where(Payment.id == payment.id, Payment.status != "paid")
@@ -82,7 +83,7 @@ def _credit_for_payment(payment: Payment) -> None:
     # Exactly the plan's tokens and points, from the server's own catalog and
     # the amount Razorpay confirmed -- never from anything the browser sent,
     # never scaled. A payment that matches no plan price credits nothing.
-    credit = exact_credit(payment.plan_id, payment.amount, payment.currency)
+    credit = _exact_credit(payment)
     if credit is None:
         logger.warning(
             "payment %s (plan %s, %s %s paise) matches no plan price; nothing credited -- review and credit by hand",
@@ -93,10 +94,27 @@ def _credit_for_payment(payment: Payment) -> None:
     auth_service.credit_tokens(payment.user_id, tokens, points)
 
 
+def _is_admin(user_id: str | None) -> bool:
+    user = auth_service.get_by_id(user_id) if user_id else None
+    return bool(user and user.is_admin)
+
+
+def _exact_credit(payment: Payment) -> tuple[int, int] | None:
+    return exact_credit(payment.plan_id, payment.amount, payment.currency, admin=_is_admin(payment.user_id))
+
+
 @router.get("/plans")
-def plans() -> dict:
-    """The plans on sale, so prices live in one place (app/billing/plans.py)."""
-    return {"plans": offered_plans()}
+def plans(request: Request) -> dict:
+    """The plans on sale, so prices live in one place (app/billing/plans.py).
+    Open to everyone; a signed-in admin also gets the test pages."""
+    user_id = None
+    authorization = request.headers.get("authorization", "")
+    if authorization.startswith("Bearer "):
+        try:
+            user_id = decode_access_token(authorization[7:])
+        except HTTPException:
+            user_id = None
+    return {"plans": offered_plans(admin=_is_admin(user_id))}
 
 
 @router.get("/summary")
@@ -273,9 +291,13 @@ def _webhook_secrets() -> list[str]:
     return [value for value in (os.environ.get(name, "").strip() for name in names) if value]
 
 
-def _page_plan_for(amount: int, currency: str) -> str | None:
+def _page_plan_for(amount: int, currency: str, admin: bool) -> str | None:
     for plan_id, plan in PLANS.items():
-        if plan.get("payment_page_url") and is_full_price(plan, amount) and plan["currency"] == currency:
+        if plan["currency"] != currency:
+            continue
+        if plan.get("payment_page_url") and is_full_price(plan, amount):
+            return plan_id
+        if admin and is_admin_test_price(plan, amount):
             return plan_id
     return None
 
@@ -284,14 +306,21 @@ def _credit_payment_page(session, entity: dict) -> None:
     """A captured payment the app did not create: one made on a plan's
     Razorpay payment page. Credit the account whose email was entered there,
     exactly once per Razorpay payment id."""
-    plan_id = _page_plan_for(entity.get("amount"), entity.get("currency"))
     payment_id = str(entity.get("id") or "")
-    if not plan_id or not payment_id:
+    if not payment_id:
         return
     if session.query(Payment).filter_by(razorpay_payment_id=payment_id).first():
         return  # already credited (Razorpay retries webhooks)
     email = str(entity.get("email") or "").strip().lower()
     user = auth_service.get_by_email(email) if email else None
+    # Test page amounts (INR 1) only ever match for an admin's own account.
+    plan_id = _page_plan_for(entity.get("amount"), entity.get("currency"), admin=bool(user and user.is_admin))
+    if plan_id is None:
+        logger.warning(
+            "Razorpay page payment %s (%s %s paise, email %r) matches no plan price; nothing credited -- review by hand",
+            payment_id, entity.get("currency"), entity.get("amount"), email,
+        )
+        return
     if user is None:
         logger.warning(
             "Razorpay page payment %s for plan %s has no matching account (email %r); credit it by hand",

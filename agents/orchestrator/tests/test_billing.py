@@ -542,3 +542,72 @@ def test_the_browser_cannot_choose_what_a_plan_credits(env, monkeypatch):
     calls = razorpay_ok(monkeypatch)
     env.client.post("/billing/orders", json={"plan_id": "basic", "amount": 100, "tokens": 99_999_999, "points": 99_999})
     assert calls["orders"][0]["amount"] == 39900
+
+
+# --- the admin-only INR 1 test page for Basic -------------------------------
+
+def make_admin(env, user=None):
+    from app.models import User
+    session = env.database()
+    try:
+        session.get(User, (user or env.user).id).is_admin = True
+        session.commit()
+    finally:
+        session.close()
+
+
+def plans_as(env, user=None):
+    from app.auth.security import create_access_token
+    headers = {"authorization": "Bearer " + create_access_token((user or env.user).id)} if user is not False else {}
+    return {plan["id"]: plan for plan in env.client.get("/billing/plans", headers=headers).json()["plans"]}
+
+
+def test_learners_never_see_the_test_page(env):
+    for offered in (plans_as(env), plans_as(env, user=False)):
+        assert offered["basic"]["payment_page_url"] is None and offered["basic"]["test_page"] is False
+        assert offered["basic"]["amount"] == 39900
+
+
+def test_an_admin_gets_the_1_rupee_test_page_on_basic_only(env):
+    make_admin(env)
+    offered = plans_as(env)
+    assert offered["basic"]["payment_page_url"] == "https://rzp.io/rzp/fAamOYc"
+    assert (offered["basic"]["page_amount"], offered["basic"]["test_page"]) == (100, True)
+    # The other plans keep their real pages.
+    assert offered["standard"]["payment_page_url"] == "https://rzp.io/rzp/mKDSePpB" and offered["standard"]["test_page"] is False
+    assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8" and offered["premium"]["test_page"] is False
+
+
+def test_the_test_amount_credits_only_an_admin_and_only_exactly_the_basic_plan():
+    credit = plan_catalog.exact_credit
+    assert credit("basic", 100, "INR") is None                                   # a learner
+    assert credit("basic", 100, "INR", admin=True) == (500_000, 250)
+    assert credit("basic", 101, "INR", admin=True) is None
+    assert credit("standard", 100, "INR", admin=True) is None                    # no test page there
+    assert credit("premium", 100, "INR", admin=True) is None
+
+
+def test_an_admin_paying_the_test_page_gets_exactly_the_basic_plan(env):
+    make_admin(env)
+    set_balance(env, 0)
+    assert page_payment(env, amount=100).status_code == 200
+    assert balance(env) == 500_000 and points(env) == 250
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["plan_id"], payment["amount"], payment["points"]) == ("basic", 100, 250)
+
+
+def test_a_learner_paying_the_test_page_gets_nothing_and_it_is_logged(env, caplog):
+    before = balance(env)
+    assert page_payment(env, amount=100).status_code == 200
+    assert balance(env) == before
+    assert env.client.get("/billing/summary").json()["payments"] == []
+    assert "matches no plan price; nothing credited" in caplog.text
+
+
+def test_switching_the_test_page_off_stops_it_for_admins_too(env, monkeypatch):
+    make_admin(env)
+    monkeypatch.setitem(plan_catalog.PLANS["basic"], "test_page_url", "")
+    assert plans_as(env)["basic"]["payment_page_url"] is None
+    before = balance(env)
+    page_payment(env, amount=100)
+    assert balance(env) == before
