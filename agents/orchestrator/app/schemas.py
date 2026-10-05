@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AgentRegisterRequest(BaseModel):
@@ -40,8 +40,15 @@ class AgentOut(BaseModel):
     last_heartbeat: str | None
 
 
+# Bounds on what a browser can send to the general chat: long enough for any
+# real question, short enough that a pasted wall of text can't bury the
+# instructions or run up the bill.
+MAX_CHAT_MESSAGE_CHARS = 2000
+MAX_HISTORY_TURN_CHARS = 3000
+
+
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
     thread_id: str | None = None
 
 
@@ -52,19 +59,28 @@ class ChatResponse(BaseModel):
 
 
 class RouteTurn(BaseModel):
-    role: str  # "user" | "assistant"
+    # Only these two: a browser-supplied "system" turn would otherwise be sent
+    # to the model as instructions.
+    role: Literal["user", "assistant"]
     content: str
+
+    @field_validator("content")
+    @classmethod
+    def _trim(cls, value: str) -> str:
+        # Trimmed, not rejected: a long agent message (a capstone brief, a
+        # resume) in the history must not fail the whole request.
+        return value[:MAX_HISTORY_TURN_CHARS]
 
 
 class RouteRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
     # Prior turns of *this* chat, oldest first, NOT including `message` itself
     # — see orchestrator/graph.py's route_node for why this exists: routing
     # used to see only the single latest message, so a vague opener followed
     # by several turns of the user adding detail never accumulated enough
     # signal to route, and just kept re-asking the same clarifying question
     # forever.
-    history: list[RouteTurn] = Field(default_factory=list)
+    history: list[RouteTurn] = Field(default_factory=list, max_length=40)
 
 
 class RouteResponse(BaseModel):
