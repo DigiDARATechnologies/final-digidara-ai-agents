@@ -108,8 +108,34 @@ def test_allows_single_inline_code_reference_in_technical_prose():
     assert validate_generated_item(technical_item(question),TECHNICAL_SLOT)["question"]==question
 
 
-def test_rejects_multiline_unfenced_program_code():
-    question="What is the output?\ndef add(a, b):\n    return a + b"
+def test_multiline_bare_code_is_fenced_instead_of_failing_the_test():
+    # The model sometimes writes a question's code on plain lines and repeats
+    # it on every retry; one such question used to fail a whole Mixed Test.
+    question="What is the output?\ndef add(a, b):\n    return a + b\nprint(add(1, 2))"
+    stored=validate_generated_item(technical_item(question),TECHNICAL_SLOT)["question"]
+    assert stored=="What is the output?\n\n```python\ndef add(a, b):\n    return a + b\nprint(add(1, 2))\n```"
+
+
+@pytest.mark.parametrize("question,expected_code", [
+    ("What is the output of the following code?\nprint(type([]) == list)", "print(type([]) == list)"),
+    ("Consider the code below:\nx = [1, 2, 3]\nfor i in x:\n    print(i * 2)\nWhat is printed last?", "x = [1, 2, 3]\nfor i in x:\n    print(i * 2)"),
+])
+def test_bare_code_around_prose_becomes_one_fenced_block(question,expected_code):
+    stored=validate_generated_item(technical_item(question),TECHNICAL_SLOT)["question"]
+    assert f"```python\n{expected_code}\n```" in stored
+    assert stored.count("```")==2
+
+
+def test_the_repair_never_touches_valid_or_already_fenced_text():
+    from backend.app.utils.code_formatting import fence_bare_code
+    fenced="What does this print?\n\n```python\nprint(1)\n```"
+    assert fence_bare_code(fenced,"python")==fenced
+    prose="Which keyword defines a function in Python?\nChoose the best answer."
+    assert fence_bare_code(prose,"python")==prose
+
+
+def test_a_broken_fence_is_still_rejected():
+    question="What is the output?\n```python\nprint(1)"
     with pytest.raises(ValueError,match="fenced code block"):
         validate_generated_item(technical_item(question),TECHNICAL_SLOT)
 
