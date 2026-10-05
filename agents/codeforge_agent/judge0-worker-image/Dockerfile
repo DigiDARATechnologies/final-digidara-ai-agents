@@ -1,5 +1,5 @@
 # Adds pandas and numpy to Judge0's bundled Python 3.8.1 interpreter (Judge0
-# language id 71 -- see agents/codeforge_agent/judge0/db/languages/active.rb:219,
+# language id 71 -- see judge0 v1.13.1 db/languages/active.rb:219 (github.com/judge0/judge0),
 # run_cmd: /usr/local/python-3.8.1/bin/python3 script.py) so the CodeForge
 # Pandas/NumPy courses can run at all.
 #

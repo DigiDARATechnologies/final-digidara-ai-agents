@@ -11,6 +11,7 @@ from app import config
 from app.auth.agent_signing import sign_headers
 from app.auth.security import decode_access_token
 from app.auth import service as auth_service
+from app.auth.verified import ensure_verified
 from app.registry import service as registry_service
 
 logger = logging.getLogger("orchestrator.gateway")
@@ -135,8 +136,8 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # rejects deleted accounts and supplies the trusted platform admin
         # flag that Job Agent authorization requires.
         user = auth_service.get_by_id(user_id)
-        if user is None:
-            raise HTTPException(401, "This account no longer exists.")
+        # Also refuses an account that still has to verify its email.
+        ensure_verified(user)
 
     action_name = envelope.get("action") if isinstance(envelope, dict) else None
     # The Job Agent's only multipart action is its deterministic resume

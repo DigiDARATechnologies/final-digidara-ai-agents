@@ -6,7 +6,7 @@ guardrail against a hand-typed expected_output being wrong. Reference sources
 are kept to a conservative pre-ES2020 subset (no optional chaining, no
 nullish coalescing, no Array.prototype.at, no String.prototype.replaceAll) so
 they behave identically on the Node 24 used here and Judge0's Node 12.14.0
-(db/languages/active.rb:159-164 in the vendored judge0/ checkout).
+(db/languages/active.rb:159-164 in upstream judge0 v1.13.1).
 """
 import shutil
 import subprocess

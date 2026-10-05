@@ -24,17 +24,7 @@
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebSite", "@id": "https://digidaraaiagents.com/#website", "url": "https://digidaraaiagents.com", "name": "DigiDARA AI Agents", "publisher": {"@id": "https://digidaraaiagents.com/#org"}, "inLanguage": "en"}</script>
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "DigiDARA AI Agents", "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "url": "https://digidaraaiagents.com", "description": "AI agent platform with specialized agents for education, careers, communication, travel, construction and other industries.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}, "publisher": {"@id": "https://digidaraaiagents.com/#org"}}</script>
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is DigiDARA AI Agents?", "acceptedAnswer": {"@type": "Answer", "text": "DigiDARA AI Agents is an AI agent workspace where businesses, teams and individuals use specialized AI agents for learning, careers, communication, hiring and industry workflows, all under one account."}}, {"@type": "Question", "name": "Who is DigiDARA AI Agents for?", "acceptedAnswer": {"@type": "Answer", "text": "Anyone, anywhere in the world. Students and job seekers use it for practice and careers, while companies in travel, construction, education and other industries use it to automate repetitive work with custom AI agents."}}, {"@type": "Question", "name": "Can DigiDARA build a custom AI agent for my industry?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. DigiDARA designs and builds specialized AI agents for industries such as travel, construction, healthcare, finance and education, shaped around your own workflow."}}, {"@type": "Question", "name": "Is my data safe?", "acceptedAnswer": {"@type": "Answer", "text": "Sessions are secured, agent requests are signed, and privacy controls follow data-protection principles including data export and account deletion."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "You can start free. Paid plans add more usage and are shown inside the app under Billing."}}]}</script>
-    <script>
-      try {
-        var t = localStorage.getItem("digidara_theme");
-        if (t === "system") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-        document.documentElement.dataset.theme = t === "light" ? "light" : "dark";
-        var a = JSON.parse(localStorage.getItem("digidara_appearance") || "{}");
-        if (a.accent) document.documentElement.dataset.accent = a.accent;
-        document.documentElement.dataset.motion = a.reduceMotion ? "reduced" : "full";
-      }
-      catch (e) { document.documentElement.dataset.theme = "dark"; }
-    </script>
+    <script src="/theme-init.js"></script>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.auth.security import get_current_user_id
+from app.auth.verified import get_verified_user_id
 from app.llm import transcribe as speech
 from app.orchestrator.graph import orchestrator_graph, route_message
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
@@ -22,7 +22,7 @@ _CHAT_RATE_LIMIT = f"{CHAT_RATE_LIMIT_PER_MIN}/minute"
 
 @router.post("/chat", response_model=ChatResponse)
 @limiter.limit(_CHAT_RATE_LIMIT)
-def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> ChatResponse:
+def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> ChatResponse:
     thread_id = req.thread_id or uuid.uuid4().hex
     # Length only: a learner's message is personal data (DPDP Act 2023) and
     # must not be copied into logs that outlive their account.
@@ -41,7 +41,7 @@ def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_current_
 
 @router.post("/chat/route", response_model=RouteResponse)
 @limiter.limit(_CHAT_RATE_LIMIT)
-def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> RouteResponse:
+def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> RouteResponse:
     """Routing decision only (no agent call, no summarize) — the frontend
     uses this to hand a matched message off to that agent's own dedicated
     multi-turn flow instead of a single stateless tool invocation."""
@@ -68,7 +68,7 @@ _TRANSCRIBE_RATE_LIMIT = "15/minute"
 
 @router.post("/chat/transcribe")
 @limiter.limit(_TRANSCRIBE_RATE_LIMIT)
-def transcribe(req: TranscribeRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+def transcribe(req: TranscribeRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
     """The general chat's microphone: a recorded question in, its text out
     (OpenAI). The text is then sent like a typed message, so it passes the
     same length limit and prompt-injection guard."""
@@ -82,7 +82,7 @@ def transcribe(req: TranscribeRequest, request: Request, user_id: str = Depends(
 @router.post("/role-profiles/generate", response_model=RoleProfileResponse)
 @limiter.limit(_CHAT_RATE_LIMIT)
 def generate_profile(
-    req: RoleProfileRequest, request: Request, user_id: str = Depends(get_current_user_id)
+    req: RoleProfileRequest, request: Request, user_id: str = Depends(get_verified_user_id)
 ) -> RoleProfileResponse:
     """Create a structured profile that clients can render or persist directly."""
     logger.info("=== POST /role-profiles/generate user=%s role=%r", user_id, req.target_role)

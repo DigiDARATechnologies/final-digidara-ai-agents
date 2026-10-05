@@ -31,6 +31,7 @@ import {
 } from "./lib/communicationFlow";
 import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
+import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -92,7 +93,10 @@ function loadToken(): string | null {
 
 function toUser(authUser: AuthUser): User {
   const name = authUser.name || "User";
-  return { id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(), isAdmin: authUser.is_admin };
+  return {
+    id: authUser.id, name, email: authUser.email, mobile: authUser.mobile ?? "", initial: (name[0] || "U").toUpperCase(),
+    isAdmin: authUser.is_admin, needsEmailVerification: Boolean(authUser.verification_required),
+  };
 }
 
 
@@ -1544,6 +1548,23 @@ export default function App() {
     const toggleTheme = () => setThemePref(theme === "dark" ? "light" : "dark");
     if (!showLogin) return <LandingPage theme={theme} onToggleTheme={toggleTheme} onLogin={openLogin} />;
     return <LoginOverlay theme={theme} onToggleTheme={toggleTheme} onAuthenticate={handleAuthenticate} onBack={closeLogin} />;
+  }
+
+  // Password accounts verify their email before anything else; the server
+  // refuses the agents until then, so there is nothing else to show.
+  if (user.needsEmailVerification) {
+    return (
+      <VerifyEmailScreen
+        email={user.email}
+        onLogout={handleLogout}
+        onVerified={(authUser) => {
+          const verifiedUser = toUser(authUser);
+          localStorage.setItem("digidara_user", JSON.stringify(verifiedUser));
+          setUser(verifiedUser);
+          showToast("Email verified. Welcome to DigiDARA!");
+        }}
+      />
+    );
   }
 
   const currentChat = chats.find((c) => c.id === currentChatId) || null;

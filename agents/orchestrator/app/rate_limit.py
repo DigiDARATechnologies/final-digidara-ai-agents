@@ -8,6 +8,8 @@ rejected with 401 by that dependency rather than ever being counted here.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -25,4 +27,15 @@ def _rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_rate_limit_key)
+# Shared by every gunicorn worker when RATE_LIMIT_STORAGE_URI points at Redis
+# (docker-compose sets it); per-process memory otherwise, where 4 workers made
+# every limit effectively 4x. If Redis is unreachable the limits fall back to
+# per-process memory instead of failing the request.
+RATE_LIMIT_STORAGE_URI = os.environ.get("RATE_LIMIT_STORAGE_URI", "memory://").strip() or "memory://"
+
+limiter = Limiter(
+    key_func=_rate_limit_key,
+    storage_uri=RATE_LIMIT_STORAGE_URI,
+    in_memory_fallback_enabled=not RATE_LIMIT_STORAGE_URI.startswith("memory://"),
+    key_prefix="digidara",
+)

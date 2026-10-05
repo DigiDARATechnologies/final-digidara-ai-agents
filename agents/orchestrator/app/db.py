@@ -73,6 +73,18 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        for column, ddl in (
+            ("email_code_hash", "VARCHAR(64) NULL"),
+            ("email_code_expires_at", "DATETIME NULL"),
+            ("email_code_sent_at", "DATETIME NULL"),
+            ("email_code_attempts", "INT NOT NULL DEFAULT 0"),
+        ):
+            if column not in user_columns:
+                try:
+                    connection.execute(text(f"ALTER TABLE users ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         if "session_version" not in user_columns:
             try:
                 connection.execute(text("ALTER TABLE users ADD COLUMN session_version INT NOT NULL DEFAULT 0"))

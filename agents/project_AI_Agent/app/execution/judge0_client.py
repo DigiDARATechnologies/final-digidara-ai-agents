@@ -24,7 +24,7 @@ from app import config
 logger = logging.getLogger("capstone.execution")
 
 PYTHON3_LANGUAGE_ID = 71
-NODE_LANGUAGE_ID = 63  # JavaScript (Node.js 12.14.0) — see agents/codeforge_agent/judge0/db/languages/active.rb
+NODE_LANGUAGE_ID = 63  # JavaScript (Node.js 12.14.0) — see judge0 v1.13.1 db/languages/active.rb (github.com/judge0/judge0)
 
 
 class Judge0Unavailable(Exception):

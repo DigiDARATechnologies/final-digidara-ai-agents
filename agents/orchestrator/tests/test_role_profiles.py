@@ -10,7 +10,7 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token('learner')}"}
 
 
-def test_role_profile_is_generated_and_validated(monkeypatch, database):
+def test_role_profile_is_generated_and_validated(monkeypatch, learner):
     app = FastAPI()
     app.include_router(router)
     monkeypatch.setattr(
@@ -33,7 +33,7 @@ def test_role_profile_is_generated_and_validated(monkeypatch, database):
     assert body["declaration"]["limitations"][0] == "Needs authorization to deploy"
 
 
-def test_role_profile_rejects_unstructured_model_output(monkeypatch, database):
+def test_role_profile_rejects_unstructured_model_output(monkeypatch, learner):
     app = FastAPI()
     app.include_router(router)
     monkeypatch.setattr(role_profiles, "call_text", lambda *_args, **_kwargs: "not JSON")

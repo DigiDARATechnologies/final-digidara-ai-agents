@@ -2390,3 +2390,8 @@ a{ color:var(--accent3); }
 .low-points-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
 .low-points-buy{ border:0; border-radius:9px; background:linear-gradient(135deg,var(--accent1),var(--accent2)); color:#fff; padding:9px 16px; font-weight:750; cursor:pointer; }
 .low-points-buy:hover{ filter:brightness(1.08); }
+
+/* ===================== VERIFY EMAIL ===================== */
+.verify-email-card{ max-width:420px; margin:auto; }
+.verify-email-card .field input{ letter-spacing:.35em; font-size:20px; text-align:center; }
+.verify-email-actions{ display:flex; justify-content:space-between; gap:12px; margin-top:14px; flex-wrap:wrap; }

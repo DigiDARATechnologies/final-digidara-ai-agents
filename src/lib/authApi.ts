@@ -52,6 +52,10 @@ export interface AuthUser {
   is_admin: boolean;
   consent_accepted_at: string | null;
   consent_policy_version: string | null;
+  email_verified?: boolean;
+  /** True until this account verifies its email (password sign-ups, when
+   * verification is switched on); the agents refuse it until then. */
+  verification_required?: boolean;
 }
 
 export interface TokenResponse {
@@ -145,7 +149,29 @@ export async function changePassword(
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   });
+  const result = await parseAuthResponse<{ message: string; access_token?: string }>(response);
+  // A password change signs every session out; this device gets a fresh token.
+  if (result.access_token) localStorage.setItem("digidara_token", result.access_token);
+  return result;
+}
+
+/** Emails a new 6-digit verification code to the signed-in account. */
+export async function sendEmailCode(token: string): Promise<{ message: string }> {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/auth/email/send-code`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return parseAuthResponse<{ message: string }>(response);
+}
+
+/** Checks the code; returns the account, now verified. */
+export async function verifyEmailCode(token: string, code: string): Promise<AuthUser> {
+  const response = await fetch(`${ORCHESTRATOR_BASE}/auth/email/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ code }),
+  });
+  return parseAuthResponse<AuthUser>(response);
 }
 
 function postJson(path: string, body: Record<string, unknown>): Promise<Response> {

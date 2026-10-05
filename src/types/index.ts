@@ -32,6 +32,8 @@ export interface User {
   initial: string;
   isAdmin?: boolean;
   avatarUrl?: string;
+  /** Must verify their email before using the agents (see VerifyEmailScreen). */
+  needsEmailVerification?: boolean;
 }
 
 export interface ChatOption {

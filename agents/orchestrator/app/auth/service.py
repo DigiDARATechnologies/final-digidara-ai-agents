@@ -248,14 +248,19 @@ def link_google_id(user_id: str, google_id: str) -> User:
         session.close()
 
 
-def set_password(user_id: str, password_hash: str) -> None:
+def set_password(user_id: str, password_hash: str) -> int | None:
+    """Set a new password and sign every existing session out (a stolen
+    session must not outlive a password change). Returns the new session
+    version, so the caller can hand the current device a fresh token."""
     session = get_session()
     try:
         user = session.get(User, user_id)
         if user is None:
-            return
+            return None
         user.password_hash = password_hash
+        user.session_version = (user.session_version or 0) + 1
         session.commit()
+        return user.session_version
     finally:
         session.close()
 

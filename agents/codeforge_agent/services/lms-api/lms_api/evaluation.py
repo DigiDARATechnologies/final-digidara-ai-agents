@@ -1,8 +1,8 @@
 from .errors import ApiError
 from .judge0_client import Judge0Client
 
-# Judge0 "SQL (SQLite 3.27.2)" -- db/languages/active.rb:304 in the vendored
-# judge0/ checkout. Its run_cmd is `cat script.sql | sqlite3 db.sqlite`: `cat`
+# Judge0 "SQL (SQLite 3.27.2)" -- db/languages/active.rb:304 in upstream judge0 v1.13.1
+# (github.com/judge0/judge0). Its run_cmd is `cat script.sql | sqlite3 db.sqlite`: `cat`
 # with a filename argument never reads its own stdin, so whatever a submission
 # sends as "stdin" is silently discarded -- proven with `printf X | (cat file |
 # cat)`, which prints only the file's content. Every other language here reuses

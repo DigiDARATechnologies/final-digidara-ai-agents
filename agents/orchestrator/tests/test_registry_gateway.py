@@ -298,3 +298,17 @@ def test_gateway_resolves_freshest_healthy_version(client, upstream, database):
     service.mark_unhealthy("test-agent", "v2")
     assert invoke(client, "health", token=False).status_code == 200
     assert upstream.calls[-1][0] == PAYLOAD["endpoint"]
+
+
+def test_an_account_that_must_verify_its_email_cannot_use_agents(client, upstream, database, monkeypatch):
+    # With email verification on, the seeded learner (not yet verified) is refused
+    # before anything reaches an agent or is charged; health stays public.
+    monkeypatch.setenv("EMAIL_VERIFICATION_REQUIRED", "true")
+    response = invoke(client, "generate")
+    assert response.status_code == 403 and "verify your email" in response.json()["detail"]
+    assert upstream.calls == []
+    assert invoke(client, "health", token=False).status_code == 200
+    with database() as session:
+        session.get(User, "learner").email_verified = True
+        session.commit()
+    assert invoke(client, "generate").status_code == 200
