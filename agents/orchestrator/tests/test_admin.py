@@ -81,11 +81,12 @@ def test_overview_totals_money_users_tokens_and_agents(api, seeded):
     assert revenue["by_status"] == {"paid": 2, "created": 1}
     assert {e["label"]: e["amount"] for e in revenue["by_plan"]} == {"Basic plan": 499.0, "Points top-up": 100.0}
     assert len(revenue["daily"]) == 30 and sum(d["amount"] for d in revenue["daily"]) == 499.0
-    # Points at each account's rate (seeded accounts predate points: 3,000 tokens a point).
-    # The old-price Basic plan and the top-up sold no points, so they count at that rate too.
+    # Points at each account's rate (seeded accounts get the new-account rate, 2,000
+    # tokens a point: 120,000 + 10 tokens). The old-price Basic plan and the top-up
+    # predate points and sold none, so they count at the 3,000 rate balances had then.
     assert body["tokens"] == {
         "outstanding_balance": 120_010, "credited_by_payments": 600_000, "users_out_of_tokens": 1,
-        "outstanding_points": 40.0, "points_sold": 200.0,
+        "outstanding_points": 60.01, "points_sold": 200.0,
     }
     assert body["activity"]["conversations"] == 2 and body["activity"]["messages"] == 3 and body["activity"]["active_users_7d"] == 1
     assert {a["agent_id"]: (a["chats"], a["messages"]) for a in body["activity"]["by_agent"]} == {"capstone-project": (1, 2), "leetcode": (1, 1)}
@@ -101,7 +102,7 @@ def test_users_search_sort_and_page(api, seeded):
     assert everyone["total"] == 3 and [u["id"] for u in everyone["users"]] == ["asha", "ravi", "boss"]     # newest first
     asha = everyone["users"][0]
     assert asha["paid_total"] == 599.0 and asha["chats"] == 2 and asha["agents_used"] == 2 and asha["token_balance"] == 120_000
-    assert asha["points"] == 40.0
+    assert asha["points"] == 60.0
     # The billing plan, so the Job Agent's Users & plans tab can show it: a top-up
     # is not a plan, and an unpaid order does not make Ravi a Standard user.
     assert {u["id"]: u["plan_name"] for u in everyone["users"]} == {"asha": "Basic", "ravi": "Free", "boss": "Free"}
@@ -120,7 +121,7 @@ def test_user_detail_is_the_whole_story_of_one_user(api, seeded):
     assert body["user"]["email"] == "asha@x.io" and "password" not in str(body).lower()
     assert body["totals"] == {"paid": 599.0, "payments": 2, "paid_payments": 2, "tokens_bought": 600_000, "points_bought": 200.0, "conversations": 2, "messages": 3}
     assert body["payments"][0]["label"] == "Basic plan" and body["payments"][0]["tokens"] == 500_000
-    assert body["user"]["points"] == 40.0
+    assert body["user"]["points"] == 60.0
     assert [c["id"] for c in body["conversations"]] == ["c1", "c2"] and body["conversations"][0]["messages"] == 2
     progress = body["agent_progress"]
     assert [(p["agent_id"], p["chat_id"], p["step"]) for p in progress] == [("capstone", "c1", "awaiting_submission")]

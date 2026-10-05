@@ -15,6 +15,7 @@ from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
     active_plan,
+    credited_points,
     offered_plans,
     payment_label,
     plan_name,
@@ -24,9 +25,15 @@ from app.billing.plans import (
 )
 from app.db import get_session
 from app.models import Payment, TokenUsageEvent
+from app.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+# Per account. Each order is a call to Razorpay with our key, and verify
+# re-checks a payment with Razorpay; neither needs more than a few a minute.
+_ORDER_RATE_LIMIT = "10/minute"
+_VERIFY_RATE_LIMIT = "30/minute"
 
 
 class OrderRequest(BaseModel):
@@ -53,18 +60,25 @@ def _mark_paid(session, payment: Payment, razorpay_payment_id: str | None) -> bo
     A conditional UPDATE, not read-then-write: verify and the Razorpay webhook
     can arrive together for the same payment, and both used to see "created"
     and both credit tokens. Only the request whose UPDATE changes a row may
-    credit.
+    credit. The same UPDATE records what the payment credits, so the record
+    and the flip can never disagree.
     """
     result = session.execute(
         update(Payment)
         .where(Payment.id == payment.id, Payment.status != "paid")
-        .values(status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow())
+        .values(
+            status="paid", razorpay_payment_id=razorpay_payment_id, paid_at=datetime.utcnow(),
+            credited_tokens=tokens_for_payment(payment.plan_id, payment.amount),
+            credited_points=points_for_payment(payment.plan_id, payment.amount),
+        )
     )
     session.commit()
     return result.rowcount == 1
 
 
 def _credit_for_payment(payment: Payment) -> None:
+    # Always derived from the server's own catalog and the amount Razorpay
+    # confirmed -- never from anything the browser sent.
     tokens = tokens_for_payment(payment.plan_id, payment.amount)
     if tokens:
         auth_service.credit_tokens(payment.user_id, tokens, points_for_payment(payment.plan_id, payment.amount))
@@ -91,7 +105,7 @@ def summary(user_id: str = Depends(get_current_user_id)) -> dict:
                 {
                     "id": p.id, "plan_id": p.plan_id, "label": payment_label(p.plan_id), "amount": p.amount,
                     "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id,
-                    "points": points_for_payment(p.plan_id, p.amount),
+                    "points": credited_points(p) if p.status == "paid" else points_for_payment(p.plan_id, p.amount),
                     "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid",
                 }
                 for p in payments
@@ -171,7 +185,8 @@ def usage_this_month(
 
 
 @router.post("/orders", status_code=201)
-def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id)) -> dict:
+@limiter.limit(_ORDER_RATE_LIMIT)
+def create_order(req: OrderRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
     plan = PLANS.get(req.plan_id)
     if not plan:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown billing plan.")
@@ -196,7 +211,8 @@ def create_order(req: OrderRequest, user_id: str = Depends(get_current_user_id))
 
 
 @router.post("/verify")
-def verify_payment(req: VerifyRequest, user_id: str = Depends(get_current_user_id)) -> dict:
+@limiter.limit(_VERIFY_RATE_LIMIT)
+def verify_payment(req: VerifyRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
     key_id, key_secret = _credentials()
     session = get_session()
     try:

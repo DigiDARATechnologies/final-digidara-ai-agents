@@ -1,4 +1,5 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
+import { reportPointsActivity } from "./points";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_RESUME_BUILDER_AGENT_NAME, "resume_builder_agent");
 const TIMEOUT_MS = Number(import.meta.env.VITE_RESUME_BUILDER_TIMEOUT_MS || 120000);
@@ -70,6 +71,7 @@ export async function analyzeResumeUpload(userId: string, file: File, targetRole
       signal: controller.signal,
     });
     const body = await response.json().catch(() => ({}));
+    reportPointsActivity(response.status);
     if (!response.ok) { const error = new Error(body.message || response.statusText) as ResumeApiError; error.status = response.status; throw error; }
     return unwrap<Record<string, unknown>>(body);
   } finally { window.clearTimeout(timer); }
@@ -184,6 +186,7 @@ export async function suggestResumeStyle(userId: string, resume: Record<string, 
 export async function exportResumePdf(userId: string, resumeId: number, templateChoice?: string, style?: ResumeStyle) {
   const platformToken = localStorage.getItem("digidara_token");
   const response = await fetch(INVOKE_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) }, body: JSON.stringify({ action: "export_pdf", payload: { user_id: userId, resume_id: resumeId, template_choice: templateChoice, ...(style ? { style_settings: style } : {}) } }) });
+  reportPointsActivity(response.status);
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "PDF export failed");
   const filename = response.headers.get("content-disposition")?.match(/filename="?([^";]+)"?/)?.[1] || `resume-${resumeId}.pdf`;
   return { blob: await response.blob(), filename };
@@ -197,6 +200,7 @@ export async function previewResumePdf(userId: string, resume: Record<string, un
     headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) },
     body: JSON.stringify({ action: "preview_resume", payload: { user_id: userId, resume, template_choice: templateChoice, ...(style ? { style_settings: style } : {}) } }),
   });
+  reportPointsActivity(response.status);
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "Resume preview failed");
   const blob = await response.blob();
   if (!blob.size) throw new Error("The generated preview was empty. Please try again.");

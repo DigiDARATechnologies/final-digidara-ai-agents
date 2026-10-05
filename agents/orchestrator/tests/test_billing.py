@@ -18,6 +18,9 @@ from app.billing import invoice as invoice_pdf
 from app.billing import plans as plan_catalog
 from app.billing import routes as billing
 from app.models import Payment
+from app.rate_limit import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 KEY_ID, KEY_SECRET = "rzp_test_key", "rzp_test_secret"
 
@@ -31,7 +34,10 @@ def env(database, monkeypatch):
     user = create_user("Asha Rao", "asha@example.com", "9999999999", "hash", "2026-01")
     other = create_user("Ravi K", "ravi@example.com", None, "hash", "2026-01")
     current = {"id": user.id}
+    limiter.reset()                      # /orders and /verify are rate limited per caller
     app = FastAPI()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.include_router(billing.router)
     app.dependency_overrides[get_current_user_id] = lambda: current["id"]
     with TestClient(app) as client:
@@ -110,7 +116,7 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
 
 def test_plans_sell_fixed_tokens_shown_as_points():
     assert [(plan_catalog.PLANS[i]["tokens"], plan_catalog.PLANS[i]["points"]) for i in ("basic", "standard", "premium")] == [
-        (300_000, 100), (700_000, 250), (900_000, 500),
+        (500_000, 250), (1_000_000, 500), (1_500_000, 750),
     ]
     # Off-price payments are still priced at gpt-4o-mini's rate: $0.15 in /
     # $0.60 out per million, blended 3:1, at INR 96.25 per USD.
@@ -120,13 +126,18 @@ def test_plans_sell_fixed_tokens_shown_as_points():
 def test_an_order_paid_at_an_older_price_gets_what_it_paid_for():
     assert plan_catalog.tokens_for_payment("basic", 39900) == plan_catalog.PLANS["basic"]["tokens"]
     assert plan_catalog.tokens_for_payment("basic", 49900) == 500_000        # the old Basic price bought 500,000
-    assert plan_catalog.tokens_for_payment("basic", 45000) == plan_catalog.tokens_for_rupees(450)
+    # Any other amount gets the plan's own tokens scaled to it -- never
+    # OpenAI's raw per-rupee rate, which is ~30x what a plan gives.
+    assert plan_catalog.tokens_for_payment("basic", 45000) == round(500_000 * 45000 / 39900)
+    assert plan_catalog.points_for_payment("basic", 45000) == round(250 * 45000 / 39900, 2)
+    assert plan_catalog.points_for_payment("basic", 49900) is None          # an old-price order: it sold tokens, not points
     assert plan_catalog.tokens_for_payment("topup_500000", 50000) == 500_000
 
 
-def test_higher_plans_never_give_fewer_tokens_per_rupee(env):
-    rates = [plan["tokens"] / plan["amount"] for plan in env.client.get("/billing/plans").json()["plans"]]
-    assert rates == sorted(rates)
+def test_higher_plans_never_give_meaningfully_fewer_points_per_rupee(env):
+    # 250 / 399 and 500 / 799 are the same rate to within a rounding paisa.
+    rates = [plan["points"] / plan["amount"] for plan in env.client.get("/billing/plans").json()["plans"]]
+    assert all(later >= earlier * 0.995 for earlier, later in zip(rates, rates[1:]))
 
 
 # --- labels and current plan ----------------------------------------------
@@ -413,7 +424,7 @@ def test_a_new_account_starts_with_the_free_points(env):
     assert balance(env) == plan_catalog.free_signup_tokens()
 
 
-@pytest.mark.parametrize("plan_id,shown", [("basic", 100), ("standard", 250), ("premium", 500)])
+@pytest.mark.parametrize("plan_id,shown", [("basic", 250), ("standard", 500), ("premium", 750)])
 def test_each_plan_shows_its_own_points(env, monkeypatch, plan_id, shown):
     set_balance(env, 0)
     buy(env, monkeypatch, plan_id, "order_1")
@@ -423,31 +434,32 @@ def test_each_plan_shows_its_own_points(env, monkeypatch, plan_id, shown):
 
 def test_points_add_up_across_plans_with_different_rates(env, monkeypatch):
     set_balance(env, 0)
-    buy(env, monkeypatch, "basic", "order_1")        # 300,000 tokens as 100 points
-    buy(env, monkeypatch, "premium", "order_2")      # 900,000 tokens as 500 points
-    assert balance(env) == 1_200_000 and points(env) == 600
+    buy(env, monkeypatch, "basic", "order_1")        # 500,000 tokens as 250 points
+    buy(env, monkeypatch, "premium", "order_2")      # 1,500,000 tokens as 750 points
+    assert balance(env) == 2_000_000 and points(env) == 1000
 
 
 def test_free_points_and_a_plan_add_up(env, monkeypatch):
     buy(env, monkeypatch, "basic", "order_1")
-    assert points(env) == plan_catalog.FREE_SIGNUP_POINTS + 100
+    assert points(env) == plan_catalog.FREE_SIGNUP_POINTS + 250
 
 
 def test_spending_tokens_spends_points_at_the_accounts_rate(env, monkeypatch):
     set_balance(env, 0)
-    buy(env, monkeypatch, "basic", "order_1")        # 3,000 tokens a point
+    buy(env, monkeypatch, "basic", "order_1")        # 2,000 tokens a point
     auth_service.settle_tokens(env.user.id, 15_000, "aptitude_agent", "create_test")
-    assert points(env) == 95
+    assert points(env) == 242.5
 
 
 def test_a_negative_balance_still_shows_the_points_just_bought(env, monkeypatch):
     set_balance(env, -2_000)
     buy(env, monkeypatch, "standard", "order_1")
-    assert balance(env) == 698_000 and points(env) == 250
+    assert balance(env) == 998_000 and points(env) == 500
 
 
-def test_an_old_balance_counts_at_the_free_rate(env):
-    set_balance(env, 120_000, tokens_per_point=plan_catalog.FREE_TOKENS_PER_POINT)
+def test_an_old_balance_keeps_the_rate_stored_on_its_row(env):
+    # Rows from before 6 Oct 2026 were migrated at 3,000 tokens a point.
+    set_balance(env, 120_000, tokens_per_point=plan_catalog.LEGACY_TOKENS_PER_POINT)
     assert points(env) == 40
 
 
@@ -456,14 +468,43 @@ def test_monthly_usage_reports_points(env, monkeypatch):
     buy(env, monkeypatch, "basic", "order_1")
     auth_service.settle_tokens(env.user.id, 30_000, "aptitude_agent", "create_test")   # also records the usage
     body = env.client.get("/billing/usage-month").json()
-    assert body["points_used"] == 10 and body["points_balance"] == 90 and body["points_limit"] == 100
-    assert [(a["agent_name"], a["points"]) for a in body["agents"]] == [("aptitude_agent", 10)]
+    assert body["points_used"] == 15 and body["points_balance"] == 235 and body["points_limit"] == 250
+    assert [(a["agent_name"], a["points"]) for a in body["agents"]] == [("aptitude_agent", 15)]
 
 
 def test_the_catalog_and_history_show_points(env):
     offered = {plan["id"]: plan for plan in env.client.get("/billing/plans").json()["plans"]}
-    assert [offered[i]["points"] for i in ("basic", "standard", "premium")] == [100, 250, 500]
-    assert offered["basic"]["features"][0] == "100 points credited instantly"
+    assert [offered[i]["points"] for i in ("basic", "standard", "premium")] == [250, 500, 750]
+    assert offered["basic"]["features"][0] == "250 points credited instantly"
     assert not any("token" in feature.lower() for plan in offered.values() for feature in plan["features"])
     add_payment(env, "premium", order="o1")
-    assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 500
+    assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 750
+
+
+# --- crediting is recorded and server-side only ------------------------------
+
+def test_a_paid_payment_records_what_it_credited_and_a_later_price_change_cannot_rewrite_it(env, monkeypatch):
+    set_balance(env, 0)
+    buy(env, monkeypatch, "basic", "order_1")
+    session = env.database()
+    try:
+        row = session.query(Payment).filter_by(razorpay_order_id="order_1").one()
+        assert (row.credited_tokens, row.credited_points) == (500_000, 250)
+    finally:
+        session.close()
+    monkeypatch.setitem(plan_catalog.PLANS["basic"], "points", 1)       # the catalog changes later
+    assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 250
+
+
+def test_order_creation_is_rate_limited_per_account(env, monkeypatch):
+    made = iter(range(100))
+    monkeypatch.setattr(billing.httpx, "post", lambda *a, **k: SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"id": f"order_{next(made)}"}))
+    codes = [env.client.post("/billing/orders", json={"plan_id": "basic"}).status_code for _ in range(11)]
+    assert codes[:10] == [201] * 10 and codes[10] == 429
+
+
+def test_the_browser_cannot_choose_what_a_plan_credits(env, monkeypatch):
+    # Only plan_id is accepted; amount and tokens come from the server's catalog.
+    calls = razorpay_ok(monkeypatch)
+    env.client.post("/billing/orders", json={"plan_id": "basic", "amount": 100, "tokens": 99_999_999, "points": 99_999})
+    assert calls["orders"][0]["amount"] == 39900

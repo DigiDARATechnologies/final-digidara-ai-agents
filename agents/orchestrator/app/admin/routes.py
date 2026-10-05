@@ -14,7 +14,7 @@ from sqlalchemy import func, or_
 
 from app import config
 from app.auth.security import get_current_user_id
-from app.billing.plans import active_plan, payment_label, plan_name, points_for_payment, points_for_tokens, tokens_for_payment
+from app.billing.plans import active_plan, credited_points, credited_tokens, payment_label, plan_name, points_for_tokens
 from app.db import get_session
 from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
 
@@ -34,12 +34,6 @@ def require_admin(user_id: str = Depends(get_current_user_id)) -> str:
         return user_id
     finally:
         session.close()
-
-
-def _payment_points(payment: Payment) -> float:
-    """Points a payment sold; payments from before points count at the free rate."""
-    sold = points_for_payment(payment.plan_id, payment.amount)
-    return sold if sold is not None else points_for_tokens(tokens_for_payment(payment.plan_id, payment.amount) or 0, None)
 
 
 def _user_points(user: User) -> float:
@@ -145,14 +139,14 @@ def overview(_admin: str = Depends(require_admin)) -> dict:
 
         tokens = {
             "outstanding_balance": int(session.query(func.sum(User.token_balance)).scalar() or 0),
-            "credited_by_payments": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
+            "credited_by_payments": sum(credited_tokens(p) for p in paid),
             "users_out_of_tokens": session.query(func.count(User.id)).filter(User.token_balance <= 0).scalar() or 0,
             # What the admin screens show: each account's balance at its own rate.
             "outstanding_points": round(sum(
                 points_for_tokens(max(0, balance or 0), rate)
                 for balance, rate in session.query(User.token_balance, User.tokens_per_point)
             ), 2),
-            "points_sold": round(sum(_payment_points(p) for p in paid), 2),
+            "points_sold": round(sum(credited_points(p) for p in paid), 2),
         }
 
         usage = _chat_usage(session)
@@ -248,16 +242,16 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
             },
             "totals": {
                 "paid": _rupees(sum(p.amount for p in paid)), "payments": len(payments), "paid_payments": len(paid),
-                "tokens_bought": sum(tokens_for_payment(p.plan_id, p.amount) or 0 for p in paid),
-                "points_bought": round(sum(_payment_points(p) for p in paid), 2),
+                "tokens_bought": sum(credited_tokens(p) for p in paid),
+                "points_bought": round(sum(credited_points(p) for p in paid), 2),
                 "conversations": len([c for c in conversations if c.deleted_at is None]),
                 "messages": sum(counts.values()),
             },
             "payments": [{
                 "id": p.id, "label": payment_label(p.plan_id), "plan_id": p.plan_id, "amount": _rupees(p.amount), "currency": p.currency,
                 "status": p.status, "razorpay_order_id": p.razorpay_order_id, "razorpay_payment_id": p.razorpay_payment_id,
-                "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at), "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
-                "points": _payment_points(p),
+                "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at), "tokens": credited_tokens(p),
+                "points": credited_points(p),
             } for p in payments],
             "conversations": [{
                 "id": c.id, "agent_id": c.agent_id, "title": c.title, "messages": counts.get(c.id, 0), "pinned": bool(c.pinned),
@@ -315,8 +309,8 @@ def list_payments(
                 "id": p.id, "user_id": p.user_id, "email": email or "(deleted account)", "name": name or "", "label": payment_label(p.plan_id),
                 "amount": _rupees(p.amount), "currency": p.currency, "status": p.status, "razorpay_order_id": p.razorpay_order_id,
                 "razorpay_payment_id": p.razorpay_payment_id, "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at),
-                "tokens": tokens_for_payment(p.plan_id, p.amount) or 0,
-                "points": _payment_points(p),
+                "tokens": credited_tokens(p),
+                "points": credited_points(p),
             } for p, email, name in rows],
         }
     finally:

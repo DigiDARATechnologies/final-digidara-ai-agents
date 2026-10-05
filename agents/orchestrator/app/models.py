@@ -175,6 +175,12 @@ class Payment(Base):
     status: Mapped[str] = mapped_column(String(24), default="created", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Exactly what this payment credited, written in the same UPDATE that
+    # marks it paid (billing/routes.py:_mark_paid). History and the admin
+    # screens read these, so a later price or plan change can never rewrite
+    # what a past payment gave. NULL on payments from before they existed.
+    credited_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    credited_points: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class TokenUsageEvent(Base):
