@@ -26,6 +26,7 @@ export interface JobFetchProfile {
   profile_completed: boolean;
   onboarding_step?: string;
   onboarding_prompt?: string;
+  onboarding_options?: Array<{ label: string; value: string }>;
   plan_tier: string;
 }
 

@@ -1496,7 +1496,7 @@ PROFILE_FIELD_PURPOSES = {
     "preferred_titles": "I ask for target roles to record the jobs you want in your profile and keep searches relevant. "
                         "For example, **Data Analyst** or **AI Engineer**; those are roles, not skills.",
     "preferred_locations": "I ask for your preferred city to fill the location section of your profile. "
-                           "You don't need to share your home address. If you prefer office or hybrid work, please choose a city; **Remote** or **Any location** are also fine.",
+                           "You don't need to share your home address. Please choose one of the cities shown: Chennai, Coimbatore, Madurai, Tiruchirappalli or Salem.",
     "resume": "A resume can help add relevant career details to your profile, but uploading one is optional. "
               "You can type **skip** instead.",
 }
@@ -1616,6 +1616,32 @@ def _build_profile_response_dict(profile: Dict[str, Any], changed_fields: List[s
     }
 
 
+# The cities offered whenever the agent asks for a location: the Tamil Nadu
+# cities the job collection (Adzuna and PR Labs) searches every week. Shown as
+# buttons; a city the user types is still accepted.
+LOCATION_CHOICES = ["Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem"]
+LOCATION_CHOICE_ACTIONS = [{"label": city, "value": city} for city in LOCATION_CHOICES]
+_LOCATION_QUESTION = re.compile(r"which city (?:would you like|you'd like) to work in", re.I)
+_LOCATION_CHOICE_TEXT = "Choose **Chennai**, **Coimbatore**, **Madurai**, **Tiruchirappalli** or **Salem**."
+
+
+def onboarding_actions(step: str) -> List[Dict[str, str]]:
+    """Buttons shown under an onboarding question."""
+    if step == "preferred_locations":
+        return list(LOCATION_CHOICE_ACTIONS)
+    if step == "resume":
+        return [{"label": "Skip resume", "value": "skip"}]
+    return []
+
+
+def _with_location_choices(result: Any) -> Any:
+    """Offer the city buttons under every reply that asks for a location."""
+    if (isinstance(result, dict) and not result.get("suggested_actions")
+            and _LOCATION_QUESTION.search(str(result.get("reply") or ""))):
+        result["suggested_actions"] = list(LOCATION_CHOICE_ACTIONS)
+    return result
+
+
 def _next_onboarding_prompt(profile: Dict[str, Any]) -> Tuple[str, str]:
     """Derive the next prompt from the persisted profile, never from the old step."""
     if not profile.get("full_name") or not _is_valid_human_name(profile.get("full_name", "")):
@@ -1627,9 +1653,7 @@ def _next_onboarding_prompt(profile: Dict[str, Any]) -> Tuple[str, str]:
     if not profile.get("preferred_titles"):
         return "preferred_titles", "Please share your target **job titles** or roles (e.g. AI Engineer, Data Analyst)."
     if not _has_location_preference(profile):
-        if profile.get("preferred_work_mode") in {"office", "hybrid"}:
-            return "preferred_locations", "Which city would you like to work in? (e.g. Chennai or Bengaluru). You can also say **Any location**."
-        return "preferred_locations", "Which city would you like to work in? (e.g. Chennai or Bengaluru). You can also choose **Remote** or **Any location**."
+        return "preferred_locations", f"Which city would you like to work in? {_LOCATION_CHOICE_TEXT}"
     return "resume", "Your profile details are saved. Attach your resume or type **skip** to view matching jobs."
 
 
@@ -2280,7 +2304,7 @@ def _handle_onboarding_step(
                 return {
                     "reply": f"{name_confirmation}{prompt}",
                     "show_jobs": False,
-                    "suggested_actions": ([{"label": "Skip resume", "value": "skip"}] if next_step == "resume" else []),
+                    "suggested_actions": onboarding_actions(next_step),
                     "matched_jobs": [],
                     "updated_profile": _build_profile_response_dict(profile, fields),
                 }
@@ -2952,6 +2976,18 @@ def chat_with_job_agent(
     memory_context: str = "",
 ) -> Dict[str, Any]:
     """Main conversational entry point for DigiDARA Job Agent with full memory and trust verification."""
+    return _with_location_choices(
+        _chat_with_job_agent(user_id, message, history, selected_job_id, memory_context)
+    )
+
+
+def _chat_with_job_agent(
+    user_id: str,
+    message: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+    selected_job_id: Optional[int] = None,
+    memory_context: str = "",
+) -> Dict[str, Any]:
     db = get_db()
     cursor = db.cursor(dictionary=True)
     try:
@@ -2988,7 +3024,7 @@ def chat_with_job_agent(
             saved_mode = f" Your saved work mode is **{mode.title()}**." if mode else ""
             return {
                 "reply": "You haven't saved a preferred city yet." + saved_mode +
-                         " Which city would you like to work in?",
+                         f" Which city would you like to work in? {_LOCATION_CHOICE_TEXT}",
                 "show_jobs": False, "suggested_actions": [], "matched_jobs": [],
                 "updated_profile": _build_profile_response_dict(profile, []),
                 "profile_status": _profile_completion_status(profile),

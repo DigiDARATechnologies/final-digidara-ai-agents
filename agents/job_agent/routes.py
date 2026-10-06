@@ -58,7 +58,7 @@ from .scraper import _validate_public_url, ScraperError
 from .service import _clean_job, queue_source_run_once
 from .skills import normalize_skill_name, parse_resume_for_profile
 from .tn_location import ALL_TN_DISTRICTS, canonicalize_location, location_matches_preferences
-from .chat_service import MAX_EXPERIENCE_YEARS, _has_location_preference, _matches_target_role, _next_onboarding_prompt, chat_with_job_agent, extract_work_mode_from_text
+from .chat_service import MAX_EXPERIENCE_YEARS, _has_location_preference, _matches_target_role, _next_onboarding_prompt, chat_with_job_agent, extract_work_mode_from_text, onboarding_actions
 from .trust import evaluate_job_trust
 from .usage import (
     check_and_record_chat_usage,
@@ -199,6 +199,7 @@ def my_profile():
                 profile["onboarding_prompt"] = ""
             else:
                 profile["onboarding_step"], profile["onboarding_prompt"] = _next_onboarding_prompt(profile)
+            profile["onboarding_options"] = onboarding_actions(profile["onboarding_step"])
             return jsonify({"profile": _serialize(profile)})
 
         data = request.get_json(silent=True) or {}
