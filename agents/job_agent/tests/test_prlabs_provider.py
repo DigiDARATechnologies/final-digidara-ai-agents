@@ -90,7 +90,7 @@ class PRLabsFetchTests(unittest.TestCase):
         self.assertEqual(kwargs["json"]["search_term"], "Data Analyst")
         self.assertEqual(kwargs["json"]["location"], "Tamil Nadu, India")
         self.assertEqual(kwargs["json"]["site_name"], ["linkedin", "indeed"])
-        self.assertEqual(kwargs["json"]["hours_old"], 72)
+        self.assertEqual(kwargs["json"]["hours_old"], 72)  # the value passed in
         self.assertNotIn("test-key", str(kwargs["json"]))
 
     @patch.dict(os.environ, {"PRLABS_API_KEY": ""})
@@ -119,8 +119,18 @@ class PRLabsPlanTests(unittest.TestCase):
         self.assertTrue(config["enabled"])
         terms = {query["search_term"] for query in config["queries"]}
         self.assertTrue({"AI Engineer", "Data Analyst", "Data Scientist", "Web Developer", "Full Stack Developer"} <= terms)
-        self.assertEqual({query["location"] for query in config["queries"]}, {"Tamil Nadu, India"})
+        locations = {query["location"] for query in config["queries"]}
+        self.assertIn("Tamil Nadu, India", locations)
+        self.assertIn("Tiruchirappalli, Tamil Nadu, India", locations)
         self.assertEqual(config["sites"], ["linkedin", "indeed"])
+        self.assertEqual(config["hours_old"], 168)
+
+    def test_every_daily_block_searches_every_role_and_pairs_are_unique(self):
+        config = get_prlabs_config({"prlabs": {"roles": ["A", "B", "C"], "locations": ["X", "Y"]}})
+        queries = [(q["search_term"], q["location"]) for q in config["queries"]]
+        self.assertEqual(len(set(queries)), 6)
+        self.assertEqual({role for role, _ in queries[:3]}, {"A", "B", "C"})
+        self.assertEqual({location for _, location in queries[:3]}, {"X", "Y"})
 
     def test_roles_and_locations_multiply_and_disabled_means_no_searches(self):
         config = get_prlabs_config({"prlabs": {"roles": ["AI Engineer", "Web Developer"], "locations": ["Chennai", "Coimbatore"]}})
@@ -142,7 +152,8 @@ class PRLabsPlanTests(unittest.TestCase):
     def test_upcoming_plan_lists_prlabs_searches(self):
         plan = upcoming_plan(days=1, start=date(2026, 10, 6))
         self.assertTrue(plan[0]["prlabs"])
-        self.assertIn("(Tamil Nadu, India)", plan[0]["prlabs"][0])
+        self.assertEqual(len(plan[0]["prlabs"]), 14)
+        self.assertTrue(all(entry.endswith("Tamil Nadu, India)") for entry in plan[0]["prlabs"]))
 
     def test_calls_are_capped_per_day_and_month(self):
         windows = {name for name, _, _ in FREE_PLAN_LIMITS["prlabs"]}

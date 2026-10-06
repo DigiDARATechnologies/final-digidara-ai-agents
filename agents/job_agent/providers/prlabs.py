@@ -116,7 +116,7 @@ def normalize_job(raw_job):
     }
 
 
-def fetch_and_normalize(search_term, location, results_wanted=50, sites=None, hours_old=72,
+def fetch_and_normalize(search_term, location, results_wanted=50, sites=None, hours_old=168,
                         session=None, before_request=None):
     """Search one role in one location; returns canonical job dicts."""
     key = _api_key()

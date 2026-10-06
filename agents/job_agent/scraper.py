@@ -332,7 +332,7 @@ def scrape_source(source):
             location=config.get("location") or "Tamil Nadu, India",
             results_wanted=int(config.get("results_wanted", 50)),
             sites=config.get("sites") or None,
-            hours_old=int(config.get("hours_old", 72)),
+            hours_old=int(config.get("hours_old", 168)),
             before_request=lambda: reserve_call("prlabs"),
         )
 

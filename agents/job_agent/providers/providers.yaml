@@ -494,16 +494,24 @@ jsearch:
 # Key is read from PRLABS_API_KEY in the environment (never put it here).
 # Each role below is searched in each location; calls per day/month are capped
 # by JOBS_PRLABS_DAILY_QUERIES / JOBS_PRLABS_MONTHLY_CALLS (free_plan.py).
+# With 14 roles x 6 locations and 14 searches a day, every role runs every day
+# and reaches every location every 6 days.
 prlabs:
   enabled: true
-  # LinkedIn's location "Tamil Nadu, India" covers every district in one search;
-  # each job's district is classified afterwards (tn_location.py).
+  # "Tamil Nadu, India" covers the whole state, but its 50 results are mostly
+  # Chennai; the cities below (each with a 50 km radius) bring in the other
+  # districts. Each job's district is classified afterwards (tn_location.py).
   locations:
     - Tamil Nadu, India
+    - Coimbatore, Tamil Nadu, India
+    - Madurai, Tamil Nadu, India
+    - Tiruchirappalli, Tamil Nadu, India
+    - Salem, Tamil Nadu, India
+    - Tirunelveli, Tamil Nadu, India
   sites: [linkedin, indeed]
   results_wanted: 50
-  # Only jobs posted in the last 3 days, so a daily run picks up new ones.
-  hours_old: 72
+  # A location comes round every 6 days, so look back 7 days (= JOBS_RETENTION_DAYS).
+  hours_old: 168
   roles:
     - AI Engineer
     - Machine Learning Engineer
