@@ -179,3 +179,32 @@ def test_validates_double_escaped_unlabelled_code_block():
     validated=validate_generated_item(item,slot)
 
     assert "```c\n#include <stdio.h>\nint main() { return 0; }\n```" in validated["question"]
+
+
+def test_a_code_layout_failure_gets_a_targeted_retry_and_a_no_code_final_retry():
+    from backend.app.services.test_generation import _retry_context
+    error = ValueError("question 6: technical code must be inside a language-labelled fenced code block")
+    second = _retry_context("BASE", error, [], 1, final=False)
+    assert "CODE LAYOUT:" in second and "question_code" in second and "NO program code" not in second
+    final = _retry_context("BASE", error, [], 2, final=True)
+    assert "CODE LAYOUT, FINAL" in final and "NO program code" in final
+    other = _retry_context("BASE", ValueError("options must be unique and non-empty"), [], 2, final=True)
+    assert "CODE LAYOUT" not in other
+
+
+def test_a_conceptual_technical_question_without_code_is_valid():
+    slot = {"category": "Technical Aptitude", "topic": "Advanced Recursion", "difficulty": "Medium"}
+    item = {
+        "question": "Which condition stops a recursive function from calling itself forever?",
+        "options": {"A": "The base case", "B": "The recursive case", "C": "A global variable", "D": "The call stack size"},
+        "correct_answer": "A",
+        "explanation": "A recursive function needs a base case that returns without recursing, which ends the chain of calls.",
+        **slot,
+    }
+    assert validate_generated_item(item, slot)["question"].startswith("Which condition")
+
+
+def test_bare_code_after_a_fenced_block_is_fenced_too():
+    question = "What does this print?\n```python\nprint(1)\n```\nprint(2)\nprint(3)"
+    stored = validate_generated_item(technical_item(question), TECHNICAL_SLOT)["question"]
+    assert stored.count("```") == 4 and "```python\nprint(2)\nprint(3)\n```" in stored
