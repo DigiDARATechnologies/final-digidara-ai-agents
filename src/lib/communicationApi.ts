@@ -112,6 +112,19 @@ export function respondWriting(authToken: string, sessionId: number, answer: str
   });
 }
 
+/** End a "Chat with AI" writing conversation: the server evaluates each of the
+ * learner's messages and saves a completed session that has a PDF report. */
+export function finishWritingChat(
+  authToken: string,
+  topic: string,
+  difficulty: Difficulty,
+  history: Array<{ role: "assistant" | "user"; text: string }>,
+) {
+  return invoke<{ session_id: number; overall_score?: number | null; summary_feedback?: string; total_turns: number }>(
+    "writing_chat_finish", { authToken, topic, difficulty, history },
+  );
+}
+
 export function endWriting(authToken: string, sessionId: number) {
   return invoke<Record<string, any>>("writing_end", { authToken, session_id: sessionId });
 }

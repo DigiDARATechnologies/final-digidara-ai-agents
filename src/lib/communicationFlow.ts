@@ -3,6 +3,7 @@ import {
   bridgeIdentity,
   downloadSpeakingReportPdf,
   downloadWritingReportPdf,
+  finishWritingChat,
   endPronunciationSession,
   endSpeaking,
   endWriting,
@@ -666,7 +667,32 @@ export async function handleCommunicationText(
   }
 
   if (state.step === "writing_chat_turn") {
-    if (command === "end_session") return showMenu(state, "Writing chat ended. What would you like to practise next?");
+    if (command === "end_session") {
+      // The AI's messages are "reaction\n\ncorrection\n\nnext question"; the
+      // report shows each answer under the question it replied to.
+      const history = (state.writingChatHistory || []).map((entry) => (
+        entry.role === "assistant" ? { ...entry, text: entry.text.split("\n\n").pop() || entry.text } : entry
+      ));
+      if (!history.some((entry) => entry.role === "user")) {
+        return showMenu(state, "Writing chat ended. What would you like to practise next?");
+      }
+      try {
+        const summary = await finishWritingChat(state.authToken!, state.writingTopic || "this topic", state.difficulty, history);
+        const scoreText = summary.overall_score !== null && summary.overall_score !== undefined ? `${summary.overall_score}/10` : "—/10";
+        return {
+          state: { ...state, step: "main_menu" as const, sessionId: summary.session_id, writingChatHistory: undefined },
+          messages: [{
+            text: `Writing chat complete! Overall score: ${scoreText}\n${summary.summary_feedback ?? ""}\n\nYour Writing Practice Report PDF is ready, with every correction from this chat:`,
+            options: [
+              { label: "📄 Download PDF Report", value: "download_writing_pdf", description: "Download your detailed writing analysis PDF" },
+              ...MENU_OPTIONS,
+            ],
+          }],
+        };
+      } catch (error) {
+        return showMenu(state, `Writing chat ended, but the report could not be prepared: ${(error as Error).message}`);
+      }
+    }
     try {
       const history = [...(state.writingChatHistory || []), { role: "user" as const, text: trimmed }];
       const result = await writingChat(state.authToken!, state.writingTopic || "this topic", state.difficulty, history);
