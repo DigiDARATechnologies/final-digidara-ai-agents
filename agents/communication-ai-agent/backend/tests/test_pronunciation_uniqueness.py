@@ -64,14 +64,21 @@ def test_sentences_never_repeat_either(client, auth_headers, monkeypatch):
     assert generate(client, auth_headers, mode="sentence") == "We play cricket on Sundays."
 
 
-def test_a_word_another_learner_just_got_is_avoided_when_possible(client, monkeypatch):
-    other = {"Authorization": f"Bearer {client.post('/api/auth/guest').get_json()['token']}"}
-    mine = {"Authorization": f"Bearer {client.post('/api/auth/guest').get_json()['token']}"}
-    scripted(monkeypatch, ["Strategy", "Strategy", "Feedback"])
+def test_a_word_another_learner_just_got_is_avoided_when_possible(client, monkeypatch, make_user_headers):
+    other, mine = make_user_headers(), make_user_headers()
+    scripted(monkeypatch, ["Strategy"])
     assert generate(client, other) == "Strategy"
     calls = scripted(monkeypatch, ["Strategy", "Feedback"])
-    assert generate(client, mine) == "Feedback"
+    assert generate(client, mine) == "Feedback"          # new to me, but someone got "Strategy" today
     assert "Strategy" in calls[0]["recent"]
+
+
+def test_another_learners_word_is_still_given_when_nothing_else_comes_back(client, monkeypatch, make_user_headers):
+    other, mine = make_user_headers(), make_user_headers()
+    scripted(monkeypatch, ["Strategy"])
+    generate(client, other)
+    scripted(monkeypatch, ["Strategy"] * 4)
+    assert generate(client, mine) == "Strategy"          # never had it myself, so it is allowed
 
 
 def test_twelve_sessions_of_words_are_all_different(client, auth_headers, monkeypatch):

@@ -59,6 +59,7 @@ ACTION_MAP = {
     "writing_daily_status": ("GET", "/api/writing/daily-challenge-status"),
     "writing_start": ("POST", "/api/writing/start"),
     "writing_chat": ("POST", "/api/writing/chat"),
+    "writing_chat_finish": ("POST", "/api/writing/chat/finish"),
     "writing_respond": ("POST", "/api/writing/respond"),
     "writing_end": ("POST", "/api/writing/end"),
     "writing_active": ("GET", "/api/writing/active"),

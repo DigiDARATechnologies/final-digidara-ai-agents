@@ -56,3 +56,22 @@ def auth_headers(client):
     assert response.status_code == 200
     token = response.get_json()["token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def make_user_headers(app):
+    """Auth headers for a brand-new, separate learner (guest login is one shared account)."""
+    from flask_jwt_extended import create_access_token
+    from app.models import User
+
+    count = {"n": 0}
+
+    def make():
+        count["n"] += 1
+        user = User(name=f"Learner {count['n']}", email=f"learner{count['n']}@example.com")
+        user.set_password("not-used-in-tests-123")
+        db.session.add(user)
+        db.session.commit()
+        return {"Authorization": f"Bearer {create_access_token(identity=str(user.id))}"}
+
+    return make
