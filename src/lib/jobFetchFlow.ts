@@ -236,7 +236,7 @@ export async function openJobFetchChat(user: User, conversationId?: string): Pro
 
       return {
         state: profileState,
-        messages: [{ text: welcomeText, options: profile.onboarding_step === "resume" ? [{ label: "Skip resume", value: "skip" }] : [] }],
+        messages: [{ text: welcomeText, options: profile.onboarding_options ?? (profile.onboarding_step === "resume" ? [{ label: "Skip resume", value: "skip" }] : []) }],
       };
     }
 
