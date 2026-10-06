@@ -158,7 +158,26 @@ def _fallback_pronunciation_item(mode, difficulty, recent_items=None):
     }
 
 
-def generate_pronunciation_item(practice_mode, difficulty, recent_items=None):
+def unused_fallback_item(practice_mode, difficulty, used_keys, normalize):
+    """A built-in item this learner has never been given, or None.
+
+    `used_keys` holds `normalize(text)` for everything already given."""
+    if practice_mode not in {"word", "sentence"}:
+        return None
+    candidates = [
+        item for item in FALLBACK_PRONUNCIATION_ITEMS[(practice_mode, difficulty)]
+        if normalize(item[0]) not in used_keys
+    ]
+    if not candidates:
+        return None
+    import random
+    text = random.choice(candidates)[0]
+    return _fallback_pronunciation_item(practice_mode, difficulty, [
+        item[0] for item in FALLBACK_PRONUNCIATION_ITEMS[(practice_mode, difficulty)] if item[0] != text
+    ])
+
+
+def generate_pronunciation_item(practice_mode, difficulty, recent_items=None, variety_hint=None):
     if practice_mode == "minimal_pairs":
         import random
         # Priority 7: Generate minimal pairs
@@ -205,7 +224,8 @@ def generate_pronunciation_item(practice_mode, difficulty, recent_items=None):
         f"{difficulty}\n\n"
         "Recent items that must not be repeated:\n"
         f"{recent_items or []}\n\n"
-        "Rules for Word Practice:\n\n"
+        + (f"Variety requirement (so different learners get different items):\n{variety_hint}\n\n" if variety_hint else "")
+        + "Rules for Word Practice:\n\n"
         "Easy:\n"
         "- Use common everyday English words.\n"
         "- Use short or simple words.\n"
@@ -276,7 +296,7 @@ def generate_pronunciation_item(practice_mode, difficulty, recent_items=None):
         "Do not repeat recent items."
     )
     try:
-        data = _extract_json(_chat(system_prompt, "Generate the item now.", temperature=0.6, operation="pronunciation.daily_challenge_generation" if practice_mode == "daily" else "pronunciation.content_generation", module="pronunciation", service="groq_pronunciation.generate_pronunciation_item"))
+        data = _extract_json(_chat(system_prompt, "Generate the item now.", temperature=0.6 if practice_mode == "daily" else 0.9, operation="pronunciation.daily_challenge_generation" if practice_mode == "daily" else "pronunciation.content_generation", module="pronunciation", service="groq_pronunciation.generate_pronunciation_item"))
         practice_lines = data.get("practice_lines") if isinstance(data.get("practice_lines"), list) else []
         text = str(data.get("practice_text") or data.get("text") or "").strip()
         if practice_mode == "daily" and practice_lines:

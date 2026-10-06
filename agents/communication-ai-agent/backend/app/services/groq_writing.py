@@ -392,7 +392,7 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
 
     mistakes = data.get("mistakes") if isinstance(data.get("mistakes"), list) else []
     normalized_mistakes = []
-    for mistake in mistakes[:4]:
+    for mistake in mistakes[:6]:
         if not isinstance(mistake, dict):
             continue
         normalized_mistakes.append({
@@ -405,7 +405,7 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
     areas = data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else []
     mistake_points = _normalize_points(data.get("mistake_points") or data.get("mistake_explanation_points"))
     if not mistake_points and normalized_mistakes:
-        mistake_points = [point for mistake in normalized_mistakes for point in mistake.get("mistake_points", [])][:4]
+        mistake_points = [point for mistake in normalized_mistakes for point in mistake.get("mistake_points", [])][:6]
     return {
         "appreciation": data.get("appreciation") or "Good attempt.",
         "status": data.get("status") or ("No Answer" if not answer.strip() else "Partially Correct"),
@@ -413,7 +413,7 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         "corrected_answer": data.get("corrected_answer") or answer,
         "explanation": data.get("explanation") or data.get("mistake_explanation") or "A detailed correction was not available for this answer.",
         "mistake_points": mistake_points,
-        "mistakes": normalized_mistakes[:4],
+        "mistakes": normalized_mistakes[:6],
         "vocabulary_suggestions": vocabulary[:3],
         "strengths": strengths[:4] or ["You submitted a complete response."],
         "areas_to_improve": areas[:4] or ["Add one clear supporting detail and review grammar before submitting."],
