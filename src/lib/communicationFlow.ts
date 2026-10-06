@@ -174,16 +174,48 @@ function writingExercisePrompt(question: string, difficulty: Difficulty): string
   return `${question}\n\nWriting instruction: Write a clear paragraph of about ${target.range} words. Explain your ideas clearly and use complete sentences.`;
 }
 
+const NO_CORRECTIONS = /no (?:major )?grammar corrections?/i;
+
+/** Every correction the evaluator found, as "❌ wrong → ✅ right" lines with
+ * the reason under each, then better word choices. Reads the structured
+ * `mistakes` first and falls back to the `mistake_points` strings, so a
+ * correction is never dropped because the evaluator used the other field. */
+export function writingCorrections(feedback: NonNullable<WritingTurnResult["feedback"]>): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const item of feedback.mistakes || []) {
+    const wrong = String(item.incorrect || "").trim();
+    const right = String(item.correct || "").trim();
+    if (!wrong || !right || normalizedSentence(wrong) === normalizedSentence(right) || seen.has(wrong.toLowerCase())) continue;
+    seen.add(wrong.toLowerCase());
+    const why = String(item.explanation || "").trim();
+    lines.push(`• ❌ “${wrong}” → ✅ “${right}”${why ? `\n  ${why}` : ""}`);
+  }
+  if (!lines.length) {
+    for (const point of feedback.mistake_points || []) {
+      const text = String(point || "").trim();
+      if (!text || NO_CORRECTIONS.test(text)) continue;
+      lines.push(`• ${text.replace(/^["“]([^"”]+)["”]\s*(?:→|->)\s*["“]([^"”]+)["”]/, "❌ “$1” → ✅ “$2”")}`);
+    }
+  }
+  const words = (feedback.vocabulary_suggestions || [])
+    .filter((item) => item.original && item.suggestion && normalizedSentence(item.original) !== normalizedSentence(item.suggestion))
+    .slice(0, 3)
+    .map((item) => `• “${item.original}” → “${item.suggestion}”${item.example ? `\n  e.g. ${item.example}` : ""}`);
+  return [
+    lines.length ? `**Corrections (${lines.length}):**\n${lines.join("\n")}` : "**Corrections:** ✅ No grammar mistakes found.",
+    words.length ? `**Better word choices:**\n${words.join("\n")}` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
 function writingEvaluationResult(feedback: NonNullable<WritingTurnResult["feedback"]>): string {
   const scores = feedback.scores || {};
   const score = (label: string, key: string) => `${label}: ${scores[key] == null ? "—" : scores[key]}/10`;
-  const corrections = (feedback.mistakes || []).filter((item) => item.incorrect && item.correct).slice(0, 6)
-    .map((item) => `• “${item.incorrect}” → “${item.correct}”${item.explanation ? `\n  ${item.explanation}` : ""}`);
   return [
     "Focus on grammar and clarity for improvement.",
     [score("Clarity", "clarity"), score("Grammar", "grammar"), score("Knowledge", "knowledge"), score("Spelling", "spelling"), score("Vocabulary", "vocabulary"), score("Overall", "overall")].join(" · "),
-    corrections.length ? `Grammar corrections:\n${corrections.join("\n")}` : "Grammar corrections: No major grammar corrections were found.",
-    `Corrected paragraph:\n“${feedback.corrected_answer || feedback.better_natural_answer || "Your paragraph was received."}”`,
+    writingCorrections(feedback),
+    `**Corrected paragraph:**\n“${feedback.corrected_answer || feedback.better_natural_answer || "Your paragraph was received."}”`,
   ].join("\n\n");
 }
 
@@ -586,11 +618,12 @@ export async function handleCommunicationText(
           messages: [{ text: writingEvaluationResult(feedback || {}), options: [{ label: "End session", value: "end_session" }] }],
         };
       }
+      const corrected = String(feedback?.corrected_answer || "").trim();
       const lines = [
         feedback?.short_feedback || feedback?.feedback || "Got it.",
         formatScores(feedback?.scores),
-        feedback?.corrected_answer ? `Corrected: ${feedback.corrected_answer}` : "",
-        "",
+        feedback ? writingCorrections(feedback) : "",
+        corrected && normalizedSentence(corrected) !== normalizedSentence(trimmed) ? `**Corrected answer:**\n“${corrected}”` : "",
         result.prompt || "",
       ].filter(Boolean);
       return {
@@ -601,7 +634,7 @@ export async function handleCommunicationText(
           lastScores: feedback?.scores,
           lastFeedback: feedback?.short_feedback || feedback?.feedback,
         },
-        messages: [{ text: lines.join("\n"), options: [{ label: "End session", value: "end_session" }] }],
+        messages: [{ text: lines.join("\n\n"), options: [{ label: "End session", value: "end_session" }] }],
       };
     } catch (error) {
       return { state, messages: [{ text: `Could not save your answer: ${(error as Error).message}` }] };

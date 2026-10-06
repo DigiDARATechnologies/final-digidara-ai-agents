@@ -1,6 +1,8 @@
 import json
+import random
+import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
@@ -11,7 +13,7 @@ from ..extensions import db
 from ..models import PronunciationAttempt, PronunciationItem, PronunciationSession, User
 from ..services import groq_service
 from ..services.daily_challenges import PRONUNCIATION_DAILY, activity_status, backfill_today_from_completed_sessions, complete_daily_activity, mark_activity_started, today_challenge_date
-from ..services.groq_pronunciation import DAILY_CHALLENGE_SCHEMA_VERSION, generate_phonetic_hints
+from ..services.groq_pronunciation import DAILY_CHALLENGE_SCHEMA_VERSION, generate_phonetic_hints, unused_fallback_item
 from ..services.pronunciation_assessment import assess_pronunciation
 from ..services.cefr_adaptation import calculate_adaptive_difficulty, score_to_cefr
 from ..utils.score_utils import to_score10
@@ -22,6 +24,22 @@ ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
 ALLOWED_MODES = {"word", "sentence", "daily"}
 PUBLIC_MODE_NAMES = {"word": "word", "sentence": "sentence", "daily": "daily_challenge"}
 MAX_ATTEMPTS_PER_ITEM = 3
+
+# Uniqueness: a learner is never given a word or sentence they have had
+# before (in that practice mode, at any difficulty). Each request also gets a
+# random theme and starting letter, and items given to anyone in the last day
+# are avoided, so different learners get different words.
+UNIQUE_GENERATION_ATTEMPTS = 4
+AVOID_LIST_SIZE = 80            # of the learner's own history, sent to the AI
+SHARED_AVOID_HOURS = 24
+SHARED_AVOID_SIZE = 40
+VARIETY_THEMES = [
+    "daily life", "food and cooking", "travel and transport", "health and fitness", "nature and weather",
+    "family and relationships", "school and studies", "technology and computers", "office and teamwork",
+    "job interviews", "money and banking", "shopping", "sports", "science", "arts and music",
+    "emotions and personality", "city life", "customer service", "the environment", "communication skills",
+]
+VARIETY_LETTERS = "ABCDEFGHILMNOPRSTUVW"
 DEFAULT_OPEN_ENDED_QUESTIONS = 0
 
 
@@ -135,11 +153,77 @@ def _recent_items(user_id, practice_mode, difficulty):
     return [item.text for item in rows]
 
 
+def _uniqueness_key(text):
+    """Case, punctuation and spacing don't make an item different."""
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", str(text or "").lower())).strip()
+
+
+def _items_given_to(user_id, practice_mode):
+    """Every item text this learner was ever given in this mode, newest first."""
+    rows = (
+        db.session.query(PronunciationItem.text)
+        .filter(PronunciationItem.user_id == user_id, PronunciationItem.practice_mode == practice_mode)
+        .order_by(PronunciationItem.created_at.desc())
+        .all()
+    )
+    return [row[0] for row in rows if row[0]]
+
+
+def _items_given_to_anyone_recently(practice_mode, difficulty):
+    since = datetime.utcnow() - timedelta(hours=SHARED_AVOID_HOURS)
+    rows = (
+        db.session.query(PronunciationItem.text)
+        .filter(
+            PronunciationItem.practice_mode == practice_mode,
+            PronunciationItem.difficulty == difficulty,
+            PronunciationItem.created_at >= since,
+        )
+        .order_by(PronunciationItem.created_at.desc())
+        .limit(SHARED_AVOID_SIZE)
+        .all()
+    )
+    return [row[0] for row in rows if row[0]]
+
+
+def _variety_hint(practice_mode):
+    theme = random.choice(VARIETY_THEMES)
+    if practice_mode == "word":
+        return f"Choose a word related to {theme}, starting with the letter {random.choice(VARIETY_LETTERS)} if a suitable one exists."
+    return f"Make the sentence about {theme}."
+
+
+def _unique_payload(user_id, practice_mode, difficulty):
+    """A generated item this learner has never had; see UNIQUE_GENERATION_ATTEMPTS."""
+    history = _items_given_to(user_id, practice_mode)
+    used = {_uniqueness_key(text) for text in history}
+    shared = {_uniqueness_key(text) for text in _items_given_to_anyone_recently(practice_mode, difficulty)}
+    avoid = history[:AVOID_LIST_SIZE] + [text for text in _items_given_to_anyone_recently(practice_mode, difficulty) if _uniqueness_key(text) not in used]
+    fresh_but_shared = None
+    for _ in range(UNIQUE_GENERATION_ATTEMPTS):
+        payload = groq_service.generate_pronunciation_item(practice_mode, difficulty, avoid, variety_hint=_variety_hint(practice_mode))
+        key = _uniqueness_key(payload.get("text"))
+        if key and key not in used:
+            if key not in shared:
+                return payload
+            fresh_but_shared = fresh_but_shared or payload   # new to this learner, recently given to someone else
+        avoid.append(payload.get("text"))
+    if fresh_but_shared:
+        return fresh_but_shared
+    fallback = unused_fallback_item(practice_mode, difficulty, used, _uniqueness_key)
+    if fallback:
+        return fallback
+    current_app.logger.warning(
+        "Pronunciation: no unused %s item for user %s at %s after %d attempts; repeating one",
+        practice_mode, user_id, difficulty, UNIQUE_GENERATION_ATTEMPTS,
+    )
+    return payload
+
+
 def _recent_daily_titles(user_id, difficulty):
     rows = (
         PronunciationItem.query.filter_by(user_id=user_id, practice_mode="daily", difficulty=difficulty)
         .order_by(PronunciationItem.created_at.desc())
-        .limit(8)
+        .limit(60)
         .all()
     )
     titles = []
@@ -199,11 +283,14 @@ def _generated_response(item):
 
 
 def _create_item(user_id, practice_mode, difficulty, daily_date=None):
-    recent = _recent_daily_titles(user_id, difficulty) if practice_mode == "daily" else _recent_items(user_id, practice_mode, difficulty)
-    payload = groq_service.generate_pronunciation_item(practice_mode, difficulty, recent)
-    payload_title = (payload.get("metadata") or {}).get("title") or payload.get("meaning") or payload.get("text")
-    if _same_item(payload_title if practice_mode == "daily" else payload.get("text"), recent):
+    if practice_mode == "daily":
+        recent = _recent_daily_titles(user_id, difficulty)
         payload = groq_service.generate_pronunciation_item(practice_mode, difficulty, recent)
+        payload_title = (payload.get("metadata") or {}).get("title") or payload.get("meaning") or payload.get("text")
+        if _same_item(payload_title, recent):
+            payload = groq_service.generate_pronunciation_item(practice_mode, difficulty, recent)
+    else:
+        payload = _unique_payload(user_id, practice_mode, difficulty)
     item = PronunciationItem(
         public_id=str(uuid.uuid4()),
         user_id=user_id,

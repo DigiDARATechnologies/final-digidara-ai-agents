@@ -84,7 +84,10 @@ export interface WritingTurnResult {
     scores?: Record<string, number | null>;
     corrected_answer?: string;
     better_natural_answer?: string;
-    mistakes?: Array<{ incorrect?: string; correct?: string; explanation?: string }>;
+    mistakes?: Array<{ incorrect?: string; correct?: string; explanation?: string; type?: string }>;
+    /** "incorrect phrase" → "corrected phrase" — reason, one string per correction. */
+    mistake_points?: string[];
+    vocabulary_suggestions?: Array<{ original?: string; suggestion?: string; example?: string }>;
   };
   last_turn_scores?: Record<string, any>;
 }
