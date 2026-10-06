@@ -67,6 +67,28 @@ def _draw_logo_and_footer(canvas, doc):
     canvas.restoreState()
 
 
+def _turn_corrections(turn):
+    """(wrong, right, reason) for each correction stored with a turn's evaluation."""
+    try:
+        feedback = json.loads(getattr(turn, "feedback_json", None) or "{}")
+    except (TypeError, ValueError):
+        return []
+    found, seen = [], set()
+    for item in feedback.get("mistakes") or []:
+        if not isinstance(item, dict):
+            continue
+        wrong, right = str(item.get("incorrect") or "").strip(), str(item.get("correct") or "").strip()
+        if wrong and right and wrong.lower() != right.lower() and wrong.lower() not in seen:
+            seen.add(wrong.lower())
+            found.append((wrong, right, str(item.get("explanation") or "").strip()))
+    if not found:
+        for point in feedback.get("mistake_points") or []:
+            text = str(point or "").strip()
+            if text and "no grammar correction" not in text.lower():
+                found.append((None, None, text))
+    return found[:6]
+
+
 def generate_writing_report_pdf(session, learner_name="Learner"):
     """Compile a professional, beautiful PDF report for a completed writing session."""
     buffer = BytesIO()
@@ -290,9 +312,25 @@ def generate_writing_report_pdf(session, learner_name="Learner"):
             if feedback_text:
                 turn_elements.append(Spacer(1, 2))
                 turn_elements.append(Paragraph(f"<b>AI Feedback:</b> {_plain(feedback_text)}", muted_body))
+            corrections = _turn_corrections(turn)
+            if corrections:
+                turn_elements.append(Spacer(1, 3))
+                turn_elements.append(Paragraph(f"<b>Corrections ({len(corrections)}):</b>", body_style))
+                for wrong, right, reason in corrections:
+                    if wrong:
+                        line = (f"&nbsp;&nbsp;* <font color='#C53030'><strike>{_plain(wrong)}</strike></font> -&gt; "
+                                f"<font color='#167A50'><b>{_plain(right)}</b></font>")
+                        if reason:
+                            line += f"<br/>&nbsp;&nbsp;&nbsp;&nbsp;<font color='#5A6A80'>{_plain(reason)}</font>"
+                    else:
+                        line = f"&nbsp;&nbsp;* {_plain(reason)}"
+                    turn_elements.append(Paragraph(line, body_style))
+            elif getattr(turn, "feedback_json", None):
+                turn_elements.append(Spacer(1, 2))
+                turn_elements.append(Paragraph("<b>Corrections:</b> <font color='#167A50'>No grammar mistakes found.</font>", body_style))
             if correction and str(correction).strip() != str(answer).strip():
                 turn_elements.append(Spacer(1, 2))
-                turn_elements.append(Paragraph(f"<b>Grammar & Correction:</b> <font color='#167A50'>{_plain(correction)}</font>", body_style))
+                turn_elements.append(Paragraph(f"<b>Corrected Answer:</b> <font color='#167A50'>{_plain(correction)}</font>", body_style))
             if better and str(better).strip() != str(answer).strip() and str(better).strip() != str(correction).strip():
                 turn_elements.append(Spacer(1, 2))
                 turn_elements.append(Paragraph(f"<b>Natural Polish:</b> <font color='#4A37D0'>{_plain(better)}</font>", body_style))

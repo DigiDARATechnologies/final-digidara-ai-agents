@@ -177,6 +177,23 @@ def _session_payload(session):
     }
 
 
+def _store_turn_feedback(turn, feedback, answer):
+    """Write an evaluate_writing_answer result onto a turn; returns (feedback, scores)."""
+    feedback = feedback if isinstance(feedback, dict) else {}
+    scores = feedback.get("scores") if isinstance(feedback.get("scores"), dict) else {}
+    turn.grammar_score = scores.get("grammar")
+    turn.vocabulary_score = scores.get("vocabulary")
+    turn.clarity_score = scores.get("clarity")
+    turn.knowledge_score = scores.get("knowledge")
+    turn.overall_score = scores.get("overall")
+    turn.corrected_answer = feedback.get("corrected_answer") or answer
+    turn.better_natural_answer = feedback.get("better_natural_answer") or turn.corrected_answer
+    turn.feedback_json = json.dumps(feedback)
+    turn.feedback = feedback.get("short_feedback") or feedback.get("feedback") or "Your answer was received."
+    turn.weak_area_tags = json.dumps(_weak_area_tags_from_feedback(feedback))
+    return feedback, scores
+
+
 def _finalize_writing_session(session, mark_daily_completion=False, result_id=None):
     turns = [turn for turn in session.turns if turn.user_response]
     session.total_turns = len(turns)
@@ -624,6 +641,85 @@ def writing_chat():
         return _api_error("The writing chat is unavailable right now. Please try again.", "WRITING_CHAT_UNAVAILABLE", 503)
 
 
+# A finished chat is evaluated message by message (the newest ones, if long).
+MAX_CHAT_REPORT_TURNS = 10
+
+
+@writing_bp.post("/chat/finish")
+@jwt_required()
+def finish_writing_chat():
+    """End a "Chat with AI" conversation: evaluate each of the learner's
+    messages like a writing answer (scores, corrections) and save it all as
+    a completed writing session, so it gets the same summary and PDF report."""
+    user_id = int(get_jwt_identity())
+    try:
+        _ensure_writing_schema()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return _api_error("The writing database schema is not ready.", "DATABASE_SCHEMA_OUTDATED", 503)
+    data = request.get_json(silent=True) or {}
+    topic = str(data.get("topic") or "").strip()
+    difficulty = str(data.get("difficulty") or "medium").strip().lower()
+    history = data.get("history") if isinstance(data.get("history"), list) else []
+    if len(topic) < 3 or len(topic) > 120:
+        return _api_error("Please enter a valid writing topic.", "INVALID_CUSTOM_TOPIC")
+    if difficulty not in ALLOWED_DIFFICULTIES:
+        return _api_error("difficulty must be easy, medium or hard", "INVALID_DIFFICULTY")
+
+    pairs = []
+    question = f"Chat with AI about {topic}"
+    for item in history[-60:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        message = str(item.get("text") or "").strip()[:1500]
+        if not message:
+            continue
+        if role == "assistant":
+            question = message
+        elif role == "user":
+            pairs.append((question, message))
+    pairs = pairs[-MAX_CHAT_REPORT_TURNS:]
+    if not pairs:
+        return _api_error("Write at least one message in the chat to get a report.", "EMPTY_CHAT")
+
+    try:
+        session = WritingSession(
+            user_id=user_id, mode="chat", topic_title=topic[:200],
+            topic_description=f"Chat with AI about {topic}"[:500], difficulty=difficulty,
+            status="in_progress", total_turns=len(pairs),
+        )
+        db.session.add(session)
+        for number, (prompt, answer) in enumerate(pairs, start=1):
+            turn = WritingTurn(turn_number=number, ai_prompt=prompt, user_response=answer, completed_at=datetime.utcnow())
+            session.turns.append(turn)
+            try:
+                feedback = groq_service.evaluate_writing_answer("chat", difficulty, topic, prompt, answer)
+            except Exception:
+                current_app.logger.exception("Writing chat message evaluation failed")
+                feedback = {}
+            _store_turn_feedback(turn, feedback, answer)
+        db.session.flush()
+        summary = _finalize_writing_session(session)
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Writing chat report could not be saved")
+        return _api_error("Could not save your writing chat. Please try again.", "DATABASE_ERROR", 503)
+
+    return jsonify({
+        "success": True,
+        "done": True,
+        "session_id": session.id,
+        "overall_score": to_score10(session.overall_score),
+        "summary": session.summary_feedback,
+        "summary_feedback": session.summary_feedback,
+        "strengths": summary.get("strengths", []),
+        "areas_to_improve": summary.get("areas_to_improve", []),
+        "total_turns": len(pairs),
+    })
+
+
 @writing_bp.put("/draft")
 @jwt_required()
 def save_draft():
@@ -850,18 +946,7 @@ def respond():
         feedback = groq_service.evaluate_writing_answer(
             session.mode, session.difficulty, session.topic_title, current_turn.ai_prompt, current_turn.user_response
         )
-        feedback = feedback if isinstance(feedback, dict) else {}
-        scores = feedback.get("scores") if isinstance(feedback.get("scores"), dict) else {}
-        current_turn.grammar_score = scores.get("grammar")
-        current_turn.vocabulary_score = scores.get("vocabulary")
-        current_turn.clarity_score = scores.get("clarity")
-        current_turn.knowledge_score = scores.get("knowledge")
-        current_turn.overall_score = scores.get("overall")
-        current_turn.corrected_answer = feedback.get("corrected_answer") or answer
-        current_turn.better_natural_answer = feedback.get("better_natural_answer") or current_turn.corrected_answer
-        current_turn.feedback_json = json.dumps(feedback)
-        current_turn.feedback = feedback.get("short_feedback") or feedback.get("feedback") or "Your answer was received."
-        current_turn.weak_area_tags = json.dumps(_weak_area_tags_from_feedback(feedback))
+        feedback, scores = _store_turn_feedback(current_turn, feedback, answer)
 
         if session.mode == "daily":
             complete_daily_activity(user_id, WRITING_DAILY, session.id, result_id=current_turn.id)
