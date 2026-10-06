@@ -12,7 +12,7 @@ httpx==0.28.1
 # (see CI_CD_SETUP.md). httpx==0.28.1 already matches the working pin used
 # by the communication agent elsewhere in this repo.
 litellm==1.88.6
-langgraph==1.0.10
+langgraph==1.2.13
 bcrypt>=4.2,<5
 PyJWT>=2.9,<3
 slowapi>=0.1.9,<1
