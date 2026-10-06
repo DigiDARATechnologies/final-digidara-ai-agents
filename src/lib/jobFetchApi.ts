@@ -352,7 +352,7 @@ export interface JobAutomationSettings {
 /** Free-plan API usage per provider and the coming week's planned searches. */
 export interface FreePlanOverview {
   usage: Record<string, Array<{ window: string; used: number; limit: number }>>;
-  upcoming: Array<{ date: string; adzuna: Array<{ city: string; roles: string[] }>; jsearch: string[] }>;
+  upcoming: Array<{ date: string; adzuna: Array<{ city: string; roles: string[] }>; jsearch: string[]; prlabs?: string[] }>;
 }
 
 export function adminGetAutomation() {
@@ -458,6 +458,16 @@ export function adminJSearchStatus() {
 
 export function adminJSearchRun() {
   return invoke<QueueCollectionResult>("admin_jsearch_run");
+}
+
+export function adminPRLabsStatus() {
+  return invoke<{
+    ready: boolean; enabled: boolean; configured: boolean; queries_count: number; calls_left_today: number; reason: string;
+  }>("admin_prlabs_status");
+}
+
+export function adminPRLabsRun() {
+  return invoke<QueueCollectionResult>("admin_prlabs_run");
 }
 
 export interface JobTokenSettings {

@@ -306,6 +306,50 @@ def get_adzuna_config(config=None):
     }
 
 
+DEFAULT_PRLABS_ROLES = [
+    "AI Engineer", "Machine Learning Engineer", "Generative AI Engineer", "Data Scientist",
+    "Data Analyst", "Data Engineer", "Business Intelligence Analyst", "Web Developer",
+    "Frontend Developer", "Full Stack Developer", "React Developer", "Backend Developer",
+    "Python Developer", "UI UX Designer",
+]
+
+
+def get_prlabs_config(config=None):
+    """Return the PR Labs Jobs API search plan.
+
+    `{enabled, queries: [{search_term, location}], sites, results_wanted,
+    hours_old}`. Each role in `prlabs.roles` is searched in each of
+    `prlabs.locations` (default: all of Tamil Nadu in one search); the
+    per-job Tamil Nadu district classification happens later, as for every
+    other source.
+
+    Queries are laid out diagonally, like the Adzuna catalogue: every block
+    of len(roles) searches covers every role once, each role in a different
+    location, and the next block moves each role to its next location. A
+    daily budget of len(roles) therefore searches every role every day and
+    every role reaches every location within len(locations) days."""
+    config = load_providers_config() if config is None else config
+    prlabs = config.get("prlabs") or {}
+    if not isinstance(prlabs, dict):
+        return {"enabled": False, "queries": [], "sites": [], "results_wanted": 0, "hours_old": 0}
+    roles = _names(prlabs.get("roles")) or list(DEFAULT_PRLABS_ROLES)
+    locations = _names(prlabs.get("locations")) or ["Tamil Nadu, India"]
+    # Only the first time each location appears matters; duplicates would repeat searches.
+    locations = list(dict.fromkeys(locations))
+    sites = [str(site).strip().lower() for site in (prlabs.get("sites") or ["linkedin", "indeed"]) if str(site).strip()]
+    return {
+        "enabled": bool(prlabs.get("enabled", True)),
+        "queries": [
+            {"search_term": role, "location": locations[(index + block) % len(locations)]}
+            for block in range(len(locations))
+            for index, role in enumerate(roles)
+        ],
+        "sites": sites,
+        "results_wanted": max(1, min(100, int(prlabs.get("results_wanted", 50)))),
+        "hours_old": max(1, int(prlabs.get("hours_old", 168))),
+    }
+
+
 def get_jsearch_config(config=None):
     """Return `{enabled, queries}` for RapidAPI JSearch."""
     config = load_providers_config() if config is None else config

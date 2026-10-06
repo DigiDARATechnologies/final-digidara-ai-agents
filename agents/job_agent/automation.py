@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .config import JOBS_AUTOMATION_TIME, JOBS_AUTOMATION_TIMEZONE, JOBS_RETENTION_DAYS
 from .db import get_db
-from .providers.sync import queue_adzuna_collection, queue_jsearch_collection
+from .providers.sync import queue_adzuna_collection, queue_jsearch_collection, queue_prlabs_collection
 from .service import prune_expired_jobs
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ def queue_due_automation(now=None):
         # 1. 30-Day Automated Retention Pruning
         prune_outcome = prune_expired_jobs(max_age_days=JOBS_RETENTION_DAYS)
 
-        # 2. Daily Automated Ingestion from Adzuna & JSearch (RapidAPI)
+        # 2. Daily Automated Ingestion from Adzuna, JSearch (RapidAPI) & PR Labs
         total_queued = 0
         adzuna_res = queue_adzuna_collection(admin_id=None)
         if adzuna_res.get("ready"):
@@ -133,6 +133,10 @@ def queue_due_automation(now=None):
         if jsearch_res.get("ready"):
             total_queued += jsearch_res.get("queued_count", 0)
 
+        prlabs_res = queue_prlabs_collection(admin_id=None)
+        if prlabs_res.get("ready"):
+            total_queued += prlabs_res.get("queued_count", 0)
+
         _record_outcome(queued_count=total_queued)
         return {
             "due": True,
@@ -140,6 +144,7 @@ def queue_due_automation(now=None):
             "pruned": prune_outcome,
             "adzuna": adzuna_res,
             "jsearch": jsearch_res,
+            "prlabs": prlabs_res,
         }
     except Exception as exc:
         _record_outcome(error=str(exc))

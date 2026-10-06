@@ -73,6 +73,10 @@ JOBS_RETENTION_DAYS = max(1, int(os.getenv("JOBS_RETENTION_DAYS", "7")))
 # The catalogue (providers.yaml `it_coverage`) rotates through these slices.
 JOBS_ADZUNA_DAILY_QUERIES = max(0, int(os.getenv("JOBS_ADZUNA_DAILY_QUERIES", "70")))
 JOBS_JSEARCH_DAILY_QUERIES = max(0, int(os.getenv("JOBS_JSEARCH_DAILY_QUERIES", "6")))
+# PR Labs (prlabsapi.com): one search per role per day by default -- every
+# AI / data / web role in providers.yaml, all of Tamil Nadu.
+JOBS_PRLABS_DAILY_QUERIES = max(0, int(os.getenv("JOBS_PRLABS_DAILY_QUERIES", "14")))
+JOBS_PRLABS_MONTHLY_CALLS = max(0, int(os.getenv("JOBS_PRLABS_MONTHLY_CALLS", "450")))
 
 # Dynamic SaaS Token & Daily Free Quota Defaults (can be overridden by DB or .env)
 DEFAULT_FREE_DAILY_FEED_LIMIT = int(os.getenv("JOBS_FREE_DAILY_FEED_LIMIT", "20"))

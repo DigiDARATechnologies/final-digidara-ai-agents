@@ -3,7 +3,7 @@
 Analyzes job listings for college students to ensure postings are genuine, verified,
 and free of fraudulent schemes (e.g. upfront training fees, security deposits,
 untraceable contacts). Transparently identifies listing source (Adzuna API,
-RapidAPI JSearch, or Direct Employer Portal).
+RapidAPI JSearch, PR Labs Jobs API, or Direct Employer Portal).
 """
 from __future__ import annotations
 
@@ -93,11 +93,13 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         source_type == "jsearch"
         or (not source_type and ("jsearch" in external_id or any(d in parsed_domain for d in RAPIDAPI_DOMAINS)))
     )
+    is_prlabs = source_type == "prlabs" or (not source_type and external_id.startswith("prlabs:"))
     is_direct_career_page = (
         bool(parsed_domain)
         and ("careers." in parsed_domain or "/careers" in apply_url.lower() or "/jobs" in apply_url.lower())
         and not is_adzuna
         and not is_jsearch
+        and not is_prlabs
         and not any(d in parsed_domain for d in JOB_BOARD_DOMAINS)
     )
 
@@ -109,6 +111,10 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
         source_label = "RapidAPI JSearch"
         score += 3
         signals.append("Listing supplied by JSearch; employer verification not established")
+    elif is_prlabs:
+        source_label = "PR Labs Jobs API"
+        score += 3
+        signals.append("Listing supplied by PR Labs (LinkedIn / Indeed); employer verification not established")
     elif is_direct_career_page:
         source_label = "Direct Company Portal"
         score += 15
@@ -154,7 +160,7 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
 
     # Clamp score
     final_score = max(20, min(99, score))
-    if is_adzuna or is_jsearch:
+    if is_adzuna or is_jsearch or is_prlabs:
         final_score = min(final_score, 79)
     is_verified = bool(is_direct_career_page and final_score >= 85 and not scam_found)
 
@@ -171,6 +177,9 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     elif is_jsearch:
         trust_badge = "📋 Aggregator Listing (via RapidAPI JSearch)"
         trust_level = "aggregator"
+    elif is_prlabs:
+        trust_badge = "📋 Aggregator Listing (via PR Labs)"
+        trust_level = "aggregator"
     elif final_score >= 75:
         trust_badge = "ℹ️ Listing Checks Passed"
         trust_level = "standard"
@@ -184,7 +193,7 @@ def evaluate_job_trust(job: Dict[str, Any]) -> Dict[str, Any]:
     if is_direct_career_page:
         application_label = "Apply on company career page"
         verification_note = "Direct career-page signals found; still verify the employer and role before sharing personal data."
-    elif is_adzuna or is_jsearch:
+    elif is_adzuna or is_jsearch or is_prlabs:
         application_label = "Open listing source"
         verification_note = "Aggregator-supplied listing; the employer and vacancy were not independently verified."
     else:

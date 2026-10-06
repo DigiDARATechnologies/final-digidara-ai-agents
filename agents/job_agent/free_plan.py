@@ -10,12 +10,15 @@ Free plans (checked 1 Oct 2026):
 - Adzuna: 25 calls a minute, 250 a day, 1,000 a week, 2,500 a month
   (developer.adzuna.com/docs/terms_of_service).
 - RapidAPI JSearch Basic: 200 requests a month, 1,000 an hour.
+- PR Labs Jobs API: credit-based; capped here at JOBS_PRLABS_DAILY_QUERIES
+  a day and JOBS_PRLABS_MONTHLY_CALLS a month (set them to the plan bought).
 """
 from __future__ import annotations
 
 import logging
 import time
 
+from .config import JOBS_PRLABS_DAILY_QUERIES, JOBS_PRLABS_MONTHLY_CALLS
 from .db import get_db
 
 logger = logging.getLogger(__name__)
@@ -24,6 +27,7 @@ logger = logging.getLogger(__name__)
 FREE_PLAN_LIMITS = {
     "adzuna": [("minute", 60, 25), ("day", 86400, 250), ("week", 7 * 86400, 1000), ("month", 31 * 86400, 2500)],
     "jsearch": [("hour", 3600, 1000), ("month", 31 * 86400, 200)],
+    "prlabs": [("day", 86400, JOBS_PRLABS_DAILY_QUERIES), ("month", 31 * 86400, JOBS_PRLABS_MONTHLY_CALLS)],
 }
 # Windows this short are waited out rather than refused.
 WAIT_WINDOW_SECONDS = 3600

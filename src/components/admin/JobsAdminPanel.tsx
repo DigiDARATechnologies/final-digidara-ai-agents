@@ -5,6 +5,7 @@ import {
   adminApifyRun,
   adminGetAutomation,
   adminJSearchRun,
+  adminPRLabsRun,
   adminListCategories,
   adminListJobs,
   adminListRuns,
@@ -30,7 +31,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 type Tab = "jobs" | "sources" | "users";
 
-const PROVIDER_LABELS: Record<string, string> = { adzuna: "Adzuna", jsearch: "RapidAPI JSearch" };
+const PROVIDER_LABELS: Record<string, string> = { adzuna: "Adzuna", jsearch: "RapidAPI JSearch", prlabs: "PR Labs (LinkedIn / Indeed)" };
 
 /** Free-plan API usage (calls made in each rolling window, against the free
  * limit) and the next 7 days' planned role and city searches. */
@@ -57,11 +58,12 @@ function FreePlanPanel({ plan }: { plan: FreePlanOverview }) {
         <details key={day.date} style={{ marginBottom: "6px" }}>
           <summary style={{ cursor: "pointer", fontSize: "13px" }}>
             {new Date(`${day.date}T00:00:00`).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
-            {" · "}{day.adzuna.reduce((sum, city) => sum + city.roles.length, 0)} Adzuna + {day.jsearch.length} JSearch searches
+            {" · "}{day.adzuna.reduce((sum, city) => sum + city.roles.length, 0)} Adzuna + {day.jsearch.length} JSearch + {(day.prlabs ?? []).length} PR Labs searches
           </summary>
           <ul style={{ margin: "6px 0 0 0", fontSize: "12px", lineHeight: 1.5 }}>
             {day.adzuna.map((city) => <li key={city.city}><strong>{city.city}:</strong> {city.roles.join(", ")}</li>)}
             {day.jsearch.length > 0 && <li><strong>JSearch:</strong> {day.jsearch.join(", ")}</li>}
+            {(day.prlabs ?? []).length > 0 && <li><strong>PR Labs:</strong> {(day.prlabs ?? []).join(", ")}</li>}
           </ul>
         </details>
       ))}
@@ -110,6 +112,7 @@ function getJobSourceBadge(externalId: string = "", sourceType?: string | null) 
   const source = (sourceType || "").toLowerCase();
   if (source === "adzuna" || (!source && externalId.startsWith("adzuna:"))) return { label: "Adzuna", color: "#0369a1", bg: "#e0f2fe" };
   if (source === "jsearch" || (!source && externalId.startsWith("jsearch:"))) return { label: "RapidAPI JSearch", color: "#047857", bg: "#d1fae5" };
+  if (source === "prlabs" || (!source && externalId.startsWith("prlabs:"))) return { label: "PR Labs", color: "#7c3aed", bg: "#ede9fe" };
   if (externalId.startsWith("manual")) return { label: "Manual", color: "#4b5563", bg: "#f3f4f6" };
   return { label: source === "greenhouse" ? "Greenhouse" : source === "apify" ? "Apify" : "Other source", color: "#6b7280", bg: "#f3f4f6" };
 }
@@ -263,6 +266,19 @@ export default function JobsAdminPanel() {
     }
   }
 
+  async function syncAndRunPRLabs() {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await adminPRLabsRun();
+      setNotice(`${result.queued_count} PR Labs search(es) queued; ${result.already_queued_count} already active.`);
+      load("sources");
+    } catch (err) {
+      setError((err as Error).message);
+      setLoading(false);
+    }
+  }
+
   async function syncAndRunJSearch() {
     try {
       setLoading(true);
@@ -317,6 +333,7 @@ export default function JobsAdminPanel() {
     const source = (job.source_type || "").toLowerCase();
     if (jobSourceFilter === "adzuna") return source === "adzuna" || (!source && extId.startsWith("adzuna:"));
     if (jobSourceFilter === "jsearch") return source === "jsearch" || (!source && extId.startsWith("jsearch:"));
+    if (jobSourceFilter === "prlabs") return source === "prlabs" || (!source && extId.startsWith("prlabs:"));
     if (jobSourceFilter === "manual") return extId.startsWith("manual");
     return true;
   });
@@ -367,6 +384,7 @@ export default function JobsAdminPanel() {
                 <option value="">All Sources</option>
                 <option value="adzuna">Adzuna</option>
                 <option value="jsearch">RapidAPI JSearch</option>
+                <option value="prlabs">PR Labs (LinkedIn / Indeed)</option>
                 <option value="manual">Manual</option>
               </select>
             </div>
@@ -535,7 +553,7 @@ export default function JobsAdminPanel() {
               </div>
               <p style={{ margin: "0 0 12px 0", fontSize: "13px", color: "var(--text-dim, #666)", lineHeight: 1.45 }}>
                 When enabled, the server automatically fetches fresher jobs for every IT role every day at{" "}
-                <strong>9:00 AM IST</strong> across Adzuna and RapidAPI (JSearch), taking only jobs posted in the last 7 days.
+                <strong>9:00 AM IST</strong> across Adzuna, RapidAPI (JSearch) and PR Labs (LinkedIn / Indeed, all of Tamil Nadu), taking only jobs posted in the last 7 days.
                 Each day runs a different slice of the role and city searches, so all of them run every week.
                 Jobs are removed 7 days after posting, except ones a user saved or applied to.
               </p>
@@ -615,6 +633,9 @@ export default function JobsAdminPanel() {
             </button>
             <button className="btn btn-primary btn-sm" onClick={syncAndRunJSearch} disabled={loading}>
               {loading ? "Queueing…" : "🔍 Sync + queue JSearch (RapidAPI)"}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={syncAndRunPRLabs} disabled={loading}>
+              {loading ? "Queueing…" : "💼 Sync + queue PR Labs (AI, data & web — Tamil Nadu)"}
             </button>
           </div>
 

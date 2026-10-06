@@ -41,13 +41,16 @@ from .providers.config_loader import (
     get_greenhouse_companies,
     get_jsearch_config,
     get_pending_validation_companies,
+    get_prlabs_config,
 )
 from .providers.jsearch import is_configured as is_jsearch_configured
+from .providers.prlabs import PRLABS_API_KEY_ENV, is_configured as is_prlabs_configured
 from .providers.sync import (
     queue_adzuna_collection,
     queue_apify_collection,
     queue_greenhouse_collection,
     queue_jsearch_collection,
+    queue_prlabs_collection,
     revalidate_greenhouse_source,
     sync_greenhouse_sources,
 )
@@ -68,7 +71,7 @@ from .usage import (
 logger = logging.getLogger(__name__)
 
 job_bp = Blueprint("job_agent", __name__)
-SOURCE_TYPES = {"json_ld", "html_cards", "rss", "greenhouse", "apify", "adzuna", "jsearch"}
+SOURCE_TYPES = {"json_ld", "html_cards", "rss", "greenhouse", "apify", "adzuna", "jsearch", "prlabs"}
 JOB_STATUSES = {"pending", "active", "rejected", "expired"}
 APPLICATION_STATUSES = {"applied", "screening", "interview", "offer", "rejected", "withdrawn"}
 
@@ -1607,4 +1610,29 @@ def admin_jsearch_run():
     if not status.get("ready"):
         return jsonify(status), 409
     return jsonify({"message": "JSearch collection queued", **status}), 202
+
+
+@job_bp.get("/api/jobs/admin/providers/prlabs/status")
+@admin_required
+def admin_prlabs_status():
+    from .free_plan import remaining_calls
+    config = get_prlabs_config()
+    configured = is_prlabs_configured()
+    return jsonify({
+        "ready": configured and config["enabled"],
+        "enabled": config["enabled"],
+        "configured": configured,
+        "queries_count": len(config["queries"]),
+        "calls_left_today": remaining_calls("prlabs") if configured else 0,
+        "reason": "" if configured else f"{PRLABS_API_KEY_ENV} is not set",
+    })
+
+
+@job_bp.post("/api/jobs/admin/providers/prlabs/run")
+@admin_required
+def admin_prlabs_run():
+    status = queue_prlabs_collection(admin_id=g.job_user_id)
+    if not status.get("ready"):
+        return jsonify(status), 409
+    return jsonify({"message": "PR Labs collection queued", **status}), 202
 

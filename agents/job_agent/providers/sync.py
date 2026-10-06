@@ -3,7 +3,13 @@ import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from ..config import JOBS_ADZUNA_DAILY_QUERIES, JOBS_AUTOMATION_TIMEZONE, JOBS_JSEARCH_DAILY_QUERIES, JOBS_RETENTION_DAYS
+from ..config import (
+    JOBS_ADZUNA_DAILY_QUERIES,
+    JOBS_AUTOMATION_TIMEZONE,
+    JOBS_JSEARCH_DAILY_QUERIES,
+    JOBS_PRLABS_DAILY_QUERIES,
+    JOBS_RETENTION_DAYS,
+)
 from ..db import get_db
 from ..service import process_run, queue_source_run, queue_source_run_once
 from .apify import get_apify_status
@@ -13,6 +19,7 @@ from .config_loader import (
     get_greenhouse_companies,
     get_it_coverage,
     get_jsearch_config,
+    get_prlabs_config,
     load_providers_config,
 )
 
@@ -494,6 +501,7 @@ def upcoming_plan(days=7, start=None):
     start = start or datetime.now(ZoneInfo(JOBS_AUTOMATION_TIMEZONE)).date()
     adzuna = rotation_order(get_adzuna_config()["queries"]) if get_adzuna_config()["enabled"] else []
     jsearch = rotation_order(get_jsearch_config()["queries"]) if get_jsearch_config()["enabled"] else []
+    prlabs = get_prlabs_config()["queries"] if get_prlabs_config()["enabled"] else []
     plan = []
     for offset in range(days):
         day = date.fromordinal(start.toordinal() + offset)
@@ -504,6 +512,8 @@ def upcoming_plan(days=7, start=None):
             "date": day.isoformat(),
             "adzuna": [{"city": city, "roles": roles} for city, roles in by_city.items()],
             "jsearch": [search["query"] for search in todays_slice(jsearch, JOBS_JSEARCH_DAILY_QUERIES, day)],
+            "prlabs": [f'{search["search_term"]} ({search["location"]})'
+                       for search in todays_slice(prlabs, JOBS_PRLABS_DAILY_QUERIES, day)],
         })
     return plan
 
@@ -650,3 +660,81 @@ def queue_jsearch_collection(admin_id=None, today=None):
                            take=daily_take("jsearch", JOBS_JSEARCH_DAILY_QUERIES))
     return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
 
+
+def _prlabs_source_name(search_term, location):
+    clean = lambda value: "_".join(str(value).strip().lower().replace(",", " ").split())
+    return f"prlabs:{clean(search_term)}:{clean(location)}"[:150]
+
+
+def sync_prlabs_sources(config=None):
+    """Reconcile `job_sources` rows with the PR Labs searches in providers.yaml."""
+    prlabs_config = get_prlabs_config(config)
+    queries = prlabs_config["queries"] if prlabs_config["enabled"] else []
+    db = get_db()
+    cursor = db.cursor()
+    try:
+        active_names = []
+        for search in queries:
+            name = _prlabs_source_name(search["search_term"], search["location"])
+            active_names.append(name)
+            parser_config = json.dumps({
+                "search_term": search["search_term"],
+                "location": search["location"],
+                "sites": prlabs_config["sites"],
+                "results_wanted": prlabs_config["results_wanted"],
+                "hours_old": prlabs_config["hours_old"],
+            })
+            cursor.execute(
+                """INSERT INTO job_sources (name, source_type, source_url, parser_config, is_active, scraping_authorized)
+                   VALUES (%s, 'prlabs', %s, %s, 1, 1)
+                   ON DUPLICATE KEY UPDATE
+                       source_url = VALUES(source_url),
+                       parser_config = VALUES(parser_config),
+                       is_active = 1,
+                       scraping_authorized = 1""",
+                (name, "https://api0.prlabsapi.com/getjobs", parser_config),
+            )
+
+        if active_names:
+            placeholders = ",".join(["%s"] * len(active_names))
+            cursor.execute(
+                f"""UPDATE job_sources SET is_active = 0
+                    WHERE source_type = 'prlabs' AND name NOT IN ({placeholders})""",
+                tuple(active_names),
+            )
+        else:
+            cursor.execute("UPDATE job_sources SET is_active = 0 WHERE source_type = 'prlabs'")
+
+        db.commit()
+        logger.info("[Jobs][PRLabs] Synced %d search source(s)", len(queries))
+        return len(queries)
+    finally:
+        cursor.close()
+        db.close()
+
+
+def _active_prlabs_sources():
+    """Active PR Labs sources in providers.yaml order (the daily rotation order)."""
+    order = {
+        _prlabs_source_name(search["search_term"], search["location"]): index
+        for index, search in enumerate(get_prlabs_config()["queries"])
+    }
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM job_sources WHERE source_type = 'prlabs' AND is_active = 1 ORDER BY name")
+        rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        db.close()
+    return sorted(rows, key=lambda row: (order.get(row["name"], len(order)), row["name"]))
+
+
+def queue_prlabs_collection(admin_id=None, today=None):
+    from .prlabs import PRLABS_API_KEY_ENV, is_configured as is_prlabs_configured
+    if not is_prlabs_configured():
+        return {"ready": False, "reason": f"{PRLABS_API_KEY_ENV} is not configured"}
+    sync_prlabs_sources()
+    sources = todays_slice(_active_prlabs_sources(), JOBS_PRLABS_DAILY_QUERIES, today,
+                           take=daily_take("prlabs", JOBS_PRLABS_DAILY_QUERIES))
+    return {"ready": True, "source_count": len(sources), **_queue_sources(sources, admin_id)}
