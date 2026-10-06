@@ -109,14 +109,11 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
     assert [i for i in offered if offered[i]["popular"]] == ["standard"]
     assert "custom" not in body
     assert "pro_monthly" not in offered and "pro_yearly" not in offered
-    # Every plan is paid on its own Razorpay payment page.
-    assert [i for i in offered if offered[i]["payment_page_url"]] == ["basic", "standard", "premium"]
-    assert offered["basic"]["payment_page_url"] == "https://rzp.io/rzp/6OOfhsv"
-    assert offered["basic"]["page_amount"] == 47082
+    # Every plan is paid in the in-app checkout (email locked), price + 18% GST.
+    assert [offered[i]["payment_page_url"] for i in offered] == [None, None, None]
+    assert [offered[i]["amount_with_gst"] for i in offered] == [47082, 94282, 117882]
+    assert {offered[i]["gst_percent"] for i in offered} == {18}
     assert "test_page" not in offered["basic"]
-    assert offered["standard"]["payment_page_url"] == "https://rzp.io/rzp/mKDSePpB"
-    assert offered["premium"]["payment_page_url"] == "https://rzp.io/rzp/j6YPZzy8"
-    assert (offered["standard"]["page_amount"], offered["premium"]["page_amount"]) == (94282, 117882)
 
 
 def test_plans_sell_fixed_tokens_shown_as_points():
@@ -194,25 +191,55 @@ def test_a_recent_legacy_pro_plan_keeps_its_active_status(env):
 
 # --- ordering ---------------------------------------------------------------
 
-def in_app_basic(monkeypatch):
-    """Every plan is sold on a Razorpay page now; the in-app checkout path is
-    still there, so its tests take Basic off its page."""
-    monkeypatch.delitem(plan_catalog.PLANS["basic"], "payment_page_url")
+@pytest.mark.parametrize("plan_id,charged", [("basic", 47082), ("standard", 94282), ("premium", 117882)])
+def test_ordering_a_plan_charges_its_price_plus_gst(env, monkeypatch, plan_id, charged):
+    calls = razorpay_ok(monkeypatch)
+    response = env.client.post("/billing/orders", json={"plan_id": plan_id})
+    assert response.status_code == 201
+    body = response.json()
+    assert calls["orders"][0]["amount"] == charged and calls["orders"][0]["currency"] == "INR"
+    assert body["amount"] == charged and body["name"] == f"{plan_catalog.PLANS[plan_id]['name']} plan"
 
 
-def test_ordering_a_plan_charges_the_catalog_price(env, monkeypatch):
-    in_app_basic(monkeypatch)
+def test_the_checkout_shows_the_accounts_own_email_locked(env, monkeypatch):
     calls = razorpay_ok(monkeypatch)
     body = env.client.post("/billing/orders", json={"plan_id": "basic"}).json()
-    assert calls["orders"][0]["amount"] == 39900 and calls["orders"][0]["currency"] == "INR"
-    assert body["amount"] == 39900 and body["name"] == "Basic plan"
+    assert body["prefill"] == {"name": "Asha Rao", "email": "asha@example.com", "contact": "9999999999"}
+    assert body["readonly"] == {"email": True}
+    # The order itself names the account, so crediting never depends on a typed email.
+    assert calls["orders"][0]["notes"] == {"user_id": env.user.id, "plan_id": "basic", "email": "asha@example.com"}
 
 
-# Plans paid on their Razorpay pages are never sold in-app.
-@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", "", "basic", "standard", "premium"])
+def test_a_gstin_is_stored_with_the_order_and_sent_to_razorpay(env, monkeypatch):
+    calls = razorpay_ok(monkeypatch)
+    env.client.post("/billing/orders", json={"plan_id": "standard", "gstin": " 33abcde1234f1z5 "})
+    assert calls["orders"][0]["notes"]["gstin"] == "33ABCDE1234F1Z5"
+    session = env.database()
+    try:
+        assert session.query(Payment).one().customer_gstin == "33ABCDE1234F1Z5"
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("gstin", ["123", "33ABCDE1234F1Y5", "ABCDE1234F1Z533", "33ABCDE1234F1Z5X"])
+def test_a_malformed_gstin_is_refused_before_any_order(env, monkeypatch, gstin):
+    calls = razorpay_ok(monkeypatch)
+    response = env.client.post("/billing/orders", json={"plan_id": "basic", "gstin": gstin})
+    assert response.status_code == 422 and "GSTIN" in response.text
+    assert calls["orders"] == []
+
+
+@pytest.mark.parametrize("plan_id", ["pro_monthly", "pro_yearly", "custom", "gold", ""])
 def test_plans_that_are_not_on_sale_cannot_be_ordered(env, monkeypatch, plan_id):
     calls = razorpay_ok(monkeypatch)
     assert env.client.post("/billing/orders", json={"plan_id": plan_id}).status_code == 400
+    assert calls["orders"] == []
+
+
+def test_a_plan_switched_back_to_a_payment_page_is_not_sold_in_app(env, monkeypatch):
+    monkeypatch.setitem(plan_catalog.PLANS["basic"], "payment_page_url", "https://rzp.io/rzp/example")
+    calls = razorpay_ok(monkeypatch)
+    assert env.client.post("/billing/orders", json={"plan_id": "basic"}).status_code == 400
     assert calls["orders"] == []
 
 
@@ -292,7 +319,8 @@ def test_a_paid_payment_downloads_as_a_pdf_invoice(env, monkeypatch):
 def test_an_invoice_shows_included_gst_only_when_configured(env, monkeypatch):
     monkeypatch.setattr(rl_config, "pageCompression", 0)
     payment_id = add_payment(env, "standard")
-    assert b"GST" not in env.client.get(f"/billing/invoices/{payment_id}").content
+    # (Image data can hold the letters "GST" by chance; printed text has "GST @".)
+    assert b"GST @" not in env.client.get(f"/billing/invoices/{payment_id}").content
 
     monkeypatch.setenv("INVOICE_GST_RATE", "18")
     monkeypatch.setenv("INVOICE_GSTIN", "29ABCDE1234F1Z5")
@@ -452,9 +480,10 @@ def test_the_payment_page_can_sign_with_its_own_webhook_secret(env, monkeypatch)
     assert page_payment(env, payment_id="pay_page_2", secret=b"wrong").status_code == 400
 
 
-def test_the_999_plan_cannot_be_ordered_in_app(env, monkeypatch):
-    razorpay_ok(monkeypatch)
-    assert env.client.post("/billing/orders", json={"plan_id": "premium"}).status_code == 400
+def test_the_999_plan_is_ordered_in_app_with_gst(env, monkeypatch):
+    calls = razorpay_ok(monkeypatch)
+    assert env.client.post("/billing/orders", json={"plan_id": "premium"}).status_code == 201
+    assert calls["orders"][0]["amount"] == 117882
 
 
 # --- points ----------------------------------------------------------------
@@ -540,7 +569,7 @@ def test_monthly_usage_reports_points(env, monkeypatch):
 def test_the_catalog_and_history_show_points(env):
     offered = {plan["id"]: plan for plan in env.client.get("/billing/plans").json()["plans"]}
     assert [offered[i]["points"] for i in ("basic", "standard", "premium")] == [250, 500, 750]
-    assert offered["basic"]["features"][0] == "250 points added after Razorpay confirms the payment"
+    assert offered["basic"]["features"][0] == "250 points credited instantly"
     assert not any("token" in feature.lower() for plan in offered.values() for feature in plan["features"])
     add_payment(env, "premium", order="o1")
     assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 750
@@ -562,7 +591,6 @@ def test_a_paid_payment_records_what_it_credited_and_a_later_price_change_cannot
 
 
 def test_order_creation_is_rate_limited_per_account(env, monkeypatch):
-    in_app_basic(monkeypatch)
     made = iter(range(100))
     monkeypatch.setattr(billing.httpx, "post", lambda *a, **k: SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"id": f"order_{next(made)}"}))
     codes = [env.client.post("/billing/orders", json={"plan_id": "basic"}).status_code for _ in range(11)]
@@ -570,8 +598,61 @@ def test_order_creation_is_rate_limited_per_account(env, monkeypatch):
 
 
 def test_the_browser_cannot_choose_what_a_plan_credits(env, monkeypatch):
-    in_app_basic(monkeypatch)
     # Only plan_id is accepted; amount and tokens come from the server's catalog.
     calls = razorpay_ok(monkeypatch)
     env.client.post("/billing/orders", json={"plan_id": "basic", "amount": 100, "tokens": 99_999_999, "points": 99_999})
-    assert calls["orders"][0]["amount"] == 39900
+    assert calls["orders"][0]["amount"] == 47082
+
+
+# --- GST invoice -------------------------------------------------------------
+
+def gst_invoice(env, monkeypatch, gstin=None):
+    monkeypatch.setattr(rl_config, "pageCompression", 0)
+    payment_id = add_payment(env, "standard", amount=94282)
+    if gstin:
+        session = env.database()
+        try:
+            session.get(Payment, payment_id).customer_gstin = gstin
+            session.commit()
+        finally:
+            session.close()
+    response = env.client.get(f"/billing/invoices/{payment_id}")
+    assert response.status_code == 200
+    return response.content
+
+
+def test_a_plan_paid_with_gst_gets_a_tax_invoice_split_into_price_and_gst(env, monkeypatch):
+    pdf = gst_invoice(env, monkeypatch)
+    for text in (b"TAX INVOICE", rb"GST @ 18%", b"INR 799.00", b"INR 143.82", b"INR 942.82"):
+        assert text in pdf, text
+    assert b"GSTIN:" not in pdf          # no buyer GSTIN given, and no seller GSTIN configured
+
+
+def test_the_buyers_gstin_is_printed_on_the_invoice(env, monkeypatch):
+    monkeypatch.setenv("INVOICE_GSTIN", "33AAAAA0000A1Z5")
+    pdf = gst_invoice(env, monkeypatch, gstin="33ABCDE1234F1Z5")
+    assert b"GSTIN: 33ABCDE1234F1Z5" in pdf      # billed to
+    assert b"GSTIN: 33AAAAA0000A1Z5" in pdf      # seller
+
+
+def test_the_invoice_is_headed_by_the_digidara_logo(env, monkeypatch):
+    pdf = gst_invoice(env, monkeypatch)
+    logo = invoice_pdf.LOGO.read_bytes()
+    width = int.from_bytes(logo[16:20], "big")
+    assert len(re.findall(rb"/Subtype /Image", pdf)) == 1
+    assert re.search(rb"/Width %d\b" % width, pdf)
+
+
+def test_a_gstin_typed_on_an_old_payment_page_reaches_the_invoice(env):
+    set_balance(env, 0)
+    event = json.dumps({"event": "payment.captured", "payload": {"payment": {"entity": {
+        "id": "pay_page_gst", "order_id": "order_page_gst", "amount": 47082, "currency": "INR", "email": "asha@example.com",
+        "notes": {"email": "asha@example.com", "gstin_(optional_–_for_business_tax_invoice)": "33abcde1234f1z5"}}}}}).encode()
+    response = env.client.post("/billing/webhook", content=event,
+                               headers={"x-razorpay-signature": hmac.new(b"hook-secret", event, hashlib.sha256).hexdigest()})
+    assert response.status_code == 200 and points(env) == 250
+    session = env.database()
+    try:
+        assert session.query(Payment).filter_by(razorpay_payment_id="pay_page_gst").one().customer_gstin == "33ABCDE1234F1Z5"
+    finally:
+        session.close()

@@ -188,6 +188,8 @@ class Payment(Base):
     # what a past payment gave. NULL on payments from before they existed.
     credited_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     credited_points: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The buyer's GSTIN, when they gave one for a business tax invoice.
+    customer_gstin: Mapped[str | None] = mapped_column(String(15), nullable=True)
 
 
 class TokenUsageEvent(Base):

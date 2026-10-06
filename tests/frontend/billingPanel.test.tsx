@@ -18,11 +18,12 @@ const mocked = jest.mocked(api);
 const plan = (id: string, name: string, amount: number, tokens: number, points: number, extra = {}) => ({
   id, name, amount, currency: 'INR', period: 'month', tokens, points, bonus_percent: 0, description: `${name} plan`, features: [`${points} points credited instantly`], popular: false, ...extra,
 });
-const PAGE = 'https://rzp.io/rzp/j6YPZzy8';
-const PAGE_799 = 'https://rzp.io/rzp/mKDSePpB';
-const PAGE_399 = 'https://rzp.io/rzp/6OOfhsv';
 const catalog = {
-  plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: PAGE_399, page_amount: 47082 }), plan('standard', 'Standard', 79900, 1000000, 500, { popular: true, payment_page_url: PAGE_799, page_amount: 94282 }), plan('premium', 'Premium', 99900, 900000, 500, { payment_page_url: PAGE, page_amount: 117882 })],
+  plans: [
+    plan('basic', 'Basic', 39900, 500000, 250, { amount_with_gst: 47082, gst_percent: 18 }),
+    plan('standard', 'Standard', 79900, 1000000, 500, { popular: true, amount_with_gst: 94282, gst_percent: 18 }),
+    plan('premium', 'Premium', 99900, 1500000, 750, { amount_with_gst: 117882, gst_percent: 18 }),
+  ],
 };
 const payments = [
   { id: 'paid-1', plan_id: 'standard', label: 'Standard plan', amount: 99900, currency: 'INR', status: 'paid', payment_id: 'pay_1', created_at: '2026-09-14T10:00:00Z', invoice_available: true },
@@ -57,32 +58,71 @@ test('shows Basic 399, Standard 799 and Premium 999, and no Custom plan', async 
   expect(screen.queryByText(/Pro Monthly|Pro Annual/)).not.toBeInTheDocument();
 });
 
-test('the 999 plan opens the Razorpay payment page and asks for the account email', async () => {
+type CheckoutOptions = Record<string, unknown>;
+
+function captureCheckout() {
+  const opened: CheckoutOptions[] = [];
+  (window as unknown as { Razorpay: unknown }).Razorpay = function Razorpay(options: CheckoutOptions) {
+    opened.push(options);
+    return { open: jest.fn(), on: jest.fn() };
+  };
+  mocked.loadRazorpay.mockResolvedValue(undefined);
+  return opened;
+}
+
+const ORDER = {
+  key_id: 'test-key-id', order_id: 'order_1', amount: 117882, currency: 'INR', name: 'Premium plan',
+  prefill: { name: 'Asha Rao', email: 'asha@example.com', contact: '9999999999' }, readonly: { email: true },
+};
+
+test('every plan shows its price with GST and is paid in-app as the logged-in account', async () => {
+  const opened = captureCheckout();
   const open = jest.spyOn(window, 'open').mockReturnValue(null);
+  mocked.createBillingOrder.mockResolvedValue(ORDER);
   setup();
+  expect(await screen.findByText(/Paying as/)).toHaveTextContent('Paying as asha@example.com');
   const premium = (await screen.findByRole('button', { name: 'Buy Premium' })).closest('article') as HTMLElement;
-  expect(within(premium).getByText('asha@example.com')).toBeInTheDocument();
-  expect(within(premium).getByText(/1,178\.82 incl\. GST/)).toBeInTheDocument();
+  expect(within(premium).getByText(/1,178\.82 incl\. 18% GST/)).toBeInTheDocument();
+  expect(within(document.querySelector('[data-plan="basic"]') as HTMLElement).getByText(/470\.82 incl\. 18% GST/)).toBeInTheDocument();
+  expect(within(document.querySelector('[data-plan="standard"]') as HTMLElement).getByText(/942\.82 incl\. 18% GST/)).toBeInTheDocument();
   fireEvent.click(within(premium).getByRole('button', { name: 'Buy Premium' }));
-  expect(open).toHaveBeenCalledWith(PAGE, '_blank', 'noopener,noreferrer');
-  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
-  expect(screen.getByRole('status')).toHaveTextContent('500 points appear here once Razorpay confirms');
-  mocked.fetchTokenBalance.mockResolvedValue({ balance: 2150000, points: 916.66, tokens_per_point: 2345.46 });
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh balance' }));
-  expect(await screen.findByText('916')).toBeInTheDocument();
+  await waitFor(() => expect(opened).toHaveLength(1));
+  expect(mocked.createBillingOrder).toHaveBeenCalledWith('premium', undefined);
+  expect(open).not.toHaveBeenCalled();
+  expect(opened[0].prefill).toEqual(ORDER.prefill);
+  expect(opened[0].readonly).toEqual({ email: true });
+  expect(opened[0].amount).toBe(117882);
   open.mockRestore();
 });
 
-test('a plan with no payment page is bought in-app by its plan id', async () => {
-  mocked.createBillingOrder.mockRejectedValue(new Error('stop here'));
+test('a GSTIN is sent with the order, upper-cased', async () => {
+  captureCheckout();
+  mocked.createBillingOrder.mockResolvedValue(ORDER);
+  setup();
+  fireEvent.change(await screen.findByLabelText(/GSTIN/), { target: { value: '33abcde1234f1z5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Buy Standard' }));
+  await waitFor(() => expect(mocked.createBillingOrder).toHaveBeenCalledWith('standard', '33ABCDE1234F1Z5'));
+});
+
+test('a malformed GSTIN stops the purchase before any order', async () => {
   const toast = setup();
-  // Every live plan uses a Razorpay page; the in-app checkout still works for one that doesn't.
-  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250)] });
+  fireEvent.change(await screen.findByLabelText(/GSTIN/), { target: { value: '33ABC' } });
+  expect(screen.getByRole('alert')).toHaveTextContent('valid 15-character GSTIN');
+  fireEvent.click(screen.getByRole('button', { name: 'Buy Basic' }));
+  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('valid 15-character GSTIN'));
+});
+
+test('a plan switched back to a payment page still opens that page', async () => {
+  const open = jest.spyOn(window, 'open').mockReturnValue(null);
+  const toast = setup();
+  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: 'https://rzp.io/rzp/x' })] });
   cleanup();
   render(<BillingPanel open user={user} onToast={toast} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Buy Basic' }));
-  await waitFor(() => expect(mocked.createBillingOrder).toHaveBeenCalledWith('basic'));
-  await waitFor(() => expect(toast).toHaveBeenCalledWith('stop here'));
+  expect(open).toHaveBeenCalledWith('https://rzp.io/rzp/x', '_blank', 'noopener,noreferrer');
+  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
+  open.mockRestore();
 });
 
 test('history uses real labels and offers an invoice only for paid payments', async () => {
@@ -117,26 +157,4 @@ test('the current plan card reflects a paid plan, and a top-up alone is still Fr
 test('with no paid plan the account shows as Free', async () => {
   setup();
   expect(await screen.findByText('DigiDARA Free')).toBeInTheDocument();
-});
-
-test('the 799 plan opens its own Razorpay page and shows what it charges', async () => {
-  const open = jest.spyOn(window, 'open').mockReturnValue(null);
-  setup();
-  const standard = (await screen.findByRole('button', { name: 'Buy Standard' })).closest('article') as HTMLElement;
-  expect(within(standard).getByText(/942\.82 incl\. GST/)).toBeInTheDocument();
-  fireEvent.click(within(standard).getByRole('button', { name: 'Buy Standard' }));
-  expect(open).toHaveBeenCalledWith(PAGE_799, '_blank', 'noopener,noreferrer');
-  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
-  open.mockRestore();
-});
-
-test('the 399 plan opens its own Razorpay page and shows what it charges', async () => {
-  const open = jest.spyOn(window, 'open').mockReturnValue(null);
-  setup();
-  const basic = (await screen.findByRole('button', { name: 'Buy Basic' })).closest('article') as HTMLElement;
-  expect(within(basic).getByText(/470\.82 incl\. GST/)).toBeInTheDocument();
-  fireEvent.click(within(basic).getByRole('button', { name: 'Buy Basic' }));
-  expect(open).toHaveBeenCalledWith(PAGE_399, '_blank', 'noopener,noreferrer');
-  expect(mocked.createBillingOrder).not.toHaveBeenCalled();
-  open.mockRestore();
 });
