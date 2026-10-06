@@ -15,6 +15,9 @@ function money(amountMinor: number, currency = "INR", whole = false) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, ...(whole ? { minimumFractionDigits: amountMinor % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 } : {}) }).format(amountMinor / 100);
 }
 
+// Same rule as the server (billing/routes.py GSTIN_PATTERN).
+const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
 export default function BillingPanel({ open, user, onToast }: Props) {
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [catalog, setCatalog] = useState<BillingPlans | null>(null);
@@ -22,6 +25,9 @@ export default function BillingPanel({ open, user, onToast }: Props) {
   const [busy, setBusy] = useState(false);
   const [invoiceBusy, setInvoiceBusy] = useState<string | null>(null);
   const [pagePlan, setPagePlan] = useState<PlanOffer | null>(null);
+  const [gstin, setGstin] = useState("");
+  const gstinValue = gstin.replace(/\s+/g, "").toUpperCase();
+  const gstinError = gstinValue && !GSTIN_PATTERN.test(gstinValue) ? "Enter a valid 15-character GSTIN, e.g. 33ABCDE1234F1Z5, or leave it empty." : "";
 
   const refresh = useCallback(async () => {
     const [summary, balance] = await Promise.all([
@@ -55,7 +61,10 @@ export default function BillingPanel({ open, user, onToast }: Props) {
       const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
       const checkout = new Razorpay({
         key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: description(order), order_id: order.order_id,
-        prefill: { name: user.name, email: user.email, contact: user.mobile }, theme: { color: "#365f91" },
+        // The server sends this account's own details; the email is locked so
+        // the payment is always made as this account.
+        prefill: order.prefill ?? { name: user.name, email: user.email, contact: user.mobile },
+        readonly: order.readonly ?? { email: true }, theme: { color: "#365f91" },
         handler: async (response: CheckoutResponse) => {
           try {
             await verifyBillingPayment(response);
@@ -80,7 +89,8 @@ export default function BillingPanel({ open, user, onToast }: Props) {
       setPagePlan(plan);
       return;
     }
-    void pay(() => createBillingOrder(plan.id), (order) => order.name, () => plan.points);
+    if (gstinError) { onToast(gstinError); return; }
+    void pay(() => createBillingOrder(plan.id, gstinValue || undefined), (order) => order.name, () => plan.points);
   };
 
   async function saveInvoice(paymentId: string) {
@@ -107,6 +117,12 @@ export default function BillingPanel({ open, user, onToast }: Props) {
       <div className="current-plan"><div><small>Available Points</small><strong>{pointsBalance === null ? "-" : formatPoints(pointsBalance)}</strong><span>Each agent request uses a few points. Points never expire.</span></div></div>
 
       <h3 className="settings-title">Choose a Plan</h3>
+      <p className="billing-account-note">Paying as <b>{user.email}</b>. Points are added to this account.</p>
+      <label className="billing-gstin">
+        <span>GSTIN (optional, for a business tax invoice)</span>
+        <input value={gstin} onChange={(event) => setGstin(event.target.value)} placeholder="e.g. 33ABCDE1234F1Z5" maxLength={20} autoComplete="off" aria-invalid={!!gstinError} />
+        {gstinError && <small role="alert">{gstinError}</small>}
+      </label>
       {!catalog ? <p>Loading plans...</p> : (
         <div className="plan-grid">
           {catalog.plans.map((plan) => (
@@ -114,9 +130,10 @@ export default function BillingPanel({ open, user, onToast }: Props) {
               {plan.popular && <span>Most Popular</span>}
               <h3>{plan.name}</h3>
               <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
+              {plan.amount_with_gst && plan.amount_with_gst !== plan.amount && <small className="plan-gst">{money(plan.amount_with_gst, plan.currency)} incl. {plan.gst_percent || 18}% GST</small>}
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab{plan.page_amount && plan.page_amount !== plan.amount ? <> ({money(plan.page_amount, plan.currency)} incl. GST)</> : null}. Pay with <b>{user.email}</b> so the points reach this account.</p>}
+              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the points reach this account.</p>}
               <button disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
             </article>
           ))}

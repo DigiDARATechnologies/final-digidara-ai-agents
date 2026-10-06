@@ -6,9 +6,10 @@ export interface BillingSummary { plan: string; plan_name: string; plan_expires_
 /** `payment_page_url`: the plan is paid on DigiDARA's Razorpay payment page
  * (points are added by the server once Razorpay confirms), not in-app.
  * `tokens` is what the plan really credits; learners are only shown `points`. */
-export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; payment_page_url?: string | null; page_amount?: number | null; }
+export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; amount_with_gst?: number; gst_percent?: number; payment_page_url?: string | null; }
 export interface BillingPlans { plans: PlanOffer[]; }
-export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; }
+/** `prefill` / `readonly`: the account's own details, with the email locked in the checkout. */
+export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; prefill?: { name: string; email: string; contact: string }; readonly?: { email?: boolean }; }
 
 function token() { return localStorage.getItem("digidara_token") || ""; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -18,7 +19,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 export const fetchBillingSummary = () => request<BillingSummary>("/billing/summary");
 export const fetchBillingPlans = () => request<BillingPlans>("/billing/plans");
-export const createBillingOrder = (plan_id: string) => request<RazorpayOrder>("/billing/orders", { method: "POST", body: JSON.stringify({ plan_id }) });
+export const createBillingOrder = (plan_id: string, gstin?: string) => request<RazorpayOrder>("/billing/orders", { method: "POST", body: JSON.stringify(gstin ? { plan_id, gstin } : { plan_id }) });
 export const verifyBillingPayment = (body: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => request<{ verified: boolean; plan: string }>("/billing/verify", { method: "POST", body: JSON.stringify(body) });
 
 export function loadRazorpay(): Promise<void> {

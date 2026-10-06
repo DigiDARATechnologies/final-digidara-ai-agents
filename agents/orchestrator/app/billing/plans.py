@@ -48,6 +48,16 @@ def tokens_for_rupees(rupees: float) -> int:
 # one-time payments, not auto-renewing subscriptions.
 PLAN_PERIOD_DAYS = 30
 
+# Plan prices below are before GST; every plan is charged its price plus GST
+# at this rate (`amount_with_gst`), in the in-app Razorpay checkout.
+GST_RATE_PERCENT = 18
+
+# Each plan is paid in the in-app Razorpay checkout: the order is created by
+# the server for the logged-in account, the checkout shows that account's
+# email locked, and the points are credited to that account id. A plan is sold
+# on a hosted Razorpay payment page instead only when its RAZORPAY_*_PAGE_URL
+# is set -- a page cannot lock the email, so its payment is matched to an
+# account by whatever email is typed there.
 PLANS: dict[str, dict] = {
     "basic": {
         "name": "Basic",
@@ -56,10 +66,9 @@ PLANS: dict[str, dict] = {
         "tokens": 500_000,
         "points": 250,
         "description": "For getting started and light, occasional use.",
-        # Paid on DigiDARA's Razorpay payment page, like Standard and Premium.
-        "payment_page_url": os.getenv("RAZORPAY_BASIC_PAGE_URL", "https://rzp.io/rzp/6OOfhsv"),
-        # What that page charges: INR 399 + 18% GST = INR 470.82.
-        "page_amount": int(os.getenv("RAZORPAY_BASIC_PAGE_AMOUNT", "47082")),
+        "payment_page_url": os.getenv("RAZORPAY_BASIC_PAGE_URL", ""),
+        # What is charged: INR 399 + 18% GST = INR 470.82.
+        "amount_with_gst": int(os.getenv("RAZORPAY_BASIC_PAGE_AMOUNT", "47082")),
     },
     "standard": {
         "name": "Standard",
@@ -69,10 +78,9 @@ PLANS: dict[str, dict] = {
         "points": 500,
         "description": "For regular learners who use several agents each week.",
         "popular": True,
-        # Paid on DigiDARA's Razorpay payment page, like Premium below.
-        "payment_page_url": os.getenv("RAZORPAY_STANDARD_PAGE_URL", "https://rzp.io/rzp/mKDSePpB"),
-        # What that page charges: INR 799 + 18% GST = INR 942.82.
-        "page_amount": int(os.getenv("RAZORPAY_STANDARD_PAGE_AMOUNT", "94282")),
+        "payment_page_url": os.getenv("RAZORPAY_STANDARD_PAGE_URL", ""),
+        # What is charged: INR 799 + 18% GST = INR 942.82.
+        "amount_with_gst": int(os.getenv("RAZORPAY_STANDARD_PAGE_AMOUNT", "94282")),
     },
     "premium": {
         "name": "Premium",
@@ -81,28 +89,37 @@ PLANS: dict[str, dict] = {
         "tokens": 1_500_000,
         "points": 750,
         "description": "For heavy daily use across every agent.",
-        # Paid on DigiDARA's own Razorpay payment page instead of the in-app
-        # checkout; the webhook credits the account whose email was entered
-        # there (routes.py `_credit_payment_page`).
-        "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", "https://rzp.io/rzp/j6YPZzy8"),
-        # What that page actually charges: INR 999 + 18% GST = INR 1,178.82.
-        # The webhook only credits a page payment of exactly this amount (or
-        # the plan price), so keep it in step with the page.
-        "page_amount": int(os.getenv("RAZORPAY_PREMIUM_PAGE_AMOUNT", "117882")),
+        "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", ""),
+        # What is charged: INR 999 + 18% GST = INR 1,178.82. A payment is
+        # only credited at exactly this amount (or the plan price).
+        "amount_with_gst": int(os.getenv("RAZORPAY_PREMIUM_PAGE_AMOUNT", "117882")),
     },
 }
 
 
 def is_full_price(plan: dict, amount_paise: int) -> bool:
-    """The plan's price, or what its Razorpay page charges (price + GST)."""
-    return amount_paise in (plan["amount"], plan.get("page_amount"))
+    """The plan's price, or what is charged for it (price + GST)."""
+    return amount_paise in (plan["amount"], plan.get("amount_with_gst"))
+
+
+def charge_amount(plan: dict) -> int:
+    """What the checkout charges for a plan: its price plus GST."""
+    return plan.get("amount_with_gst") or plan["amount"]
+
+
+def gst_breakdown(plan_id: str, amount_paise: int) -> tuple[int, int] | None:
+    """(price before GST, GST) for a payment of a plan's price plus GST."""
+    plan = PLANS.get(plan_id)
+    if plan is None or not plan.get("amount_with_gst") or amount_paise != plan["amount_with_gst"]:
+        return None
+    return plan["amount"], amount_paise - plan["amount"]
 
 
 def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, int] | None:
     """The one place that decides what a payment credits: exactly the plan's
     tokens and points, and only for exactly its price -- INR 399 (or the
-    INR 470.82 its Razorpay page charges with GST) -> 500,000, INR 799 (or its
-    page's INR 942.82) -> 1,000,000, INR 999 (or its page's INR 1,178.82) ->
+    INR 470.82 charged with GST) -> 500,000, INR 799 (or INR 942.82 with
+    GST) -> 1,000,000, INR 999 (or INR 1,178.82 with GST) ->
     1,500,000.
     Never scaled, never rounded up.
 
@@ -204,8 +221,9 @@ def offered_plans() -> list[dict]:
             "description": plan["description"],
             "features": features,
             "popular": bool(plan.get("popular")),
-            "payment_page_url": page,
-            "page_amount": plan.get("page_amount") if page else None,
+            "amount_with_gst": charge_amount(plan),
+            "gst_percent": GST_RATE_PERCENT if charge_amount(plan) != plan["amount"] else 0,
+            "payment_page_url": page or None,
         })
     return result
 

@@ -2,11 +2,12 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func, update
 
 from app.auth import service as auth_service
@@ -15,8 +16,10 @@ from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
     active_plan,
+    charge_amount,
     credited_points,
     exact_credit,
+    gst_breakdown,
     is_full_price,
     offered_plans,
     payment_label,
@@ -37,8 +40,29 @@ _ORDER_RATE_LIMIT = "10/minute"
 _VERIFY_RATE_LIMIT = "30/minute"
 
 
+# 15 characters: state code, PAN, entity number, "Z", check character.
+GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
+
+
+def normalize_gstin(value) -> str | None:
+    """An upper-cased GSTIN, None when blank; ValueError when malformed."""
+    gstin = re.sub(r"\s+", "", str(value or "")).upper()
+    if not gstin:
+        return None
+    if not GSTIN_PATTERN.match(gstin):
+        raise ValueError("Enter a valid 15-character GSTIN, e.g. 33ABCDE1234F1Z5, or leave it empty.")
+    return gstin
+
+
 class OrderRequest(BaseModel):
     plan_id: str
+    # Optional: the buyer's GSTIN, printed on the invoice.
+    gstin: str | None = None
+
+    @field_validator("gstin")
+    @classmethod
+    def _valid_gstin(cls, value):
+        return normalize_gstin(value)
 
 
 class VerifyRequest(BaseModel):
@@ -206,21 +230,36 @@ def create_order(req: OrderRequest, request: Request, user_id: str = Depends(get
     if plan.get("payment_page_url"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This plan is paid on its Razorpay payment page.")
     key_id, key_secret = _credentials()
+    user = auth_service.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account not found.")
+    amount = charge_amount(plan)
     receipt = f"dd_{user_id[:10]}_{int(datetime.utcnow().timestamp())}"
+    notes = {"user_id": user_id, "plan_id": req.plan_id, "email": user.email}
+    if req.gstin:
+        notes["gstin"] = req.gstin
     try:
-        response = httpx.post("https://api.razorpay.com/v1/orders", auth=(key_id, key_secret), json={"amount": plan["amount"], "currency": plan["currency"], "receipt": receipt, "notes": {"user_id": user_id, "plan_id": req.plan_id}}, timeout=15)
+        response = httpx.post("https://api.razorpay.com/v1/orders", auth=(key_id, key_secret), json={"amount": amount, "currency": plan["currency"], "receipt": receipt, "notes": notes}, timeout=15)
         response.raise_for_status()
         order = response.json()
     except httpx.HTTPError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Unable to create payment order.") from exc
     session = get_session()
     try:
-        payment = Payment(user_id=user_id, plan_id=req.plan_id, amount=plan["amount"], currency=plan["currency"], razorpay_order_id=order["id"])
+        payment = Payment(user_id=user_id, plan_id=req.plan_id, amount=amount, currency=plan["currency"],
+                          razorpay_order_id=order["id"], customer_gstin=req.gstin)
         session.add(payment)
         session.commit()
     finally:
         session.close()
-    return {"key_id": key_id, "order_id": order["id"], "amount": plan["amount"], "currency": plan["currency"], "name": f"{plan['name']} plan"}
+    # The checkout pre-fills the logged-in account's own details and locks the
+    # email, so the payment is always made as -- and credited to -- this
+    # account (crediting goes by order id, never by a typed email).
+    return {
+        "key_id": key_id, "order_id": order["id"], "amount": amount, "currency": plan["currency"], "name": f"{plan['name']} plan",
+        "prefill": {"name": user.name or "", "email": user.email, "contact": user.mobile or ""},
+        "readonly": {"email": True},
+    }
 
 
 @router.post("/verify")
@@ -262,8 +301,10 @@ def download_invoice(payment_id: str, user_id: str = Depends(get_current_user_id
         if payment.status != "paid" or payment.paid_at is None:
             raise HTTPException(status.HTTP_409_CONFLICT, "An invoice is available once the payment is complete.")
         user = auth_service.get_by_id(user_id)
-        customer = {"name": getattr(user, "name", ""), "email": getattr(user, "email", ""), "mobile": getattr(user, "mobile", "") or ""}
-        pdf = invoice_pdf.build_invoice_pdf(payment=payment, description=payment_label(payment.plan_id), customer=customer)
+        customer = {"name": getattr(user, "name", ""), "email": getattr(user, "email", ""), "mobile": getattr(user, "mobile", "") or "",
+                    "gstin": payment.customer_gstin or ""}
+        pdf = invoice_pdf.build_invoice_pdf(payment=payment, description=payment_label(payment.plan_id), customer=customer,
+                                            gst=gst_breakdown(payment.plan_id, payment.amount))
         filename = f"{invoice_pdf.invoice_number(payment.id, payment.paid_at)}.pdf"
         return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "private, no-store"})
     finally:
@@ -278,9 +319,22 @@ def _webhook_secrets() -> list[str]:
 
 
 def _page_plan_for(amount: int, currency: str) -> str | None:
+    # Pages are off by default now, but a payment made on an old page link is
+    # still credited.
     for plan_id, plan in PLANS.items():
-        if plan["currency"] == currency and plan.get("payment_page_url") and is_full_price(plan, amount):
+        if plan["currency"] == currency and is_full_price(plan, amount):
             return plan_id
+    return None
+
+
+def _page_gstin(entity: dict) -> str | None:
+    """The GSTIN typed into a payment page's optional GSTIN field, if valid."""
+    for key, value in (entity.get("notes") or {}).items():
+        if "gstin" in str(key).lower():
+            try:
+                return normalize_gstin(value)
+            except ValueError:
+                return None
     return None
 
 
@@ -309,7 +363,8 @@ def _credit_payment_page(session, entity: dict) -> None:
         )
         return
     payment = Payment(user_id=user.id, plan_id=plan_id, amount=entity["amount"], currency=entity["currency"],
-                      razorpay_order_id=str(entity.get("order_id") or f"page_{payment_id}"))
+                      razorpay_order_id=str(entity.get("order_id") or f"page_{payment_id}"),
+                      customer_gstin=_page_gstin(entity))
     session.add(payment)
     session.commit()
     if _mark_paid(session, payment, payment_id):

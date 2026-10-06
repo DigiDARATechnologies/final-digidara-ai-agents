@@ -92,7 +92,8 @@ def init_db() -> None:
                 if "1060" not in str(exc):
                     raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
-        for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL")):
+        for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
+                            ("customer_gstin", "VARCHAR(15) NULL")):
             if column not in payment_columns:
                 try:
                     connection.execute(text(f"ALTER TABLE payments ADD COLUMN {column} {ddl}"))

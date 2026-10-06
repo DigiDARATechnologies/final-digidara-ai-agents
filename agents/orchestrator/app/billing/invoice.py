@@ -9,6 +9,11 @@ Seller details come from the environment so nothing legal is invented here:
                               the GST included in the amount paid (prices are
                               treated as tax-inclusive).
 
+A plan payment of its price plus GST is split into the price and the GST
+(plans.gst_breakdown) without any setting. The buyer's GSTIN, when they gave
+one at checkout, is printed under "Billed to". The DigiDARA AI Agents logo
+(assets/digidara-logo.png) heads the page.
+
 The invoice number is derived from the payment, so it is stable and unique but
 not a gapless sequence; if statutory serial numbering is required it must be
 replaced by a real counter.
@@ -16,13 +21,17 @@ replaced by a real counter.
 import io
 import os
 from datetime import datetime
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+LOGO = Path(__file__).resolve().parent / "assets" / "digidara-logo.png"
+LOGO_WIDTH = 62 * mm
 
 
 def invoice_number(payment_id: str, paid_at: datetime) -> str:
@@ -51,8 +60,17 @@ def company_details() -> dict:
     }
 
 
-def build_invoice_pdf(*, payment, description: str, customer: dict) -> bytes:
-    """`payment` needs id, amount, currency, razorpay_payment_id, razorpay_order_id, paid_at."""
+def _logo():
+    from reportlab.lib.utils import ImageReader
+    width, height = ImageReader(str(LOGO)).getSize()
+    return Image(str(LOGO), width=LOGO_WIDTH, height=LOGO_WIDTH * height / width, hAlign="LEFT")
+
+
+def build_invoice_pdf(*, payment, description: str, customer: dict, gst: tuple[int, int] | None = None) -> bytes:
+    """`payment` needs id, amount, currency, razorpay_payment_id, razorpay_order_id, paid_at.
+
+    `gst` is (price before GST, GST) when the payment was a plan's price plus
+    GST; otherwise INVOICE_GST_RATE (if set) splits the amount as tax-inclusive."""
     company = company_details()
     number = invoice_number(payment.id, payment.paid_at)
     styles = getSampleStyleSheet()
@@ -67,7 +85,8 @@ def build_invoice_pdf(*, payment, description: str, customer: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm,
                             title=f"Invoice {number}", author=company["name"])
-    story = [p("INVOICE", title), p("Payment receipt for your DigiDARA purchase", small), Spacer(1, 8 * mm)]
+    story = [_logo(), Spacer(1, 6 * mm), p("TAX INVOICE" if gst else "INVOICE", title),
+             p("Payment receipt for your DigiDARA purchase", small), Spacer(1, 8 * mm)]
 
     seller = [p(company["name"], ParagraphStyle("seller", parent=body, fontName="Helvetica-Bold", fontSize=12))]
     seller += [p(line, body) for line in company["address"]]
@@ -77,6 +96,8 @@ def build_invoice_pdf(*, payment, description: str, customer: dict) -> bytes:
     for key in ("email", "mobile"):
         if customer.get(key):
             buyer.append(p(customer[key]))
+    if customer.get("gstin"):
+        buyer.append(p(f"GSTIN: {customer['gstin']}", ParagraphStyle("gstin", parent=body, fontName="Helvetica-Bold")))
     meta = [
         p("INVOICE NO.", label), p(number), Spacer(1, 2 * mm),
         p("DATE PAID", label), p(f"{payment.paid_at:%d %b %Y}"),
@@ -86,7 +107,8 @@ def build_invoice_pdf(*, payment, description: str, customer: dict) -> bytes:
     story += [header, Spacer(1, 10 * mm)]
 
     total = money(payment.amount, payment.currency)
-    rows = [[p("DESCRIPTION", label), p("QTY", label), p("AMOUNT", label)], [p(description), p("1"), p(total)]]
+    line_amount = money(gst[0], payment.currency) if gst else total
+    rows = [[p("DESCRIPTION", label), p("QTY", label), p("AMOUNT", label)], [p(description), p("1"), p(line_amount)]]
     items = Table(rows, colWidths=[110 * mm, 15 * mm, 45 * mm])
     items.setStyle(TableStyle([
         ("LINEBELOW", (0, 0), (-1, 0), 0.8, colors.HexColor("#d0d5dd")),
@@ -98,7 +120,11 @@ def build_invoice_pdf(*, payment, description: str, customer: dict) -> bytes:
 
     totals = []
     rate = _gst_rate()
-    if rate:
+    if gst:
+        price, tax = gst
+        totals.append([p("Taxable value"), p(money(price, payment.currency))])
+        totals.append([p(f"GST @ {round(tax * 100 / price):g}%"), p(money(tax, payment.currency))])
+    elif rate:
         taxable = round(payment.amount / (1 + rate / 100))
         totals.append([p("Taxable value"), p(money(taxable, payment.currency))])
         totals.append([p(f"GST @ {rate:g}% (included)"), p(money(payment.amount - taxable, payment.currency))])
