@@ -6,11 +6,12 @@ jest.mock("../../src/lib/jobFetchApi", () => ({
     { id: 1, title: "Adzuna role", company: "Example", external_id: "legacy-id-a", source_type: "adzuna", status: "active" },
     { id: 2, title: "JSearch role", company: "Example", external_id: "legacy-id-b", source_type: "jsearch", status: "active" },
     { id: 3, title: "Manual role", company: "Example", external_id: "manual:1", source_type: null, status: "active" },
+    { id: 4, title: "PR Labs role", company: "Example", external_id: "prlabs:li-1", source_type: null, status: "active" },
   ] }),
   adminListCategories: jest.fn().mockResolvedValue({ categories: [] }),
   adminGetAutomation: jest.fn().mockResolvedValue({ automation: null, free_plan: {
     usage: { adzuna: [{ window: "month", used: 312, limit: 2500 }], jsearch: [{ window: "month", used: 40, limit: 200 }] },
-    upcoming: [{ date: "2026-10-02", adzuna: [{ city: "Chennai", roles: ["Java Developer", "React Developer"] }], jsearch: ["QA Engineer fresher in Tamil Nadu"] }],
+    upcoming: [{ date: "2026-10-02", adzuna: [{ city: "Chennai", roles: ["Java Developer", "React Developer"] }], jsearch: ["QA Engineer fresher in Tamil Nadu"], prlabs: ["AI Engineer (Tamil Nadu, India)"] }],
   } }),
   adminListSources: jest.fn().mockResolvedValue({ sources: [] }),
   adminApifyActors: jest.fn().mockResolvedValue({ actors: [] }),
@@ -34,10 +35,14 @@ test("admin source badges and filter use stored provider metadata and tolerate a
   expect(within(adzuna.closest("tr")!).getByText("Adzuna")).toBeInTheDocument();
   expect(within(jsearch.closest("tr")!).getByText("RapidAPI JSearch")).toBeInTheDocument();
   expect(within(manual.closest("tr")!).getByText("Manual")).toBeInTheDocument();
+  expect(within(screen.getByText("PR Labs role").closest("tr")!).getByText("PR Labs")).toBeInTheDocument();
   fireEvent.change(screen.getByDisplayValue("All Sources"), { target: { value: "jsearch" } });
   expect(screen.getByText("JSearch role")).toBeInTheDocument();
   expect(screen.queryByText("Adzuna role")).not.toBeInTheDocument();
   expect(screen.queryByText("Manual role")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByDisplayValue("RapidAPI JSearch"), { target: { value: "prlabs" } });
+  expect(screen.getByText("PR Labs role")).toBeInTheDocument();
+  expect(screen.queryByText("JSearch role")).not.toBeInTheDocument();
 });
 
 test("users & plans names each user and shows their billing plan beside the job feed tier", async () => {
@@ -59,6 +64,7 @@ test("sources tab shows free-plan usage and the next days' role and city plan", 
   expect(await screen.findByText("Free plan: API calls used")).toBeInTheDocument();
   expect(screen.getByText("month: 312 / 2,500")).toBeInTheDocument();
   expect(screen.getByText("month: 40 / 200")).toBeInTheDocument();
-  expect(screen.getByText(/2 Adzuna \+ 1 JSearch searches/)).toBeInTheDocument();
+  expect(screen.getByText(/2 Adzuna \+ 1 JSearch \+ 1 PR Labs searches/)).toBeInTheDocument();
+  expect(screen.getByText("AI Engineer (Tamil Nadu, India)")).toBeInTheDocument();
   expect(screen.getByText("Java Developer, React Developer")).toBeInTheDocument();
 });
