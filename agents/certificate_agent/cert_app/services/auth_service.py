@@ -4,7 +4,9 @@ import hashlib
 import hmac
 
 import bcrypt
-from jose import JWTError, jwt
+# PyJWT, not python-jose: python-jose has an unpatched advisory and no fixed
+# release. Every token's `sub` is a string, which PyJWT requires.
+import jwt
 
 from cert_app.config import get_settings
 from cert_app.db.database import get_connection
@@ -36,7 +38,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def verify_token(token: str) -> Optional[dict]:
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 
