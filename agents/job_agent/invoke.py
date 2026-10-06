@@ -76,6 +76,8 @@ ACTION_ROUTE_MAP = {
     "admin_adzuna_run": ("POST", "/api/jobs/admin/providers/adzuna/run"),
     "admin_jsearch_status": ("GET", "/api/jobs/admin/providers/jsearch/status"),
     "admin_jsearch_run": ("POST", "/api/jobs/admin/providers/jsearch/run"),
+    "admin_prlabs_status": ("GET", "/api/jobs/admin/providers/prlabs/status"),
+    "admin_prlabs_run": ("POST", "/api/jobs/admin/providers/prlabs/run"),
     "admin_tn_coverage": ("GET", "/api/jobs/admin/tn-coverage"),
     "admin_get_token_settings": ("GET", "/api/jobs/admin/token-settings"),
     "admin_update_token_settings": ("PUT", "/api/jobs/admin/token-settings"),

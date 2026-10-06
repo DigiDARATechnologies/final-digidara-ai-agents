@@ -489,3 +489,33 @@ adzuna:
 # Searches come from `it_coverage` above; a `queries:` list here would replace it.
 jsearch:
   enabled: true
+
+# PR Labs Jobs Search API (prlabsapi.com) -- LinkedIn and Indeed listings.
+# Key is read from PRLABS_API_KEY in the environment (never put it here).
+# Each role below is searched in each location; calls per day/month are capped
+# by JOBS_PRLABS_DAILY_QUERIES / JOBS_PRLABS_MONTHLY_CALLS (free_plan.py).
+prlabs:
+  enabled: true
+  # LinkedIn's location "Tamil Nadu, India" covers every district in one search;
+  # each job's district is classified afterwards (tn_location.py).
+  locations:
+    - Tamil Nadu, India
+  sites: [linkedin, indeed]
+  results_wanted: 50
+  # Only jobs posted in the last 3 days, so a daily run picks up new ones.
+  hours_old: 72
+  roles:
+    - AI Engineer
+    - Machine Learning Engineer
+    - Generative AI Engineer
+    - Data Scientist
+    - Data Analyst
+    - Data Engineer
+    - Business Intelligence Analyst
+    - Web Developer
+    - Frontend Developer
+    - Full Stack Developer
+    - React Developer
+    - Backend Developer
+    - Python Developer
+    - UI UX Designer

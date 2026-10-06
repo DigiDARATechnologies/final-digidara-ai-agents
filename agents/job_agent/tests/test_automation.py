@@ -12,19 +12,22 @@ from job_agent.app import create_app
 
 class AutomationScheduleTests(unittest.TestCase):
     @patch("job_agent.automation._record_outcome")
+    @patch("job_agent.automation.queue_prlabs_collection")
     @patch("job_agent.automation.queue_jsearch_collection")
     @patch("job_agent.automation.queue_adzuna_collection")
     @patch("job_agent.automation.prune_expired_jobs")
     @patch("job_agent.automation._claim_today", return_value=True)
-    def test_due_schedule_queues_providers_once(self, claim, mock_prune, mock_adzuna, mock_jsearch, record):
+    def test_due_schedule_queues_providers_once(self, claim, mock_prune, mock_adzuna, mock_jsearch, mock_prlabs, record):
         mock_prune.return_value = {"success": True, "expired_count": 0, "deleted_count": 0}
         mock_adzuna.return_value = {"ready": True, "queued_count": 2}
         mock_jsearch.return_value = {"ready": True, "queued_count": 3}
+        mock_prlabs.return_value = {"ready": True, "queued_count": 4}
         result = automation.queue_due_automation(datetime(2026, 9, 9, 9, 0, tzinfo=ZoneInfo("Asia/Kolkata")))
         self.assertTrue(result["due"])
         mock_adzuna.assert_called_once_with(admin_id=None)
         mock_jsearch.assert_called_once_with(admin_id=None)
-        record.assert_called_once_with(queued_count=5)
+        mock_prlabs.assert_called_once_with(admin_id=None)
+        record.assert_called_once_with(queued_count=9)
 
     @patch("job_agent.automation._claim_today")
     def test_before_schedule_does_not_claim_or_queue(self, claim):

@@ -323,6 +323,19 @@ def scrape_source(source):
                                            date_posted=str(config.get("date_posted") or "all"),
                                            before_request=lambda: reserve_call("jsearch"))
 
+    if source_type == "prlabs":
+        from .providers.prlabs import fetch_and_normalize as prlabs_fetch_and_normalize
+        from .free_plan import reserve_call
+
+        return prlabs_fetch_and_normalize(
+            search_term=config.get("search_term") or "",
+            location=config.get("location") or "Tamil Nadu, India",
+            results_wanted=int(config.get("results_wanted", 50)),
+            sites=config.get("sites") or None,
+            hours_old=int(config.get("hours_old", 72)),
+            before_request=lambda: reserve_call("prlabs"),
+        )
+
     session = requests.Session()
     session.headers.update({"User-Agent": SCRAPER_USER_AGENT, "Accept": "text/html, application/rss+xml, application/xml"})
     content_bytes, encoding = _fetch(session, source["source_url"])
