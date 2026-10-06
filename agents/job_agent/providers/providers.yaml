@@ -498,16 +498,16 @@ jsearch:
 # and reaches every location every 6 days.
 prlabs:
   enabled: true
-  # "Tamil Nadu, India" covers the whole state, but its 50 results are mostly
-  # Chennai; the cities below (each with a 50 km radius) bring in the other
-  # districts. Each job's district is classified afterwards (tn_location.py).
+  # "Tamil Nadu, India" covers the whole state; the five cities below (each
+  # with a 50 km radius) are the ones the Job Agent offers users, so each gets
+  # its own searches. Each job's district is classified afterwards (tn_location.py).
   locations:
     - Tamil Nadu, India
+    - Chennai, Tamil Nadu, India
     - Coimbatore, Tamil Nadu, India
     - Madurai, Tamil Nadu, India
     - Tiruchirappalli, Tamil Nadu, India
     - Salem, Tamil Nadu, India
-    - Tirunelveli, Tamil Nadu, India
   sites: [linkedin, indeed]
   results_wanted: 50
   # A location comes round every 6 days, so look back 7 days (= JOBS_RETENTION_DAYS).
