@@ -91,6 +91,26 @@ if [ "$SITE_OK" = false ]; then
   echo "Site health check FAILED."
 fi
 
+# The home page is served by the frontend container alone, so it stays 200
+# even when the frontend can't reach the orchestrator (6 Oct 2026: every API
+# call returned 502 for ~1.5 h after a "successful" deploy). Check the API
+# through the public site too: /auth/me without a login must answer 401 and
+# the plan catalog 200.
+API_OK=false
+for _ in $(seq 1 12); do
+  AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://digidaraaiagents.com/auth/me || true)
+  PLANS_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://digidaraaiagents.com/billing/plans || true)
+  if [ "$AUTH_CODE" = "401" ] && [ "$PLANS_CODE" = "200" ]; then
+    API_OK=true
+    break
+  fi
+  sleep 5
+done
+if [ "$API_OK" = false ]; then
+  HEALTH_OK=false
+  echo "Public API health check FAILED (auth/me=$AUTH_CODE, billing/plans=$PLANS_CODE)."
+fi
+
 BAD_CONTAINERS=$(docker compose ps --format '{{.Name}} {{.State}} {{.Health}}' | awk '$2 != "running" || $3 == "unhealthy"' || true)
 if [ -n "$BAD_CONTAINERS" ]; then
   echo "Containers not running or unhealthy:"

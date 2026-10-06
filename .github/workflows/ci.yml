@@ -369,6 +369,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: docker build -f Dockerfile.frontend -t digidara-frontend:test .
+      # The image only proves the files copied; this proves nginx accepts the
+      # config (a broken nginx.conf would otherwise first fail on the server).
+      - name: Test frontend nginx config
+        run: docker run --rm digidara-frontend:test nginx -t
       - name: Scan frontend container
         uses: aquasecurity/trivy-action@v0.36.0
         with:
