@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 import requests
 
@@ -120,8 +121,31 @@ def normalize_job(raw_job):
     }
 
 
-def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None, max_days_old=None, before_request=None):
-    """Query Adzuna's India job search endpoint and return normalized jobs."""
+# A dropped connection (DNS hiccup, "Network is unreachable", reset) is retried
+# after these pauses before the search is reported as failed. The request never
+# reached Adzuna, so the retries are not extra calls against the free plan.
+CONNECTION_RETRY_DELAYS = (2, 5)
+
+
+def _get_with_retry(session, url, params, headers, sleep):
+    for delay in (*CONNECTION_RETRY_DELAYS, None):
+        try:
+            return session.get(url, params=params, headers=headers, timeout=SCRAPER_TIMEOUT_SECONDS)
+        except requests.ConnectionError as exc:
+            if delay is None:
+                raise
+            logger.warning("[Jobs][Adzuna] connection failed (%s); retrying in %ss", type(exc).__name__, delay)
+            sleep(delay)
+
+
+def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None, max_days_old=None, before_request=None,
+                        sleep=time.sleep):
+    """Query Adzuna's India job search endpoint and return normalized jobs.
+
+    The credentials travel in the query string, so no error raised here may
+    include the request URL or the underlying exception text (both contain
+    app_id and app_key) -- and the original exception is not chained, since
+    the worker logs the full traceback."""
     app_id, app_key = _credentials()
     session = session or requests.Session()
 
@@ -144,11 +168,16 @@ def fetch_and_normalize(what, where, page=1, results_per_page=20, session=None, 
     if before_request:
         before_request()  # free-plan guard: may refuse before any call is made
     try:
-        response = session.get(url, params=params, headers=headers, timeout=SCRAPER_TIMEOUT_SECONDS)
-    except requests.Timeout as exc:
-        raise AdzunaAPIError(f"Timed out contacting Adzuna ({url})") from exc
+        response = _get_with_retry(session, url, params, headers, sleep)
+    except requests.Timeout:
+        raise AdzunaAPIError(f"Timed out contacting Adzuna for {what!r} in {where!r}") from None
+    except requests.ConnectionError:
+        raise AdzunaAPIError(
+            f"Could not connect to Adzuna for {what!r} in {where!r} after {len(CONNECTION_RETRY_DELAYS) + 1} attempts "
+            "(network problem on the server); it will be retried on the next run"
+        ) from None
     except requests.RequestException as exc:
-        raise AdzunaAPIError(f"Adzuna request failed: {exc}") from exc
+        raise AdzunaAPIError(f"Adzuna request failed ({type(exc).__name__})") from None
 
     if response.status_code != 200:
         raise AdzunaAPIError(f"Adzuna returned HTTP {response.status_code}: {response.text[:200]}")
