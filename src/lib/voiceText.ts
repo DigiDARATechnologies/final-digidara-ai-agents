@@ -1,8 +1,9 @@
 /** Turning agent replies into speakable, sentence-sized pieces (no network,
  * so it is unit-testable). */
 const MAX_CHUNK = 260;
-// The first piece is short, so the first words are heard sooner.
-const FIRST_CHUNK = 140;
+// The first piece is short -- generation time grows with length -- so the
+// first words are heard sooner while the rest is generated behind it.
+const FIRST_CHUNK = 100;
 
 /** Text as it should be heard: no markdown, links, code or emoji. */
 export function speakableText(raw: string): string {
@@ -51,5 +52,13 @@ export function splitForSpeech(text: string): string[] {
     }
   }
   if (current) chunks.push(current);
+  // A long first sentence: speak its opening clause first.
+  if (chunks.length && chunks[0].length > FIRST_CHUNK) {
+    const first = chunks[0];
+    const comma = first.lastIndexOf(", ", FIRST_CHUNK);
+    const space = first.lastIndexOf(" ", FIRST_CHUNK);
+    const cut = comma >= 40 ? comma + 1 : space >= 40 ? space : -1;
+    if (cut > 0) chunks.splice(0, 1, first.slice(0, cut).trim(), first.slice(cut).trim());
+  }
   return chunks;
 }

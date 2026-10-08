@@ -8,7 +8,7 @@ test('speaks the words, not the markdown, links, code or emoji', () => {
 test('the first piece is short so speech starts quickly, later pieces group sentences', () => {
   const text = 'Hello Asha. ' + 'This is a longer explanation of your interview answer. '.repeat(6);
   const chunks = splitForSpeech(text.trim());
-  expect(chunks[0].length).toBeLessThanOrEqual(140);
+  expect(chunks[0].length).toBeLessThanOrEqual(100);
   expect(chunks.every((c) => c.length <= 260)).toBe(true);
   expect(chunks.join(' ').replace(/\s+/g, ' ')).toBe(text.trim().replace(/\s+/g, ' '));
 });
@@ -24,4 +24,10 @@ test('a very long sentence is cut at commas and spaces, never mid-word', () => {
   const chunks = splitForSpeech(words);
   expect(chunks.every((c) => c.length <= 260)).toBe(true);
   expect(chunks.join(' ').split(' ')).toEqual(words.split(' '));
+});
+
+test('a long opening sentence is spoken clause first', () => {
+  const chunks = splitForSpeech('That was a strong answer about your final-year project, and you explained the database design clearly, which interviewers love.');
+  expect(chunks[0]).toBe('That was a strong answer about your final-year project,');
+  expect(chunks.join(' ')).toContain('which interviewers love.');
 });
