@@ -20,6 +20,7 @@ import {
   type SyntaxErrorDetail,
   type TopicOption,
 } from "./capstoneApi";
+import { displayRole, easyMediumHard, goalLine, learnerGoal } from "./learnerContext";
 
 /** A rough, deliberately over-inclusive heuristic: is this message the
  * student asking something or disputing a finding, rather than a plain
@@ -205,7 +206,8 @@ export function createInitialCapstoneState(user: User): CapstoneFlowState {
     name: user.name,
     email: user.email,
     phone: user.mobile,
-    difficulty: "easy",
+    // The learner's Capstone level (Beginner -> easy ... Professional -> hard).
+    difficulty: easyMediumHard("capstone_project_agent"),
     pendingQuestion: "focus",
   };
 }
@@ -217,7 +219,20 @@ function projectTypeQuestion(focus: string): string {
 }
 
 export function initialCapstoneMessage(user: User): CapstoneFlowMessage {
-  return { text: `Hi ${user.name.split(" ")[0]}! ${FOCUS_QUESTION}` };
+  const firstName = user.name.split(" ")[0];
+  const goal = learnerGoal();
+  if (!goal) return { text: `Hi ${firstName}! ${FOCUS_QUESTION}` };
+  // Onboarding already told us the goal: offer it instead of asking again.
+  const role = displayRole(goal.targetRole);
+  const skills = goal.skills.slice(0, 3);
+  const focus = skills.length ? `${role} using ${skills.join(", ")}` : role;
+  return {
+    text: `Hi ${firstName}! Based on your profile (${goalLine(goal)}), shall I build your capstone project around that? Tap below, or type a different language, role or topic.`,
+    options: [
+      { label: `${role} project`, value: focus, description: skills.length ? `Uses ${skills.join(", ")}` : "Matches your target role" },
+      ...(skills[0] ? [{ label: `${skills[0]} project`, value: skills[0], description: "Focus on your top skill" }] : []),
+    ],
+  };
 }
 
 function formatRequirements(req: Record<string, any>): string {

@@ -1,4 +1,5 @@
 import type { ChatOption, User } from "../types";
+import { easyMediumHard, goalLine, goalMatchScore, learnerGoal } from "./learnerContext";
 import {
   askTutor,
   ensureSession,
@@ -59,9 +60,32 @@ function matchSlugOrName<T extends { slug: string; name: string }>(list: T[], va
   return list.find((item) => item.slug === needle || item.name.toLowerCase() === needle);
 }
 
+/** Courses ordered by how well they fit the learner's goal; the best fit first. */
+function rankCourses(courses: Course[]): { ordered: Course[]; recommended: Course | null } {
+  const goal = learnerGoal();
+  if (!goal) return { ordered: courses, recommended: null };
+  const scored = courses.map((course, index) => ({ course, index, score: goalMatchScore(goal, course.name, course.description) }));
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  return { ordered: scored.map((s) => s.course), recommended: scored[0]?.score > 0 ? scored[0].course : null };
+}
+
+/** "Hi Asha! For your goal (Data Analyst · SQL, Excel), I recommend Data Analytics." */
+function courseGreeting(courses: Course[], firstName?: string): string {
+  const goal = learnerGoal();
+  const { recommended } = rankCourses(courses);
+  const hello = firstName ? `Hi ${firstName}! ` : "";
+  if (goal && recommended) return `${hello}For your goal (${goalLine(goal)}), I recommend **${recommended.name}**. Choose a course to practice:`;
+  return `${hello}Choose a course to practice:`;
+}
+
 function courseOptions(courses: Course[]): ChatOption[] {
+  const { ordered, recommended } = rankCourses(courses);
   return [
-    ...courses.map((c) => ({ label: c.name, value: c.slug, description: c.description })),
+    ...ordered.map((c) => ({
+      label: c === recommended ? `⭐ ${c.name} · recommended for you` : c.name,
+      value: c.slug,
+      description: c.description,
+    })),
     { label: "Code Playground", value: "__playground__", description: "Write and run any code freely, not tied to a course." },
   ];
 }
@@ -75,8 +99,10 @@ function topicOptions(topics: Topic[]): ChatOption[] {
 }
 
 function problemOptions(problems: ProblemSummary[]): ChatOption[] {
+  // Problems at the learner's level are marked, so they know where to start.
+  const level = easyMediumHard("codeforge_agent");
   return problems.map((p) => ({
-    label: `${p.name} (${p.difficulty})`,
+    label: `${String(p.difficulty).toLowerCase() === level ? "★ " : ""}${p.name} (${p.difficulty})`,
     value: p.slug,
     description: p.attempts > 0 ? `${p.progress} · best ${p.best_score}` : p.progress,
   }));
@@ -107,7 +133,7 @@ async function enterCourses(state: CodeForgeFlowState): Promise<{ state: CodeFor
   const { courses } = await listCourses(state.sessionToken!);
   return {
     state: { ...state, step: "awaiting_course", courses },
-    messages: [{ text: "Choose a course to practice:", options: courseOptions(courses) }],
+    messages: [{ text: courseGreeting(courses), options: courseOptions(courses) }],
   };
 }
 
@@ -121,7 +147,7 @@ export async function openCodeForgeChat(
     return {
       state: { ...base, sessionToken, studentName: student.display_name, courses },
       messages: [{
-        text: `Hi ${student.display_name.split(" ")[0]}! Choose a course to practice:`,
+        text: courseGreeting(courses, student.display_name.split(" ")[0]),
         options: courseOptions(courses),
       }],
     };

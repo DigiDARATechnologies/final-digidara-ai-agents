@@ -24,6 +24,7 @@ import {
   type SpeakingTurnResult,
   type WritingTurnResult,
 } from "./communicationApi";
+import { easyMediumHard } from "./learnerContext";
 
 export type CommunicationStep =
   | "main_menu"
@@ -235,7 +236,8 @@ const PRONUNCIATION_MODE_OPTIONS: ChatOption[] = [
 ];
 
 function baseState(): CommunicationFlowState {
-  return { step: "main_menu", difficulty: "medium" };
+  // The learner's Communication level (Beginner -> easy ... Professional -> hard).
+  return { step: "main_menu", difficulty: easyMediumHard("communication_agent") };
 }
 
 function menuMessage(intro: string): CommunicationFlowMessage {

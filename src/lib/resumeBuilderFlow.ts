@@ -18,6 +18,7 @@ import {
   type ResumeCreateInput,
 } from "./resumeBuilderApi";
 import { parseLinkedInExport } from "./linkedinExport";
+import { displayRole, learnerGoal } from "./learnerContext";
 
 export type ResumeBuilderStep = "choose_workflow" | "awaiting_experience_level" | "awaiting_title" | "awaiting_name" | "awaiting_email" | "awaiting_phone" | "awaiting_location" | "awaiting_role" | "awaiting_summary" | "awaiting_skills" | "awaiting_experience" | "awaiting_experience_more" | "awaiting_education" | "awaiting_education_more" | "awaiting_project" | "awaiting_project_more" | "awaiting_linkedin" | "awaiting_github" | "awaiting_portfolio" | "awaiting_certifications" | "awaiting_certifications_more" | "awaiting_achievements" | "awaiting_achievements_more" | "confirming" | "awaiting_enrichment_choice" | "awaiting_upload_role" | "awaiting_upload_job_description" | "awaiting_upload" | "awaiting_paste_text" | "awaiting_import_zip" | "awaiting_import_linkedin" | "awaiting_import_github" | "awaiting_import_portfolio" | "reviewing" | "awaiting_edit_instruction" | "awaiting_edit_confirmation" | "awaiting_template" | "completed" | "error";
 interface ResumeDraft {
@@ -917,6 +918,30 @@ async function generateVerifiedResume(state: ResumeBuilderFlowState, user: User)
   }
 }
 
+
+/** A question with the learner's saved answer from onboarding as a one-tap
+ * option, so they never retype what DigiDARA already knows. */
+function roleQuestion(text: string): ResumeBuilderMessage {
+  const goal = learnerGoal();
+  return goal ? { text, options: [{ label: `${displayRole(goal.targetRole)} (from your profile)`, value: displayRole(goal.targetRole) }] } : { text };
+}
+
+function skillsQuestion(text: string): ResumeBuilderMessage {
+  const goal = learnerGoal();
+  return goal && goal.skills.length
+    ? { text, options: [{ label: `Use my skills: ${goal.skills.slice(0, 6).join(", ")}`, value: goal.skills.join(", ") }] }
+    : { text };
+}
+
+/** The experience question, with the learner's own answer marked. */
+function experienceLevelOptions(fresher: string, experienced: string): ChatOption[] {
+  const mine = learnerGoal()?.experience;
+  return [
+    { label: mine === "fresher" ? "Fresher / student · from your profile" : "Fresher / student", value: "fresher", description: fresher },
+    { label: mine === "experienced" ? "Experienced professional · from your profile" : "Experienced professional", value: "experienced", description: experienced },
+  ];
+}
+
 export async function openResumeBuilderChat(user: User): Promise<ResumeBuilderFlowResult> {
   const state = createInitialResumeBuilderState();
   try { await ensureResumeProfile(user.id, user.name, user.email); return { state, messages: [{ text: `Hi ${user.name.split(" ")[0]}! Would you like to create a new resume or upload one to improve?`, options: choices }] }; }
@@ -1295,13 +1320,13 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
     return {
       state: { ...state, step: "awaiting_upload_role", error: undefined },
-      messages: [{ text: "What role are you targeting with this resume? For example: Data Analyst or Python Developer." }],
+      messages: [roleQuestion("What role are you targeting with this resume? For example: Data Analyst or Python Developer.")],
     };
   }
 
   if (isCreateResumeIntent(value) && (state.step === "choose_workflow" || state.step === "error" || state.step === "awaiting_experience_level")) {
     if (state.step === "awaiting_experience_level") {
-      return { state, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: [{ label: "Fresher / student", value: "fresher", description: "A concise, one-page resume focused on education, projects, skills, and internships." }, { label: "Experienced professional", value: "experienced", description: "A resume designed for up to two pages, with room for career impact and achievements." }] }] };
+      return { state, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: experienceLevelOptions("A concise, one-page resume focused on education, projects, skills, and internships.", "A resume designed for up to two pages, with room for career impact and achievements.") }] };
     }
     const preservedTargetRole = state.draft?.targetRole;
     return {
@@ -1319,7 +1344,7 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
   if (isUploadResumeIntent(value)) {
     return {
       state: { ...state, step: "awaiting_upload_role", error: undefined, draft: {} },
-      messages: [{ text: "What role are you targeting with this resume? For example: Data Analyst or Python Developer." }],
+      messages: [roleQuestion("What role are you targeting with this resume? For example: Data Analyst or Python Developer.")],
     };
   }
 
@@ -1520,8 +1545,8 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
   }
   if (state.step === "choose_workflow") {
-    if (value === "new") return { state: { ...state, step: "awaiting_experience_level", draft: {} }, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: [{ label: "Fresher / student", value: "fresher", description: "A concise, one-page resume focused on education, projects, skills, and internships." }, { label: "Experienced professional", value: "experienced", description: "A resume designed for up to two pages, with room for career impact and achievements." }] }] };
-    if (value === "upload") return { state: { ...state, step: "awaiting_upload_role", draft: {} }, messages: [{ text: "What role are you targeting with this resume? For example: Data Analyst or Python Developer." }] };
+    if (value === "new") return { state: { ...state, step: "awaiting_experience_level", draft: {} }, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: experienceLevelOptions("A concise, one-page resume focused on education, projects, skills, and internships.", "A resume designed for up to two pages, with room for career impact and achievements.") }] };
+    if (value === "upload") return { state: { ...state, step: "awaiting_upload_role", draft: {} }, messages: [roleQuestion("What role are you targeting with this resume? For example: Data Analyst or Python Developer.")] };
     if (value === "paste_text") return { state: { ...state, step: "awaiting_paste_text", draft: {} }, messages: [{ text: "Paste your LinkedIn “About” and experience text, or any rough notes about your background, and I'll turn it into a resume." }] };
     if (value === "import_linkedin_zip") return { state: { ...state, step: "awaiting_import_zip", draft: {} }, messages: [{ text: "Attach the ZIP using the paperclip button. On LinkedIn: Settings & Privacy → Data privacy → Get a copy of your data. It can take LinkedIn a little while to prepare it — come back here once you have the download." }] };
   }
@@ -1568,17 +1593,17 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
     return { state: updateDraft(state, { phone: isSkip(value) ? "" : clean(value) }, "awaiting_location"), messages: [{ text: "What city and country should appear on your resume? Type Skip to omit it.", options: skipOption }] };
   }
-  if (state.step === "awaiting_location") return { state: updateDraft(state, { location: isSkip(value) ? "" : normalizeLocation(value) }, "awaiting_role"), messages: [{ text: "What role are you targeting? For example: Data Analyst or Frontend Developer." }] };
+  if (state.step === "awaiting_location") return { state: updateDraft(state, { location: isSkip(value) ? "" : normalizeLocation(value) }, "awaiting_role"), messages: [roleQuestion("What role are you targeting? For example: Data Analyst or Frontend Developer.")] };
   if (state.step === "awaiting_role") {
     if (clean(value).length < 2) return { state, messages: [{ text: "Please enter the role you are targeting." }] };
     return { state: updateDraft(state, { targetRole: clean(value).replace(/^role\s*:\s*/i, "") }, "awaiting_summary"), messages: [{ text: "Write a short summary, share a few facts, or type Skip. You can improve it later with AI.", options: skipOption }] };
   }
   if (state.step === "awaiting_summary") {
     if (isSkip(value) || (clean(value).length >= 3 && clean(value).length < 30)) {
-      return { state: updateDraft(state, { summary: isSkip(value) ? "" : clean(value) }, "awaiting_skills"), messages: [{ text: "List your key skills, separated by commas. For example: Python, SQL, Power BI, Excel." }] };
+      return { state: updateDraft(state, { summary: isSkip(value) ? "" : clean(value) }, "awaiting_skills"), messages: [skillsQuestion("List your key skills, separated by commas. For example: Python, SQL, Power BI, Excel.")] };
     }
     if (clean(value).length < 30) return { state, messages: [{ text: "Please add a little more detail—at least 30 characters makes your summary useful to recruiters." }] };
-    return { state: updateDraft(state, { summary: clean(value) }, "awaiting_skills"), messages: [{ text: "List your key skills, separated by commas. For example: Python, SQL, Power BI, Excel." }] };
+    return { state: updateDraft(state, { summary: clean(value) }, "awaiting_skills"), messages: [skillsQuestion("List your key skills, separated by commas. For example: Python, SQL, Power BI, Excel.")] };
   }
   if (state.step === "awaiting_skills") {
     const rawSkills = clean(value).split(",").map(clean).filter(Boolean);

@@ -17,6 +17,7 @@ import {
   updateCertificateRecipient,
   type CertificateProfileResponse,
 } from "./certificateAgentApi";
+import { goalMatchScore, learnerGoal } from "./learnerContext";
 
 export type CertificateStep =
   | "awaiting_action"
@@ -138,6 +139,15 @@ const topicOptions: ChatOption[] = DEFAULT_TOPICS.map((value) => ({
   value,
 }));
 
+/** Exam topics, the ones that fit the learner's goal first and marked. */
+function topicChoices(): ChatOption[] {
+  const goal = learnerGoal();
+  if (!goal) return topicOptions;
+  const scored = topicOptions.map((option, index) => ({ option, index, score: goalMatchScore(goal, option.value) }));
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  return scored.map(({ option, score }) => (score > 0 ? { ...option, label: `${option.label} · fits your goal` } : option));
+}
+
 export const createInitialCertificateState = (): CertificateFlowState => ({
   step: "awaiting_action",
 });
@@ -241,7 +251,7 @@ export async function handleCertificateText(
         messages: [
           {
             text: "Select a topic for your certification exam, or type a custom topic:",
-            options: topicOptions,
+            options: topicChoices(),
           },
         ],
       };
@@ -258,7 +268,7 @@ export async function handleCertificateText(
         messages: [
           {
             text: "Select a topic for your AI Chat Exam Session:",
-            options: topicOptions,
+            options: topicChoices(),
           },
         ],
       };

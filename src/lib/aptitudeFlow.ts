@@ -1,4 +1,5 @@
 import type { ChatOption, User } from "../types";
+import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, skipAptitudeQuestion, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
 
 export type AptitudeStep = "awaiting_mode" | "awaiting_category" | "awaiting_level" | "awaiting_language" | "awaiting_question" | "awaiting_next_question" | "completed";
@@ -8,6 +9,20 @@ const categories = ["Quantitative Aptitude", "Logical Reasoning", "Verbal Abilit
 const categoryOptions = categories.map((value) => ({ label: value, value }));
 const levelOptions = ["Beginner", "Intermediate", "Advanced"].map((value) => ({ label: value, value }));
 const languageOptions = ["Python", "Java", "C", "SQL"].map((value) => ({ label: value, value }));
+
+/** Practice levels, with the learner's own Aptitude level marked. */
+function levelChoices(): ChatOption[] {
+  const mine = beginnerToAdvanced("aptitude_agent");
+  return levelOptions.map((option) => option.value.toLowerCase() === mine ? { ...option, label: `${option.label} · your level` } : option);
+}
+
+/** Languages, with the ones the learner listed as skills first. */
+function languageChoices(): ChatOption[] {
+  const skills = (learnerGoal()?.skills ?? []).map((skill) => skill.toLowerCase());
+  const known = languageOptions.filter((option) => skills.includes(option.value.toLowerCase()));
+  const rest = languageOptions.filter((option) => !known.includes(option));
+  return [...known.map((option) => ({ ...option, label: `${option.label} · your skill` })), ...rest];
+}
 const optionMap = (options: Record<string, string>): ChatOption[] => Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 // The gateway answers 402 "Not enough points" (formerly "Insufficient token balance").
 const isTokenInterruption = (error: unknown) => /not enough points|insufficient token balance|token balance/i.test((error as Error)?.message || "");
@@ -18,7 +33,9 @@ const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
  * no need to reconfigure) if it still fails. See RETRY_START_TEST below. */
 const RETRY_START_TEST = "retry_start_test";
 export const createInitialAptitudeState = (): AptitudeFlowState => ({ step: "awaiting_mode" });
-export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: `Hi ${user.name.split(" ")[0]}! What would you like to practice?`, options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] });
+export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: learnerGoal()
+  ? `Hi ${user.name.split(" ")[0]}! Aptitude rounds are a common first filter for ${displayRole(learnerGoal()!.targetRole)} roles. What would you like to practice?`
+  : `Hi ${user.name.split(" ")[0]}! What would you like to practice?`, options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] });
 
 function questionMessage(question: AptitudeQuestion): AptitudeFlowMessage {
   const priority = question.topic_is_starred ? " ★ Priority topic" : "";
@@ -108,11 +125,11 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
     if (state.step === "awaiting_mode") {
       const mode = value.toLowerCase().includes("category") ? "category_practice" : value.toLowerCase().includes("mixed") ? "mixed" : undefined;
       if (!mode) return { state, messages: [{ text: "Choose Mixed Test or Category Practice.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }] };
-      return mode === "category_practice" ? { state: { ...state, mode, step: "awaiting_category" as const }, messages: [{ text: "Choose a category:", options: categoryOptions }] } : { state: { ...state, mode, step: "awaiting_language" as const }, messages: [{ text: "Choose the Technical Aptitude language (Python is the default):", options: languageOptions }] };
+      return mode === "category_practice" ? { state: { ...state, mode, step: "awaiting_category" as const }, messages: [{ text: "Choose a category:", options: categoryOptions }] } : { state: { ...state, mode, step: "awaiting_language" as const }, messages: [{ text: "Choose the Technical Aptitude language (Python is the default):", options: languageChoices() }] };
     }
-    if (state.step === "awaiting_category") { const category = categories.find((item) => item.toLowerCase() === value.toLowerCase()); if (!category) return { state, messages: [{ text: "Choose a category from the list.", options: categoryOptions }] }; return { state: { ...state, category, step: "awaiting_level" as const }, messages: [{ text: "Choose a practice level:", options: levelOptions }] }; }
-    if (state.step === "awaiting_level") { const level = (["Beginner", "Intermediate", "Advanced"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!level) return { state, messages: [{ text: "Choose Beginner, Intermediate, or Advanced.", options: levelOptions }] }; return state.category === "Technical Aptitude" ? { state: { ...state, level, step: "awaiting_language" as const }, messages: [{ text: "Choose a programming language:", options: languageOptions }] } : await startTestWithRetry({ ...state, level }, user); }
-    if (state.step === "awaiting_language") { const language = (["C", "Java", "Python", "SQL"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!language) return { state, messages: [{ text: "Choose C, Java, Python, or SQL.", options: languageOptions }] }; return await startTestWithRetry({ ...state, technicalLanguage: language }, user); }
+    if (state.step === "awaiting_category") { const category = categories.find((item) => item.toLowerCase() === value.toLowerCase()); if (!category) return { state, messages: [{ text: "Choose a category from the list.", options: categoryOptions }] }; return { state: { ...state, category, step: "awaiting_level" as const }, messages: [{ text: "Choose a practice level:", options: levelChoices() }] }; }
+    if (state.step === "awaiting_level") { const level = (["Beginner", "Intermediate", "Advanced"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!level) return { state, messages: [{ text: "Choose Beginner, Intermediate, or Advanced.", options: levelChoices() }] }; return state.category === "Technical Aptitude" ? { state: { ...state, level, step: "awaiting_language" as const }, messages: [{ text: "Choose a programming language:", options: languageChoices() }] } : await startTestWithRetry({ ...state, level }, user); }
+    if (state.step === "awaiting_language") { const language = (["C", "Java", "Python", "SQL"] as const).find((item) => item.toLowerCase() === value.toLowerCase()); if (!language) return { state, messages: [{ text: "Choose C, Java, Python, or SQL.", options: languageChoices() }] }; return await startTestWithRetry({ ...state, technicalLanguage: language }, user); }
     if (state.step === "awaiting_next_question") {
       if (!/retry|question|continue/i.test(value)) {
         return { state, messages: [{ text: "Your previous answer was saved. Retry loading the next question to continue.", options: [{ label: "Retry question", value: "retry question" }] }] };

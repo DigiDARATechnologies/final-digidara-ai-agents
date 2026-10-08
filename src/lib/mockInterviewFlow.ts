@@ -3,6 +3,7 @@ import {
   endMockInterview, ensureMockInterviewSession, exitMockInterview, getActiveMockInterview, startMockInterview, submitMockInterviewAnswer,
   type MockInterviewQuestion, type MockInterviewSummary,
 } from "./mockInterviewApi";
+import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 
 export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "choose_question_count" | "in_interview" | "completed" | "error";
 export interface MockInterviewFlowState {
@@ -58,6 +59,35 @@ const exitOption: ChatOption[] = [{ label: "Exit interview", value: "exit_interv
 
 const errorText = (error: unknown) => error instanceof Error ? error.message : "Something went wrong.";
 
+const DIFFICULTY_LABELS = { beginner: "Beginner", intermediate: "Intermediate", advanced: "Advanced" } as const;
+
+/** The opening choices: the learner's own role at their level first, when known. */
+function openingOptions(): ChatOption[] {
+  const goal = learnerGoal();
+  if (!goal) return roundOptions;
+  const level = beginnerToAdvanced("mock_interview_agent");
+  return [
+    { label: `Technical interview for ${displayRole(goal.targetRole)}`, value: "profile_role",
+      description: `Your target role · ${DIFFICULTY_LABELS[level]} level` },
+    ...roundOptions,
+  ];
+}
+
+/** Role choices with the learner's target role first. */
+function roleChoices(): ChatOption[] {
+  const goal = learnerGoal();
+  if (!goal) return roleOptions;
+  const role = displayRole(goal.targetRole);
+  const others = roleOptions.filter((option) => option.value.toLowerCase() !== role.toLowerCase());
+  return [{ label: `${role} (your target role)`, value: role }, ...others];
+}
+
+/** Difficulty choices with the learner's own level marked. */
+function difficultyChoices(): ChatOption[] {
+  const level = beginnerToAdvanced("mock_interview_agent");
+  return difficultyOptions.map((option) => option.value === level ? { ...option, label: `${option.label} · your level` } : option);
+}
+
 function questionMessage(question: string, order: number, total?: number, realIndex?: number): MockInterviewMessage {
   const heading = `Question ${realIndex ?? order}${total ? ` of ${total}` : ""}`;
   return { text: `${heading}:\n\n${question}`, options: exitOption };
@@ -87,7 +117,7 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
     const intro = q.resumed_existing ? "Resuming your interview in progress." : "Your interview has started. The question will be read aloud; you can speak or type your answer.";
     return { state: next, messages: [{ text: intro }, questionMessage(q.question, q.question_order, q.total_questions, next.realQuestionIndex)] };
   } catch (error) {
-    return { state: { ...state, step: "choose_difficulty", error: errorText(error) }, messages: [{ text: `I couldn't start the interview: ${errorText(error)}`, options: difficultyOptions }] };
+    return { state: { ...state, step: "choose_difficulty", error: errorText(error) }, messages: [{ text: `I couldn't start the interview: ${errorText(error)}`, options: difficultyChoices() }] };
   }
 }
 
@@ -130,7 +160,12 @@ export async function openMockInterviewChat(user: User): Promise<MockInterviewFl
     } catch { /* Setup remains available if the optional resume check fails. */ }
     return {
       state: { ...state, sessionToken: session.sessionToken },
-      messages: [{ text: `Hi ${user.name.split(" ")[0]}! Which mock interview would you like to practise?`, options: roundOptions }],
+      messages: [{
+        text: learnerGoal()
+          ? `Hi ${user.name.split(" ")[0]}! Ready to practise for your ${displayRole(learnerGoal()!.targetRole)} interview? Pick an option.`
+          : `Hi ${user.name.split(" ")[0]}! Which mock interview would you like to practise?`,
+        options: openingOptions(),
+      }],
     };
   } catch (error) {
     return { state: { ...state, step: "error", error: errorText(error) }, messages: [{ text: `I couldn't start Mock Interview: ${errorText(error)}`, options: [{ label: "Try again", value: "retry" }] }] };
@@ -145,35 +180,43 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
   if (value === "restart" || value === "retry" || state.step === "completed" || state.step === "error") return openMockInterviewChat(user);
 
   if (state.step === "choose_round") {
-    if (value === "hr") return { state: { ...state, roundType: "hr", interviewMode: "course", step: "choose_difficulty" }, messages: [{ text: "Choose your HR interview difficulty.", options: difficultyOptions }] };
+    const goal = learnerGoal();
+    if (value === "profile_role" && goal) {
+      const difficulty = beginnerToAdvanced("mock_interview_agent");
+      return {
+        state: { ...state, roundType: "technical", interviewMode: "role", roleName: displayRole(goal.targetRole), difficulty, step: "choose_question_count" },
+        messages: [{ text: `${displayRole(goal.targetRole)} interview at ${DIFFICULTY_LABELS[difficulty]} level. How many questions would you like?`, options: questionCountOptions }],
+      };
+    }
+    if (value === "hr") return { state: { ...state, roundType: "hr", interviewMode: "course", step: "choose_difficulty" }, messages: [{ text: "Choose your HR interview difficulty.", options: difficultyChoices() }] };
     if (value === "technical") return { state: { ...state, roundType: "technical", step: "choose_mode" }, messages: [{ text: "Would you like questions for a job role or one technical topic?", options: modeOptions }] };
-    return { state, messages: [{ text: "Please choose an interview type.", options: roundOptions }] };
+    return { state, messages: [{ text: "Please choose an interview type.", options: openingOptions() }] };
   }
 
   if (state.step === "choose_mode") {
-    if (value === "role") return { state: { ...state, interviewMode: "role", step: "choose_role" }, messages: [{ text: "Choose a job role or enter your own.", options: roleOptions }] };
+    if (value === "role") return { state: { ...state, interviewMode: "role", step: "choose_role" }, messages: [{ text: "Choose a job role or enter your own.", options: roleChoices() }] };
     if (value === "custom_topic") return { state: { ...state, interviewMode: "custom_topic", step: "awaiting_subject" }, messages: [{ text: "Which technical topic should I interview you on? For example, Python, React, or MySQL." }] };
     return { state, messages: [{ text: "Choose a job role or custom topic.", options: modeOptions }] };
   }
 
   if (state.step === "choose_role") {
     if (value === "custom_role") return { state: { ...state, step: "awaiting_role" }, messages: [{ text: "Enter the job role you want to practise (up to 150 characters)." }] };
-    const selected = roleOptions.find((option) => option.value.toLowerCase() === value && option.value !== "custom_role");
-    if (selected) return { state: { ...state, roleName: selected.value, step: "choose_difficulty" }, messages: [{ text: `Great. Choose a difficulty for the ${selected.value} interview.`, options: difficultyOptions }] };
-    return { state, messages: [{ text: "Choose a listed role or select Enter another role.", options: roleOptions }] };
+    const selected = roleChoices().find((option) => option.value.toLowerCase() === value && option.value !== "custom_role");
+    if (selected) return { state: { ...state, roleName: selected.value, step: "choose_difficulty" }, messages: [{ text: `Great. Choose a difficulty for the ${selected.value} interview.`, options: difficultyChoices() }] };
+    return { state, messages: [{ text: "Choose a listed role or select Enter another role.", options: roleChoices() }] };
   }
 
   if (state.step === "awaiting_role" || state.step === "awaiting_subject") {
     if (!text || text.length > 150) return { state, messages: [{ text: "Enter a name of up to 150 characters." }] };
     const next = state.step === "awaiting_role" ? { roleName: text } : { subject: text };
-    return { state: { ...state, ...next, step: "choose_difficulty" }, messages: [{ text: `Choose a difficulty for ${text}.`, options: difficultyOptions }] };
+    return { state: { ...state, ...next, step: "choose_difficulty" }, messages: [{ text: `Choose a difficulty for ${text}.`, options: difficultyChoices() }] };
   }
 
   if (state.step === "choose_difficulty") {
     if (value === "beginner" || value === "intermediate" || value === "advanced") {
       return { state: { ...state, difficulty: value, step: "choose_question_count" }, messages: [{ text: "How many questions would you like?", options: questionCountOptions }] };
     }
-    return { state, messages: [{ text: "Please choose a difficulty.", options: difficultyOptions }] };
+    return { state, messages: [{ text: "Please choose a difficulty.", options: difficultyChoices() }] };
   }
 
   if (state.step === "choose_question_count") {

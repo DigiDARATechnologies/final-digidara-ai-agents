@@ -36,6 +36,7 @@ import OnboardingScreen from "./components/OnboardingScreen";
 import ReadinessView from "./components/ReadinessView";
 import OrganizationView from "./components/OrganizationView";
 import { fetchLearnerSummary, type LearnerSummary } from "./lib/learnerApi";
+import { setLearnerContext } from "./lib/learnerContext";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -151,6 +152,8 @@ export default function App() {
       .finally(() => { if (active) setLearnerLoaded(true); });
     return () => { active = false; };
   }, [learnerUserId]);
+  // Every agent's chat flow reads the learner's goal and levels from here.
+  useEffect(() => { setLearnerContext(learnerSummary); }, [learnerSummary]);
   // Signed-out visitors land on the public home page; "Login" swaps to the
   // existing login screen and mirrors it in the URL (/login) so it is linkable.
   const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login");

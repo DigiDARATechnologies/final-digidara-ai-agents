@@ -95,8 +95,9 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
 }
 
 function Trend({ points }: { points: { overall: number | null; computed_at: string }[] }) {
-  const values = points.map((p) => p.overall ?? 0);
-  if (values.length < 2) return <p className="rd-muted">Your trend appears after your readiness is checked a few times.</p>;
+  // Only checks that produced a score: "not started" is not a 0 on the chart.
+  const values = points.filter((p) => p.overall !== null).map((p) => p.overall as number);
+  if (values.length < 2) return <p className="rd-muted">Your trend appears once your readiness has been scored a few times.</p>;
   const width = 320;
   const height = 70;
   const step = width / (values.length - 1);

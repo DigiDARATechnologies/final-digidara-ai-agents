@@ -1,4 +1,5 @@
 import type { ChatOption, User } from "../types";
+import { displayRole, learnerGoal } from "./learnerContext";
 import {
   chatWithJobAgent,
   ensureJobConversation,
@@ -9,6 +10,7 @@ import {
   updateJobFetchProfile,
   uploadJobFetchResume,
   type JobFeedItem,
+  type JobFetchProfile,
 } from "./jobFetchApi";
 
 export type JobFetchStep =
@@ -205,12 +207,41 @@ async function loadFeed(state: JobFetchFlowState, query: Record<string, unknown>
   };
 }
 
+/**
+ * Onboarding already collected the learner's skills and target role; a job
+ * profile still missing them is filled in from there, so the Job Agent only
+ * asks for what it really still needs (city, work mode, resume). Only empty
+ * fields are filled -- anything the learner told the Job Agent stays.
+ */
+async function prefillFromLearnerGoal(profile: JobFetchProfile, user: User): Promise<JobFetchProfile> {
+  const goal = learnerGoal();
+  if (!goal || profile.profile_completed) return profile;
+  const fill = {
+    full_name: profile.full_name || user.name,
+    skills: profile.skills.length ? profile.skills : goal.skills,
+    preferred_titles: profile.preferred_titles.length ? profile.preferred_titles : [displayRole(goal.targetRole)],
+    preferred_locations: profile.preferred_locations,
+    preferred_work_mode: profile.preferred_work_mode || undefined,
+    // A fresher has 0 years; an experienced learner is asked how many.
+    ...(!profile.experience_provided && goal.experience === "fresher" ? { experience_years: 0 } : {}),
+  };
+  const changed = fill.full_name !== profile.full_name || fill.skills !== profile.skills
+    || fill.preferred_titles !== profile.preferred_titles || "experience_years" in fill;
+  if (!changed) return profile;
+  try {
+    await updateJobFetchProfile(fill);
+    return await getJobFetchProfile();
+  } catch {
+    return profile;
+  }
+}
+
 export async function openJobFetchChat(user: User, conversationId?: string): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
   const base = createInitialState();
   try {
     await ensureJobFetchProfile();
     if (conversationId) await ensureJobConversation(conversationId, "Job Agent");
-    const profile = await getJobFetchProfile();
+    const profile = await prefillFromLearnerGoal(await getJobFetchProfile(), user);
     const profileState: JobFetchFlowState = {
       ...base,
       conversationId,
