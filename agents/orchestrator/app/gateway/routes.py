@@ -12,6 +12,8 @@ from app.auth.agent_signing import sign_headers
 from app.auth.security import decode_access_token
 from app.auth import service as auth_service
 from app.auth.verified import ensure_verified
+from app.learner import levels as level_rules
+from app.learner import service as learner_service
 from app.registry import service as registry_service
 
 logger = logging.getLogger("orchestrator.gateway")
@@ -90,6 +92,8 @@ FREE_ACTIONS = {
     # as a call would bill a single answer many times over; the answer of
     # record (transcribe_audio, on submit) stays billable.
     "transcribe_preview",
+    # Phase 2 readiness: a read of the learner's own progress, no LLM call.
+    "get_student_summary",
     # The same live preview for the Communication Coach's spoken answers.
     "speaking_transcribe_preview",
     "mixed_test_config", "save_mixed_test_config", "daily_usage",
@@ -100,9 +104,8 @@ FREE_ACTIONS = {
 }
 
 
-@router.post("/agents/{agent_name}/invoke")
-async def invoke_registered_agent(agent_name: str, request: Request) -> Response:
-    """Forward JSON or multipart bodies only to a live registry endpoint."""
+def _resolve_agent(agent_name: str):
+    """The live registry row for agent_name, or the gateway's 503/403."""
     agent = registry_service.resolve_healthy(agent_name)
     if agent is None:
         raise HTTPException(503, f"Agent {agent_name!r} is not registered or its heartbeat is stale.")
@@ -113,6 +116,36 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             "blocked gateway invoke to disallowed host: agent=%s endpoint=%s host=%s", agent_name, agent.endpoint, host
         )
         raise HTTPException(403, f"Registered endpoint for {agent_name!r} is not on an allowed host.")
+    return agent
+
+
+def _add_learner_context(agent_name: str, envelope: dict, user_id: str) -> None:
+    """Phase 2: every agent receives the learner's target role, skills,
+    degree and their level with that agent as the envelope's `learner`
+    field. Agents read only `action` and `payload`, so the extra top-level
+    field is ignored by any agent that does not use it yet; it is part of the
+    signed body. For actions that take a difficulty, the level also fills in
+    `payload.difficulty` when the browser did not choose one."""
+    try:
+        context = learner_service.learner_context(user_id, agent_name)
+    except Exception:
+        logger.warning("learner context unavailable for agent=%s", agent_name, exc_info=True)
+        return
+    envelope["learner"] = context
+    payload = envelope.get("payload")
+    if (
+        isinstance(payload, dict)
+        and context.get("difficulty")
+        and envelope.get("action") in level_rules.DIFFICULTY_ACTIONS.get(agent_name, frozenset())
+        and not payload.get("difficulty")
+    ):
+        payload["difficulty"] = context["difficulty"]
+
+
+@router.post("/agents/{agent_name}/invoke")
+async def invoke_registered_agent(agent_name: str, request: Request) -> Response:
+    """Forward JSON or multipart bodies only to a live registry endpoint."""
+    agent = _resolve_agent(agent_name)
 
     body = await request.body()
     envelope = None
@@ -125,7 +158,6 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
     # Health polling carries no learner data and remains public. Every other
     # action must be tied to a valid DigiDARA login.
     is_health = isinstance(envelope, dict) and envelope.get("action") == "health"
-    user_id = None
     user = None
     if not is_health:
         authorization = request.headers.get("authorization", "")
@@ -139,14 +171,34 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         # Also refuses an account that still has to verify its email.
         ensure_verified(user)
 
+    return await _forward(
+        agent, agent_name, body, envelope, user,
+        request.headers.get("content-type"), request.headers.get("accept"),
+    )
+
+
+async def invoke_json(agent_name: str, action: str, payload: dict, user, caller: str | None = None) -> Response:
+    """Call one agent action for an already-authenticated, verified user --
+    the A2A hub and the readiness service use this, so they get exactly the
+    browser path's routing, billing, signing and learner context."""
+    agent = _resolve_agent(agent_name)
+    envelope: dict = {"action": action, "payload": dict(payload or {})}
+    if caller:
+        envelope["caller"] = caller
+    body = json.dumps(envelope).encode("utf-8")
+    return await _forward(agent, agent_name, body, envelope, user, "application/json", "application/json")
+
+
+async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None) -> Response:
+    user_id = user.id if user is not None else None
     action_name = envelope.get("action") if isinstance(envelope, dict) else None
     # The Job Agent's only multipart action is its deterministic resume
     # upload. Multipart bodies are forwarded byte-for-byte, so they are not
     # decoded into `envelope` above; identify this narrowly by the registered
     # agent plus media type instead of trusting a client-supplied billing
     # override header/query parameter.
-    is_job_resume_upload = agent_name == "job_agent" and request.headers.get("content-type", "").startswith("multipart/form-data")
-    is_multipart = request.headers.get("content-type", "").startswith("multipart/form-data")
+    is_multipart = (content_type or "").startswith("multipart/form-data")
+    is_job_resume_upload = agent_name == "job_agent" and is_multipart
     is_free_action = action_name in FREE_ACTIONS or is_job_resume_upload
     is_billable = bool(user_id) and not is_free_action
 
@@ -158,9 +210,9 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             raise HTTPException(402, "Not enough points. Please top up to continue.")
 
     headers: dict[str, str] = {}
-    if content_type := request.headers.get("content-type"):
+    if content_type:
         headers["content-type"] = content_type
-    if accept := request.headers.get("accept"):
+    if accept:
         headers["accept"] = accept
     if user_id:
         # Derived from the verified platform JWT, never from the JSON payload.
@@ -168,14 +220,15 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         headers["x-digidara-is-admin"] = "true" if user and user.is_admin else "false"
         headers["x-digidara-token-balance"] = str(user.token_balance) if user else "0"
 
-    if isinstance(envelope, dict):
+    if isinstance(envelope, dict) and user_id:
         if envelope.get("action") == "ensure_session":
             payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
             # Identity bridges receive only server-verified profile fields;
             # browser-supplied identity values are never forwarded.
             payload.update({"user_id": user.id, "name": user.name, "email": user.email, "mobile": user.mobile or ""})
             envelope["payload"] = payload
-            body = json.dumps(envelope).encode("utf-8")
+        _add_learner_context(agent_name, envelope, user_id)
+        body = json.dumps(envelope).encode("utf-8")
 
     # Aptitude batch creation and mock-interview question planning/final
     # evaluation can outlast ordinary agent calls. Keep their larger budgets

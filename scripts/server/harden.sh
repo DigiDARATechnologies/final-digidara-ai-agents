@@ -12,7 +12,7 @@
 #   3. fail2ban: bans an IP for 1 h after 5 failed SSH logins in 10 min.
 #   4. Automatic security updates (unattended-upgrades).
 #   5. Daily MySQL backup at 02:30, kept 14 days, in /opt/backups.
-#   6. Every .env / judge0.conf readable by root only.
+#   6. Every .env readable by root only; judge0.conf by the Judge0 user only.
 #   7. Lists old backups that contain secrets, for you to delete.
 #   8. Confirms the digidaraaiagents.com certificate renews automatically.
 #
@@ -97,7 +97,12 @@ fi
 echo "Copy /opt/backups off this server regularly (another machine or cloud storage)."
 
 step "6. Secret files readable by root only"
-find "$APP" -maxdepth 6 \( -name ".env" -o -name ".env.bak-*" -o -name "judge0.conf" \) -type f -exec chmod 600 {} \; -print | sed 's/^/600 /'
+find "$APP" -maxdepth 6 \( -name ".env" -o -name ".env.bak-*" \) -type f -exec chmod 600 {} \; -print | sed 's/^/600 /'
+# judge0.conf is bind-mounted into the Judge0 containers, which run as uid
+# 1000 (gid 999). Root-only 600 makes it unreadable there: Judge0 falls back
+# to localhost for Postgres and Redis and crash-loops. Owned by that uid it
+# stays 600 -- private to everyone else on the host.
+find "$APP" -maxdepth 6 -name "judge0.conf" -type f -exec chown 1000:999 {} \; -exec chmod 600 {} \; -print | sed 's/^/600 (uid 1000) /'
 
 step "7. Old backups that contain secrets (delete once the site works)"
 find /opt /root -maxdepth 3 \( -name "*.tar.gz" -o -name ".env.bak-*" \) -type f 2>/dev/null | grep -v '^/opt/backups/' || echo "none found"

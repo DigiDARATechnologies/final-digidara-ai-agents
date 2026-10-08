@@ -1,0 +1,109 @@
+name: DigiDARA Staging
+
+# Deploys the `phase2` branch to staging.digidaraaiagents.com. Kept separate
+# from ci.yml on purpose: ci.yml (and its production deploy on `main`) is not
+# changed by staging work. When phase2 is approved, a pull request into main
+# runs the full ci.yml suite and production deploys exactly as before.
+on:
+  push:
+    branches: [phase2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One staging deploy at a time; a newer push replaces a queued one.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    name: Frontend lint, types, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:ci
+      - run: npm run build
+
+  python:
+    name: Python lint, types, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            agents/**/requirements*.txt
+      - run: python -m pip install -r requirements-quality.txt
+      - run: python -m ruff check agents scripts tests
+      - run: python -m mypy
+      - run: python -m pytest tests/unit -q
+
+  orchestrator:
+    name: Orchestrator tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agents/orchestrator/requirements*.txt
+      - run: python -m pip install -r agents/orchestrator/requirements.txt pytest
+      - name: Run orchestrator test suite
+        working-directory: agents/orchestrator
+        env:
+          ENV: dev
+        run: python -m pytest -q tests
+
+  compose:
+    name: Compose and script validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash -n scripts/deploy-staging.sh
+      - name: Create CI-only env files from examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          for directory in agents/orchestrator agents/project_AI_Agent agents/codeforge_agent/services/lms-api agents/communication-ai-agent/backend agents/aptitude_agent agents/mock_interview_agent/backend agents/resume_builder_agent/backend agents/certificate_agent agents/job_agent docker/mysql; do
+            if [ -f "$directory/.env.example" ]; then cp "$directory/.env.example" "$directory/.env"; else touch "$directory/.env"; fi
+          done
+          touch agents/codeforge_agent/judge0/judge0.conf
+      - run: docker compose config --quiet
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: [frontend, python, orchestrator, compose]
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.digidaraaiagents.com
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_DEPLOY_HOST }}
+          username: ${{ secrets.STAGING_DEPLOY_USER }}
+          key: ${{ secrets.STAGING_DEPLOY_SSH_KEY }}
+          command_timeout: 45m
+          script: |
+            set -euo pipefail
+            cd /opt/digidara-agents
+            previous_commit="$(git rev-parse HEAD)"
+            git fetch origin phase2
+            git reset --hard "${{ github.sha }}"
+            PREVIOUS_COMMIT="$previous_commit" DEPLOY_COMMIT="${{ github.sha }}" DEPLOY_BRANCH=phase2 \
+              SITE_URL=https://staging.digidaraaiagents.com GHCR_PULL_TOKEN="${{ secrets.GHCR_PULL_TOKEN }}" \
+              bash scripts/deploy-staging.sh

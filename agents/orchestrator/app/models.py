@@ -204,3 +204,112 @@ class TokenUsageEvent(Base):
     action: Mapped[str] = mapped_column(String(100), default="")
     tokens: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: learner profile, per-agent levels, organizations, readiness, A2A.
+# All new tables -- create_all adds them on startup without touching any
+# existing table, so a database restored from production keeps every row.
+# ---------------------------------------------------------------------------
+
+
+class LearnerProfile(Base):
+    """What the learner is preparing for. Collected right after sign-up and
+    sent (as the gateway's `learner` envelope field) to every agent, so each
+    agent tailors its questions to the same target role, skills and degree."""
+
+    __tablename__ = "learner_profiles"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    target_role: Mapped[str] = mapped_column(String(200), default="")
+    degree: Mapped[str] = mapped_column(String(200), default="")
+    skills: Mapped[list] = mapped_column(JSON, default=list)
+    # "fresher" or "experienced" -- framing for interviews and job search.
+    experience: Mapped[str] = mapped_column(String(32), default="fresher")
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class AgentLevel(Base):
+    """One learner's level with one agent: beginner, medium, hard or
+    professional. Every learner starts at beginner with every agent; the
+    learner, or an admin of their organization, moves it up."""
+
+    __tablename__ = "agent_levels"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
+    agent_name: Mapped[str] = mapped_column(String(64))
+    level: Mapped[str] = mapped_column(String(16), default="beginner")
+    # Who set it last: "default", "self", "organization" or "readiness".
+    source: Mapped[str] = mapped_column(String(16), default="default")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("user_id", "agent_name"),)
+
+
+class Organization(Base):
+    """A college, training institute or company that registers its learners
+    and monitors their readiness. `join_code` lets learners attach their own
+    account; admins can also create member accounts in bulk."""
+
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(32), default="college")
+    join_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class OrganizationMember(Base):
+    """A learner belongs to at most one organization (the unique user_id).
+
+    `progress_shared_at` is the member's own consent (DPDP) to let the
+    organization's admins see their readiness and levels; until it is set the
+    organization sees only that the member exists."""
+
+    __tablename__ = "organization_members"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    # "owner", "admin" or "member".
+    role: Mapped[str] = mapped_column(String(16), default="member")
+    # The organization's own id for this person: roll number, employee id.
+    external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    progress_shared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class ReadinessSnapshot(Base):
+    """One computed job-readiness result, kept so the profile can show the
+    trend over time instead of only today's number."""
+
+    __tablename__ = "readiness_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    overall: Mapped[float | None] = mapped_column(Float, nullable=True)
+    band: Mapped[str] = mapped_column(String(32), default="not_started")
+    areas: Mapped[dict] = mapped_column(JSON, default=dict)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
+class A2ATask(Base):
+    """An A2A protocol task (https://a2a-protocol.org) handled by the hub, so
+    `tasks/get` can return it after `message/send` has completed."""
+
+    __tablename__ = "a2a_tasks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    context_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    agent_name: Mapped[str] = mapped_column(String(64))
+    # The calling agent for agent-to-agent calls, or "user" for a person.
+    caller: Mapped[str] = mapped_column(String(64), default="user")
+    state: Mapped[str] = mapped_column(String(24), default="submitted")
+    task: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)

@@ -85,6 +85,7 @@ def delete_user(user_id: str) -> None:
     are no longer reachable through any authenticated account afterwards."""
     chat_history_service.purge_history(user_id)
     agent_state_service.purge_state(user_id)
+    _purge_phase2(user_id)
     session = get_session()
     try:
         user = session.get(User, user_id)
@@ -93,6 +94,37 @@ def delete_user(user_id: str) -> None:
             session.commit()
     finally:
         session.close()
+
+
+def _purge_phase2(user_id: str) -> None:
+    """Learner profile, levels, readiness history, organization membership and
+    A2A tasks. Local imports: those modules import this one."""
+    from app.learner import service as learner_service
+    from app.models import A2ATask
+    from app.organizations import service as org_service
+    from app.readiness import service as readiness_service
+
+    learner_service.purge(user_id)
+    readiness_service.purge(user_id)
+    org_service.purge(user_id)
+    session = get_session()
+    try:
+        session.query(A2ATask).filter_by(user_id=user_id).delete()
+        session.commit()
+    finally:
+        session.close()
+
+
+def _export_phase2(user_id: str) -> dict:
+    from app.learner import service as learner_service
+    from app.organizations import service as org_service
+    from app.readiness import service as readiness_service
+
+    return {
+        **learner_service.export_data(user_id),
+        "readiness_history": readiness_service.history(user_id),
+        "organization": org_service.export_data(user_id),
+    }
 
 
 def export_user_data(user_id: str) -> dict | None:
@@ -132,6 +164,7 @@ def export_user_data(user_id: str) -> dict | None:
             ],
             "chat_history": chats,
             "agent_state": saved_states,
+            **_export_phase2(user_id),
         }
     finally:
         session.close()
