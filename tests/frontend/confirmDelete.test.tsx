@@ -1,3 +1,9 @@
+jest.mock('../../src/lib/voiceEngine', () => ({
+  isSpeaking: jest.fn(() => false),
+  previewVoice: jest.fn(() => Promise.resolve(false)),
+  speakNatural: jest.fn((_text: string, handlers?: { onEnd?: () => void }) => { handlers?.onEnd?.(); return Promise.resolve(false); }),
+  stopSpeaking: jest.fn(),
+}));
 import { fireEvent, render, screen } from '@testing-library/react';
 import ConfirmDialog from '../../src/components/ConfirmDialog';
 import Sidebar from '../../src/components/Sidebar';

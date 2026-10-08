@@ -18,6 +18,7 @@ from app import db
 from app.a2a import client as a2a_client
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
+from app.memory import service as memory_service
 from app.models import ReadinessSnapshot
 
 logger = logging.getLogger("orchestrator.readiness")
@@ -127,6 +128,10 @@ async def compute(user) -> dict:
         "computed_at": datetime.utcnow().isoformat(),
     }
     _store(user.id, result)
+    try:
+        memory_service.sync_readiness(user.id, areas)
+    except Exception:
+        logger.warning("readiness memory sync failed", exc_info=True)
     return result
 
 

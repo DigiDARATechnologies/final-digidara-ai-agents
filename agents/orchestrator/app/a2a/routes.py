@@ -3,7 +3,8 @@
     GET  /.well-known/agent-card.json             the hub's card (also at /a2a/.well-known/...)
     GET  /a2a/agents                              every reachable agent's card
     GET  /a2a/{agent}/.well-known/agent-card.json one agent's card
-    POST /a2a/{agent}                             JSON-RPC: message/send, tasks/get, tasks/cancel
+    POST /a2a/{agent}                             JSON-RPC: message/send, message/stream (SSE),
+                                                  tasks/get, tasks/cancel
 
 Cards are public (they hold no learner data). JSON-RPC calls need either a
 learner's bearer token, or -- for an agent calling another agent on a
@@ -14,9 +15,10 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.a2a import cards, hub
 from app.a2a import protocol as p
@@ -48,13 +50,13 @@ def _healthy_cards(base_url: str) -> list[dict]:
         cards.agent_card(base_url, row.agent_name, row.description, row.version)
         for row in registry_service.list_healthy()
     ]
-    result.append(cards.readiness_card(base_url))
+    result.extend(cards.local_card(base_url, name) for name in cards.LOCAL_AGENTS)
     return result
 
 
 def _card_for(agent_name: str, base_url: str) -> dict:
-    if agent_name == cards.READINESS_AGENT:
-        return cards.readiness_card(base_url)
+    if agent_name in cards.LOCAL_AGENTS:
+        return cards.local_card(base_url, agent_name)
     row = registry_service.resolve_healthy(agent_name)
     if row is None:
         raise HTTPException(404, f"No reachable agent named {agent_name!r}.")
@@ -104,10 +106,48 @@ async def json_rpc(agent_name: str, request: Request) -> JSONResponse:
     user, caller = await _caller(request)
     if caller == agent_name:
         raise HTTPException(400, "An agent cannot call itself through the hub.")
-    if agent_name != cards.READINESS_AGENT and registry_service.resolve_healthy(agent_name) is None:
+    if agent_name not in cards.LOCAL_AGENTS and registry_service.resolve_healthy(agent_name) is None:
         return JSONResponse(p.rpc_error(None, p.RpcError(p.INVALID_REQUEST, f"No reachable agent named {agent_name!r}.")))
     try:
         rpc = json.loads(await request.body())
     except ValueError:
         return JSONResponse(p.rpc_error(None, p.RpcError(p.PARSE_ERROR, "Request body is not valid JSON.")))
+    if isinstance(rpc, dict) and rpc.get("method") == "message/stream":
+        return StreamingResponse(_stream(agent_name, rpc, user, caller), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     return JSONResponse(await hub.handle(agent_name, rpc, user, caller))
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+async def _stream(agent_name: str, rpc: dict, user, caller: str) -> AsyncIterator[str]:
+    """A2A message/stream: a `working` status at once, then each artifact,
+    then the final status. The agents answer in one piece, so the value is
+    the immediate acknowledgement on slow skills (test generation, interview
+    planning, career plans) -- a client can show progress right away."""
+    request_id = rpc.get("id")
+    params = rpc.get("params") if isinstance(rpc.get("params"), dict) else {}
+    message = dict(params.get("message") or {}) if isinstance(params.get("message"), dict) else {}
+    task_id = message.get("taskId") if isinstance(message.get("taskId"), str) else p.new_id()
+    context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else p.new_id()
+    message.update(taskId=task_id, contextId=context_id)
+    yield _sse(p.rpc_result(request_id, {
+        "kind": "status-update", "taskId": task_id, "contextId": context_id,
+        "status": {"state": "working", "timestamp": p.now_iso()}, "final": False,
+    }))
+    response = await hub.handle(agent_name, {**rpc, "params": {**params, "message": message}}, user, caller)
+    if "error" in response:
+        yield _sse(response)
+        return
+    task = response["result"]
+    for artifact in task.get("artifacts") or []:
+        yield _sse(p.rpc_result(request_id, {
+            "kind": "artifact-update", "taskId": task_id, "contextId": context_id,
+            "artifact": artifact, "lastChunk": True,
+        }))
+    yield _sse(p.rpc_result(request_id, {
+        "kind": "status-update", "taskId": task_id, "contextId": context_id,
+        "status": task["status"], "final": True,
+    }))

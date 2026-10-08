@@ -7,6 +7,8 @@ import useSpeechRecognition, { type AudioTranscriber } from "../hooks/useSpeechR
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
 import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
+import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
+import { recognitionLocale } from "../lib/voicePrefs";
 
 interface ChatViewProps {
   chat: Chat;
@@ -155,7 +157,9 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio, alwaysRecordVoice);
+  // The Communication Coach is English practice, so it always listens in
+  // English; every other agent listens in the learner's voice language.
+  const speech = useSpeechRecognition(agent.kind === "communication" ? "en-US" : recognitionLocale(), transcribeAudio, previewAudio, alwaysRecordVoice);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);
@@ -228,6 +232,18 @@ export default function ChatView({
   }, [codeSeed]);
 
   useEffect(() => () => window.clearTimeout(copiedTimerRef.current), []);
+
+  // Read one reply aloud in the learner's chosen voice; tap again to stop.
+  const [listeningIndex, setListeningIndex] = useState<number | null>(null);
+  function handleListen(index: number, text: string) {
+    if (listeningIndex === index) {
+      stopSpeaking();
+      setListeningIndex(null);
+      return;
+    }
+    setListeningIndex(index);
+    void speakNatural(text, { onEnd: () => setListeningIndex((current) => (current === index ? null : current)) }, true);
+  }
 
   async function handleCopy(index: number, text: string) {
     try {
@@ -328,8 +344,8 @@ export default function ChatView({
       speech.start(
         (text, final) => {
           if (voiceSessionRef.current !== session || submitted) return;
-          if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-            window.speechSynthesis.cancel();
+          if (isSpeaking() || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+            stopCoachAudio();
             setAgentSpeaking(false);
           }
           const next = text.trim();
@@ -574,6 +590,12 @@ export default function ChatView({
                         <button type="button" className="msg-action-btn" title="Copy" onClick={() => handleCopy(i, m.text)}>
                           {copiedIndex === i ? "Copied" : "Copy"}
                         </button>
+                        {m.role !== "user" && m.text.trim() && (
+                          <button type="button" className="msg-action-btn" title={listeningIndex === i ? "Stop" : "Listen"}
+                            aria-pressed={listeningIndex === i} onClick={() => handleListen(i, m.text)}>
+                            {listeningIndex === i ? "Stop" : "Listen"}
+                          </button>
+                        )}
                         {m.role === "user" && onEditMessage && (
                           <button type="button" className="msg-action-btn" title="Edit" disabled={typing} onClick={() => startEdit(i, m.text)}>
                             Edit

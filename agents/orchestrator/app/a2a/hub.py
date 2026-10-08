@@ -17,14 +17,14 @@ from fastapi import HTTPException
 
 from app import db
 from app.a2a import protocol as p
-from app.a2a.cards import READINESS_AGENT
+from app.a2a.cards import COACH_AGENT, MEMORY_AGENT, READINESS_AGENT
 from app.gateway import routes as gateway
 from app.models import A2ATask
 
 logger = logging.getLogger("orchestrator.a2a")
 
 TASK_RETENTION = timedelta(days=7)
-SUPPORTED_METHODS = ("message/send", "tasks/get", "tasks/cancel")
+SUPPORTED_METHODS = ("message/send", "message/stream", "tasks/get", "tasks/cancel")
 
 
 def _save(task: dict, user_id: str, agent_name: str, caller: str) -> None:
@@ -81,10 +81,26 @@ def _error_text(data: Any, status_code: int) -> str:
 
 
 async def _run_agent(agent_name: str, action: str, payload: dict, user, caller: str, task_id: str, context_id: str) -> dict:
-    if agent_name == READINESS_AGENT:
-        from app.readiness import service as readiness_service  # local import: readiness uses this hub
+    if agent_name in (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT):
+        # Local imports: these services call agents through this hub.
+        if agent_name == READINESS_AGENT:
+            from app.readiness import service as readiness_service
 
-        data = await readiness_service.skill(action, user)
+            data = await readiness_service.skill(action, user)
+        elif agent_name == MEMORY_AGENT:
+            from app.memory import service as memory_service
+
+            try:
+                data = memory_service.skill(action, payload, user.id, caller)
+            except memory_service.MemoryInputError as exc:
+                return p.task(task_id, context_id, "failed", status_text=str(exc))
+        else:
+            from app.coach import service as coach_service
+
+            try:
+                data = await coach_service.skill(action, payload, user)
+            except coach_service.PlanError as exc:
+                return p.task(task_id, context_id, "failed", status_text=str(exc))
         return p.task(task_id, context_id, "completed", artifacts=[p.artifact([p.data_part(data)])])
     try:
         response = await gateway.invoke_json(agent_name, action, payload, user, caller=None if caller == "user" else caller)
@@ -110,7 +126,7 @@ async def handle(agent_name: str, rpc: Any, user, caller: str = "user") -> dict:
         method = rpc["method"]
         params = rpc.get("params")
 
-        if method == "message/send":
+        if method in ("message/send", "message/stream"):
             action, payload, message = p.parse_invocation(params)
             task_id = message.get("taskId") if isinstance(message.get("taskId"), str) else p.new_id()
             context_id = message.get("contextId") if isinstance(message.get("contextId"), str) else p.new_id()
@@ -141,7 +157,7 @@ async def handle(agent_name: str, rpc: Any, user, caller: str = "user") -> dict:
                 raise p.RpcError(p.TASK_NOT_FOUND, "Task not found.")
             raise p.RpcError(p.TASK_NOT_CANCELABLE, "This task has already finished.")
 
-        if method in ("message/stream", "tasks/resubscribe") or method.startswith("tasks/pushNotificationConfig/"):
+        if method == "tasks/resubscribe" or method.startswith("tasks/pushNotificationConfig/"):
             raise p.RpcError(p.UNSUPPORTED_OPERATION, f"{method} is not supported; see capabilities in the agent card.")
         raise p.RpcError(p.METHOD_NOT_FOUND, f"Unknown method {method!r}. Supported: {', '.join(SUPPORTED_METHODS)}.")
     except p.RpcError as error:

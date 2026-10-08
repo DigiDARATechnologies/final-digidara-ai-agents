@@ -44,6 +44,14 @@ VOCABULARY_HINT = (
     "LeetCode Agent, CodeForge, Aptitude Trainer, Mock Interview, Communication Coach, Resume Builder, "
     "AI Certification Agent, Job Fetching Agent, points, viva, ATS."
 )
+# Learners speak English, Tamil, or a mix of both. Written in both scripts so
+# a Tamil question is transcribed in Tamil script instead of being forced
+# into English, and English words inside Tamil speech stay in English.
+BILINGUAL_HINT = (
+    "The learner may speak English, Tamil, or Tamil mixed with English words. "
+    "தமிழில் பேசினால் தமிழ் எழுத்தில் எழுதவும்; ஆங்கில சொற்களை ஆங்கிலத்திலேயே வைக்கவும். "
+)
+LANGUAGES = {"auto": None, "en": "en", "ta": "ta"}
 
 
 class TranscriptionError(Exception):
@@ -72,7 +80,7 @@ def decode_audio(audio_base64: str, mime_type: str) -> tuple[bytes, str]:
     return audio, extension
 
 
-def transcribe(audio_base64: str, mime_type: str) -> str:
+def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str:
     audio, extension = decode_audio(audio_base64, mime_type)
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
@@ -83,7 +91,13 @@ def transcribe(audio_base64: str, mime_type: str) -> str:
             OPENAI_TRANSCRIPTIONS_URL,
             headers={"Authorization": f"Bearer {api_key}"},
             files={"file": (f"question.{extension}", audio, base_type)},
-            data={"model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0", "prompt": VOCABULARY_HINT},
+            data={
+                "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
+                "prompt": BILINGUAL_HINT + VOCABULARY_HINT,
+                # A fixed language when the learner chose one; otherwise the
+                # model detects it, so a Tamil question stays Tamil.
+                **({"language": LANGUAGES[language]} if LANGUAGES.get(language) else {}),
+            },
             timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
         )
     except httpx.HTTPError as exc:

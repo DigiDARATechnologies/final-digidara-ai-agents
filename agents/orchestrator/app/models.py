@@ -313,3 +313,39 @@ class A2ATask(Base):
     task: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class LearnerMemory(Base):
+    """Something worth remembering about a learner, shared by every agent:
+    their goal and preferences, what they are good at, where they struggle,
+    milestones. Agents receive the most relevant few with every call (the
+    gateway's `learner.memory`) and add their own over A2A; the learner sees
+    and can delete every one (DPDP)."""
+
+    __tablename__ = "learner_memories"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # goal, preference, strength, gap, milestone or note.
+    kind: Mapped[str] = mapped_column(String(16), default="note")
+    text: Mapped[str] = mapped_column(String(500))
+    # Who wrote it: "user", "readiness", or the agent's registry name.
+    source: Mapped[str] = mapped_column(String(64), default="user")
+    # Only this agent receives it; NULL means every agent does.
+    agent_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    importance: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now, index=True)
+
+
+class CareerPlan(Base):
+    """The learner's latest AI career plan: weeks of tasks across the agents,
+    written from their readiness, profile and memory (app/coach)."""
+
+    __tablename__ = "career_plans"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    language: Mapped[str] = mapped_column(String(8), default="en")
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)

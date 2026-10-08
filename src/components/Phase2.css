@@ -185,3 +185,44 @@ button.og-band { cursor: pointer; }
   .rd-other-row .rd-levels { width: 100%; }
   .og-search { min-width: 0; width: 100%; }
 }
+
+/* ---- voice settings (Settings > General) ---- */
+.voice-personas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: min(360px, 100%); }
+.voice-personas button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; border: 1px solid var(--line-1);
+  border-radius: 10px; background: transparent; color: var(--tx-1); font: inherit; cursor: pointer; text-align: left;
+}
+.voice-personas button span { font-size: 11.5px; color: var(--tx-3); }
+.voice-personas button.active { border-color: var(--accent3); background: var(--canvas-accent-soft); }
+.voice-personas button:disabled { opacity: .5; cursor: default; }
+.voice-select { padding: 7px 10px; border: 1px solid var(--line-1); border-radius: 10px; background: var(--surf-2); color: var(--tx-1); font: inherit; font-size: 13px; }
+.voice-speed { width: 180px; accent-color: var(--accent1); }
+.voice-personas-row { align-items: flex-start; flex-wrap: wrap; gap: 10px; }
+
+/* ---- career plan and memory (readiness page) ---- */
+.cp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.cp-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.cp-headline { margin: 4px 0 6px; font-size: 20px; font-weight: 650; }
+.cp-weeks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 14px; }
+.cp-week { border: 1px solid var(--line-2); border-radius: 14px; padding: 14px; background: var(--surf-2); }
+.cp-week h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--tx-3); }
+.cp-week h5 { margin: 0 0 10px; font-size: 14.5px; }
+.cp-task { padding: 8px 0; border-top: 1px solid var(--line-2); font-size: 13px; }
+.cp-task b { display: block; margin-bottom: 2px; }
+.cp-task small { color: var(--tx-3); }
+.cp-task .og-lv { width: auto; padding: 0 6px; font-size: 10.5px; margin: 0 6px 0 0; }
+.cp-cheer { margin: 14px 0 0; font-weight: 600; color: var(--tx-2); }
+.mem-list { display: grid; gap: 6px; margin-top: 10px; }
+.mem-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surf-2); font-size: 13.5px; }
+.mem-row .mem-kind { flex: 0 0 auto; padding: 2px 8px; border-radius: 99px; background: var(--ov-2); font-size: 11px; font-weight: 650; text-transform: capitalize; color: var(--tx-2); }
+.mem-row .mem-kind.kind-gap { background: color-mix(in srgb, #f59e0b 22%, transparent); }
+.mem-row .mem-kind.kind-strength { background: color-mix(in srgb, #22c55e 22%, transparent); }
+.mem-row .mem-kind.kind-goal { background: color-mix(in srgb, #3b82f6 22%, transparent); }
+.mem-row p { flex: 1; margin: 0; min-width: 0; }
+.mem-row small { color: var(--tx-3); white-space: nowrap; }
+.mem-row button { border: 0; background: none; color: var(--tx-3); cursor: pointer; font: inherit; font-size: 13px; padding: 2px 4px; }
+.mem-row button:hover { color: var(--tx-1); }
+.mem-row button.pinned { color: var(--gold); }
+.mem-add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.mem-add input { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--line-1); border-radius: 10px; background: var(--surf-2); color: var(--tx-1); font: inherit; font-size: 13.5px; }
+.mem-add select { padding: 8px 10px; border: 1px solid var(--line-1); border-radius: 10px; background: var(--surf-2); color: var(--tx-1); font: inherit; font-size: 13px; }

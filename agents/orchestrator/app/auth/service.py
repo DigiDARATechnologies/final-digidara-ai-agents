@@ -104,9 +104,14 @@ def _purge_phase2(user_id: str) -> None:
     from app.organizations import service as org_service
     from app.readiness import service as readiness_service
 
+    from app.coach import service as coach_service
+    from app.memory import service as memory_service
+
     learner_service.purge(user_id)
     readiness_service.purge(user_id)
     org_service.purge(user_id)
+    memory_service.clear(user_id)
+    coach_service.purge(user_id)
     session = get_session()
     try:
         session.query(A2ATask).filter_by(user_id=user_id).delete()
@@ -116,7 +121,9 @@ def _purge_phase2(user_id: str) -> None:
 
 
 def _export_phase2(user_id: str) -> dict:
+    from app.coach import service as coach_service
     from app.learner import service as learner_service
+    from app.memory import service as memory_service
     from app.organizations import service as org_service
     from app.readiness import service as readiness_service
 
@@ -124,6 +131,8 @@ def _export_phase2(user_id: str) -> dict:
         **learner_service.export_data(user_id),
         "readiness_history": readiness_service.history(user_id),
         "organization": org_service.export_data(user_id),
+        "memory": memory_service.list_for(user_id),
+        "career_plan": coach_service.get(user_id),
     }
 
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.auth.verified import get_verified_user_id
+from app.learner import service as learner_service
 from app.llm import transcribe as speech
 from app.orchestrator.graph import orchestrator_graph, route_message
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
@@ -47,7 +48,7 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     multi-turn flow instead of a single stateless tool invocation."""
     logger.info("=== POST /chat/route user=%s message_chars=%d history_turns=%d", user_id, len(req.message), len(req.history))
     try:
-        result = route_message(req.message, [turn.model_dump() for turn in req.history])
+        result = route_message(req.message, [turn.model_dump() for turn in req.history], _learner_context(user_id))
     except Exception:
         logger.exception("router-only graph failed")
         raise HTTPException(
@@ -57,9 +58,21 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
 
 
+def _learner_context(user_id: str) -> dict | None:
+    """Phase 2: the learner's goal, skills and shared memory, so the general
+    chat answers personally. Never blocks a reply if it cannot be read."""
+    try:
+        return learner_service.learner_context(user_id, "general_chat")
+    except Exception:
+        logger.warning("general chat: learner context unavailable", exc_info=True)
+        return None
+
+
 class TranscribeRequest(BaseModel):
     audio_base64: str = Field(min_length=1, max_length=speech.MAX_AUDIO_BASE64_CHARS)
     mime_type: str = Field(default="audio/webm", max_length=64)
+    # "auto" (detect), "en" or "ta".
+    language: str = Field(default="auto", max_length=8)
 
 
 # Each call is a paid OpenAI request with up to a few minutes of audio.
@@ -73,7 +86,7 @@ def transcribe(req: TranscribeRequest, request: Request, user_id: str = Depends(
     (OpenAI). The text is then sent like a typed message, so it passes the
     same length limit and prompt-injection guard."""
     try:
-        text = speech.transcribe(req.audio_base64, req.mime_type)
+        text = speech.transcribe(req.audio_base64, req.mime_type, req.language)
     except speech.TranscriptionError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
     return {"transcript": text}

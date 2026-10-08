@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { transcribeGeneralAudio } from "../lib/orchestratorApi";
+import { recognitionLocale } from "../lib/voicePrefs";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
 
@@ -20,7 +21,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The DigiDARA Assistant's voice input: recorded, then transcribed with
   // OpenAI on the server, on every device.
-  const speech = useSpeechRecognition("en-US", transcribeGeneralAudio, undefined, true);
+  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, undefined, true);
   const voiceSessionRef = useRef(0);
 
   function handleSubmit(e: FormEvent) {

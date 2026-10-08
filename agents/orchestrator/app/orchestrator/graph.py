@@ -48,6 +48,8 @@ class OrchestratorState(TypedDict, total=False):
     agent_error: str | None
     agent_used: str | None
     reply: str
+    # Phase 2: the learner's goal, skills and shared memory, for a personal answer.
+    learner_context: dict[str, Any] | None
 
 
 # --- Node 1: load whatever agents are live right now (deterministic) -------
@@ -66,8 +68,11 @@ def route_node(state: OrchestratorState) -> dict:
         logger.warning("general chat: blocked a prompt-injection attempt (%d chars)", len(state["message"]))
         return {"tool_name": None, "reply": guard.OFF_LIMITS_REPLY}
     tools = state.get("tools") or []
+    system = prompts.router_system_prompt(has_tools=bool(tools))
+    if state.get("learner_context"):
+        system = f"{system}\n\n{prompts.learner_context_block(state['learner_context'])}"
     result = call_with_tools(
-        system=prompts.router_system_prompt(has_tools=bool(tools)),
+        system=system,
         user=state["message"],
         tools=tools,
         history=guard.safe_history(state.get("history")),
@@ -129,13 +134,13 @@ def summarize_node(state: OrchestratorState) -> dict:
     return {"reply": reply}
 
 
-def route_message(message: str, history: list[dict[str, str]] | None = None) -> dict:
+def route_message(message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None) -> dict:
     """load_registry + route only — no agent invocation, no summarize. Used
     by POST /chat/route for handoff-style UIs that run the matched agent's
     own dedicated multi-turn flow client-side instead of a single stateless
     tool call. Reuses load_registry_node/route_node unmodified; a second
     compiled StateGraph would be pure overhead for two sequential calls."""
-    state: OrchestratorState = {"message": message, "history": history or []}
+    state: OrchestratorState = {"message": message, "history": history or [], "learner_context": learner_context}
     state.update(load_registry_node(state))
     state.update(route_node(state))
     return {"agent_name": state.get("tool_name"), "reply": state.get("reply")}

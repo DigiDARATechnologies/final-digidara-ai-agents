@@ -182,3 +182,35 @@ export const setMemberLevel = (orgId: string, memberId: string, agentName: strin
 export const refreshMemberReadiness = (orgId: string, memberId: string) =>
   request<Readiness>(`/organizations/${orgId}/members/${memberId}/readiness`, json("POST"));
 export const rotateJoinCode = (orgId: string) => request<Membership>(`/organizations/${orgId}/join-code`, json("POST"));
+
+export type MemoryKind = "goal" | "preference" | "strength" | "gap" | "milestone" | "note";
+
+export interface LearnerMemory {
+  id: string;
+  kind: MemoryKind;
+  text: string;
+  /** "user", "readiness", "coach", or the agent that remembered it. */
+  source: string;
+  agent_name: string | null;
+  importance: number;
+  pinned: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PlanTask { agent_name: string; agent_label: string; title: string; why: string; level: LevelId }
+export interface CareerPlan {
+  headline: string;
+  summary: string;
+  weeks: { week: number; focus: string; tasks: PlanTask[] }[];
+  encouragement: string;
+  language: "en" | "ta";
+  created_at: string;
+}
+
+export const fetchMemories = () => request<LearnerMemory[]>("/learner/memory");
+export const addMemory = (text: string, kind: MemoryKind) => request<LearnerMemory>("/learner/memory", json("POST", { text, kind }));
+export const pinMemory = (id: string, pinned: boolean) => request<LearnerMemory>(`/learner/memory/${id}/pin`, json("PUT", { pinned }));
+export const deleteMemory = (id: string) => request<void>(`/learner/memory/${id}`, json("DELETE"));
+export const fetchCareerPlan = () => request<{ plan: CareerPlan | null }>("/learner/plan");
+export const createCareerPlan = (language: "en" | "ta") => request<{ plan: CareerPlan }>("/learner/plan", json("POST", { language }));

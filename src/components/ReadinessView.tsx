@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import CareerPlanPanel from "./CareerPlanPanel";
 import LearnerProfileForm, { type ProfileInput } from "./LearnerProfileForm";
+import MemoryPanel from "./MemoryPanel";
 import {
   LEVEL_IDS,
   BAND_TONE,
@@ -203,6 +205,8 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
 
         {error && <p className="form-error" role="alert">{error}</p>}
 
+        <CareerPlanPanel onToast={onToast} />
+
         {readiness && readiness.next_steps.length > 0 && (
           <section className="pv-section">
             <h2>Do this next</h2>
@@ -251,6 +255,9 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
             <div className="rd-chips">{profile.skills.map((skill) => <span key={skill} className="lp-chip">{skill}</span>)}</div>
           </div>
         </section>
+
+        <MemoryPanel onToast={onToast}
+          agentLabels={Object.fromEntries(summary.levels.map((level) => [level.agent_name, level.agent_label]))} />
 
         {membership && (
           <section className="pv-section rd-panel">

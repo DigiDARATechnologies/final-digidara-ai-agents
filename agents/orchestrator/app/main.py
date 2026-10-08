@@ -24,6 +24,7 @@ from app.agent_state.routes import router as agent_state_router  # noqa: E402
 from app.a2a.routes import router as a2a_router  # noqa: E402
 from app.learner.routes import router as learner_router  # noqa: E402
 from app.organizations.routes import router as organizations_router  # noqa: E402
+from app.voice.routes import router as voice_router  # noqa: E402
 
 app = FastAPI(title="DigiDARA Orchestrator", version="1.0.0")
 
@@ -66,6 +67,7 @@ app.include_router(agent_state_router)
 app.include_router(learner_router)
 app.include_router(organizations_router)
 app.include_router(a2a_router)
+app.include_router(voice_router)
 
 
 @app.on_event("startup")

@@ -193,7 +193,7 @@ def test_agent_errors_become_failed_tasks(app_client, agents):
 
 @pytest.mark.parametrize("body, code", [
     ({"jsonrpc": "1.0", "id": 1, "method": "message/send"}, -32600),
-    (rpc("message/stream", {}), -32004),
+    (rpc("tasks/resubscribe", {}), -32004),
     (rpc("tasks/unknown", {}), -32601),
     (rpc("message/send", {"message": {"parts": []}}), -32602),
     (rpc("tasks/cancel", {"id": "nope"}), -32001),

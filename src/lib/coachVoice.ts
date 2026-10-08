@@ -1,10 +1,11 @@
+import { speakNatural, stopSpeaking } from "./voiceEngine";
+
 /**
- * Hybrid Voice Engine: Neural TTS (Phase 2) with Seamless Browser Fallback (Phase 1).
+ * Hybrid Voice Engine: natural voice (lib/voiceEngine.ts) with browser fallback.
  *
  * Architecture:
- * 1. Checks backend `/api/speaking/synthesize` for studio-quality Neural Audio (OpenAI tts-1 'nova').
- * 2. If backend Neural TTS is unavailable, rate-limited, or offline, immediately falls back
- *    to the calibrated local browser voice (Microsoft Jenny / Aria / Google US English).
+ * playCoachSpeech goes through the orchestrator's /voice/speak (see voiceEngine.ts);
+ * the browser-voice helpers below remain for callers that build utterances.
  */
 
 const FEMALE_VOICE_PATTERNS = [
@@ -82,6 +83,7 @@ export interface CoachSpeechOptions {
 
 /** Stop any currently playing coach audio (both neural HTML5 audio and browser speech). */
 export function stopCoachAudio(): void {
+  stopSpeaking();
   if (activeAudioElement) {
     try {
       activeAudioElement.pause();
@@ -125,59 +127,14 @@ export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions
 }
 
 /**
- * Play speech using Phase 2 Neural Backend TTS, seamlessly falling back to Phase 1 browser voice.
+ * Speak as the coach, through the natural voice engine (warm persona, English
+ * or Tamil, sentence-by-sentence so it starts fast), which falls back to the
+ * browser voice on its own. Only onStart and onEnd fire: an error ends in
+ * the fallback, so callers that resume listening from both never resume twice.
  */
 export async function playCoachSpeech(text: string, options: CoachSpeechOptions = {}): Promise<void> {
   stopCoachAudio();
-
-  const preferNeural = options.preferNeural ?? true;
-  const processedText = formatCoachSpeechText(text);
-
-  if (!preferNeural || !options.authToken) {
-    playBrowserCoachSpeech(processedText, options);
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/speaking/synthesize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${options.authToken}`,
-      },
-      body: JSON.stringify({
-        text: processedText,
-        voice: options.voiceName || "nova",
-        speed: options.rate ?? 0.92,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Neural TTS returned ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
-    activeAudioElement = audio;
-
-    audio.onplay = () => options.onStart?.();
-    audio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      activeAudioElement = null;
-      options.onEnd?.();
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(audioUrl);
-      activeAudioElement = null;
-      playBrowserCoachSpeech(processedText, options);
-    };
-
-    await audio.play();
-  } catch (err) {
-    // Zero-downtime graceful fallback to local browser voice
-    playBrowserCoachSpeech(processedText, options);
-  }
+  await speakNatural(formatCoachSpeechText(text), { onStart: options.onStart, onEnd: options.onEnd ?? options.onError });
 }
 
 /** Compatibility helper for existing SpeechSynthesisUtterance references. */

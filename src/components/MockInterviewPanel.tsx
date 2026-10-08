@@ -3,7 +3,7 @@ import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { isMobileVoiceDevice, microphoneErrorMessage } from "../lib/voiceCapture";
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from "../lib/mockInterviewApi";
 import { AFTER_PROMPT_END_MS, AWAY_PROMPT, secondsUntilAction, silenceAction } from "../lib/answerSilence";
-import { speakBrowserText } from "../lib/browserSpeech";
+import { speakNatural as speakBrowserText } from "../lib/voiceEngine";
 import type { MockInterviewAnswerTiming, MockInterviewFlowState } from "../lib/mockInterviewFlow";
 
 const TIME_LIMIT_SECONDS = { beginner: 60, intermediate: 90, advanced: 120 } as const;

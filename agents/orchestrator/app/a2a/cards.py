@@ -23,6 +23,10 @@ SUMMARY_SKILL = {
 }
 
 READINESS_AGENT = "readiness"
+MEMORY_AGENT = "memory"
+COACH_AGENT = "career_coach"
+# Agents the hub serves itself, not through the registry.
+LOCAL_AGENTS = (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT)
 
 # Skills per registry agent name. Ids are real actions of that agent.
 AGENT_SKILLS: dict[str, list[dict]] = {
@@ -90,7 +94,7 @@ def agent_card(base_url: str, agent_name: str, description: str, version: str) -
         "preferredTransport": "JSONRPC",
         "version": version,
         "provider": {"organization": "DigiDARA Technologies", "url": base_url},
-        "capabilities": {"streaming": False, "pushNotifications": False, "stateTransitionHistory": False},
+        "capabilities": {"streaming": True, "pushNotifications": False, "stateTransitionHistory": False},
         "defaultInputModes": ["application/json", "text/plain"],
         "defaultOutputModes": ["application/json"],
         "skills": skills,
@@ -98,24 +102,43 @@ def agent_card(base_url: str, agent_name: str, description: str, version: str) -
     }
 
 
-def readiness_card(base_url: str) -> dict:
+LOCAL_CARD_INFO: dict[str, tuple[str, str, list[dict]]] = {
+    READINESS_AGENT: ("Job Readiness", "The learner's overall job readiness, combined from every agent's student summary.", [
+        {"id": "get_readiness", "name": "Job readiness", "description": "Overall score, band, per-area scores and levels.", "tags": ["readiness"]},
+        {"id": "get_learner_profile", "name": "Learner profile", "description": "Target role, skills, degree and per-agent levels.", "tags": ["profile"]},
+    ]),
+    MEMORY_AGENT: ("Learner Memory", "What every agent should know about the learner: goals, preferences, strengths, gaps.", [
+        {"id": "recall", "name": "Recall", "description": "The memories for this agent (payload.agent_name, payload.limit).", "tags": ["memory"]},
+        {"id": "remember", "name": "Remember", "description": "Store a memory (payload.text, kind, importance, scope: agent|all).", "tags": ["memory"]},
+        {"id": "forget", "name": "Forget", "description": "Delete one of this agent's memories (payload.id).", "tags": ["memory"]},
+    ]),
+    COACH_AGENT: ("Career Coach", "A personal week-by-week job-readiness plan, built from every agent over A2A.", [
+        {"id": "create_plan", "name": "Create plan", "description": "Write a new plan (payload.language: en|ta).", "tags": ["plan"]},
+        {"id": "get_plan", "name": "Current plan", "description": "The learner's latest plan.", "tags": ["plan"]},
+    ]),
+}
+
+
+def local_card(base_url: str, agent_name: str) -> dict:
+    name, description, skills = LOCAL_CARD_INFO[agent_name]
     return {
         "protocolVersion": PROTOCOL_VERSION,
-        "name": "Job Readiness",
-        "description": "The learner's overall job readiness, combined from every agent's student summary.",
-        "url": f"{base_url}/a2a/{READINESS_AGENT}",
+        "name": name,
+        "description": description,
+        "url": f"{base_url}/a2a/{agent_name}",
         "preferredTransport": "JSONRPC",
         "version": "1.0.0",
         "provider": {"organization": "DigiDARA Technologies", "url": base_url},
-        "capabilities": {"streaming": False, "pushNotifications": False, "stateTransitionHistory": False},
+        "capabilities": {"streaming": True, "pushNotifications": False, "stateTransitionHistory": False},
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
-        "skills": [
-            {"id": "get_readiness", "name": "Job readiness", "description": "Overall score, band, per-area scores and levels.", "tags": ["readiness"]},
-            {"id": "get_learner_profile", "name": "Learner profile", "description": "Target role, skills, degree and per-agent levels.", "tags": ["profile"]},
-        ],
+        "skills": skills,
         **_security(),
     }
+
+
+def readiness_card(base_url: str) -> dict:
+    return local_card(base_url, READINESS_AGENT)
 
 
 def hub_card(base_url: str, cards: list[dict]) -> dict:
@@ -129,7 +152,7 @@ def hub_card(base_url: str, cards: list[dict]) -> dict:
         "preferredTransport": "JSONRPC",
         "version": "2.0.0",
         "provider": {"organization": "DigiDARA Technologies", "url": base_url},
-        "capabilities": {"streaming": False, "pushNotifications": False, "stateTransitionHistory": False},
+        "capabilities": {"streaming": True, "pushNotifications": False, "stateTransitionHistory": False},
         "defaultInputModes": ["application/json"],
         "defaultOutputModes": ["application/json"],
         "skills": [

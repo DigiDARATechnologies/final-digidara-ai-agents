@@ -1,3 +1,9 @@
+jest.mock('../../src/lib/voiceEngine', () => ({
+  isSpeaking: jest.fn(() => false),
+  previewVoice: jest.fn(() => Promise.resolve(false)),
+  speakNatural: jest.fn((_text: string, handlers?: { onEnd?: () => void }) => { handlers?.onEnd?.(); return Promise.resolve(false); }),
+  stopSpeaking: jest.fn(),
+}));
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MockInterviewPanel from '../../src/components/MockInterviewPanel';
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from '../../src/lib/mockInterviewApi';

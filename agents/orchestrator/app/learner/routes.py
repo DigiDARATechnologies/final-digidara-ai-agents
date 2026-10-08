@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from app import db
@@ -11,6 +11,9 @@ from app.auth import service as auth_service
 from app.auth.consent import CONSENT_POLICY_VERSION
 from app.auth.security import get_current_user_id
 from app.auth.verified import get_verified_user_id
+from app.coach import service as coach_service
+from app.memory import service as memory_service
+from app.rate_limit import limiter
 from app.learner import levels as level_rules
 from app.learner import service
 from app.models import User
@@ -18,6 +21,7 @@ from app.organizations import service as org_service
 from app.readiness import service as readiness_service
 
 router = APIRouter(prefix="/learner", tags=["learner"])
+
 
 
 class ProfileIn(BaseModel):
@@ -100,3 +104,75 @@ async def readiness(refresh: bool = False, user_id: str = Depends(get_verified_u
 @router.get("/readiness/history")
 def readiness_history(user_id: str = Depends(get_verified_user_id)) -> list[dict]:
     return readiness_service.history(user_id)
+
+
+# --- shared memory (what every agent knows about the learner) ---------------
+
+class MemoryIn(BaseModel):
+    text: str = Field(min_length=2, max_length=500)
+    kind: str = "note"
+    pinned: bool = False
+
+
+class PinIn(BaseModel):
+    pinned: bool
+
+
+@router.get("/memory")
+def list_memory(user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return memory_service.list_for(user_id)
+
+
+@router.post("/memory", status_code=201)
+def add_memory(req: MemoryIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    try:
+        # The learner's own memories go to every agent and rank above notes.
+        return memory_service.add(user_id, req.text, req.kind, "user", None, 4, req.pinned)
+    except memory_service.MemoryInputError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.put("/memory/{memory_id}/pin")
+def pin_memory(memory_id: str, req: PinIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    try:
+        return memory_service.set_pinned(user_id, memory_id, req.pinned)
+    except memory_service.MemoryInputError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.delete("/memory/{memory_id}", status_code=204)
+def delete_memory(memory_id: str, user_id: str = Depends(get_verified_user_id)) -> Response:
+    if not memory_service.forget(user_id, memory_id):
+        raise HTTPException(404, "No such memory.")
+    return Response(status_code=204)
+
+
+@router.delete("/memory", status_code=204)
+def clear_memory(user_id: str = Depends(get_verified_user_id)) -> Response:
+    memory_service.clear(user_id)
+    return Response(status_code=204)
+
+
+# --- AI career plan ---------------------------------------------------------
+
+class PlanIn(BaseModel):
+    language: str = "en"
+
+
+@router.get("/plan")
+def get_plan(user_id: str = Depends(get_verified_user_id)) -> dict:
+    return {"plan": coach_service.get(user_id)}
+
+
+@router.post("/plan")
+@limiter.limit("6/hour")
+async def create_plan(req: PlanIn, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Readiness over A2A + profile + memory -> an LLM-written plan."""
+    user = auth_service.get_by_id(user_id)
+    try:
+        plan = await coach_service.generate(user, req.language)
+    except coach_service.NoPoints as exc:
+        raise HTTPException(402, str(exc)) from exc
+    except coach_service.PlanError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"plan": plan}

@@ -120,6 +120,8 @@ def learner_context(user_id: str, agent_name: str) -> dict:
         session.close()
     level = level_rules.normalize(row.level if row else None)
     data = _profile_dict(profile)
+    from app.memory import service as memory_service  # local import: memory imports nothing from here
+
     return {
         "target_role": data["target_role"],
         "degree": data["degree"],
@@ -127,6 +129,8 @@ def learner_context(user_id: str, agent_name: str) -> dict:
         "experience": data["experience"],
         "level": level,
         "difficulty": level_rules.agent_difficulty(agent_name, level),
+        # The few memories most relevant to this agent (shared + its own).
+        "memory": memory_service.for_agent(user_id, agent_name),
     }
 
 
