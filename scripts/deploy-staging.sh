@@ -60,10 +60,12 @@ if ! docker compose up -d --build --wait --wait-timeout 300; then
 fi
 
 # Every agent through the gateway, the same way the browser reaches them.
+# Up to 2 minutes each: after a full rebuild an agent can take that long to
+# register with the orchestrator, and a shorter wait rolled a good deploy back.
 AGENTS="job_agent aptitude_agent codeforge_agent communication_agent resume_builder_agent certificate_agent capstone_project_agent mock_interview_agent"
 for agent in $AGENTS; do
   AGENT_OK=false
-  for _ in $(seq 1 12); do
+  for _ in $(seq 1 24); do
     if docker compose exec -T orchestrator python -c \
       "import sys, urllib.request; request=urllib.request.Request('http://127.0.0.1:8100/gateway/agents/' + sys.argv[1] + '/invoke', data=b'{\"action\":\"health\"}', headers={'Content-Type':'application/json'}); urllib.request.urlopen(request, timeout=10).read()" \
       "$agent" </dev/null >/dev/null 2>&1; then
