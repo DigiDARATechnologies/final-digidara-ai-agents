@@ -32,6 +32,10 @@ import {
 import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import OnboardingScreen from "./components/OnboardingScreen";
+import ReadinessView from "./components/ReadinessView";
+import OrganizationView from "./components/OrganizationView";
+import { fetchLearnerSummary, type LearnerSummary } from "./lib/learnerApi";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -128,6 +132,25 @@ export default function App() {
     saveAppearance(appearance);
   }, [appearance]);
   const [user, setUser] = useState<User | null>(() => loadUser());
+  // Phase 2: target role, skills, degree and per-agent levels. Loaded once
+  // the account is verified; null while loading, or if the server does not
+  // answer -- then onboarding is skipped rather than locking the learner out.
+  const [learnerSummary, setLearnerSummary] = useState<LearnerSummary | null>(null);
+  const [learnerLoaded, setLearnerLoaded] = useState(false);
+  const learnerUserId = user && !user.needsEmailVerification ? user.id : null;
+  useEffect(() => {
+    if (!learnerUserId) {
+      setLearnerSummary(null);
+      setLearnerLoaded(false);
+      return;
+    }
+    let active = true;
+    fetchLearnerSummary()
+      .then((summary) => { if (active) setLearnerSummary(summary); })
+      .catch(() => { if (active) setLearnerSummary(null); })
+      .finally(() => { if (active) setLearnerLoaded(true); });
+    return () => { active = false; };
+  }, [learnerUserId]);
   // Signed-out visitors land on the public home page; "Login" swaps to the
   // existing login screen and mirrors it in the URL (/login) so it is linkable.
   const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login");
@@ -1483,7 +1506,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1499,6 +1522,10 @@ export default function App() {
     }
     if (action === "admin" && user?.isAdmin) {
       switchView("admin");
+      return;
+    }
+    if (action === "readiness" || action === "organization") {
+      switchView(action);
       return;
     }
     showToast("This section is coming soon.");
@@ -1567,10 +1594,26 @@ export default function App() {
     );
   }
 
+  // Every learner says what they are preparing for once, right after
+  // sign-up; an account an organization created also gives its consent.
+  if (learnerLoaded && learnerSummary && (!learnerSummary.profile.onboarding_completed || learnerSummary.consent_required)) {
+    return (
+      <OnboardingScreen
+        name={user.name}
+        summary={learnerSummary}
+        onLogout={handleLogout}
+        onDone={(summary) => {
+          setLearnerSummary(summary);
+          showToast("You are all set. Every agent now knows your goal.");
+        }}
+      />
+    );
+  }
+
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
+  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", readiness: "Job readiness", organization: "Organization", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
   const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My Agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
@@ -1828,6 +1871,18 @@ export default function App() {
           )}
 
           {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
+
+          {view === "readiness" && learnerSummary && (
+            <ReadinessView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+          )}
+
+          {view === "organization" && learnerSummary && (
+            <OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+          )}
+
+          {(view === "readiness" || view === "organization") && !learnerSummary && (
+            <div className="pv-page"><div className="pv-inner"><p className="rd-muted">{learnerLoaded ? "This page could not be loaded. Please try again shortly." : "Loading…"}</p></div></div>
+          )}
 
           {view === "chat" && newChatPending && (
             <NewChatLanding

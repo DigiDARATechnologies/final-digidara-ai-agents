@@ -80,4 +80,4 @@ export interface Chat {
   autoSubject?: string;
 }
 
-export type View = "store" | "chat" | "admin" | "profile" | "help-center" | "release-notes" | "contact" | "bug-report";
+export type View = "store" | "chat" | "admin" | "profile" | "readiness" | "organization" | "help-center" | "release-notes" | "contact" | "bug-report";
