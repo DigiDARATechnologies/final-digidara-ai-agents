@@ -7,6 +7,7 @@ import uuid
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from httpx import ASGITransport, AsyncClient
 
@@ -132,6 +133,15 @@ async def _invoke(request: Request) -> Response:
 
     if action in ("ensure_profile", "ensure_session"):
         return JSONResponse(_ensure_profile(payload))
+
+    if action == "get_student_summary":
+        # Phase 2 readiness. The orchestrator gateway overwrites payload.email
+        # with the verified account's own address for this action.
+        if not str(request.headers.get("x-digidara-user-id") or "").strip():
+            raise HTTPException(status_code=401, detail="Verified DigiDARA identity is required")
+        from cert_app.services.readiness import student_summary
+        email = str(payload.get("email") or "").strip().lower()
+        return JSONResponse(await run_in_threadpool(student_summary, email))
 
     route_info = ACTION_ROUTE_MAP.get(action)
     if not route_info:

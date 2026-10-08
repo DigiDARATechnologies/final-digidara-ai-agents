@@ -339,6 +339,19 @@ class MySqlRepository:
             row = cursor.fetchone()
         return {"totalProblems": int(row["total_problems"]), "solvedProblems": int(row["solved_problems"]), "averageScore": int(row["average_score"])}
 
+    def student_problem_rows(self, email):
+        """Every problem the student with this email has a progress row for,
+        with its difficulty and topic (Phase 2 readiness summary)."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT p.difficulty, spp.best_score, spp.status, t.name topic, spp.updated_at "
+                "FROM students s JOIN student_problem_progress spp ON spp.student_id=s.id "
+                "JOIN coding_problems p ON p.id=spp.problem_id JOIN coding_topics t ON t.id=p.topic_id "
+                "WHERE s.email=%s",
+                (email,),
+            )
+            return cursor.fetchall()
+
     def record_activity(self, student_id, course_slug, technology_slug=None, topic_slug=None):
         course = self.get_course(course_slug)
         technology = None

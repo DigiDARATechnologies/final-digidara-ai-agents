@@ -256,6 +256,13 @@ def test_readiness_is_cached_then_recomputed_on_request(app_client, agents):
     assert len(app_client.get("/learner/readiness/history", headers=auth()).json()) == 1
 
 
+def test_a_summary_request_cannot_name_someone_else(app_client, agents):
+    app_client.post("/gateway/agents/aptitude_agent/invoke", headers=auth(),
+                    json={"action": "get_student_summary", "payload": {"email": "other@example.test", "user_id": "other"}})
+    payload = agents.calls[-1][1]["payload"]
+    assert payload["email"] == "learner@example.test" and payload["user_id"] == "learner"
+
+
 def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
     reply = _signed(app_client, "/a2a/readiness", send("get_readiness"), {
         "x-digidara-caller-agent": "job_agent", "x-digidara-on-behalf-of": "learner",

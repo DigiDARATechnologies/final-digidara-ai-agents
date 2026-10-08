@@ -84,6 +84,13 @@ def invoke():
         # The current gateway has no signed user-assertion channel. Refuse
         # operations rather than treating a raw payload identity as auth.
         return jsonify({"success": False, "message": "A verified production identity is required"}), 401
+    if action == "get_student_summary":
+        # Phase 2 readiness: only ever the gateway-verified learner's own resumes.
+        gateway_user_id = (request.headers.get("X-Digidara-User-Id") or "").strip()
+        if not USER_ID_PATTERN.fullmatch(gateway_user_id):
+            return jsonify({"success": False, "message": "Verified DigiDARA identity is required"}), 401
+        from ..services.readiness import student_summary
+        return jsonify(student_summary(gateway_user_id))
     if action == "ensure_profile":
         user_id = payload.get("user_id")
         name = payload.get("name")

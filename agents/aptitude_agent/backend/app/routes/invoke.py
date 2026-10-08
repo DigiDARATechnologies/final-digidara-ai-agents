@@ -14,7 +14,7 @@ import uuid
 from flask import Blueprint, current_app, g, request, jsonify
 
 from ..extensions import db
-from ..models import Student
+from ..models import AptitudeTest, Student, TopicPerformance
 from ..services.auth_service import issue_token
 
 bp = Blueprint("strategy_f_invoke", __name__)
@@ -96,6 +96,45 @@ def _personal_data(action: str, payload: dict):
     return client.delete("/api/aptitude/me", headers=headers)
 
 
+SUMMARY_RECENT_TESTS = 10
+
+
+def _student_summary(payload: dict):
+    """Phase 2 readiness skill (digidara.student_summary.v1).
+
+    The orchestrator's gateway overwrites payload.email with the verified
+    account's own address for this action, so this is always the caller's
+    own progress. Score: average percentage of the latest completed tests.
+    """
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+    email = str(payload.get("email") or "").strip().lower()
+    student = Student.query.filter_by(email=email).first() if email else None
+    empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
+             "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
+    if student is None:
+        return jsonify(empty)
+    completed = (AptitudeTest.query.filter_by(student_id=student.id, status="completed")
+                 .order_by(AptitudeTest.completed_at.desc()).all())
+    if not completed:
+        return jsonify(empty)
+    recent = completed[:SUMMARY_RECENT_TESTS]
+    score = sum(float(test.percentage or 0) for test in recent) / len(recent)
+    topics = [t for t in TopicPerformance.query.filter_by(student_id=student.id).all() if (t.attempts or 0) >= 3]
+    ranked = sorted(topics, key=lambda t: float(t.accuracy or 0), reverse=True)
+    last = recent[0].completed_at
+    return jsonify({
+        "schema": "digidara.student_summary.v1",
+        "score": round(score, 1),
+        "activity_count": len(completed),
+        "last_activity_at": last.isoformat() if last else None,
+        "strengths": [f"{t.topic} ({float(t.accuracy or 0):.0f}%)" for t in ranked[:3] if float(t.accuracy or 0) >= 70],
+        "gaps": [f"{t.topic} ({float(t.accuracy or 0):.0f}%)" for t in reversed(ranked[-3:]) if float(t.accuracy or 0) < 60],
+        "metrics": {"tests_completed": len(completed), "recent_tests_averaged": len(recent),
+                    "best_percentage": round(max(float(t.percentage or 0) for t in completed), 1)},
+    })
+
+
 ROUTES = {
     "dashboard": ("GET", "/api/aptitude/dashboard"),
     "history": ("GET", "/api/aptitude/history"),
@@ -161,6 +200,8 @@ def invoke():
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:
         return _personal_data(action, payload)
+    if action == "get_student_summary":
+        return _student_summary(payload)
     if action == "usage_summary":
         empty = {"agent_name": "aptitude_agent", "total_requests": 0, "total_tokens": 0,
                  "prompt_tokens": 0, "completion_tokens": 0, "by_request_type": {}}

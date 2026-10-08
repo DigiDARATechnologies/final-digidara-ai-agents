@@ -104,6 +104,11 @@ FREE_ACTIONS = {
 }
 
 
+# Actions whose payload identity (user_id, name, email, mobile) the gateway
+# overwrites with the verified account's before forwarding.
+IDENTITY_ACTIONS = frozenset({"ensure_session", "get_student_summary"})
+
+
 def _resolve_agent(agent_name: str):
     """The live registry row for agent_name, or the gateway's 503/403."""
     agent = registry_service.resolve_healthy(agent_name)
@@ -221,10 +226,12 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         headers["x-digidara-token-balance"] = str(user.token_balance) if user else "0"
 
     if isinstance(envelope, dict) and user_id:
-        if envelope.get("action") == "ensure_session":
+        if envelope.get("action") in IDENTITY_ACTIONS:
             payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
             # Identity bridges receive only server-verified profile fields;
-            # browser-supplied identity values are never forwarded.
+            # browser-supplied identity values are never forwarded. Agents
+            # look the learner up by this email, so a summary can only ever
+            # be the caller's own.
             payload.update({"user_id": user.id, "name": user.name, "email": user.email, "mobile": user.mobile or ""})
             envelope["payload"] = payload
         _add_learner_context(agent_name, envelope, user_id)

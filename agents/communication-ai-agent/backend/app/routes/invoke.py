@@ -236,6 +236,13 @@ def invoke():
         # capstone_project_agent/codeforge_agent's own usage_summary actions.
         from ..services.groq_usage import get_usage_summary
         return jsonify(get_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
+    if action == "get_student_summary":
+        # Phase 2 readiness. The orchestrator gateway overwrites payload.email
+        # with the verified account's own address for this action.
+        if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
+            return _error("Verified DigiDARA identity is required.", "unverified_identity", 401)
+        from ..services.readiness import student_summary
+        return jsonify(student_summary(str(payload.get("email") or "").strip().lower()))
     if action == "speaking_transcribe":
         return _transcribe(payload)
     if action == "speaking_transcribe_preview":

@@ -1213,6 +1213,13 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(certificate_download_action, payload)
     elif action in {"export_user_data", "delete_user_data"}:
         result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
+    elif action == "get_student_summary":
+        # Phase 2 readiness. The orchestrator gateway overwrites payload.email
+        # with the verified account's own address for this action.
+        if not str(request.headers.get("x-digidara-user-id") or "").strip():
+            raise HTTPException(401, "Verified DigiDARA identity is required.")
+        from app.api.readiness import student_summary
+        result = await run_in_threadpool(student_summary, str(payload.get("email") or "").strip().lower())
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

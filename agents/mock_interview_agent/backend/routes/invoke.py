@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import logging
 from io import BytesIO
 
@@ -97,6 +98,68 @@ def _personal_data(action: str, payload: dict):
     if action == "export_user_data":
         return jsonify(privacy.export_student(email))
     return jsonify(privacy.erase_student(email))
+
+
+SUMMARY_RECENT_INTERVIEWS = 5
+BULLET_CHARS = " -*•"
+
+
+def _text_items(value) -> list[str]:
+    """strengths/weaknesses are stored as a JSON list or as plain text."""
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, list):
+        return [str(item).strip() for item in parsed if str(item).strip()]
+    return [item for item in (line.strip(BULLET_CHARS) for line in str(value).replace(";", "\n").splitlines()) if item]
+
+
+def _student_summary(payload: dict):
+    """Phase 2 readiness skill (digidara.student_summary.v1). The gateway
+    puts the verified account's own email in the payload for this action.
+    Score: the latest completed interviews' overall score, out of 10 -> 100."""
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+    empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
+             "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
+    email = str(payload.get("email") or "").strip().lower()
+    student, _ = db.query("SELECT id FROM students WHERE email = %s", (email,), fetchone=True) if email else (None, None)
+    if student is None:
+        return jsonify(empty)
+    rows, _ = db.query(
+        "SELECT overall_score, technical_accuracy, communication_clarity, confidence, strengths, weaknesses, ended_at "
+        "FROM interviews WHERE student_id = %s AND status = 'completed' AND overall_score IS NOT NULL "
+        "ORDER BY ended_at DESC, id DESC",
+        (student["id"],), fetch=True,
+    )
+    rows = rows or []
+    if not rows:
+        return jsonify(empty)
+    recent = rows[:SUMMARY_RECENT_INTERVIEWS]
+
+    def average(column):
+        values = [float(r[column]) for r in recent if r.get(column) is not None]
+        return round(sum(values) / len(values) * 10, 1) if values else None
+
+    latest = recent[0]
+    ended = latest.get("ended_at")
+    return jsonify({
+        "schema": "digidara.student_summary.v1",
+        "score": average("overall_score"),
+        "activity_count": len(rows),
+        "last_activity_at": ended.isoformat() if hasattr(ended, "isoformat") else None,
+        "strengths": _text_items(latest.get("strengths"))[:3],
+        "gaps": _text_items(latest.get("weaknesses"))[:3],
+        "metrics": {
+            "interviews_completed": len(rows),
+            "technical_accuracy": average("technical_accuracy"),
+            "communication_clarity": average("communication_clarity"),
+            "confidence": average("confidence"),
+        },
+    })
 
 
 def _usage_summary(payload: dict):
@@ -246,6 +309,8 @@ def invoke():
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:
         return _personal_data(action, payload)
+    if action == "get_student_summary":
+        return _student_summary(payload)
 
     logger.info("mock_interview invoke action=%s", action)
     return _dispatch(action, payload)
