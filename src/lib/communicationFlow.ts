@@ -24,7 +24,7 @@ import {
   type SpeakingTurnResult,
   type WritingTurnResult,
 } from "./communicationApi";
-import { easyMediumHard } from "./learnerContext";
+import { displayRole, easyMediumHard, learnerGoal } from "./learnerContext";
 
 export type CommunicationStep =
   | "main_menu"
@@ -437,6 +437,18 @@ async function beginSpeakingPractice(state: CommunicationFlowState, difficulty: 
     medium: { title: "Ideas and Experiences", description: "Explain an experience, share an opinion, and support it with clear details." },
     hard: { title: "Professional Discussion", description: "Discuss a professional issue, analyze alternatives, and justify your position." },
   };
+  // With a target role, practise speaking for that job instead of generic topics.
+  const goal = learnerGoal();
+  if (goal) {
+    const role = displayRole(goal.targetRole);
+    const skills = goal.skills.slice(0, 3).join(", ") || "your skills";
+    topics.easy = { title: `Introduce Yourself as an Aspiring ${role}`,
+      description: `Introduce yourself for a ${role} role: your studies${goal.degree ? ` (${goal.degree})` : ""}, your skills (${skills}) and why this job excites you.` };
+    topics.medium = { title: `Explain a ${role} Project`,
+      description: `Explain a project or idea that uses ${skills}, clearly enough for a ${role} interviewer to follow.` };
+    topics.hard = { title: `${role} Interview Discussion`,
+      description: `Discuss a real ${role} challenge, compare approaches and justify your choice as you would in a job interview.` };
+  }
   try {
     const topic = topics[difficulty];
     const result = await startSpeaking(state.authToken!, { mode: "topic", difficulty, topicTitle: topic.title, topicDescription: topic.description });
