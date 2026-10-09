@@ -274,6 +274,10 @@ def topic_intake(req: TopicIntakeRequest) -> TopicIntakeResponse:
 
 @router.post("/eligibility/free", response_model=EligibilityCheckResponse)
 def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
+    return free_topics_for_learner(req, None)
+
+
+def free_topics_for_learner(req: FreeTopicRequest, learner: dict | None) -> EligibilityCheckResponse:
     """Generate project topics for any language, role, or topic the student
     names -- the only entry point this app has; there is no certificate/
     enrollment gate. `req.course_name` doubles as that free-text topic here.
@@ -342,6 +346,7 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
             # kept unique across every student asking about the same focus,
             # whatever project type they picked.
             "topic_focus_key": (req.topic_key or req.course_name).split("|")[0],
+            "learner_brief": prompts.learner_brief(learner),
         }
     finally:
         session.close()
@@ -1188,7 +1193,7 @@ async def invoke(request: Request) -> JSONResponse:
     elif action == "topic_intake_turn":
         result = await run_in_threadpool(topic_intake, TopicIntakeRequest(**payload))
     elif action == "check_eligibility_free":
-        result = await run_in_threadpool(eligibility_check_free, FreeTopicRequest(**payload))
+        result = await run_in_threadpool(free_topics_for_learner, FreeTopicRequest(**payload), body.get("learner"))
     elif action == "choose_topic":
         result = await run_in_threadpool(topic_choose, TopicChooseRequest(**payload))
     elif action == "confirm_timer":

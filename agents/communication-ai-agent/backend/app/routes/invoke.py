@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import User
+from ..services import learner_context
 
 invoke_bp = Blueprint("invoke", __name__)
 
@@ -218,6 +219,15 @@ def _forward(action, payload):
 
 @invoke_bp.post("/api/invoke")
 def invoke():
+    # Phase 2: the gateway's signed learner context, for this request only.
+    token = learner_context.set_from_envelope(request.get_json(silent=True))
+    try:
+        return _invoke()
+    finally:
+        learner_context.reset(token)
+
+
+def _invoke():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _error("A JSON request body is required.", "invalid_json")

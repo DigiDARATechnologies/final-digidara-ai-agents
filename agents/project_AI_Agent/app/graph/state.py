@@ -30,6 +30,10 @@ class ProjectAgentState(TypedDict, total=False):
     # The language/role the request is for -- keys the offered_topics pool
     # that keeps every student's topics unique (see topic_generator_node).
     topic_focus_key: str
+    # Phase 2: the learner's target role, skills and known weak areas from
+    # the gateway's signed profile (see prompts.learner_brief) -- extra
+    # steering for the topic generator, never a replacement for the request.
+    learner_brief: str
 
     topic_options: list[dict[str, Any]]  # [{id, title, summary, medium, skills_applied}]
     chosen_topic: dict[str, Any]

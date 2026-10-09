@@ -10,6 +10,7 @@ from contextvars import copy_context
 from functools import partial
 
 from openai import OpenAI
+import learner_context
 from services.question_history import question_hash
 
 
@@ -471,6 +472,7 @@ def build_interview_questions(
         f"Cover these skill areas in order, cycling if needed: {assignment_skills or ['core concepts']}. "
         "Ask one concise question per item. Technical answers must be verbal; never require writing code. "
         f"Do not repeat these previous questions: {initial_asked_context}. "
+        f"{learner_context.prompt_block()} "
         "Return ONLY valid JSON as an array of objects in this exact shape: "
         '{"questions":[{"topic_area":"concise lowercase area","question":"question text"}]}.'
     )
@@ -1052,7 +1054,7 @@ def generate_question(
         "troubleshooting choice. At Advanced ask about a consequential design trade-off, failure "
         "mode, performance, security, or reliability decision. Keep the question directly tied to "
         "the selected topic; avoid vague questions such as 'What is technology?'. "
-        f"Ask one question at a time. {role_priority_guidance} {variety_guidance} Do not repeat any of these "
+        f"Ask one question at a time. {role_priority_guidance} {variety_guidance}{learner_context.prompt_block()} Do not repeat any of these "
         f"already-asked questions (from this and prior attempts): {asked_so_far}. Reply ONLY "
         "with valid JSON in exactly this shape: "
         '{"topic_area":"<concise lowercase technical area>","question":"<question>"}. '

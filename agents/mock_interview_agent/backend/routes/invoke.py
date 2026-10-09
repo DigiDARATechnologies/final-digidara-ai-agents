@@ -22,6 +22,7 @@ from io import BytesIO
 from flask import Blueprint, current_app, jsonify, request
 
 import db
+import learner_context
 import privacy
 from session_auth import InvalidSessionToken, issue_session_token, student_id_from_token
 from settings import ALLOWED_AUDIO_TYPES, MAX_AUDIO_UPLOAD_BYTES
@@ -293,6 +294,15 @@ def _dispatch(action: str, payload: dict):
 
 @bp.post("/invoke")
 def invoke():
+    # Phase 2: the gateway's signed learner context, for this request only.
+    token = learner_context.set_from_envelope(request.get_json(silent=True))
+    try:
+        return _invoke()
+    finally:
+        learner_context.reset(token)
+
+
+def _invoke():
     request_body = request.get_json(silent=True) or {}
     if not isinstance(request_body, dict):
         return _error("Request body must be an object", "invalid_request", 400)
