@@ -239,6 +239,23 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
   const [scrolled, setScrolled] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
+  // Digidara Assistant chat widget: loaded only while the landing page is shown.
+  useEffect(() => {
+    const s = document.createElement("script");
+    s.src = "https://automation.digidaraaibusiness.com/widget.js";
+    s.async = true;
+    s.dataset.agentId = "540cd4ed-47e3-42db-9330-16033e03286e";
+    s.dataset.widgetKey = "3fc02a3cbc4c430d9eba06d24f80fa67";
+    s.dataset.apiUrl = "https://api.automation.digidaraaibusiness.com";
+    s.dataset.botName = "Digidara Assistant";
+    s.dataset.color = "#4877e5";
+    s.dataset.welcome = "Hello! How can I help you?";
+    document.body.appendChild(s);
+    return () => {
+      s.remove();
+    };
+  }, []);
+
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = rootRef.current;
