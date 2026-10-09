@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from app import db
 from app.a2a import protocol as p
-from app.a2a.cards import COACH_AGENT, MEMORY_AGENT, READINESS_AGENT
+from app.a2a.cards import COACH_AGENT, CONDUCTOR_AGENT, MEMORY_AGENT, READINESS_AGENT
 from app.gateway import routes as gateway
 from app.models import A2ATask
 
@@ -81,12 +81,16 @@ def _error_text(data: Any, status_code: int) -> str:
 
 
 async def _run_agent(agent_name: str, action: str, payload: dict, user, caller: str, task_id: str, context_id: str) -> dict:
-    if agent_name in (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT):
+    if agent_name in (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT, CONDUCTOR_AGENT):
         # Local imports: these services call agents through this hub.
         if agent_name == READINESS_AGENT:
             from app.readiness import service as readiness_service
 
             data = await readiness_service.skill(action, user)
+        elif agent_name == CONDUCTOR_AGENT:
+            from app.conductor import service as conductor_service
+
+            data = await conductor_service.skill(action, payload, user)
         elif agent_name == MEMORY_AGENT:
             from app.memory import service as memory_service
 

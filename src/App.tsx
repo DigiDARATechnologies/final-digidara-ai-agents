@@ -35,7 +35,8 @@ import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import OnboardingScreen from "./components/OnboardingScreen";
 import ReadinessView from "./components/ReadinessView";
 import OrganizationView from "./components/OrganizationView";
-import { fetchLearnerSummary, type LearnerSummary } from "./lib/learnerApi";
+import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
+import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
 import { setLearnerContext } from "./lib/learnerContext";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
@@ -1159,6 +1160,7 @@ export default function App() {
     mockAnswer?: { answer: string; timing: MockInterviewAnswerTiming }
   ) {
     if (!currentChatId || !user) return;
+    const signedInUser = user;
     const chatId = currentChatId;
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
@@ -1219,6 +1221,53 @@ export default function App() {
     persistChats(withUserMsg);
     setTyping(true);
 
+    // The Conductor: when the learner types instead of tapping a choice, it
+    // works out what they meant -- one of the choices, another agent, starting
+    // over, or a question -- so the guided flow never just asks again.
+    const lastAgentMessage = !isEdit ? chat?.messages.at(-1) : undefined;
+    const choices = lastAgentMessage?.role === "agent" ? lastAgentMessage.options ?? [] : [];
+    const typed = text.trim();
+    const typedAChoice = choices.some((o) => o.value.toLowerCase() === typed.toLowerCase() || o.label.toLowerCase() === typed.toLowerCase());
+    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined
+        && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice) {
+      const step = String((resumeSnapshot as { step?: unknown } | undefined)?.step ?? "");
+      interpretTurn(agent.backendAgentName, step, choices, typed)
+        .then((decision) => applyDecision(decision))
+        .catch(() => dispatch(text));
+      return;
+    }
+    dispatch(text);
+
+    function applyDecision(decision: ConductorDecision) {
+      if (decision.intent === "select_option") {
+        dispatch(decision.option_value);
+        return;
+      }
+      if (decision.intent === "reply") {
+        appendAgentMessages(chatId, [{ text: decision.reply, options: choices }]);
+        setTyping(false);
+        return;
+      }
+      if (decision.intent === "switch_agent") {
+        const target = findAgentByBackendName(decision.agent_name);
+        if (target) {
+          setTyping(false);
+          appendAgentMessages(chatId, [{ text: `That's something ${target.name} does. Opening it for you now.` }]);
+          openAgentChat(target.id);
+          return;
+        }
+      }
+      if (decision.intent === "restart" && agent) {
+        setTyping(false);
+        appendAgentMessages(chatId, [{ text: `Sure, let's start ${agent.name} again so you can choose differently.` }]);
+        openAgentChat(agent.id);
+        return;
+      }
+      dispatch(text);
+    }
+
+    function dispatch(text: string) {
+    const user = signedInUser;
     if (agent?.kind === "capstone") {
       const flowState = (resumeSnapshot as CapstoneFlowState | undefined) ?? createInitialCapstoneState(user);
       handleCapstoneText(flowState, text).then(({ state: nextState, messages, openDashboard }) => {
@@ -1257,6 +1306,7 @@ export default function App() {
           if (flowState.testId && (nextState.step === "completed" || !nextState.testId)) aptitudeFinalizedAttempts.current.add(flowState.testId);
           setAptitudeStates((prev) => ({ ...prev, [chatId]: nextState as AptitudeFlowState }));
           appendAgentMessages(chatId, messages);
+          if (nextState.step === "completed" && flowState.step !== "completed") shareNewResults();
         })
         .catch((error) => {
           appendAgentMessages(chatId, [{ text: `Aptitude request failed: ${(error as Error).message}` }]);
@@ -1327,6 +1377,7 @@ export default function App() {
         .then(({ state, messages }) => {
           setMockInterviewStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
+          if (state.step === "completed" && flowState.step !== "completed") shareNewResults();
         })
         .catch((error) => {
           appendAgentMessages(chatId, [{ text: `Mock Interview request failed: ${(error as Error).message}` }]);
@@ -1386,6 +1437,14 @@ export default function App() {
     }
 
     routeGeneralMessage(chatId, text, toRouteHistory(baseMessages));
+    }
+  }
+
+  /** After an interview or test finishes, refresh readiness in the background:
+   * it asks every agent over A2A and updates the shared memory, so every agent
+   * knows the new strengths and gaps in the learner's next chat. */
+  function shareNewResults() {
+    void fetchReadiness(true).catch(() => undefined);
   }
 
   function editMessage(index: number, newText: string) {

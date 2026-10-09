@@ -25,8 +25,9 @@ SUMMARY_SKILL = {
 READINESS_AGENT = "readiness"
 MEMORY_AGENT = "memory"
 COACH_AGENT = "career_coach"
+CONDUCTOR_AGENT = "conductor"
 # Agents the hub serves itself, not through the registry.
-LOCAL_AGENTS = (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT)
+LOCAL_AGENTS = (READINESS_AGENT, MEMORY_AGENT, COACH_AGENT, CONDUCTOR_AGENT)
 
 # Skills per registry agent name. Ids are real actions of that agent.
 AGENT_SKILLS: dict[str, list[dict]] = {
@@ -111,6 +112,9 @@ LOCAL_CARD_INFO: dict[str, tuple[str, str, list[dict]]] = {
         {"id": "recall", "name": "Recall", "description": "The memories for this agent (payload.agent_name, payload.limit).", "tags": ["memory"]},
         {"id": "remember", "name": "Remember", "description": "Store a memory (payload.text, kind, importance, scope: agent|all).", "tags": ["memory"]},
         {"id": "forget", "name": "Forget", "description": "Delete one of this agent's memories (payload.id).", "tags": ["memory"]},
+    ]),
+    CONDUCTOR_AGENT: ("Conductor", "Understands what a learner means inside any agent's guided flow and routes it.", [
+        {"id": "interpret", "name": "Interpret a turn", "description": "payload: agent_name, step, options [{value,label}], message -> intent.", "tags": ["routing"]},
     ]),
     COACH_AGENT: ("Career Coach", "A personal week-by-week job-readiness plan, built from every agent over A2A.", [
         {"id": "create_plan", "name": "Create plan", "description": "Write a new plan (payload.language: en|ta).", "tags": ["plan"]},
