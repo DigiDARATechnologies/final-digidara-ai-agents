@@ -100,3 +100,27 @@ test('goal matching links roles and skills to course names', () => {
   expect(goalMatchScore(goal, 'Data Analytics')).toBeGreaterThan(goalMatchScore(goal, 'Generative AI and Agentic AI'));
   expect(goalMatchScore({ ...goal, skills: ['c'] }, 'Code Playground')).toBe(0);
 });
+
+test('coding practice moves on to the next topic when one is finished', async () => {
+  const { handleCodeForgeText } = await import('../../src/lib/codeforgeFlow');
+  const topic = (slug: string, name: string, sequence: number, progress = 'Not Started') => ({
+    id: sequence, slug, name, sequence, progress, description: '', problem_count: 5,
+  });
+  const solved = { id: 1, name: 'Print a Greeting', slug: 'greet', description: '', difficulty: 'Easy', max_score: 100,
+    language: 'python', sequence: 1, progress: 'Solved', best_score: 100, attempts: 1 };
+  const state = {
+    step: 'awaiting_topic' as const, sessionToken: 's', courses: [], technologies: [], problems: [],
+    courseSlug: 'genai', technologySlug: 'python', technologyName: 'Python',
+    topics: [topic('intro', 'Introduction and Syntax', 1, 'Solved'), topic('print', 'Print and Input', 2)],
+  };
+  jest.mocked(codeforgeApi.listProblems).mockResolvedValueOnce({ problems: [solved] } as never);
+  const finished = await handleCodeForgeText(state, 'intro');
+  expect(finished.messages[0].text).toContain("You've solved every problem in Introduction and Syntax! Ready for Print and Input?");
+  expect(finished.messages[0].options?.[0]).toMatchObject({ value: 'next_topic', label: 'Next topic: Print and Input' });
+
+  jest.mocked(codeforgeApi.listProblems).mockResolvedValueOnce({ problems: [{ ...solved, progress: 'Not Started', attempts: 0 }] } as never);
+  const moved = await handleCodeForgeText(finished.state, 'next topic');
+  expect(moved.state.topicSlug).toBe('print');
+  expect(moved.messages[0].text).toBe('Print and Input problems:');
+  expect(moved.messages[0].options?.map((o) => o.value)).toContain('back_to_topics');
+});

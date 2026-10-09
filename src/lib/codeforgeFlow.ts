@@ -108,6 +108,24 @@ function problemOptions(problems: ProblemSummary[]): ChatOption[] {
   }));
 }
 
+/** The topic after the current one, in course order. */
+function nextTopic(state: CodeForgeFlowState): Topic | undefined {
+  const ordered = [...state.topics].sort((a, b) => a.sequence - b.sequence);
+  const index = ordered.findIndex((t) => t.slug === state.topicSlug);
+  return index >= 0 ? ordered[index + 1] : undefined;
+}
+
+/** Ways to move on from a topic's problem list. */
+function topicNavigation(state: CodeForgeFlowState): ChatOption[] {
+  const next = nextTopic(state);
+  return [
+    ...(next ? [{ label: `Next topic: ${next.name}`, value: "next_topic", description: `${next.problem_count} problems · ${next.progress}` }] : []),
+    { label: "All topics", value: "back_to_topics", description: `Every ${state.technologyName ?? ""} topic`.trim() },
+  ];
+}
+
+const NEXT_TOPIC = /^(next|next topic|next one|move on|go to next topic|continue to next topic)$/i;
+
 // Same pattern as Aptitude's option map: {A: "text", B: "text", ...} -> clickable buttons.
 function mcqOptions(options: Record<string, string>): ChatOption[] {
   return Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
@@ -123,10 +141,40 @@ async function enterTopics(state: CodeForgeFlowState): Promise<{ state: CodeForg
 
 async function enterProblems(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
   const { problems } = await listProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, state.topicSlug!);
+  const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", problems };
+  const allSolved = problems.length > 0 && problems.every((p) => p.progress === "Solved");
+  if (allSolved) {
+    // Finished topic: moving on comes first; the problems stay for revision.
+    const upcoming = nextTopic(next);
+    return {
+      state: next,
+      messages: [{
+        text: upcoming
+          ? `🎉 You've solved every problem in ${state.topicName}! Ready for ${upcoming.name}? You can also redo any problem below.`
+          : `🎉 You've solved every problem in ${state.topicName}, and it's the last ${state.technologyName ?? ""} topic. Pick another topic or course, or redo a problem.`,
+        options: [...topicNavigation(next), ...(upcoming ? [] : [{ label: "Back to courses", value: "back_to_courses" }]), ...problemOptions(problems)],
+      }],
+    };
+  }
   return {
-    state: { ...state, step: "awaiting_problem", problems },
-    messages: [{ text: `${state.topicName} problems:`, options: problemOptions(problems) }],
+    state: next,
+    messages: [{ text: `${state.topicName} problems:`, options: [...problemOptions(problems), ...topicNavigation(next)] }],
   };
+}
+
+async function enterNextTopic(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+  if (!state.topics.length) return enterTopics(state);
+  const upcoming = nextTopic(state);
+  if (!upcoming) {
+    return {
+      state,
+      messages: [{
+        text: `That was the last ${state.technologyName ?? ""} topic. Choose any topic again, or another course.`,
+        options: [{ label: "All topics", value: "back_to_topics" }, { label: "Back to courses", value: "back_to_courses" }],
+      }],
+    };
+  }
+  return enterProblems({ ...state, topicSlug: upcoming.slug, topicName: upcoming.name });
 }
 
 async function enterCourses(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
@@ -220,6 +268,7 @@ export async function submitCodeForgeCode(
     const nextOptions: ChatOption[] = accepted
       ? [
           { label: "Choose another problem", value: "choose_another_problem" },
+          ...(nextTopic(state) ? [{ label: `Next topic: ${nextTopic(state)!.name}`, value: "next_topic" }] : []),
           { label: "Back to topics", value: "back_to_topics" },
           { label: "Back to courses", value: "back_to_courses" },
         ]
@@ -244,6 +293,7 @@ export async function handleCodeForgeText(
   if (command === "back_to_courses") return enterCourses(state);
   if (command === "back_to_topics") return enterTopics(state);
   if (command === "choose_another_problem") return enterProblems(state);
+  if ((command === "next_topic" || NEXT_TOPIC.test(trimmed)) && state.topicSlug) return enterNextTopic(state);
 
   switch (state.step) {
     case "awaiting_course": {
@@ -284,7 +334,7 @@ export async function handleCodeForgeText(
 
     case "awaiting_problem": {
       const problem = matchSlugOrName(state.problems, trimmed);
-      if (!problem) return { state, messages: [{ text: "Pick a problem from the list.", options: problemOptions(state.problems) }] };
+      if (!problem) return { state, messages: [{ text: "Pick a problem from the list, or move on to another topic.", options: [...problemOptions(state.problems), ...topicNavigation(state)] }] };
       try {
         const { problem: detail } = await getProblem(
           state.sessionToken!,
@@ -375,6 +425,7 @@ export async function handleCodeForgeText(
             text: feedback,
             options: [
               { label: "Choose another problem", value: "choose_another_problem" },
+              ...(nextTopic(state) ? [{ label: `Next topic: ${nextTopic(state)!.name}`, value: "next_topic" }] : []),
               { label: "Back to topics", value: "back_to_topics" },
               { label: "Back to courses", value: "back_to_courses" },
             ],

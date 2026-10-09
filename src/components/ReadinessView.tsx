@@ -49,6 +49,32 @@ export function ScoreRing({ score, band, size = 148 }: { score: number | null; b
   );
 }
 
+/** How each area's score is worked out, in the learner's words. */
+const AREA_EXPLANATION: Record<string, string> = {
+  codeforge_agent: "Your best score on every problem you tried (Medium counts 2×, Hard 3×), scaled by how many you've solved: half credit at your first solve, full credit at 20 solved.",
+  mock_interview_agent: "The average overall score of your last 5 completed interviews (out of 10, shown out of 100).",
+  aptitude_agent: "The average percentage of your last 10 completed aptitude tests.",
+  communication_agent: "The average of your writing, speaking and pronunciation scores from your latest sessions.",
+  resume_builder_agent: "Your best ATS score across your resumes. Run an ATS check to get one.",
+  capstone_project_agent: "Your best graded capstone project score.",
+  certificate_agent: "Your best exam score in each certification topic, averaged.",
+};
+
+const METRIC_LABELS: Record<string, string> = {
+  problems_solved: "solved", problems_attempted: "attempted", hard_solved: "hard solved", medium_solved: "medium solved",
+  interviews_completed: "interviews", tests_completed: "tests", best_percentage: "best %", resumes: "resumes",
+  ats_checks: "ATS checks", certificates: "certificates", graded: "graded", writing_score: "writing",
+  speaking_score: "speaking", pronunciation_score: "pronunciation",
+};
+
+function metricLine(metrics: ReadinessArea["metrics"]): string {
+  return Object.entries(metrics)
+    .filter(([key, value]) => METRIC_LABELS[key] && value !== null && value !== undefined && value !== false)
+    .slice(0, 3)
+    .map(([key, value]) => `${typeof value === "number" ? Math.round(value) : value} ${METRIC_LABELS[key]}`)
+    .join(" · ");
+}
+
 function LevelPicker({ value, onChange, disabled }: { value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean }) {
   return (
     <div className="rd-levels" role="radiogroup" aria-label="Level">
@@ -77,6 +103,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         </div>
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? area.score : 0}%` }} /></div>
+      {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
       <LevelPicker value={area.level} onChange={onLevel} disabled={busy} />
       {area.suggested_level && area.suggested_level !== area.level && (
         <button type="button" className="rd-suggest" disabled={busy} onClick={() => onLevel(area.suggested_level as LevelId)}>
@@ -90,6 +117,12 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         </div>
       )}
       {area.status === "unavailable" && area.reason && <p className="rd-muted rd-reason">{area.reason}</p>}
+      {AREA_EXPLANATION[area.agent_name] && (
+        <details className="rd-how">
+          <summary>How this score works</summary>
+          <p>{AREA_EXPLANATION[area.agent_name]} Suggested level: below 40 Beginner, 40–64 Medium, 65–84 Hard, 85+ Professional.</p>
+        </details>
+      )}
     </div>
   );
 }
@@ -194,6 +227,18 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <p className="rd-muted">
                 {readiness.coverage.assessed} of {readiness.coverage.total} areas assessed · checked {when(readiness.computed_at)}
               </p>
+            )}
+            {readiness && (
+              <details className="rd-how">
+                <summary>How is this calculated?</summary>
+                <p>
+                  Each area's score (0–100) counts by its weight: Coding 25%, Interview 20%, Aptitude 15%, Communication 15%,
+                  Resume 10%, Projects 10%, Certification 5%. Areas you haven't started yet count as 0, because an untested
+                  skill isn't job-ready yet.{" "}
+                  {readiness.overall !== null && `Yours: ${readiness.areas.filter((a) => a.status === "assessed" && a.score !== null)
+                    .map((a) => `${a.label} ${Math.round(a.score as number)} × ${a.weight}%`).join(" + ")} = ${Math.round(readiness.overall)}.`}
+                </p>
+              </details>
             )}
             <div className="rd-hero-actions">
               <button className="btn btn-primary btn-sm" disabled={loading} onClick={() => void load(true)}>
