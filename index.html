@@ -25,6 +25,12 @@
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "DigiDARA AI Agents", "applicationCategory": "BusinessApplication", "operatingSystem": "Web", "url": "https://digidaraaiagents.com", "description": "AI agent platform with specialized agents for education, careers, communication, travel, construction and other industries.", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}, "publisher": {"@id": "https://digidaraaiagents.com/#org"}}</script>
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": "What is DigiDARA AI Agents?", "acceptedAnswer": {"@type": "Answer", "text": "DigiDARA AI Agents is an AI agent workspace where businesses, teams and individuals use specialized AI agents for learning, careers, communication, hiring and industry workflows, all under one account."}}, {"@type": "Question", "name": "Who is DigiDARA AI Agents for?", "acceptedAnswer": {"@type": "Answer", "text": "Anyone, anywhere in the world. Students and job seekers use it for practice and careers, while companies in travel, construction, education and other industries use it to automate repetitive work with custom AI agents."}}, {"@type": "Question", "name": "Can DigiDARA build a custom AI agent for my industry?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. DigiDARA designs and builds specialized AI agents for industries such as travel, construction, healthcare, finance and education, shaped around your own workflow."}}, {"@type": "Question", "name": "Is my data safe?", "acceptedAnswer": {"@type": "Answer", "text": "Sessions are secured, agent requests are signed, and privacy controls follow data-protection principles including data export and account deletion."}}, {"@type": "Question", "name": "How much does it cost?", "acceptedAnswer": {"@type": "Answer", "text": "You can start free. Paid plans add more usage and are shown inside the app under Billing."}}]}</script>
     <script src="/theme-init.js"></script>
+    <style>
+      /* First paint: match the landing page background so a hard refresh never flashes white, and keep the crawler copy below out of sight. */
+      html{background:#050816}
+      html[data-theme="light"]{background:#f6f8fd}
+      #seo-fallback{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    </style>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -33,7 +39,7 @@
   <body>
     <div id="root">
       <!-- Static copy for crawlers and AI answer engines; React replaces it on load. -->
-      <main style="font-family:sans-serif;max-width:760px;margin:40px auto;padding:0 20px">
+      <main id="seo-fallback">
         <h1>DigiDARA AI Agents: AI agents for every industry</h1>
         <p>DigiDARA AI Agents gives people and businesses worldwide specialized AI agents for learning, careers, communication, travel, construction and more. Use ready-made agents or have a custom AI agent built around your workflow.</p>
         <h2>Live AI agents</h2>
