@@ -12,6 +12,30 @@ async function invoke<T>(action: string, payload: Record<string, unknown>, timeo
 
 function unwrap<T>(result: { data?: T } | T): T { return (result as { data?: T }).data ?? result as T; }
 
+/** What DigiDARA already knows for this learner's resume: account, profile,
+ * and what the other agents report (orchestrator GET /learner/resume-facts). */
+export interface ResumeFacts {
+  name: string; email: string; phone: string; target_role: string; degree: string;
+  experience_level: "fresher" | "experienced"; skills: string[];
+  projects: Array<{ title: string; description?: string; skills?: string[]; score?: number | null }>;
+  certifications: Array<{ name: string; issuer?: string; date?: string; score?: number | null }>;
+  achievements: Array<{ title: string; description?: string }>;
+  /** Areas that contributed, e.g. "Coding", "Projects". */
+  sources: string[];
+  /** What still has to be asked: phone, location, education, linkedin, github, project, experience. */
+  missing: string[];
+}
+
+export async function fetchResumeFacts(): Promise<ResumeFacts> {
+  const base = (import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100").replace(/\/$/, "");
+  const platformToken = localStorage.getItem("digidara_token");
+  const response = await fetch(`${base}/learner/resume-facts`, {
+    headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
+  });
+  if (!response.ok) throw new Error(`Could not read your DigiDARA profile (${response.status}).`);
+  return response.json() as Promise<ResumeFacts>;
+}
+
 export async function checkResumeBuilderHealth(): Promise<boolean> {
   try { return (await invoke<{ status: string }>("health", {})).status === "ok"; } catch { return false; }
 }

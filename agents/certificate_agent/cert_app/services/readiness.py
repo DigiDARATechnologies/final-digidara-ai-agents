@@ -10,6 +10,10 @@ from typing import Iterable, Optional
 from cert_app.db.database import get_connection
 
 
+def _date(value) -> Optional[str]:
+    return value.date().isoformat() if hasattr(value, "date") else (value.isoformat() if hasattr(value, "isoformat") else None)
+
+
 def build_student_summary(exams: Iterable[dict], certificates: Iterable[dict]) -> dict:
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
@@ -36,6 +40,12 @@ def build_student_summary(exams: Iterable[dict], certificates: Iterable[dict]) -
         "strengths": [f"Certified: {topic}" for topic in certified[:3]],
         "gaps": [f"Not certified yet: {topic} (best {best[topic]:.0f}%)" for topic in uncertified[:3]],
         "metrics": {"certificates": len(certificates), "exams_finished": len(exams), "topics": len(best)},
+        "resume": {"certifications": [
+            {"name": f"{topic} Certification", "issuer": "DigiDARA AI Certification",
+             "date": _date(next((c.get("issued_at") for c in certificates if str(c.get("topic") or "General") == topic), None)),
+             "score": round(best[topic])}
+            for topic in certified[:6]
+        ]},
     }
 
 

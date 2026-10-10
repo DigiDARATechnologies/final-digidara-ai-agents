@@ -345,9 +345,10 @@ class MySqlRepository:
         with its difficulty and topic (Phase 2 readiness summary)."""
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
-                "SELECT p.difficulty, spp.best_score, spp.status, t.name topic, spp.updated_at "
+                "SELECT p.difficulty, spp.best_score, spp.status, t.name topic, tech.name technology, spp.updated_at "
                 "FROM students s JOIN student_problem_progress spp ON spp.student_id=s.id "
                 "JOIN coding_problems p ON p.id=spp.problem_id JOIN coding_topics t ON t.id=p.topic_id "
+                "JOIN coding_technologies tech ON tech.id=t.technology_id "
                 "WHERE s.email=%s",
                 (email,),
             )

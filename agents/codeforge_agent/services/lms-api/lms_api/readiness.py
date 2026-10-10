@@ -21,6 +21,28 @@ def _iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else None
 
 
+RESUME_MIN_SOLVED = 5
+
+
+def _resume_block(solved):
+    """Technologies with solved problems, and one checkable line per
+    technology with enough of them, for the learner's resume."""
+    by_tech = {}
+    for row in solved:
+        tech = row.get("technology")
+        if tech:
+            by_tech.setdefault(tech, {"Easy": 0, "Medium": 0, "Hard": 0})[row.get("difficulty") or "Easy"] += 1
+    ranked = sorted(by_tech.items(), key=lambda item: -sum(item[1].values()))
+    achievements = []
+    for tech, counts in ranked:
+        total = sum(counts.values())
+        if total >= RESUME_MIN_SOLVED:
+            split = ", ".join(f"{n} {level}" for level, n in counts.items() if n)
+            achievements.append({"title": f"Solved {total} {tech} coding problems",
+                                 "description": f"DigiDARA Coding Practice, tested against hidden test cases ({split})."})
+    return {"skills": [tech for tech, _ in ranked], "achievements": achievements[:3]}
+
+
 def _level_progress(solved, totals, difficulty):
     level = str(difficulty or "").strip().capitalize()
     total = (totals or {}).get(level, 0)
@@ -69,4 +91,5 @@ def build_student_summary(rows, totals=None, difficulty=None):
             "level_progress": _level_progress(solved, totals, difficulty),
             "level_total": (totals or {}).get(str(difficulty or "").strip().capitalize()),
         },
+        "resume": _resume_block(solved),
     }

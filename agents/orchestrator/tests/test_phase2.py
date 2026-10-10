@@ -426,3 +426,23 @@ def test_export_and_erasure_cover_phase2_data(app_client, agents, database):
     with database() as session:
         for model in (LearnerProfile, AgentLevel, ReadinessSnapshot, OrganizationMember, A2ATask):
             assert session.query(model).filter_by(user_id="learner").count() == 0
+
+
+# --- resume facts ---------------------------------------------------------------
+
+def test_resume_facts_join_the_profile_and_what_agents_report(app_client, agents, monkeypatch):
+    learner_service.save_profile("learner", "Data Analyst", "B.Sc Computer Science", ["SQL", "Excel"], "fresher")
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"resume": {
+        "skills": ["Python", "sql"],
+        "achievements": [{"title": "Solved 20 Python coding problems", "description": "DigiDARA Coding Practice", "x": "dropped"}],
+        "projects": [{"description": "no title, dropped"}],
+    }})
+    facts = app_client.get("/learner/resume-facts", headers=auth()).json()
+    assert facts["name"] == "Learner" and facts["email"] == "learner@example.test" and facts["target_role"] == "Data Analyst"
+    assert facts["skills"] == ["SQL", "Excel", "Python"]
+    assert facts["projects"] == [] and "project" in facts["missing"] and "phone" in facts["missing"]
+    titles = [a["title"] for a in facts["achievements"]]
+    # Aptitude 70 earns a line; the interview's 60 does not.
+    assert titles == ["Solved 20 Python coding problems", "Aptitude: 70% average"]
+    assert "x" not in facts["achievements"][0]
+    assert facts["sources"] == ["Coding", "Aptitude"]

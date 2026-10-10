@@ -22,6 +22,8 @@ def test_best_score_per_topic_and_certified_topics():
     assert body["gaps"] == ["Not certified yet: Machine Learning (best 40%)"]
     assert body["metrics"] == {"certificates": 1, "exams_finished": 3, "topics": 2}
     assert body["last_activity_at"].startswith("2026-09-05")
+    assert body["resume"]["certifications"] == [
+        {"name": "Python Certification", "issuer": "DigiDARA AI Certification", "date": "2026-09-05", "score": 85}]
 
 
 def test_chat_mode_certificate_without_an_exam_row_counts():

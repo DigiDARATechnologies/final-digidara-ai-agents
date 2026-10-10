@@ -74,10 +74,42 @@ def _strings(value: Any, limit: int = 5) -> list[str]:
     return [str(item)[:160] for item in value if isinstance(item, (str, int, float))][:limit]
 
 
+def _text(value: Any, limit: int) -> str:
+    return " ".join(str(value).split())[:limit] if isinstance(value, (str, int, float)) else ""
+
+
+def _resume_block(value: Any) -> dict:
+    """An agent's optional resume facts, cut down to plain short text:
+    skills, projects, certifications and achievements."""
+    if not isinstance(value, dict):
+        return {}
+    def items(key: str, fields: dict[str, int], required: str, limit: int) -> list[dict]:
+        rows = value.get(key) if isinstance(value.get(key), list) else []
+        result = []
+        for row in rows[:limit]:
+            if not isinstance(row, dict) or not _text(row.get(required), 200):
+                continue
+            item = {field: _text(row.get(field), size) for field, size in fields.items() if _text(row.get(field), size)}
+            if isinstance(row.get("skills"), list):
+                item["skills"] = _strings(row["skills"], 8)
+            if isinstance(row.get("score"), (int, float)) and not isinstance(row.get("score"), bool):
+                item["score"] = _clamp_score(row["score"])
+            result.append(item)
+        return result
+    block = {
+        "skills": [_text(s, 60) for s in _strings(value.get("skills"), 12) if _text(s, 60)],
+        "projects": items("projects", {"title": 160, "description": 400}, "title", 4),
+        "certifications": items("certifications", {"name": 200, "issuer": 120, "date": 10}, "name", 6),
+        "achievements": items("achievements", {"title": 160, "description": 300}, "title", 4),
+    }
+    return {key: rows for key, rows in block.items() if rows}
+
+
 def summarize_reply(data: Any) -> dict:
     """Validate one agent's student summary; anything unexpected is dropped."""
     if not isinstance(data, dict):
-        return {"score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
+        return {"score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {},
+                "resume": {}}
     activity = data.get("activity_count")
     metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
     return {
@@ -87,6 +119,7 @@ def summarize_reply(data: Any) -> dict:
         "strengths": _strings(data.get("strengths")),
         "gaps": _strings(data.get("gaps")),
         "metrics": {str(k)[:60]: v for k, v in list(metrics.items())[:20] if isinstance(v, (str, int, float, bool)) or v is None},
+        "resume": _resume_block(data.get("resume")),
     }
 
 

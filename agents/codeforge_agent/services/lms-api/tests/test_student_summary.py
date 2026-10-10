@@ -50,6 +50,15 @@ class StudentSummaryScoringTests(unittest.TestCase):
         self.assertIsNone(build_student_summary(rows, totals, "hard")["metrics"]["level_progress"])
         self.assertIsNone(build_student_summary(rows)["metrics"]["level_progress"])
 
+    def test_resume_lists_technologies_and_solved_counts(self):
+        rows = [dict(row("Easy", 100, "Solved"), technology="Python") for _ in range(4)]
+        rows += [dict(row("Medium", 100, "Solved"), technology="Python"), dict(row("Easy", 100, "Solved"), technology="SQL")]
+        resume = build_student_summary(rows)["resume"]
+        self.assertEqual(resume["skills"], ["Python", "SQL"])
+        # SQL has fewer than five solves, so only Python earns a line.
+        self.assertEqual(resume["achievements"], [{"title": "Solved 5 Python coding problems",
+            "description": "DigiDARA Coding Practice, tested against hidden test cases (4 Easy, 1 Medium)."}])
+
     def test_twenty_solves_give_full_breadth(self):
         body = build_student_summary([row("Medium", 100, "Solved") for _ in range(20)])
         self.assertEqual(body["score"], 100.0)

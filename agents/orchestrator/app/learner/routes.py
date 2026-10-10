@@ -18,6 +18,7 @@ from app.learner import levels as level_rules
 from app.learner import service
 from app.models import User
 from app.organizations import service as org_service
+from app.learner import resume_facts as resume_facts_service
 from app.readiness import service as readiness_service
 
 router = APIRouter(prefix="/learner", tags=["learner"])
@@ -111,6 +112,12 @@ def accept_consent(req: ConsentIn, user_id: str = Depends(get_current_user_id)) 
 async def readiness(refresh: bool = False, user_id: str = Depends(get_verified_user_id)) -> dict:
     user = auth_service.get_by_id(user_id)
     return await readiness_service.get(user, refresh=refresh)
+
+
+@router.get("/resume-facts")
+async def resume_facts(user_id: str = Depends(get_verified_user_id)) -> dict:
+    """What DigiDARA already knows for this learner's resume (see resume_facts)."""
+    return await resume_facts_service.gather(auth_service.get_by_id(user_id))
 
 
 @router.get("/readiness/history")

@@ -4,6 +4,7 @@ import {
   createImportDraft,
   createResume,
   ensureResumeProfile,
+  fetchResumeFacts,
   generateImportedResume,
   analyzeSavedResume,
   getResume,
@@ -16,6 +17,7 @@ import {
   updateResume,
   type ResumeEditProposal,
   type ResumeCreateInput,
+  type ResumeFacts,
 } from "./resumeBuilderApi";
 import { parseLinkedInExport } from "./linkedinExport";
 import { displayRole, learnerGoal } from "./learnerContext";
@@ -43,7 +45,13 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
   /** Text typed at a project question that reads like a request ("i want my
    * resume"), held while the candidate says whether it really is a project. */
   pendingProjectText?: string;
+  /** "Build from my DigiDARA profile": the questions still to ask, in order --
+   * only what the profile and the other agents could not fill in. */
+  profileQueue?: ProfileQuestion[];
+  /** The learner's degree from their profile, shown in the education question. */
+  profileDegree?: string;
 }
+type ProfileQuestion = "phone" | "location" | "education" | "experience" | "project" | "linkedin" | "github";
 type ResumeChatTurnHistory = Array<{ role: "student" | "agent"; text: string }>;
 const HISTORY_LIMIT = 16;
 export interface ResumeBuilderMessage { text: string; options?: ChatOption[]; }
@@ -55,6 +63,12 @@ const choices: ChatOption[] = [
   { label: "Paste your LinkedIn or notes", value: "paste_text", description: "Paste your LinkedIn profile text, or any rough notes." },
   { label: "Import your LinkedIn export", value: "import_linkedin_zip", description: "The ZIP from LinkedIn's own “Get a copy of your data” — your own data, no login sharing, no scraping." },
 ];
+const FROM_PROFILE = "from_profile";
+const fromProfileChoice: ChatOption = {
+  label: "⭐ Build from my DigiDARA profile",
+  value: FROM_PROFILE,
+  description: "Uses your profile, capstone projects, certificates and coding results, and asks only what is missing.",
+};
 const skipOption: ChatOption[] = [{ label: "Skip this section", value: "skip", description: "You can add it later from your resume editor." }];
 const restartOption: ChatOption[] = [{ label: "Start over", value: "restart", description: "Discard this draft and begin again." }];
 const editOptions: ChatOption[] = [
@@ -944,7 +958,14 @@ function experienceLevelOptions(fresher: string, experienced: string): ChatOptio
 
 export async function openResumeBuilderChat(user: User): Promise<ResumeBuilderFlowResult> {
   const state = createInitialResumeBuilderState();
-  try { await ensureResumeProfile(user.id, user.name, user.email); return { state, messages: [{ text: `Hi ${user.name.split(" ")[0]}! Would you like to create a new resume or upload one to improve?`, options: choices }] }; }
+  try {
+    await ensureResumeProfile(user.id, user.name, user.email);
+    const goal = learnerGoal();
+    const text = goal
+      ? `Hi ${user.name.split(" ")[0]}! I can build your ${displayRole(goal.targetRole)} resume from what DigiDARA already knows about you, and ask only for what is missing. Or start another way:`
+      : `Hi ${user.name.split(" ")[0]}! Would you like to create a new resume or upload one to improve?`;
+    return { state, messages: [{ text, options: goal ? [fromProfileChoice, ...choices] : choices }] };
+  }
   catch (error) { return { state: { ...state, step: "error", error: (error as Error).message }, messages: [{ text: `I could not initialize Resume Builder: ${(error as Error).message}`, options: [{ label: "Try again", value: "retry" }] }] }; }
 }
 
@@ -1007,6 +1028,103 @@ export function isRetryUploadIntent(value: string): boolean {
     norm.includes("retry upload") ||
     norm.includes("try again")
   );
+}
+
+const PROFILE_STEPS: Record<ProfileQuestion, ResumeBuilderStep> = {
+  phone: "awaiting_phone", location: "awaiting_location", education: "awaiting_education", experience: "awaiting_experience",
+  project: "awaiting_project", linkedin: "awaiting_linkedin", github: "awaiting_github",
+};
+const PROFILE_ORDER: ProfileQuestion[] = ["phone", "location", "education", "experience", "project", "linkedin", "github"];
+// "Add another?" steps: the candidate is still on the same section.
+const MORE_STEPS = new Set<ResumeBuilderStep>(["awaiting_education_more", "awaiting_experience_more", "awaiting_project_more"]);
+
+function profileQuestionMessage(question: ProfileQuestion, state: ResumeBuilderFlowState): ResumeBuilderMessage {
+  if (question === "education" && state.profileDegree) {
+    const degree = state.profileDegree;
+    return {
+      text: `Your profile says you studied **${degree}**. Add the college and years, for example: UG: ${degree}, KSR College, 2021-2024, CGPA: 8.2. Add a PG the same way after a semicolon.`,
+      options: skipOption,
+    };
+  }
+  const prompt = draftFieldPrompt(question, state.draft);
+  return { text: prompt, options: /Skip/.test(prompt) ? skipOption : undefined };
+}
+
+/** The draft, filled from what DigiDARA knows -- nothing invented. */
+export function draftFromResumeFacts(facts: ResumeFacts): ResumeDraft {
+  const role = displayRole(facts.target_role || "");
+  const projectSkills = (facts.projects || []).flatMap((p) => p.skills || []);
+  const skills = [...facts.skills, ...projectSkills].filter((s, i, all) => all.findIndex((t) => t.toLowerCase() === s.toLowerCase()) === i);
+  return {
+    title: role ? `${role} Resume` : "My Resume",
+    name: facts.name, email: facts.email, phone: facts.phone || undefined,
+    targetRole: role || undefined, experienceLevel: facts.experience_level,
+    skills: skills.slice(0, 20),
+    projects: (facts.projects || []).map((p) => ({
+      title: p.title,
+      description: [p.description, p.skills?.length ? `Technologies: ${p.skills.join(", ")}.` : ""].filter(Boolean).join(" "),
+    })),
+    certifications: (facts.certifications || []).map((c) => ({
+      name: c.name, issuer: c.issuer, issue_date: c.date,
+      description: typeof c.score === "number" ? `Scored ${Math.round(c.score)}% in the certification exam.` : undefined,
+    })),
+    achievements: (facts.achievements || []).map((a) => ({ title: a.title, description: a.description, organization: "DigiDARA" })),
+  };
+}
+
+function foundSummary(facts: ResumeFacts, draft: ResumeDraft): string {
+  const lines = [
+    `• ${draft.name} — ${draft.email}${draft.phone ? ` — ${draft.phone}` : ""}`,
+    `• Target role: ${draft.targetRole || "not set"} (${draft.experienceLevel === "experienced" ? "Experienced" : "Fresher"})`,
+    `• Skills: ${(draft.skills || []).join(", ") || "none yet"}`,
+  ];
+  if (draft.projects?.length) lines.push(`• Projects: ${draft.projects.map((p) => p.title).join("; ")}`);
+  if (draft.certifications?.length) lines.push(`• Certifications: ${draft.certifications.map((c) => c.name).join("; ")}`);
+  if (draft.achievements?.length) lines.push(`• Achievements: ${draft.achievements.map((a) => a.title).join("; ")}`);
+  const from = facts.sources.length ? ` (from your profile and ${facts.sources.join(", ")})` : " (from your profile)";
+  return `Here is what I already have${from}:\n${lines.join("\n")}`;
+}
+
+async function startFromProfile(state: ResumeBuilderFlowState, user: User): Promise<ResumeBuilderFlowResult> {
+  let facts: ResumeFacts;
+  try {
+    facts = await fetchResumeFacts();
+  } catch (error) {
+    return { state, messages: [{ text: `${(error as Error).message} You can still create a resume step by step.`, options: choices }] };
+  }
+  const draft = draftFromResumeFacts({ ...facts, name: facts.name || user.name, email: facts.email || user.email });
+  const queue = PROFILE_ORDER.filter((question) => facts.missing.includes(question));
+  const next: ResumeBuilderFlowState = { ...state, draft, profileDegree: facts.degree || undefined, error: undefined };
+  const summary = foundSummary(facts, draft);
+  if (!queue.length) return { state: { ...next, step: "confirming" }, messages: [{ text: summary }, reviewMessage(draft)] };
+  const [first, ...rest] = queue;
+  return {
+    state: { ...next, step: PROFILE_STEPS[first], profileQueue: rest },
+    messages: [
+      { text: `${summary}\n\nI only need ${queue.length} more detail${queue.length === 1 ? "" : "s"}. Type Skip for anything you do not want on the resume.` },
+      profileQuestionMessage(first, next),
+    ],
+  };
+}
+
+/** In "Build from my DigiDARA profile", once a question is answered, go to
+ * the next missing detail instead of the question that normally follows --
+ * the rest is already filled in. With none left, show the review. */
+function continueProfileQueue(previous: ResumeBuilderFlowState, value: string, result: ResumeBuilderFlowResult): ResumeBuilderFlowResult {
+  const queue = previous.profileQueue;
+  if (!queue || previous.returnTo || requestedDraftField(value)) return result;
+  const step = result.state.step;
+  // Not accepted yet, or adding another entry to the same section: keep waiting.
+  if (step === previous.step || MORE_STEPS.has(step)) return { ...result, state: { ...result.state, profileQueue: queue } };
+  // Anything other than moving on to another question (a created resume, an error, a restart) ends the queue.
+  if (!DRAFT_STEPS.has(step) || step === "awaiting_enrichment_choice") return { ...result, state: { ...result.state, profileQueue: undefined } };
+  const draft = result.state.draft || {};
+  if (!queue.length) {
+    return { state: { ...result.state, step: "confirming", profileQueue: undefined }, messages: [{ text: "Thanks, that is everything I needed." }, reviewMessage(draft)] };
+  }
+  const [nextQuestion, ...rest] = queue;
+  const nextState = { ...result.state, step: PROFILE_STEPS[nextQuestion], profileQueue: rest };
+  return { state: nextState, messages: [{ text: "Got it." }, profileQuestionMessage(nextQuestion, nextState)] };
 }
 
 /** Steps where the candidate is still building the draft (before a resume
@@ -1302,7 +1420,7 @@ export async function handleResumeBuilderText(state: ResumeBuilderFlowState, use
   const restarting = value === "restart" || clean(value).toLowerCase() === "start over";
   if (state.pendingSuggestion && !restarting) return withHistory(resolveWordingSuggestion(state, value), state.history || [], value);
   const edited = restarting ? undefined : await applyTypedEdit(state, user, value);
-  const result = edited ?? await offerWordingSuggestion(state, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value)), user);
+  const result = edited ?? await offerWordingSuggestion(state, continueProfileQueue(state, value, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value))), user);
   return withHistory(result, restarting ? [] : state.history || [], value);
 }
 
@@ -1545,6 +1663,7 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
   }
   if (state.step === "choose_workflow") {
+    if (value === FROM_PROFILE) return startFromProfile(state, user);
     if (value === "new") return { state: { ...state, step: "awaiting_experience_level", draft: {} }, messages: [{ text: "Before we begin, which best describes you? This sets the right resume length and section priorities.", options: experienceLevelOptions("A concise, one-page resume focused on education, projects, skills, and internships.", "A resume designed for up to two pages, with room for career impact and achievements.") }] };
     if (value === "upload") return { state: { ...state, step: "awaiting_upload_role", draft: {} }, messages: [roleQuestion("What role are you targeting with this resume? For example: Data Analyst or Python Developer.")] };
     if (value === "paste_text") return { state: { ...state, step: "awaiting_paste_text", draft: {} }, messages: [{ text: "Paste your LinkedIn “About” and experience text, or any rough notes about your background, and I'll turn it into a resume." }] };

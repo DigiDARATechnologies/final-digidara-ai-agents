@@ -22,6 +22,29 @@ def _title(assignment: ProjectAssignment) -> str:
     return str(topic.get("title") or topic.get("name") or "Capstone project")[:120]
 
 
+def _resume_projects(assignments: list[ProjectAssignment], submissions: list[Submission]) -> list[dict[str, Any]]:
+    """Projects the learner built and submitted, for their resume: title,
+    what it does and the skills it used (from the topic they chose)."""
+    best: dict[int, float | None] = {}
+    for s in submissions:
+        score = (s.score_json or {}).get("final_score") if s.status in GRADED else None
+        current = best.get(s.assignment_id)
+        best[s.assignment_id] = score if isinstance(score, (int, float)) and (current is None or score > current) else current
+    projects = []
+    for a in assignments:
+        if a.id not in best:
+            continue
+        topic = a.topic_json or {}
+        skills = [str(x)[:40] for x in (topic.get("skills_applied") or []) if str(x).strip()][:8]
+        projects.append({
+            "title": _title(a),
+            "description": str(topic.get("summary") or "")[:400],
+            "skills": skills,
+            "score": round(float(best[a.id]), 1) if best[a.id] is not None else None,
+        })
+    return projects[:4]
+
+
 def build_student_summary(assignments: list[ProjectAssignment], submissions: list[Submission]) -> dict[str, Any]:
     empty: dict[str, Any] = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
                              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
@@ -55,6 +78,7 @@ def build_student_summary(assignments: list[ProjectAssignment], submissions: lis
             "graded": len(graded),
             "viva_passed": bool(best and best.viva_passed),
         },
+        "resume": {"projects": _resume_projects(assignments, submissions)},
     }
 
 
