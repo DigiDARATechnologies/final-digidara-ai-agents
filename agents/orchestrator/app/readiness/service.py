@@ -291,16 +291,25 @@ async def get(user, refresh: bool = False) -> dict:
     """The readiness result, recomputed when asked or when the last one is old."""
     snapshot = latest(user.id)
     age = datetime.utcnow() - snapshot.computed_at if snapshot is not None else None
-    if age is None or age > SNAPSHOT_MAX_AGE or (refresh and age > REFRESH_MIN_AGE):
+    levels = learner_service.get_levels(user.id)
+    # A level changed after the snapshot: its progress was measured at the old level.
+    level_changed = snapshot is not None and any(
+        (changed := _naive_utc(level.get("updated_at"))) and changed > snapshot.computed_at for level in levels.values()
+    )
+    if age is None or age > SNAPSHOT_MAX_AGE or (refresh and (age > REFRESH_MIN_AGE or level_changed)):
         return await compute(user)
     stored = snapshot.areas or {}
     if not isinstance(stored.get("areas"), list):
         return await compute(user)
-    levels = learner_service.get_levels(user.id)
-    areas = [
-        {**area, "level": levels.get(area["agent_name"], {}).get("level", area.get("level"))}
-        for area in stored["areas"] if isinstance(area, dict) and area.get("agent_name")
-    ]
+    areas = []
+    for area in stored["areas"]:
+        if not isinstance(area, dict) or not area.get("agent_name"):
+            continue
+        level = levels.get(area["agent_name"], {}).get("level", area.get("level"))
+        if level != area.get("level"):
+            area = {**area, "level": level, "suggested_level": None, "promoted_from": None,
+                    **_level_fields(level, None, area.get("level_progress_basis", "score"))}
+        areas.append(area)
     return {
         "overall": snapshot.overall, "band": snapshot.band,
         "band_label": BAND_LABELS.get(snapshot.band, snapshot.band),

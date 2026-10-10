@@ -217,9 +217,9 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
     try {
       const updated = await setMyLevel(agentName, level);
       onSummaryChange({ ...summary, levels: summary.levels.map((l) => (l.agent_name === agentName ? updated : l)) });
-      // Progress was measured at the old level; the next refresh measures the new one.
-      setReadiness((r) => r && { ...r, areas: r.areas.map((a) => (a.agent_name === agentName
-        ? { ...a, level, level_progress: null, can_level_up: false, suggested_level: null, promoted_from: undefined } : a)) });
+      setReadiness((r) => r && { ...r, areas: r.areas.map((a) => (a.agent_name === agentName ? { ...a, level, promoted_from: undefined } : a)) });
+      // Progress is per level: measure it again at the new one.
+      void load(true);
       onToast(`${updated.agent_label} is now ${LEVEL_LABELS[level]}.`);
     } catch (err) {
       onToast((err as Error).message);

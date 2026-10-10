@@ -272,6 +272,19 @@ def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypat
     assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"}).status_code == 409
 
 
+def test_a_level_change_is_measured_again_at_once(app_client, agents):
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    assert app_client.put("/learner/levels/codeforge_agent", headers=auth(), json={"level": "medium"}).status_code == 200
+    calls = len(agents.calls)
+    body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
+    assert len(agents.calls) > calls and coding["level"] == "medium" and coding["next_level"] == "hard"
+    # Without asking for a refresh, the stored Beginner progress is not shown as Medium's.
+    cached = next(a for a in app_client.get("/learner/readiness", headers=auth()).json()["areas"]
+                  if a["agent_name"] == "codeforge_agent")
+    assert cached["level"] == "medium"
+
+
 def test_completing_a_level_moves_up_once(app_client, agents, monkeypatch):
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {
         "metrics": {"level_progress": 100}, "last_activity_at": datetime.utcnow().isoformat()})
