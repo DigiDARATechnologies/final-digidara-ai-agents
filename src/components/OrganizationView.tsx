@@ -21,6 +21,7 @@ import {
   type Band,
   type LearnerSummary,
   type LevelId,
+  type MemberReadiness,
   type Membership,
   type OrgMember,
   type OrgSummary,
@@ -190,6 +191,7 @@ function MemberRow({ member, orgId, isOwner, summary, onChanged, onToast }: {
                         {LEVEL_IDS.map((id) => <option key={id} value={id}>{LEVEL_LABELS[id]}</option>)}
                       </select>
                       {readiness?.areas[agent]?.score != null && <small>{Math.round(readiness.areas[agent].score as number)}/100</small>}
+                      {readiness?.areas[agent] && <LevelSteps area={readiness.areas[agent]} current={level} />}
                     </label>
                   ))}
                 </div>
@@ -395,6 +397,27 @@ function Dashboard({ membership, onMembership, onToast }: { membership: Membersh
         )}
       </section>
     </>
+  );
+}
+
+
+/** "B 100% ✓ · M 40% · H 0% · P 0%": progress at each level for one agent. */
+function LevelSteps({ area, current }: { area: MemberReadiness["areas"][string]; current: LevelId }) {
+  const scores = area.level_scores ?? {};
+  if (!Object.keys(scores).length) {
+    return area.level_progress != null ? <span className="og-steps">{LEVEL_LABELS[current]}: {Math.round(area.level_progress)}% (score)</span> : null;
+  }
+  return (
+    <span className="og-steps">
+      {LEVEL_IDS.map((id) => {
+        const value = Math.round(scores[id] ?? 0);
+        return (
+          <b key={id} className={`${id === current ? "now" : ""}${value >= 100 ? " done" : ""}`} title={`${LEVEL_LABELS[id]}: ${value}%`}>
+            {LEVEL_LABELS[id][0]} {value}%{value >= 100 ? " ✓" : ""}
+          </b>
+        );
+      })}
+    </span>
   );
 }
 

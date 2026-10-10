@@ -80,20 +80,29 @@ function metricLine(metrics: ReadinessArea["metrics"]): string {
 
 const LEVEL_DIFFICULTY: Record<LevelId, string> = { beginner: "Easy", medium: "Medium", hard: "Hard", professional: "Hard" };
 
-function LevelPicker({ value, onChange, disabled, upLocked }: {
-  value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean; upLocked?: boolean;
+/** The four levels. With `gated`, only the next level can be chosen, and only
+ * once it is unlocked (50% of the current one); lower levels stay open.
+ * `scores` shows each level's own progress under its name. */
+function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, scores }: {
+  value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean;
+  gated?: boolean; nextUnlocked?: boolean; scores?: Partial<Record<LevelId, number>>;
 }) {
   const current = LEVEL_IDS.indexOf(value);
   return (
     <div className="rd-levels" role="radiogroup" aria-label="Level">
       {LEVEL_IDS.map((level, index) => {
-        const locked = Boolean(upLocked) && index > current;
+        const locked = Boolean(gated) && (index > current + 1 || (index === current + 1 && !nextUnlocked));
+        const reason = index > current + 1
+          ? `Unlocks after ${LEVEL_LABELS[LEVEL_IDS[index - 1]]}`
+          : `Complete 50% of ${LEVEL_LABELS[value]} to unlock`;
+        const score = scores?.[level];
         return (
           <button key={level} type="button" role="radio" aria-checked={value === level} disabled={disabled || locked}
-            title={locked ? `Complete 50% of ${LEVEL_LABELS[value]} to unlock` : undefined}
+            title={locked ? reason : undefined}
             className={`rd-level lv-${level}${value === level ? " active" : ""}${locked ? " locked" : ""}`}
             onClick={() => value !== level && onChange(level)}>
             {locked ? "🔒 " : ""}{LEVEL_LABELS[level]}
+            {score !== undefined && <small className="rd-level-score">{score >= 100 ? "✓ 100%" : `${Math.round(score)}%`}</small>}
           </button>
         );
       })}
@@ -105,8 +114,9 @@ function LevelPicker({ value, onChange, disabled, upLocked }: {
 function LevelProgress({ area }: { area: ReadinessArea }) {
   const progress = area.level_progress;
   if (area.status !== "assessed" || progress === null || progress === undefined) return null;
-  const what = area.level_progress_basis === "level" && area.agent_name === "codeforge_agent"
-    ? `of ${LEVEL_DIFFICULTY[area.level]} problems solved` : "your score at this level";
+  const what = area.level_progress_basis !== "level" ? "(this agent uses its overall score for levels)"
+    : area.agent_name === "codeforge_agent" ? `of ${LEVEL_DIFFICULTY[area.level]} problems solved`
+      : "from your last 5 sessions at this level";
   const next = area.next_level ? LEVEL_LABELS[area.next_level] : null;
   return (
     <div className="rd-progress">
@@ -125,6 +135,11 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
 
 function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (level: LevelId) => void; busy: boolean }) {
   const scored = area.status === "assessed" && area.score !== null;
+  // Agents that measure each level show the current level's own score: it
+  // starts from 0 at every new level. The area score (all levels together)
+  // is what counts toward job readiness.
+  const perLevel = scored && area.level_progress_basis === "level" && typeof area.level_progress === "number";
+  const shown = perLevel ? area.level_progress as number : area.score as number;
   return (
     <div className={`rd-area status-${area.status}`}>
       <div className="rd-area-head">
@@ -133,16 +148,18 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
           <span className="rd-weight">{area.weight}% of readiness</span>
         </div>
         <div className="rd-area-score">
-          {scored ? <><b>{Math.round(area.score as number)}</b><span>/100</span></> : <span className="rd-muted">
+          {scored ? <><b>{Math.round(shown)}</b><span>{perLevel ? `% ${LEVEL_LABELS[area.level]}` : "/100"}</span></> : <span className="rd-muted">
             {area.status === "unavailable" ? "Unavailable" : "Not started"}</span>}
         </div>
       </div>
-      <div className="rd-bar"><span style={{ width: `${scored ? area.score : 0}%` }} /></div>
+      <div className="rd-bar"><span style={{ width: `${scored ? Math.min(100, shown) : 0}%` }} /></div>
+      {perLevel && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · counts toward job readiness</p>}
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
       {area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
       )}
-      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} upLocked={!area.can_level_up} />
+      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up}
+        scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
       <LevelProgress area={area} />
       {area.suggested_level && area.suggested_level !== area.level && (
         <button type="button" className="rd-suggest" disabled={busy} onClick={() => onLevel(area.suggested_level as LevelId)}>
@@ -159,7 +176,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>{AREA_EXPLANATION[area.agent_name]} Levels: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
+          <p>{AREA_EXPLANATION[area.agent_name]} Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically. Each level starts from 0 on its own results.</p>
         </details>
       )}
     </div>

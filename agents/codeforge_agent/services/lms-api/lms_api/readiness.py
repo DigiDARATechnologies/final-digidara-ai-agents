@@ -91,5 +91,6 @@ def build_student_summary(rows, totals=None, difficulty=None):
             "level_progress": _level_progress(solved, totals, difficulty),
             "level_total": (totals or {}).get(str(difficulty or "").strip().capitalize()),
         },
+        "level_scores": {level.lower(): _level_progress(solved, totals, level) or 0.0 for level in DIFFICULTY_WEIGHT} if totals else None,
         "resume": _resume_block(solved),
     }

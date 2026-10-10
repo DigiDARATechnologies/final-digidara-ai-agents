@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.learner import levels as level_rules
 from app.learner import service as learner_service
 from app.readiness import service as readiness_service
 
@@ -37,6 +38,19 @@ def _add_unique(target: list[str], values: list[str]) -> None:
         if value and value.lower() not in seen:
             target.append(value)
             seen.add(value.lower())
+
+
+def _completed_levels(area: dict) -> dict | None:
+    """"Coding Practice: completed Beginner and Medium levels", from the
+    levels measured at 100%. Professional repeats Hard, so it is not listed."""
+    scores = area.get("level_scores") or {}
+    done = [level for level in level_rules.LEVELS[:-1] if (scores.get(level) or 0) >= level_rules.PROMOTE_PROGRESS]
+    if not done:
+        return None
+    names = " and ".join(level_rules.LEVEL_LABELS[level] for level in done)
+    plural = "levels" if len(done) > 1 else "level"
+    return {"title": f"{area.get('label')}: completed {names} {plural}",
+            "description": "DigiDARA leveled practice, measured on every problem or session at that level."}
 
 
 async def gather(user) -> dict[str, Any]:
@@ -64,6 +78,10 @@ async def gather(user) -> dict[str, Any]:
             title, description, count_key = rule
             count = (area.get("metrics") or {}).get(count_key) or area.get("activity_count") or 0
             achievements.append({"title": title.format(score=score), "description": description.format(count=count)})
+            used = True
+        completed = _completed_levels(area)
+        if completed:
+            achievements.append(completed)
             used = True
         if used:
             sources.append(area.get("label") or area.get("agent_name"))

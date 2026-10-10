@@ -77,6 +77,8 @@ export interface ReadinessArea {
   level_progress_basis?: "level" | "score";
   next_level?: LevelId | null;
   can_level_up?: boolean;
+  /** Progress at every level (0-100), for agents that measure each level on its own results. */
+  level_scores?: Partial<Record<LevelId, number>>;
   /** Set when readiness has just moved the learner up from this level. */
   promoted_from?: LevelId;
 }
@@ -105,7 +107,10 @@ export interface MemberReadiness {
   band: Band;
   band_label: string;
   computed_at: string;
-  areas: Record<string, { score: number | null; status: AreaStatus; level: LevelId }>;
+  areas: Record<string, {
+    score: number | null; status: AreaStatus; level: LevelId;
+    level_progress?: number | null; level_scores?: Partial<Record<LevelId, number>>;
+  }>;
 }
 
 export interface OrgMember {

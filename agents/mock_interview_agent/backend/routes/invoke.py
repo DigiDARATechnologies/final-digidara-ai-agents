@@ -118,6 +118,26 @@ def _text_items(value) -> list[str]:
     return [item for item in (line.strip(BULLET_CHARS) for line in str(value).replace(";", "\n").splitlines()) if item]
 
 
+# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
+# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
+# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
+# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
+# Beginner/Medium/Hard levels.
+LEVEL_SESSIONS = 5
+
+
+def level_scores(sessions):
+    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    result = {}
+    for difficulty in ("easy", "medium", "hard"):
+        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    return result
+
+
+INTERVIEW_DIFFICULTY = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
+
+
 def _student_summary(payload: dict):
     """Phase 2 readiness skill (digidara.student_summary.v1). The gateway
     puts the verified account's own email in the payload for this action.
@@ -131,7 +151,7 @@ def _student_summary(payload: dict):
     if student is None:
         return jsonify(empty)
     rows, _ = db.query(
-        "SELECT overall_score, technical_accuracy, communication_clarity, confidence, strengths, weaknesses, ended_at "
+        "SELECT overall_score, technical_accuracy, communication_clarity, confidence, strengths, weaknesses, ended_at, difficulty "
         "FROM interviews WHERE student_id = %s AND status = 'completed' AND overall_score IS NOT NULL "
         "ORDER BY ended_at DESC, id DESC",
         (student["id"],), fetch=True,
@@ -160,6 +180,9 @@ def _student_summary(payload: dict):
             "communication_clarity": average("communication_clarity"),
             "confidence": average("confidence"),
         },
+        "level_scores": level_scores([
+            (INTERVIEW_DIFFICULTY.get(str(r.get("difficulty") or "").lower()), float(r["overall_score"]) * 10) for r in rows
+        ]),
     })
 
 

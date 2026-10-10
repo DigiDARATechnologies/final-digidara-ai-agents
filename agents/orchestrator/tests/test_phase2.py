@@ -131,8 +131,10 @@ def test_saving_the_profile_completes_onboarding_and_cleans_skills(app_client, u
 
 def test_level_changes_are_validated(app_client, users):
     # Moving up needs progress at the current level; moving down never does.
-    up = app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"})
+    up = app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "medium"})
     assert up.status_code == 409 and "not started" in up.json()["detail"]
+    jump = app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"})
+    assert jump.status_code == 409 and "one level at a time" in jump.json()["detail"]
     learner_service.set_level("learner", "aptitude_agent", "hard", "organization")
     assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "beginner"}).json()["level"] == "beginner"
     assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "expert"}).status_code == 400
@@ -261,7 +263,7 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
 
 
 def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypatch):
-    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"metrics": {"level_progress": 30}})
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 30, "medium": 0, "hard": 0}})
     app_client.get("/learner/readiness?refresh=true", headers=auth())
     assert agents.calls[-7:] and any(
         body["payload"].get("difficulty") == "easy" for agent, body, _ in agents.calls if agent == "codeforge_agent")
@@ -287,10 +289,12 @@ def test_a_level_change_is_measured_again_at_once(app_client, agents):
 
 def test_completing_a_level_moves_up_once(app_client, agents, monkeypatch):
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {
-        "metrics": {"level_progress": 100}, "last_activity_at": datetime.utcnow().isoformat()})
+        "level_scores": {"easy": 100, "medium": 0, "hard": 0}, "last_activity_at": datetime.utcnow().isoformat()})
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
     coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
     assert coding["level"] == "medium" and coding["promoted_from"] == "beginner"
+    # Medium is measured on its own results, so it starts at 0.
+    assert coding["level_scores"]["beginner"] == 100 and coding["level_scores"]["medium"] == 0
     level = learner_service.get_levels("learner")["codeforge_agent"]
     assert level["level"] == "medium" and level["source"] == "readiness"
     # No new practice since the change: a full score does not carry it on to Hard.
@@ -304,7 +308,7 @@ def test_completing_a_level_moves_up_once(app_client, agents, monkeypatch):
 def test_organization_levels_are_not_moved_automatically(app_client, agents, monkeypatch):
     learner_service.set_level("learner", "codeforge_agent", "beginner", "organization")
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {
-        "metrics": {"level_progress": 100}, "last_activity_at": datetime.utcnow().isoformat()})
+        "level_scores": {"easy": 100, "medium": 0, "hard": 0}, "last_activity_at": datetime.utcnow().isoformat()})
     app_client.get("/learner/readiness?refresh=true", headers=auth())
     assert learner_service.get_levels("learner")["codeforge_agent"]["level"] == "beginner"
 
@@ -446,3 +450,9 @@ def test_resume_facts_join_the_profile_and_what_agents_report(app_client, agents
     assert titles == ["Solved 20 Python coding problems", "Aptitude: 70% average"]
     assert "x" not in facts["achievements"][0]
     assert facts["sources"] == ["Coding", "Aptitude"]
+
+
+def test_completed_levels_go_on_the_resume(app_client, agents, monkeypatch):
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 100, "hard": 20}})
+    facts = app_client.get("/learner/resume-facts", headers=auth()).json()
+    assert "Coding: completed Beginner and Medium levels" in [a["title"] for a in facts["achievements"]]

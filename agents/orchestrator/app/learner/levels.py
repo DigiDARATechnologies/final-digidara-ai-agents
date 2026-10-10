@@ -67,6 +67,11 @@ UNLOCK_PROGRESS = 50
 PROMOTE_PROGRESS = 100
 
 
+# Which of an agent's easy/medium/hard results each level is measured on.
+# Professional has no question set of its own yet: it keeps the Hard results.
+LEVEL_DIFFICULTY = {"beginner": "easy", "medium": "medium", "hard": "hard", "professional": "hard"}
+
+
 def next_level(level: str) -> str | None:
     index = LEVELS.index(normalize(level))
     return LEVELS[index + 1] if index + 1 < len(LEVELS) else None

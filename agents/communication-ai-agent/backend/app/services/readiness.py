@@ -11,6 +11,23 @@ from ..utils.score_utils import to_score10
 
 RECENT_SESSIONS = 5
 RECENT_PRONUNCIATION = 20
+LEVEL_HISTORY = 60
+
+# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
+# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
+# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
+# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
+# Beginner/Medium/Hard levels.
+LEVEL_SESSIONS = 5
+
+
+def level_scores(sessions):
+    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    result = {}
+    for difficulty in ("easy", "medium", "hard"):
+        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    return result
 
 
 def _items(raw):
@@ -49,6 +66,15 @@ def student_summary(email):
     times = [s.completed_at for s in sessions] + [a.created_at for a in pronunciation if a.created_at]
     last = max(times) if times else None
     missing = [name for name, score in parts.items() if score is None]
+    history = []
+    for model in (WritingSession, SpeakingSession):
+        history += (model.query.filter(model.user_id == user.id, model.overall_score.isnot(None))
+                    .order_by(model.completed_at.desc(), model.id.desc()).limit(LEVEL_HISTORY).all())
+    history.sort(key=lambda s: (s.completed_at is not None, s.completed_at), reverse=True)
+    by_level = []
+    for session in history:
+        score = to_score10(session.overall_score)
+        by_level.append((str(session.difficulty or "").lower(), score * 10 if score is not None else None))
     return {
         "schema": "digidara.student_summary.v1",
         "score": round(sum(practised) / len(practised), 1),
@@ -58,4 +84,5 @@ def student_summary(email):
         "gaps": (_items(latest.weaknesses_json)[:3] if latest else []) + [f"No {name} practice yet" for name in missing],
         "metrics": {"writing_score": parts["writing"], "speaking_score": parts["speaking"],
                     "pronunciation_score": parts["pronunciation"], "streak_days": user.streak_count or 0},
+        "level_scores": level_scores(by_level),
     }

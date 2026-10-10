@@ -99,6 +99,45 @@ def _personal_data(action: str, payload: dict):
 SUMMARY_RECENT_TESTS = 10
 
 
+# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
+# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
+# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
+# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
+# Beginner/Medium/Hard levels.
+LEVEL_SESSIONS = 5
+
+
+def level_scores(sessions):
+    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    result = {}
+    for difficulty in ("easy", "medium", "hard"):
+        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    return result
+
+
+APTITUDE_LEVEL = {"Beginner": "easy", "Intermediate": "medium", "Advanced": "hard"}
+
+
+def _test_levels(tests) -> dict:
+    """test id -> easy|medium|hard."""
+    from collections import Counter
+
+    from ..models.question import AptitudeTestQuestion
+
+    levels = {t.id: APTITUDE_LEVEL[t.selected_level] for t in tests if t.selected_level in APTITUDE_LEVEL}
+    mixed = [t.id for t in tests if t.id not in levels]
+    if mixed:
+        counts: dict = {}
+        rows = (AptitudeTestQuestion.query.with_entities(AptitudeTestQuestion.test_id, AptitudeTestQuestion.difficulty)
+                .filter(AptitudeTestQuestion.test_id.in_(mixed)).all())
+        for test_id, difficulty in rows:
+            counts.setdefault(test_id, Counter())[str(difficulty).lower()] += 1
+        for test_id, counter in counts.items():
+            levels[test_id] = counter.most_common(1)[0][0]
+    return levels
+
+
 def _student_summary(payload: dict):
     """Phase 2 readiness skill (digidara.student_summary.v1).
 
@@ -120,6 +159,7 @@ def _student_summary(payload: dict):
         return jsonify(empty)
     recent = completed[:SUMMARY_RECENT_TESTS]
     score = sum(float(test.percentage or 0) for test in recent) / len(recent)
+    levels = _test_levels(completed[:60])
     topics = [t for t in TopicPerformance.query.filter_by(student_id=student.id).all() if (t.attempts or 0) >= 3]
     ranked = sorted(topics, key=lambda t: float(t.accuracy or 0), reverse=True)
     last = recent[0].completed_at
@@ -132,6 +172,7 @@ def _student_summary(payload: dict):
         "gaps": [f"{t.topic} ({float(t.accuracy or 0):.0f}%)" for t in reversed(ranked[-3:]) if float(t.accuracy or 0) < 60],
         "metrics": {"tests_completed": len(completed), "recent_tests_averaged": len(recent),
                     "best_percentage": round(max(float(t.percentage or 0) for t in completed), 1)},
+        "level_scores": level_scores([(levels.get(t.id), float(t.percentage or 0)) for t in completed]),
     })
 
 

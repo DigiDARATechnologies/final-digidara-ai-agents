@@ -30,6 +30,7 @@ def test_summary_averages_completed_tests_and_names_topics(client, auth_headers,
             db.session.add(AptitudeTest(
                 id=str(uuid.uuid4()), student_id=student.id, status="completed",
                 percentage=percentage, completed_at=now - timedelta(days=index),
+                selected_level="Beginner" if index == 0 else None,
             ))
         db.session.add(AptitudeTest(id=str(uuid.uuid4()), student_id=student.id, status="abandoned", percentage=0))
         db.session.add(TopicPerformance(student_id=student.id, category="Quantitative", topic="Percentages", attempts=5, correct_count=5, accuracy=90))
@@ -38,6 +39,8 @@ def test_summary_averages_completed_tests_and_names_topics(client, auth_headers,
         db.session.commit()
     body = _summary(client).get_json()
     assert body["score"] == 60.0
+    # Each level counts its own last five tests: one Beginner test at 80%.
+    assert body["level_scores"] == {"easy": 16.0, "medium": 0.0, "hard": 0.0}
     assert body["activity_count"] == 3
     assert body["strengths"] == ["Percentages (90%)"]
     assert body["gaps"] == ["Puzzles (25%)"]

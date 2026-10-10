@@ -109,7 +109,7 @@ def summarize_reply(data: Any) -> dict:
     """Validate one agent's student summary; anything unexpected is dropped."""
     if not isinstance(data, dict):
         return {"score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {},
-                "resume": {}}
+                "resume": {}, "level_scores": {}}
     activity = data.get("activity_count")
     metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
     return {
@@ -120,7 +120,18 @@ def summarize_reply(data: Any) -> dict:
         "gaps": _strings(data.get("gaps")),
         "metrics": {str(k)[:60]: v for k, v in list(metrics.items())[:20] if isinstance(v, (str, int, float, bool)) or v is None},
         "resume": _resume_block(data.get("resume")),
+        "level_scores": _level_scores(data.get("level_scores")),
     }
+
+
+def _level_scores(value: Any) -> dict[str, float]:
+    """An agent's progress (0-100) at easy/medium/hard, as one per learner level."""
+    if not isinstance(value, dict):
+        return {}
+    by_difficulty = {key: _clamp_score(value.get(key)) for key in ("easy", "medium", "hard")}
+    if all(score is None for score in by_difficulty.values()):
+        return {}
+    return {level: by_difficulty[difficulty] or 0.0 for level, difficulty in level_rules.LEVEL_DIFFICULTY.items()}
 
 
 async def _area(agent_name: str, label: str, weight: int, user, levels: dict) -> dict:
@@ -136,7 +147,7 @@ async def _area(agent_name: str, label: str, weight: int, user, levels: dict) ->
                 "metrics": {}, "suggested_level": None, **_level_fields(level, None, "score")}
     summary = summarize_reply(result.data)
     status = "assessed" if summary["score"] is not None else "not_started"
-    measured = _clamp_score(summary["metrics"].get("level_progress"))
+    measured = summary["level_scores"].get(level)
     progress, basis = (measured, "level") if measured is not None else (summary["score"], "score")
     fields = _level_fields(level, progress, basis)
     return {**base, "status": status, **summary, **fields,
@@ -177,8 +188,9 @@ def _auto_promote(user, areas: list[dict], levels: dict) -> None:
             continue
         learner_service.set_level(user.id, area["agent_name"], upcoming, "readiness")
         old = area["level"]
+        measured = (area.get("level_scores") or {}).get(upcoming) if area["level_progress_basis"] == "level" else None
         area.update({"promoted_from": old, "level": upcoming, "suggested_level": None,
-                     **_level_fields(upcoming, None, area["level_progress_basis"])})
+                     **_level_fields(upcoming, measured, area["level_progress_basis"])})
         try:
             memory_service.add(
                 user.id,
@@ -268,10 +280,14 @@ def _store(user_id: str, result: dict) -> None:
 
 
 def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
-    """agent_name -> {score, status, level} from a stored snapshot."""
+    """agent_name -> {score, status, level, level_progress, level_scores} from
+    a stored snapshot (level_progress is at the level the snapshot was taken)."""
     stored = (snapshot.areas or {}).get("areas") or []
     return {
-        a["agent_name"]: {"score": a.get("score"), "status": a.get("status"), "level": a.get("level")}
+        a["agent_name"]: {
+            "score": a.get("score"), "status": a.get("status"), "level": a.get("level"),
+            "level_progress": a.get("level_progress"), "level_scores": a.get("level_scores") or {},
+        }
         for a in stored if isinstance(a, dict) and a.get("agent_name")
     }
 
@@ -340,8 +356,9 @@ async def get(user, refresh: bool = False) -> dict:
             continue
         level = levels.get(area["agent_name"], {}).get("level", area.get("level"))
         if level != area.get("level"):
+            measured = (area.get("level_scores") or {}).get(level) if area.get("level_progress_basis") == "level" else None
             area = {**area, "level": level, "suggested_level": None, "promoted_from": None,
-                    **_level_fields(level, None, area.get("level_progress_basis", "score"))}
+                    **_level_fields(level, measured, area.get("level_progress_basis", "score"))}
         areas.append(area)
     return {
         "overall": snapshot.overall, "band": snapshot.band,

@@ -41,6 +41,8 @@ def test_averages_writing_and_speaking_on_a_100_scale(client, app):
     db.session.commit()
     body = _invoke(client).get_json()
     assert body["score"] == 70.0
+    # Both sessions were at the default medium difficulty: (80 + 60) / 5.
+    assert body["level_scores"] == {"easy": 0.0, "medium": 28.0, "hard": 0.0}
     assert body["metrics"]["writing_score"] == 80.0 and body["metrics"]["speaking_score"] == 60.0
     assert body["metrics"]["pronunciation_score"] is None and body["metrics"]["streak_days"] == 4
     assert body["strengths"] == ["Clear structure"]

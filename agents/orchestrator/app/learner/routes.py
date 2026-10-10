@@ -71,6 +71,13 @@ def set_level(agent_name: str, req: LevelIn, user_id: str = Depends(get_verified
     current = service.get_levels(user_id).get(agent_name)
     scored = any(name == agent_name for name, _, _ in readiness_service.AREAS)
     if scored and current and req.level in level_rules.LEVELS and level_rules.is_higher(req.level, current["level"]):
+        # One level at a time: Hard opens only after Medium, and so on.
+        if req.level != level_rules.next_level(current["level"]):
+            raise HTTPException(
+                409,
+                f"Move up one level at a time: {level_rules.LEVEL_LABELS[level_rules.next_level(current['level'])]} comes next "
+                f"in {current['agent_label']}.",
+            )
         # Moving up needs half of the current level done; moving down is always allowed.
         progress = readiness_service.level_progress(user_id, agent_name, current["level"])
         if progress is None or progress < level_rules.UNLOCK_PROGRESS:
