@@ -165,7 +165,8 @@ class MySqlRepository:
             raise ApiError("The technology is unavailable for this course.", 404, "technology_not_found")
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
-                "SELECT tp.id,tp.name,tp.slug,tp.description,tp.display_order,COUNT(DISTINCT p.id) problem_count,"
+                # Every problem in a seeded topic shares its difficulty (catalog.topic_difficulty).
+                "SELECT tp.id,tp.name,tp.slug,tp.description,tp.display_order,COUNT(DISTINCT p.id) problem_count,MIN(p.difficulty) difficulty,"
                 "COUNT(DISTINCT CASE WHEN spp.status='Solved' THEN p.id END) solved_count,"
                 "COUNT(DISTINCT CASE WHEN spp.attempts>0 THEN p.id END) attempted_count "
                 "FROM coding_topics tp LEFT JOIN coding_problems p ON p.topic_id=tp.id AND p.is_active=TRUE "
@@ -352,6 +353,20 @@ class MySqlRepository:
             )
             return cursor.fetchall()
 
+    def problem_totals(self, email):
+        """Active problems per difficulty in the technologies this student has
+        practised -- what "all of my level" means for level progress."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT p.difficulty, COUNT(*) total FROM coding_problems p JOIN coding_topics t ON t.id=p.topic_id "
+                "WHERE p.is_active=TRUE AND t.is_active=TRUE AND t.technology_id IN ("
+                "SELECT DISTINCT t2.technology_id FROM students s JOIN student_problem_progress spp ON spp.student_id=s.id "
+                "JOIN coding_problems p2 ON p2.id=spp.problem_id JOIN coding_topics t2 ON t2.id=p2.topic_id WHERE s.email=%s) "
+                "GROUP BY p.difficulty",
+                (email,),
+            )
+            return {row["difficulty"]: int(row["total"]) for row in cursor.fetchall()}
+
     def record_activity(self, student_id, course_slug, technology_slug=None, topic_slug=None):
         course = self.get_course(course_slug)
         technology = None
@@ -428,7 +443,8 @@ class MySqlRepository:
         solved_count = int(row.get("solved_count", 0))
         attempted_count = int(row.get("attempted_count", 0))
         progress = "Solved" if problem_count and solved_count == problem_count else "In Progress" if attempted_count else "Not Started"
-        return {"id": row["id"], "name": row["name"], "slug": row["slug"], "description": row["description"], "sequence": int(row["display_order"]), "problem_count": problem_count, "progress": progress}
+        return {"id": row["id"], "name": row["name"], "slug": row["slug"], "description": row["description"], "sequence": int(row["display_order"]), "problem_count": problem_count, "progress": progress,
+                "difficulty": row.get("difficulty")}
 
     @staticmethod
     def _problem_summary(row):

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app import db
@@ -27,6 +27,9 @@ SUMMARY_SCHEMA = "digidara.student_summary.v1"
 CALLER = "readiness"
 # A fresh snapshot is reused instead of asking every agent again.
 SNAPSHOT_MAX_AGE = timedelta(minutes=10)
+# A refresh asked for within this long of the last one reuses it, so opening
+# the readiness page repeatedly does not ask every agent each time.
+REFRESH_MIN_AGE = timedelta(seconds=15)
 HISTORY_LIMIT = 30
 
 # (registry agent, area label, weight). Weights add up to 100.
@@ -40,6 +43,9 @@ AREAS: tuple[tuple[str, str, int], ...] = (
     ("certificate_agent", "Certification", 5),
 )
 TOTAL_WEIGHT = sum(weight for _, _, weight in AREAS)
+# Agents whose summary measures progress at the learner's own level; they get
+# the level's difficulty in the request. Others fall back to their score.
+LEVEL_PROGRESS_AGENTS = frozenset({"codeforge_agent"})
 
 BANDS: tuple[tuple[float, str, str], ...] = (
     (80, "job_ready", "Job ready"),
@@ -85,16 +91,82 @@ def summarize_reply(data: Any) -> dict:
 
 
 async def _area(agent_name: str, label: str, weight: int, user, levels: dict) -> dict:
-    result = await a2a_client.send(agent_name, "get_student_summary", {"email": user.email}, user, CALLER)
     level = levels.get(agent_name, {}).get("level", level_rules.DEFAULT_LEVEL)
+    request = {"email": user.email}
+    if agent_name in LEVEL_PROGRESS_AGENTS:
+        request["difficulty"] = level_rules.agent_difficulty(agent_name, level)
+    result = await a2a_client.send(agent_name, "get_student_summary", request, user, CALLER)
     base = {"agent_name": agent_name, "label": label, "weight": weight, "level": level}
     if result.state != "completed":
         return {**base, "status": "unavailable", "reason": result.error or "No summary from this agent yet.",
                 "score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [],
-                "metrics": {}, "suggested_level": None}
+                "metrics": {}, "suggested_level": None, **_level_fields(level, None, "score")}
     summary = summarize_reply(result.data)
     status = "assessed" if summary["score"] is not None else "not_started"
-    return {**base, "status": status, **summary, "suggested_level": level_rules.suggested_level(summary["score"])}
+    measured = _clamp_score(summary["metrics"].get("level_progress"))
+    progress, basis = (measured, "level") if measured is not None else (summary["score"], "score")
+    fields = _level_fields(level, progress, basis)
+    return {**base, "status": status, **summary, **fields,
+            "suggested_level": fields["next_level"] if fields["can_level_up"] else None}
+
+
+def _level_fields(level: str, progress: float | None, basis: str) -> dict:
+    upcoming = level_rules.next_level(level)
+    return {
+        "level_progress": progress, "level_progress_basis": basis, "next_level": upcoming,
+        "can_level_up": bool(upcoming) and progress is not None and progress >= level_rules.UNLOCK_PROGRESS,
+    }
+
+
+def _naive_utc(value: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None) if parsed.tzinfo else parsed
+
+
+def _auto_promote(user, areas: list[dict], levels: dict) -> None:
+    """A learner who completes their level with an agent moves up one level.
+    It needs practice since the level last changed, so a full score does not
+    carry them through every level at once; organization-set levels stay."""
+    for area in areas:
+        current = levels.get(area["agent_name"], {})
+        upcoming = area.get("next_level")
+        progress = area.get("level_progress")
+        if area["status"] != "assessed" or not upcoming or progress is None:
+            continue
+        if progress < level_rules.PROMOTE_PROGRESS or current.get("source") == "organization":
+            continue
+        changed_at = _naive_utc(current.get("updated_at"))
+        practised_at = _naive_utc(area.get("last_activity_at"))
+        if changed_at and (practised_at is None or practised_at <= changed_at):
+            continue
+        learner_service.set_level(user.id, area["agent_name"], upcoming, "readiness")
+        old = area["level"]
+        area.update({"promoted_from": old, "level": upcoming, "suggested_level": None,
+                     **_level_fields(upcoming, None, area["level_progress_basis"])})
+        try:
+            memory_service.add(
+                user.id,
+                f"{area['label']}: completed {level_rules.LEVEL_LABELS[old]}, moved up to {level_rules.LEVEL_LABELS[upcoming]}",
+                kind="milestone", source="readiness", agent_name=area["agent_name"],
+            )
+        except Exception:
+            logger.warning("level milestone not remembered", exc_info=True)
+
+
+def level_progress(user_id: str, agent_name: str, level: str) -> float | None:
+    """The learner's progress at `level` with this agent, from their latest
+    readiness snapshot; None when that snapshot was taken at another level."""
+    snapshot = latest(user_id)
+    for area in ((snapshot.areas or {}).get("areas") or []) if snapshot else []:
+        if isinstance(area, dict) and area.get("agent_name") == agent_name:
+            if area.get("level") != level:
+                return None
+            value = area["level_progress"] if "level_progress" in area else area.get("score")
+            return float(value) if isinstance(value, (int, float)) else None
+    return None
 
 
 def _next_steps(areas: list[dict]) -> list[str]:
@@ -114,6 +186,10 @@ def _next_steps(areas: list[dict]) -> list[str]:
 async def compute(user) -> dict:
     levels = learner_service.get_levels(user.id)
     areas = list(await asyncio.gather(*(_area(name, label, weight, user, levels) for name, label, weight in AREAS)))
+    try:
+        _auto_promote(user, areas, levels)
+    except Exception:
+        logger.warning("automatic level change failed", exc_info=True)
     assessed = [a for a in areas if a["status"] == "assessed"]
     overall = round(sum((a["score"] or 0) * a["weight"] for a in assessed) / TOTAL_WEIGHT, 1) if assessed else None
     band = band_for(overall, len(assessed))
@@ -136,11 +212,22 @@ async def compute(user) -> dict:
 
 
 def _store(user_id: str, result: dict) -> None:
+    """Adds a snapshot; an unchanged result only moves the last one's time,
+    so the history trend shows changes, not every page visit."""
+    stored = {"areas": result["areas"], "next_steps": result["next_steps"]}
     session = db.get_session()
     try:
+        last = (
+            session.query(ReadinessSnapshot).filter_by(user_id=user_id)
+            .order_by(ReadinessSnapshot.computed_at.desc()).first()
+        )
+        if last is not None and last.overall == result["overall"] and last.band == result["band"] and last.areas == stored:
+            last.computed_at = datetime.utcnow()
+            session.commit()
+            return
         session.add(ReadinessSnapshot(
             user_id=user_id, overall=result["overall"], band=result["band"],
-            areas={"areas": result["areas"], "next_steps": result["next_steps"]},
+            areas=stored,
         ))
         session.commit()
     finally:
@@ -203,7 +290,8 @@ def history(user_id: str) -> list[dict]:
 async def get(user, refresh: bool = False) -> dict:
     """The readiness result, recomputed when asked or when the last one is old."""
     snapshot = latest(user.id)
-    if refresh or snapshot is None or datetime.utcnow() - snapshot.computed_at > SNAPSHOT_MAX_AGE:
+    age = datetime.utcnow() - snapshot.computed_at if snapshot is not None else None
+    if age is None or age > SNAPSHOT_MAX_AGE or (refresh and age > REFRESH_MIN_AGE):
         return await compute(user)
     stored = snapshot.areas or {}
     if not isinstance(stored.get("areas"), list):

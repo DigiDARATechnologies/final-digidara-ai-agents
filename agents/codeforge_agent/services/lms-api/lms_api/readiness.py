@@ -6,6 +6,11 @@ Score = quality x breadth:
   breadth: solved problems out of BREADTH_TARGET, from half credit with one
            solve to full credit at the target, so one solved problem is not
            a job-ready coding score.
+
+Level progress: solved problems at the learner's level (Easy for Beginner,
+Medium, Hard for Hard and Professional) out of every such problem in the
+technologies they practise. 50% lets them move up a level; 100% moves them
+up automatically (the orchestrator's readiness service applies both).
 """
 
 DIFFICULTY_WEIGHT = {"Easy": 1.0, "Medium": 2.0, "Hard": 3.0}
@@ -16,9 +21,19 @@ def _iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else None
 
 
-def build_student_summary(rows):
+def _level_progress(solved, totals, difficulty):
+    level = str(difficulty or "").strip().capitalize()
+    total = (totals or {}).get(level, 0)
+    if level not in DIFFICULTY_WEIGHT or not total:
+        return None
+    return round(100 * sum(1 for r in solved if r.get("difficulty") == level) / total, 1)
+
+
+def build_student_summary(rows, totals=None, difficulty=None):
     """rows: one dict per attempted problem with difficulty, best_score,
-    status, topic and updated_at (see MySqlRepository.student_problem_rows)."""
+    status, topic and updated_at (see MySqlRepository.student_problem_rows).
+    totals: active problems per difficulty in the learner's technologies;
+    difficulty: easy|medium|hard, the learner's level here."""
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
     attempted = [row for row in rows if row.get("status") in ("Attempted", "Solved")]
@@ -51,5 +66,7 @@ def build_student_summary(rows):
             "easy_solved": solved_by_difficulty["Easy"],
             "medium_solved": solved_by_difficulty["Medium"],
             "hard_solved": solved_by_difficulty["Hard"],
+            "level_progress": _level_progress(solved, totals, difficulty),
+            "level_total": (totals or {}).get(str(difficulty or "").strip().capitalize()),
         },
     }

@@ -25,6 +25,9 @@ class SummaryRepository:
         self.emails.append(email)
         return self.rows
 
+    def problem_totals(self, email):
+        return {"Easy": 4, "Medium": 2}
+
 
 class StudentSummaryScoringTests(unittest.TestCase):
     def test_no_attempts_has_no_score(self):
@@ -38,6 +41,14 @@ class StudentSummaryScoringTests(unittest.TestCase):
         self.assertEqual(body["strengths"], ["Arrays (1 solved)"])
         self.assertEqual(body["gaps"], ["Graphs (1 unsolved)"])
         self.assertTrue(body["last_activity_at"].startswith("2026-10-03"))
+
+    def test_level_progress_counts_solves_at_the_learners_level(self):
+        rows = [row("Easy", 100, "Solved"), row("Easy", 100, "Solved"), row("Easy", 40, "Attempted"), row("Medium", 100, "Solved")]
+        totals = {"Easy": 4, "Medium": 2}
+        self.assertEqual(build_student_summary(rows, totals, "easy")["metrics"]["level_progress"], 50.0)
+        self.assertEqual(build_student_summary(rows, totals, "medium")["metrics"]["level_progress"], 50.0)
+        self.assertIsNone(build_student_summary(rows, totals, "hard")["metrics"]["level_progress"])
+        self.assertIsNone(build_student_summary(rows)["metrics"]["level_progress"])
 
     def test_twenty_solves_give_full_breadth(self):
         body = build_student_summary([row("Medium", 100, "Solved") for _ in range(20)])

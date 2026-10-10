@@ -4,6 +4,7 @@ import hmac
 import json
 import time
 import uuid
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -21,6 +22,7 @@ from app.learner import routes as learner_routes
 from app.learner import service as learner_service
 from app.models import A2ATask, AgentLevel, LearnerProfile, OrganizationMember, ReadinessSnapshot, User
 from app.organizations import routes as org_routes
+from app.readiness import service as readiness_service
 from app.registry import routes as registry_routes
 from app.registry import service as registry_service
 from app.schemas import AgentRegisterRequest
@@ -31,6 +33,8 @@ AGENTS = (
 )
 # What each fake agent reports for get_student_summary; None = action unknown.
 SUMMARY_SCORES = {"codeforge_agent": 80, "mock_interview_agent": 60, "aptitude_agent": 70}
+# Extra summary fields per agent, for tests that need them.
+SUMMARY_EXTRA: dict[str, dict] = {}
 
 
 def auth(user_id="learner"):
@@ -85,6 +89,7 @@ def agents(app_client, database, monkeypatch, users):
                 return httpx.Response(200, json={
                     "schema": "digidara.student_summary.v1", "score": score, "activity_count": 3,
                     "strengths": ["Arrays"], "gaps": ["Dynamic programming"], "metrics": {"tests": 3},
+                    **SUMMARY_EXTRA.get(agent, {}),
                 })
             if body["action"] == "report":
                 return httpx.Response(200, content=b"%PDF-1.4", headers={"content-type": "application/pdf"})
@@ -125,7 +130,11 @@ def test_saving_the_profile_completes_onboarding_and_cleans_skills(app_client, u
 
 
 def test_level_changes_are_validated(app_client, users):
-    assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"}).json()["level"] == "hard"
+    # Moving up needs progress at the current level; moving down never does.
+    up = app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"})
+    assert up.status_code == 409 and "not started" in up.json()["detail"]
+    learner_service.set_level("learner", "aptitude_agent", "hard", "organization")
+    assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "beginner"}).json()["level"] == "beginner"
     assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "expert"}).status_code == 400
     assert app_client.put("/learner/levels/unknown_agent", headers=auth(), json={"level": "hard"}).status_code == 400
 
@@ -244,8 +253,47 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     statuses = {a["agent_name"]: a["status"] for a in body["areas"]}
     assert statuses["codeforge_agent"] == "assessed" and statuses["resume_builder_agent"] == "unavailable"
     coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
-    assert coding["suggested_level"] == "hard" and coding["gaps"] == ["Dynamic programming"]
+    # Without a level measure the score is the progress: 80% of Beginner unlocks Medium.
+    assert coding["level_progress"] == 80 and coding["level_progress_basis"] == "score"
+    assert coding["can_level_up"] is True and coding["suggested_level"] == "medium"
+    assert coding["gaps"] == ["Dynamic programming"]
     assert body["next_steps"]
+
+
+def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypatch):
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"metrics": {"level_progress": 30}})
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    assert agents.calls[-7:] and any(
+        body["payload"].get("difficulty") == "easy" for agent, body, _ in agents.calls if agent == "codeforge_agent")
+    blocked = app_client.put("/learner/levels/codeforge_agent", headers=auth(), json={"level": "medium"})
+    assert blocked.status_code == 409 and "30%" in blocked.json()["detail"]
+    assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "medium"}).status_code == 200
+    # The 70% was measured at Beginner, so it does not also unlock Hard.
+    assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "hard"}).status_code == 409
+
+
+def test_completing_a_level_moves_up_once(app_client, agents, monkeypatch):
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {
+        "metrics": {"level_progress": 100}, "last_activity_at": datetime.utcnow().isoformat()})
+    body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
+    assert coding["level"] == "medium" and coding["promoted_from"] == "beginner"
+    level = learner_service.get_levels("learner")["codeforge_agent"]
+    assert level["level"] == "medium" and level["source"] == "readiness"
+    # No new practice since the change: a full score does not carry it on to Hard.
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    calls = len(agents.calls)
+    again = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    assert len(agents.calls) > calls and "cached" not in again
+    assert learner_service.get_levels("learner")["codeforge_agent"]["level"] == "medium"
+
+
+def test_organization_levels_are_not_moved_automatically(app_client, agents, monkeypatch):
+    learner_service.set_level("learner", "codeforge_agent", "beginner", "organization")
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {
+        "metrics": {"level_progress": 100}, "last_activity_at": datetime.utcnow().isoformat()})
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    assert learner_service.get_levels("learner")["codeforge_agent"]["level"] == "beginner"
 
 
 def test_readiness_is_cached_then_recomputed_on_request(app_client, agents):

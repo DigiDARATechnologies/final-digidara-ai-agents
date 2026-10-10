@@ -67,6 +67,18 @@ def save_profile(req: ProfileIn, user_id: str = Depends(get_verified_user_id)) -
 
 @router.put("/levels/{agent_name}")
 def set_level(agent_name: str, req: LevelIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    current = service.get_levels(user_id).get(agent_name)
+    scored = any(name == agent_name for name, _, _ in readiness_service.AREAS)
+    if scored and current and req.level in level_rules.LEVELS and level_rules.is_higher(req.level, current["level"]):
+        # Moving up needs half of the current level done; moving down is always allowed.
+        progress = readiness_service.level_progress(user_id, agent_name, current["level"])
+        if progress is None or progress < level_rules.UNLOCK_PROGRESS:
+            done = f"you are at {progress:g}%" if progress is not None else "you have not started it yet"
+            raise HTTPException(
+                409,
+                f"Complete {level_rules.UNLOCK_PROGRESS}% of {level_rules.LEVEL_LABELS[current['level']]} in "
+                f"{current['agent_label']} to move up ({done}). At 100% you move up automatically.",
+            )
     try:
         return service.set_level(user_id, agent_name, req.level, "self")
     except ValueError as exc:

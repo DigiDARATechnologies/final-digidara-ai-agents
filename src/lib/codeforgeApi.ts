@@ -68,6 +68,8 @@ export interface Topic {
   problem_count: number;
   progress: string;
   sequence: number;
+  /** Easy, Medium or Hard: every problem in the topic shares it. */
+  difficulty?: string | null;
 }
 
 export function listTopics(sessionToken: string, course_slug: string, technology_slug: string) {

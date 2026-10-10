@@ -8,7 +8,7 @@ import pymysql
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from lms_api.catalog import COURSES, COURSE_TECHNOLOGIES, TECHNOLOGIES, TOPICS, objectives, slugify, topic_description
+from lms_api.catalog import COURSES, COURSE_TECHNOLOGIES, TECHNOLOGIES, TOPICS, objectives, slugify, topic_description, topic_difficulty
 from lms_api.problem_catalog import PROBLEMS
 
 
@@ -84,7 +84,7 @@ def seed():
                     "output_format=VALUES(output_format),constraints_text=VALUES(constraints_text),examples_json=VALUES(examples_json),starter_code=VALUES(starter_code),language_key=VALUES(language_key),"
                     "judge0_language_id=VALUES(judge0_language_id),question_type=VALUES(question_type),mcq_options_json=VALUES(mcq_options_json),mcq_correct_key=VALUES(mcq_correct_key),"
                     "mcq_explanation=VALUES(mcq_explanation),difficulty=VALUES(difficulty),max_score=VALUES(max_score),display_order=VALUES(display_order),is_active=TRUE",
-                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem.get("starter"), problem.get("language"), problem.get("language_id"), question_type, json.dumps(mcq_options) if mcq_options else None, problem.get("mcq_correct_key"), problem.get("mcq_explanation"), problem["difficulty"], problem["order"]),
+                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem.get("starter"), problem.get("language"), problem.get("language_id"), question_type, json.dumps(mcq_options) if mcq_options else None, problem.get("mcq_correct_key"), problem.get("mcq_explanation"), topic_difficulty(problem["technology"], problem["topic"]), problem["order"]),
                 )
                 problem_id = cursor.lastrowid
                 if not problem_id:

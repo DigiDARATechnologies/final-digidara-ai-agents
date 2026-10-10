@@ -89,6 +89,13 @@
 .rd-level:hover:not(:disabled) { border-color: var(--lv); color: var(--tx-1); }
 .rd-level.active { background: var(--lv); border-color: var(--lv); color: #fff; }
 .rd-level:disabled { cursor: default; opacity: .7; }
+.rd-level.locked { opacity: .45; cursor: not-allowed; }
+.rd-progress { display: grid; gap: 4px; }
+.rd-progress-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--tx-2); }
+.rd-progress-head b { color: var(--tx-1); }
+.rd-progress .rd-muted { margin: 0; font-size: 12px; }
+.rd-bar.thin { height: 4px; margin: 2px 0; }
+.rd-promoted { margin: 0; font-size: 13px; color: var(--tx-1); }
 .rd-suggest {
   margin-top: 8px; width: 100%; padding: 6px 8px; border: 1px dashed var(--line-1); border-radius: 8px; background: none;
   color: var(--tx-2); font: inherit; font-size: 12px; cursor: pointer; text-align: left;

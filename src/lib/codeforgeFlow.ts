@@ -94,8 +94,26 @@ function technologyOptions(technologies: Technology[]): ChatOption[] {
   return technologies.map((t) => ({ label: t.name, value: t.slug, description: `${t.topic_count} topics` }));
 }
 
+/** Topics with their difficulty; the ones at the learner's level get a ★. */
 function topicOptions(topics: Topic[]): ChatOption[] {
-  return topics.map((t) => ({ label: t.name, value: t.slug, description: `${t.problem_count} problems · ${t.progress}` }));
+  const level = easyMediumHard("codeforge_agent");
+  return topics.map((t) => {
+    const difficulty = t.difficulty ? String(t.difficulty) : "";
+    const mine = difficulty.toLowerCase() === level;
+    return {
+      label: `${mine ? "★ " : ""}${t.name}`,
+      value: t.slug,
+      description: `${difficulty ? `${difficulty} · ` : ""}${t.problem_count} problems · ${t.progress}`,
+    };
+  });
+}
+
+/** "Python topics (★ = Medium, your level):" when the topics carry difficulties. */
+function topicsHeading(state: CodeForgeFlowState, topics: Topic[]): string {
+  const level = easyMediumHard("codeforge_agent");
+  const marked = topics.some((t) => String(t.difficulty ?? "").toLowerCase() === level);
+  const name = level.charAt(0).toUpperCase() + level.slice(1);
+  return marked ? `${state.technologyName} topics (★ = ${name}, your level):` : `${state.technologyName} topics:`;
 }
 
 function problemOptions(problems: ProblemSummary[]): ChatOption[] {
@@ -135,7 +153,7 @@ async function enterTopics(state: CodeForgeFlowState): Promise<{ state: CodeForg
   const { topics } = await listTopics(state.sessionToken!, state.courseSlug!, state.technologySlug!);
   return {
     state: { ...state, step: "awaiting_topic", topics },
-    messages: [{ text: `${state.technologyName} topics:`, options: topicOptions(topics) }],
+    messages: [{ text: topicsHeading(state, topics), options: topicOptions(topics) }],
   };
 }
 

@@ -59,6 +59,23 @@ DIFFICULTY_ACTIONS: dict[str, frozenset[str]] = {
 }
 
 
+# Level progress (0-100) is how much of the learner's current level they have
+# done with an agent: Coding counts solved problems at that difficulty; an
+# agent that cannot measure it yet uses its readiness score. At UNLOCK_PROGRESS
+# the learner may move up; at PROMOTE_PROGRESS readiness moves them up itself.
+UNLOCK_PROGRESS = 50
+PROMOTE_PROGRESS = 100
+
+
+def next_level(level: str) -> str | None:
+    index = LEVELS.index(normalize(level))
+    return LEVELS[index + 1] if index + 1 < len(LEVELS) else None
+
+
+def is_higher(level: str, than: str) -> bool:
+    return LEVELS.index(normalize(level)) > LEVELS.index(normalize(than))
+
+
 def normalize(level: str | None) -> str:
     value = (level or "").strip().lower()
     return value if value in LEVELS else DEFAULT_LEVEL

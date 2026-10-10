@@ -83,7 +83,8 @@ def invoke():
             raise ApiError("Verified DigiDARA identity is required.", 401, "unverified_identity")
         email = str(payload.get("email", "")).strip().lower()
         rows = repo().student_problem_rows(email) if email else []
-        return jsonify(build_student_summary(rows))
+        totals = repo().problem_totals(email) if rows else {}
+        return jsonify(build_student_summary(rows, totals, payload.get("difficulty")))
 
     if action == "list_languages":
         # Static reference data from Judge0 itself — no session required.

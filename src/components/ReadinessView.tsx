@@ -67,23 +67,58 @@ const METRIC_LABELS: Record<string, string> = {
   speaking_score: "speaking", pronunciation_score: "pronunciation",
 };
 
+// METRIC_LABELS order, not the stored key order (MySQL JSON reorders keys).
+const METRIC_ORDER = ["problems_solved", "problems_attempted", "medium_solved", "hard_solved", ...Object.keys(METRIC_LABELS)];
+
 function metricLine(metrics: ReadinessArea["metrics"]): string {
-  return Object.entries(metrics)
-    .filter(([key, value]) => METRIC_LABELS[key] && value !== null && value !== undefined && value !== false)
+  return [...new Set(METRIC_ORDER)]
+    .filter((key) => key in metrics && METRIC_LABELS[key] && metrics[key] !== null && metrics[key] !== undefined && metrics[key] !== false)
     .slice(0, 3)
-    .map(([key, value]) => `${typeof value === "number" ? Math.round(value) : value} ${METRIC_LABELS[key]}`)
+    .map((key) => `${typeof metrics[key] === "number" ? Math.round(metrics[key] as number) : metrics[key]} ${METRIC_LABELS[key]}`)
     .join(" · ");
 }
 
-function LevelPicker({ value, onChange, disabled }: { value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean }) {
+const LEVEL_DIFFICULTY: Record<LevelId, string> = { beginner: "Easy", medium: "Medium", hard: "Hard", professional: "Hard" };
+
+function LevelPicker({ value, onChange, disabled, upLocked }: {
+  value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean; upLocked?: boolean;
+}) {
+  const current = LEVEL_IDS.indexOf(value);
   return (
     <div className="rd-levels" role="radiogroup" aria-label="Level">
-      {LEVEL_IDS.map((level) => (
-        <button key={level} type="button" role="radio" aria-checked={value === level} disabled={disabled}
-          className={`rd-level lv-${level}${value === level ? " active" : ""}`} onClick={() => value !== level && onChange(level)}>
-          {LEVEL_LABELS[level]}
-        </button>
-      ))}
+      {LEVEL_IDS.map((level, index) => {
+        const locked = Boolean(upLocked) && index > current;
+        return (
+          <button key={level} type="button" role="radio" aria-checked={value === level} disabled={disabled || locked}
+            title={locked ? `Complete 50% of ${LEVEL_LABELS[value]} to unlock` : undefined}
+            className={`rd-level lv-${level}${value === level ? " active" : ""}${locked ? " locked" : ""}`}
+            onClick={() => value !== level && onChange(level)}>
+            {locked ? "🔒 " : ""}{LEVEL_LABELS[level]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** "Beginner progress 29% · Easy problems solved" with what it unlocks. */
+function LevelProgress({ area }: { area: ReadinessArea }) {
+  const progress = area.level_progress;
+  if (area.status !== "assessed" || progress === null || progress === undefined) return null;
+  const what = area.level_progress_basis === "level" && area.agent_name === "codeforge_agent"
+    ? `of ${LEVEL_DIFFICULTY[area.level]} problems solved` : "your score at this level";
+  const next = area.next_level ? LEVEL_LABELS[area.next_level] : null;
+  return (
+    <div className="rd-progress">
+      <div className="rd-progress-head">
+        <span>{LEVEL_LABELS[area.level]} progress</span><b>{Math.round(progress)}%</b>
+      </div>
+      <div className="rd-bar thin"><span style={{ width: `${Math.min(100, progress)}%` }} /></div>
+      <p className="rd-muted">
+        {Math.round(progress)}% {what}.{" "}
+        {next ? (area.can_level_up ? `${next} is unlocked; at 100% you move up automatically.` : `50% unlocks ${next}; 100% moves you up automatically.`)
+          : "This is the top level."}
+      </p>
     </div>
   );
 }
@@ -104,10 +139,14 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? area.score : 0}%` }} /></div>
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
-      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} />
+      {area.promoted_from && (
+        <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
+      )}
+      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} upLocked={!area.can_level_up} />
+      <LevelProgress area={area} />
       {area.suggested_level && area.suggested_level !== area.level && (
         <button type="button" className="rd-suggest" disabled={busy} onClick={() => onLevel(area.suggested_level as LevelId)}>
-          Your score suggests <b>{LEVEL_LABELS[area.suggested_level]}</b> — switch
+          <b>{LEVEL_LABELS[area.suggested_level]}</b> is unlocked — switch
         </button>
       )}
       {(area.strengths.length > 0 || area.gaps.length > 0) && (
@@ -120,7 +159,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>{AREA_EXPLANATION[area.agent_name]} Suggested level: below 40 Beginner, 40–64 Medium, 65–84 Hard, 85+ Professional.</p>
+          <p>{AREA_EXPLANATION[area.agent_name]} Levels: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
         </details>
       )}
     </div>
@@ -170,14 +209,17 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
     }
   }, []);
 
-  useEffect(() => { void load(false); }, [load]);
+  // Always fresh on open: the server reuses a result from the last few seconds.
+  useEffect(() => { void load(true); }, [load]);
 
   async function changeLevel(agentName: string, level: LevelId) {
     setBusyAgent(agentName);
     try {
       const updated = await setMyLevel(agentName, level);
       onSummaryChange({ ...summary, levels: summary.levels.map((l) => (l.agent_name === agentName ? updated : l)) });
-      setReadiness((r) => r && { ...r, areas: r.areas.map((a) => (a.agent_name === agentName ? { ...a, level } : a)) });
+      // Progress was measured at the old level; the next refresh measures the new one.
+      setReadiness((r) => r && { ...r, areas: r.areas.map((a) => (a.agent_name === agentName
+        ? { ...a, level, level_progress: null, can_level_up: false, suggested_level: null, promoted_from: undefined } : a)) });
       onToast(`${updated.agent_label} is now ${LEVEL_LABELS[level]}.`);
     } catch (err) {
       onToast((err as Error).message);

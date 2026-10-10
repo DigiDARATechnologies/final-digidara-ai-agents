@@ -69,6 +69,22 @@ def slugify(value):
     )
 
 
+TOPIC_DIFFICULTIES = ("Easy", "Medium", "Hard")
+
+
+def topic_difficulty(technology_slug, topic_slug):
+    """A technology's topics run from basics to advanced, so its first third
+    is Easy, the middle third Medium and the last third Hard (Python: Loops to
+    Functions are Medium, Lambda Functions to Debugging Hard). Every problem in
+    a topic shares the topic's difficulty -- this is what the learner levels
+    (Beginner, Medium, Hard, Professional) and the readiness weights use."""
+    names = TOPICS.get(technology_slug) or []
+    slugs = [slugify(name) for name in names]
+    if topic_slug not in slugs:
+        return "Easy"
+    return TOPIC_DIFFICULTIES[slugs.index(topic_slug) * 3 // len(slugs)]
+
+
 def topic_description(technology, topic):
     return f"Understand {topic.lower()} in {technology} and recognize when to apply it in practical code."
 

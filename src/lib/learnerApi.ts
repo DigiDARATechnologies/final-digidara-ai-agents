@@ -71,6 +71,14 @@ export interface ReadinessArea {
   gaps: string[];
   metrics: Record<string, string | number | boolean | null>;
   suggested_level: LevelId | null;
+  /** 0-100: how much of the current level is done; 50 unlocks the next level, 100 moves up automatically. */
+  level_progress?: number | null;
+  /** "level": measured at this level (Coding); "score": the area score stands in for it. */
+  level_progress_basis?: "level" | "score";
+  next_level?: LevelId | null;
+  can_level_up?: boolean;
+  /** Set when readiness has just moved the learner up from this level. */
+  promoted_from?: LevelId;
 }
 
 export type Band = "not_started" | "not_ready" | "developing" | "almost_ready" | "job_ready";
