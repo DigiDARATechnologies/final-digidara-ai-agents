@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import CareerPlanPanel from "./CareerPlanPanel";
 import LearnerProfileForm, { cleanProfileText, type ProfileInput } from "./LearnerProfileForm";
 import MemoryPanel from "./MemoryPanel";
+import SkillsInput, { uniqueSkills } from "./SkillsInput";
 import { syncJobProfileWithGoal } from "../lib/jobFetchFlow";
+import { knownRoleSkills } from "../lib/roleSkills";
 import {
   LEVEL_IDS,
   BAND_TONE,
@@ -11,6 +13,7 @@ import {
   fetchReadinessHistory,
   saveLearnerProfile,
   setMyLevel,
+  suggestRoleSkills,
   setProgressSharing,
   type AgentLevel,
   type Band,
@@ -214,6 +217,11 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
   const [saving, setSaving] = useState(false);
   /** A profile with a new target role, waiting for the learner to confirm the reset. */
   const [pendingRole, setPendingRole] = useState<ProfileInput | null>(null);
+  /** The skills for the new role, chosen in the role change popup. */
+  const [roleSkills, setRoleSkills] = useState<string[]>([]);
+  const [roleSkillDraft, setRoleSkillDraft] = useState("");
+  const [suggesting, setSuggesting] = useState(false);
+  const [roleSkillsError, setRoleSkillsError] = useState("");
 
   const load = useCallback(async (refresh: boolean) => {
     setLoading(true);
@@ -254,8 +262,36 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
   const savedRole = (role: string) => summary.role_history?.find((item) => item.role === cleanProfileText(role));
 
   function requestSave(profile: ProfileInput) {
-    if (isRoleChange(profile)) setPendingRole(profile);
-    else void saveProfile(profile);
+    if (!isRoleChange(profile)) {
+      void saveProfile(profile);
+      return;
+    }
+    // A new role needs its own skills: the ones kept for it last time, the
+    // usual ones for a common role, or suggestions for any other role.
+    const role = cleanProfileText(profile.target_role);
+    const kept = savedRole(role)?.skills ?? [];
+    const known = knownRoleSkills(role);
+    setPendingRole(profile);
+    setRoleSkillDraft("");
+    setRoleSkillsError("");
+    setRoleSkills(uniqueSkills(kept.length ? kept : known ?? []));
+    if (!kept.length && !known) {
+      setSuggesting(true);
+      suggestRoleSkills(role)
+        .then((suggested) => setRoleSkills((current) => (current.length ? current : uniqueSkills(suggested))))
+        .catch(() => setRoleSkillsError("I couldn't suggest skills for this role. Add the skills you have or are learning for it."))
+        .finally(() => setSuggesting(false));
+    }
+  }
+
+  function confirmRoleChange() {
+    if (!pendingRole) return;
+    const skills = uniqueSkills([...roleSkills, ...roleSkillDraft.split(",")]);
+    if (!skills.length) {
+      setRoleSkillsError(`Add at least one skill for ${pendingRole.target_role}.`);
+      return;
+    }
+    void saveProfile({ ...pendingRole, skills });
   }
 
   async function saveProfile(profile: ProfileInput) {
@@ -437,9 +473,21 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
             <p className="rd-muted">
               Your progress for <strong>{currentRole}</strong> is kept. Switch back any time and its levels and points return.
             </p>
+            <div className="field rd-role-skills">
+              <span>Skills for {pendingRole.target_role}</span>
+              <small className="rd-muted">
+                {suggesting ? "Suggesting skills for this role…"
+                  : savedRole(pendingRole.target_role)?.skills?.length ? "Your skills from last time. Change them if you like."
+                    : "Suggested for this role. Remove any you don't have, and add your own."}
+              </small>
+              <SkillsInput skills={roleSkills} onChange={(next) => { setRoleSkills(next); setRoleSkillsError(""); }}
+                draft={roleSkillDraft} onDraftChange={setRoleSkillDraft}
+                suggestions={summary.profile.skills} suggestionsLabel="Keep from your current skills" />
+            </div>
+            {roleSkillsError && <p className="form-error" role="alert">{roleSkillsError}</p>}
             <div className="rd-confirm-actions">
               <button type="button" className="btn btn-outline btn-sm" disabled={saving} onClick={() => setPendingRole(null)}>Cancel</button>
-              <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={() => void saveProfile(pendingRole)}>
+              <button type="button" className="btn btn-primary btn-sm" disabled={saving || suggesting} onClick={confirmRoleChange}>
                 {saving ? "Changing…" : "Yes, change role"}
               </button>
             </div>

@@ -1,5 +1,8 @@
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import { useState, type FormEvent } from "react";
 import type { LearnerProfile } from "../lib/learnerApi";
+import SkillsInput, { cleanProfileText, uniqueSkills } from "./SkillsInput";
+
+export { cleanProfileText };
 
 export type ProfileInput = Pick<LearnerProfile, "target_role" | "degree" | "skills" | "experience">;
 
@@ -9,20 +12,6 @@ const ROLE_SUGGESTIONS = [
   "business analyst", "ui/ux designer", "cybersecurity analyst", "product manager",
 ];
 const DEGREE_SUGGESTIONS = ["b.e / b.tech", "b.sc", "bca", "b.com", "bba", "m.e / m.tech", "m.sc", "mca", "mba", "diploma"];
-const MAX_SKILLS = 30;
-
-/** Profile text is lowercase with single spaces, the way the server keeps it. */
-export const cleanProfileText = (value: string) => value.toLowerCase().trim().replace(/\s+/g, " ");
-
-/** Lowercase skills without duplicates, in the order they were added. */
-function uniqueSkills(values: string[]): string[] {
-  const result: string[] = [];
-  for (const value of values) {
-    const skill = cleanProfileText(value).slice(0, 60);
-    if (skill && !result.includes(skill) && result.length < MAX_SKILLS) result.push(skill);
-  }
-  return result;
-}
 
 interface Props {
   initial?: Partial<ProfileInput>;
@@ -42,20 +31,8 @@ export default function LearnerProfileForm({ initial, submitLabel, busy, childre
   const [skillDraft, setSkillDraft] = useState("");
   const [experience, setExperience] = useState<ProfileInput["experience"]>(initial?.experience ?? "fresher");
   const [error, setError] = useState("");
-
-  function addSkills(raw: string) {
-    setSkills(uniqueSkills([...skills, ...raw.split(",")]));
-    setSkillDraft("");
-  }
-
-  function onSkillKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" || event.key === ",") {
-      event.preventDefault();
-      addSkills(skillDraft);
-    } else if (event.key === "Backspace" && !skillDraft && skills.length) {
-      setSkills(skills.slice(0, -1));
-    }
-  }
+  const initialRole = cleanProfileText(initial?.target_role ?? "");
+  const roleChanged = !!initialRole && cleanProfileText(targetRole).length >= 2 && cleanProfileText(targetRole) !== initialRole;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -88,17 +65,11 @@ export default function LearnerProfileForm({ initial, submitLabel, busy, childre
       </label>
       <div className="field">
         <span>Skills</span>
-        <div className="lp-skills" onClick={(e) => (e.currentTarget.querySelector("input") as HTMLInputElement | null)?.focus()}>
-          {skills.map((skill) => (
-            <span key={skill} className="lp-chip">
-              {skill}
-              <button type="button" aria-label={`Remove ${skill}`} onClick={() => setSkills(skills.filter((s) => s !== skill))}>×</button>
-            </span>
-          ))}
-          <input value={skillDraft} placeholder={skills.length ? "Add another" : "python, sql, excel…"}
-            onChange={(e) => setSkillDraft(e.target.value.toLowerCase())} onKeyDown={onSkillKey} onBlur={() => skillDraft && addSkills(skillDraft)} />
-        </div>
-        <small className="lp-hint">Press Enter or a comma after each skill.</small>
+        {roleChanged ? (
+          <p className="lp-role-note">You changed your role to <b>{cleanProfileText(targetRole)}</b>. After you save, you'll choose the skills for it.</p>
+        ) : (
+          <SkillsInput skills={skills} onChange={setSkills} draft={skillDraft} onDraftChange={setSkillDraft} />
+        )}
       </div>
       <div className="field">
         <span>Experience</span>

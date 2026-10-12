@@ -260,6 +260,8 @@ class RoleTrack(Base):
     role_key: Mapped[str] = mapped_column(String(200))
     # agent_name -> {"level", "source"}, saved when the learner left this role.
     levels: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The skills the learner had for this role, offered again on switching back.
+    skills: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # [[start ISO or null, end ISO or null], ...]: when this role was the target.
     # A null start is "since the account began" (the role held before tracks existed).
     periods: Mapped[list] = mapped_column(JSON, default=list)

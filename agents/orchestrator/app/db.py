@@ -108,6 +108,13 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc) and "1061" not in str(exc):
                     raise
+        track_columns = {column["name"] for column in inspect(engine).get_columns("role_tracks")}
+        if "skills" not in track_columns:
+            try:
+                connection.execute(text("ALTER TABLE role_tracks ADD COLUMN skills JSON NULL"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
         for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
                             ("customer_gstin", "VARCHAR(15) NULL")):

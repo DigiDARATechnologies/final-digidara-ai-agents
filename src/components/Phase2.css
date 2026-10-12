@@ -253,3 +253,10 @@ button.og-band { cursor: pointer; }
 .rd-confirm h2 { margin: 0 0 10px; font-size: 18px; }
 .rd-confirm p { margin: 0 0 10px; line-height: 1.5; color: var(--tx-1); }
 .rd-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.rd-confirm { max-height: calc(100vh - 40px); overflow-y: auto; }
+.rd-role-skills { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.rd-role-skills > span { font-weight: 600; color: var(--tx-1); }
+.lp-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--tx-2); }
+.lp-chip-add { cursor: pointer; border: 1px dashed var(--canvas-border); background: transparent; }
+.lp-chip-add:hover { border-color: var(--accent1); }
+.lp-role-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--canvas-accent-soft); color: var(--tx-1); font-size: 14px; }

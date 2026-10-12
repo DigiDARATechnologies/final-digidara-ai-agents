@@ -96,6 +96,8 @@ def _switch_role(session, user_id: str, old_role: str, new_role: str) -> None:
         session.query(ReadinessSnapshot).filter_by(user_id=user_id, role_key="").update({"role_key": old_role})
     rows = session.query(AgentLevel).filter_by(user_id=user_id).all()
     old.levels = {row.agent_name: {"level": row.level, "source": row.source} for row in rows}
+    profile = session.get(LearnerProfile, user_id)
+    old.skills = list(profile.skills or []) if profile else []
     old.periods = [list(period) for period in (old.periods or [])]
     if old.periods and old.periods[-1][1] is None:
         old.periods[-1][1] = now
@@ -147,7 +149,8 @@ def role_history(user_id: str) -> list[dict]:
     finally:
         session.close()
     return [
-        {"role": track.role_key, "levels": {name: (saved or {}).get("level") for name, saved in (track.levels or {}).items()}}
+        {"role": track.role_key, "skills": list(track.skills or []),
+         "levels": {name: (saved or {}).get("level") for name, saved in (track.levels or {}).items()}}
         for track in sorted(tracks, key=lambda t: t.updated_at or datetime.min, reverse=True)
     ]
 

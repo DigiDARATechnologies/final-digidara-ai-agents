@@ -7,6 +7,7 @@ jest.mock('../../src/lib/learnerApi', () => ({
   saveLearnerProfile: jest.fn(),
   setMyLevel: jest.fn(),
   setProgressSharing: jest.fn(),
+  suggestRoleSkills: jest.fn(),
 }));
 jest.mock('../../src/lib/jobFetchFlow', () => ({ syncJobProfileWithGoal: jest.fn() }));
 jest.mock('../../src/components/CareerPlanPanel', () => () => null);
@@ -54,17 +55,33 @@ test('a new target role asks first, then starts every level from zero', async ()
   expect(dialog).toHaveTextContent('Every agent\'s level goes back to Beginner');
   expect(dialog).toHaveTextContent('Your progress for ai engineer is kept');
   expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();
+  // The new role's skills are asked for, starting from the usual ones for it.
+  expect(dialog).toHaveTextContent('Skills for data scientist');
+  expect(dialog).toHaveTextContent('statistics');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove statistics' }));
+  // A current skill removed from the list can be kept again with one tap.
+  fireEvent.click(screen.getByRole('button', { name: 'Remove python' }));
+  fireEvent.click(screen.getByRole('button', { name: '+ python' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, change role' }));
-  await waitFor(() => expect(mocked.saveLearnerProfile).toHaveBeenCalledWith(expect.objectContaining({ target_role: 'data scientist' })));
+  await waitFor(() => expect(mocked.saveLearnerProfile).toHaveBeenCalled());
+  const saved = mocked.saveLearnerProfile.mock.calls[0][0];
+  expect(saved.target_role).toBe('data scientist');
+  expect(saved.skills).toContain('pandas');
+  expect(saved.skills).toContain('python');
+  expect(saved.skills).not.toContain('statistics');
+  expect(mocked.suggestRoleSkills).not.toHaveBeenCalled();
   expect(jobs.syncJobProfileWithGoal).toHaveBeenCalled();
   await waitFor(() => expect(onToast).toHaveBeenCalledWith(expect.stringContaining('starts from zero')));
 });
 
-test('a role worked on before says its levels come back', async () => {
-  await openEditor(summary('ai engineer', [{ role: 'data scientist', levels: { aptitude_agent: 'medium' } }]));
+test('a role worked on before says its levels come back, with its own skills', async () => {
+  await openEditor(summary('ai engineer', [{ role: 'data scientist', skills: ['r', 'tableau'], levels: { aptitude_agent: 'medium' } }]));
   fireEvent.change(screen.getByPlaceholderText('e.g. data analyst'), { target: { value: 'data scientist' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
-  expect(await screen.findByRole('alertdialog')).toHaveTextContent('its levels and points come back');
+  const dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent('its levels and points come back');
+  expect(dialog).toHaveTextContent('Your skills from last time');
+  expect(screen.getByRole('button', { name: 'Remove tableau' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();
@@ -76,4 +93,20 @@ test('the same role in other letters saves without asking', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
   await waitFor(() => expect(mocked.saveLearnerProfile).toHaveBeenCalled());
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+});
+
+test('any other role gets suggested skills, and saving needs at least one', async () => {
+  mocked.suggestRoleSkills.mockResolvedValue(['Solidity', 'smart contracts']);
+  mocked.saveLearnerProfile.mockResolvedValue(summary('blockchain developer'));
+  await openEditor(summary('ai engineer'));
+  fireEvent.change(screen.getByPlaceholderText('e.g. data analyst'), { target: { value: 'blockchain developer' } });
+  expect(screen.getByText(/you'll choose the skills for it/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save profile' }));
+  expect(await screen.findByRole('button', { name: 'Remove solidity' })).toBeInTheDocument();
+  expect(mocked.suggestRoleSkills).toHaveBeenCalledWith('blockchain developer');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove solidity' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Remove smart contracts' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, change role' }));
+  expect(screen.getByRole('alert')).toHaveTextContent('Add at least one skill for blockchain developer');
+  expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();
 });

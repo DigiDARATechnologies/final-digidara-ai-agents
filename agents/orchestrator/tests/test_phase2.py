@@ -481,6 +481,8 @@ def test_a_new_target_role_starts_from_zero_and_switching_back_restores_it(app_c
     assert {level["level"] for level in body["levels"]} == {"beginner"}
     assert body["role_history"][0]["role"] in {"ai engineer", "data scientist"}
     assert {r["role"]: r["levels"] for r in body["role_history"]}["ai engineer"] == {"aptitude_agent": "medium"}
+    # The old role keeps the skills the learner had for it.
+    assert {r["role"]: r["skills"] for r in body["role_history"]}["ai engineer"] == ["python", "sql"]
     # The new role has no readiness yet, and agents are asked only for its period.
     assert readiness_service.latest("learner") is None
     agents.calls.clear()

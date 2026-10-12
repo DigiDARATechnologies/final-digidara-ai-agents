@@ -51,7 +51,7 @@ export interface LearnerSummary {
   profile: LearnerProfile;
   levels: AgentLevel[];
   /** Roles worked towards before; switching back to one restores its levels. */
-  role_history?: { role: string; levels: Partial<Record<string, LevelId>> }[];
+  role_history?: { role: string; skills?: string[]; levels: Partial<Record<string, LevelId>> }[];
   level_choices: { id: LevelId; label: string }[];
   consent_required: boolean;
   membership: Membership | null;
@@ -177,6 +177,10 @@ const json = (method: string, body?: unknown): RequestInit => ({ method, body: b
 export const fetchLearnerSummary = () => request<LearnerSummary>("/learner/profile");
 export const saveLearnerProfile = (profile: Pick<LearnerProfile, "target_role" | "degree" | "skills" | "experience">) =>
   request<LearnerSummary>("/learner/profile", json("PUT", profile));
+/** Up to 10 skills for a role, suggested by the orchestrator's role profile writer. */
+export const suggestRoleSkills = (targetRole: string) =>
+  request<{ skills: string[] }>("/role-profiles/generate", json("POST", { target_role: targetRole.slice(0, 120) }))
+    .then((result) => result.skills);
 export const setMyLevel = (agentName: string, level: LevelId) =>
   request<AgentLevel>(`/learner/levels/${encodeURIComponent(agentName)}`, json("PUT", { level }));
 export const acceptConsent = (shareProgress: boolean | null) =>
