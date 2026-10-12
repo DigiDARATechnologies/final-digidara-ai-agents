@@ -93,6 +93,20 @@ export interface ProblemSummary {
   best_score: number;
   attempts: number;
   sequence: number;
+  /** Present in level lists, which span every topic of a technology. */
+  topic_slug?: string;
+  topic_name?: string;
+}
+
+/** Every problem at the learner's level in one technology, across its topics.
+ * The coding agent takes the level from the learner's signed context. */
+export function listLevelProblems(sessionToken: string, course_slug: string, technology_slug: string, difficulty: string) {
+  return invoke<{ course: Course; technology: Technology; difficulty: "Easy" | "Medium" | "Hard"; problems: ProblemSummary[] }>("list_level_problems", {
+    sessionToken,
+    course_slug,
+    technology_slug,
+    difficulty,
+  });
 }
 
 export function listProblems(sessionToken: string, course_slug: string, technology_slug: string, topic_slug: string) {

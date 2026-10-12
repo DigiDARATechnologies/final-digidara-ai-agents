@@ -36,6 +36,29 @@ def _student_from_payload(payload):
     return student
 
 
+LEVEL_DIFFICULTY = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
+LEVEL_NAME = {"Easy": "Beginner", "Medium": "Medium", "Hard": "Hard"}
+
+
+def _level_difficulty(body):
+    """The learner's level here as a problem difficulty (Easy/Medium/Hard),
+    from the gateway's signed `learner` context; None without one."""
+    learner = body.get("learner")
+    value = learner.get("difficulty") if isinstance(learner, dict) else None
+    return LEVEL_DIFFICULTY.get(str(value or "").strip().lower())
+
+
+def _require_level(body, difficulty):
+    """A learner practises only the problems of their own level."""
+    level = _level_difficulty(body)
+    if level and difficulty and str(difficulty).capitalize() != level:
+        raise ApiError(
+            f"This is a {difficulty} problem. Your Coding level is {LEVEL_NAME[level]}, so you practise "
+            f"{level} problems: complete 50% of them to unlock the next level.",
+            403, "level_locked",
+        )
+
+
 def _int(value, field):
     if isinstance(value, bool):
         raise ApiError(f"{field} is invalid.", 400, "invalid_parameter")
@@ -142,6 +165,13 @@ def invoke():
             "problems": items,
         })
 
+    if action == "list_level_problems":
+        difficulty = _level_difficulty(body) or LEVEL_DIFFICULTY.get(str(payload.get("difficulty") or "").lower()) or "Easy"
+        selected_course, selected_technology, items = repo().list_level_problems(
+            student["id"], payload.get("course_slug"), payload.get("technology_slug"), difficulty
+        )
+        return jsonify({"course": selected_course, "technology": selected_technology, "difficulty": difficulty, "problems": items})
+
     if action == "get_problem":
         selected_course, selected_technology, selected_topic, selected_problem = repo().get_problem(
             student["id"],
@@ -150,6 +180,7 @@ def invoke():
             payload.get("topic_slug"),
             payload.get("problem_slug"),
         )
+        _require_level(body, selected_problem.get("difficulty"))
         return jsonify({
             "course": selected_course,
             "technology": selected_technology,
@@ -159,6 +190,7 @@ def invoke():
 
     if action in ("run_problem", "submit_problem"):
         problem_id = _int(payload.get("problem_id"), "problem_id")
+        _require_level(body, repo().problem_for_evaluation(student["id"], problem_id).get("difficulty"))
         mode = "run" if action == "run_problem" else "submit"
         outcome = current_app.extensions["evaluation"].evaluate(
             student["id"], problem_id, payload.get("sourceCode"), mode
@@ -167,6 +199,7 @@ def invoke():
 
     if action == "submit_mcq_answer":
         problem_id = _int(payload.get("problem_id"), "problem_id")
+        _require_level(body, repo().problem_for_evaluation(student["id"], problem_id).get("difficulty"))
         selected_key = payload.get("selectedKey")
         if not isinstance(selected_key, str) or not selected_key:
             raise ApiError("selectedKey is required.", 400, "invalid_parameter")

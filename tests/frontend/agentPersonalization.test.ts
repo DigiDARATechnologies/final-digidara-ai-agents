@@ -2,6 +2,7 @@
 jest.mock('../../src/lib/codeforgeApi', () => ({
   getProblem: jest.fn(), submitMcqAnswer: jest.fn(), runProblem: jest.fn(), submitProblem: jest.fn(), askTutor: jest.fn(),
   ensureSession: jest.fn(), listCourses: jest.fn(), listTechnologies: jest.fn(), listTopics: jest.fn(), listProblems: jest.fn(),
+  listLevelProblems: jest.fn(),
 }));
 jest.mock('../../src/lib/mockInterviewApi', () => ({
   ensureMockInterviewSession: jest.fn(), getActiveMockInterview: jest.fn(), startMockInterview: jest.fn(),
@@ -102,26 +103,31 @@ test('goal matching links roles and skills to course names', () => {
   expect(goalMatchScore({ ...goal, skills: ['c'] }, 'Code Playground')).toBe(0);
 });
 
-test('coding practice moves on to the next topic when one is finished', async () => {
+test('coding practice is by level: a technology lists only the level\'s problems, across topics', async () => {
   const { handleCodeForgeText } = await import('../../src/lib/codeforgeFlow');
-  const topic = (slug: string, name: string, sequence: number, progress = 'Not Started') => ({
-    id: sequence, slug, name, sequence, progress, description: '', problem_count: 5,
+  setLearnerContext(learner({ codeforge_agent: 'beginner' }));
+  const problem = (slug: string, name: string, topic: string, progress = 'Not Started') => ({
+    id: slug.length, name, slug, description: '', difficulty: 'Easy', max_score: 100, language: 'python', sequence: 1,
+    progress, best_score: progress === 'Solved' ? 100 : 0, attempts: progress === 'Solved' ? 1 : 0,
+    topic_slug: topic, topic_name: topic === 'intro' ? 'Introduction' : 'Loops',
   });
-  const solved = { id: 1, name: 'Print a Greeting', slug: 'greet', description: '', difficulty: 'Easy', max_score: 100,
-    language: 'python', sequence: 1, progress: 'Solved', best_score: 100, attempts: 1 };
   const state = {
-    step: 'awaiting_topic' as const, sessionToken: 's', courses: [], technologies: [], problems: [],
-    courseSlug: 'genai', technologySlug: 'python', technologyName: 'Python',
-    topics: [topic('intro', 'Introduction and Syntax', 1, 'Solved'), topic('print', 'Print and Input', 2)],
+    step: 'awaiting_technology' as const, sessionToken: 's', courses: [], topics: [], problems: [],
+    courseSlug: 'genai', courseName: 'Generative AI', technologies: [{ id: 1, name: 'Python', slug: 'python', description: '', icon: '', topic_count: 9 }],
   };
-  jest.mocked(codeforgeApi.listProblems).mockResolvedValueOnce({ problems: [solved] } as never);
-  const finished = await handleCodeForgeText(state, 'intro');
-  expect(finished.messages[0].text).toContain("You've solved every problem in Introduction and Syntax! Ready for Print and Input?");
-  expect(finished.messages[0].options?.[0]).toMatchObject({ value: 'next_topic', label: 'Next topic: Print and Input' });
+  jest.mocked(codeforgeApi.listLevelProblems).mockResolvedValueOnce({
+    problems: [problem('greet', 'Print a Greeting', 'intro', 'Solved'), problem('count', 'Count to Ten', 'loops')],
+  } as never);
+  const listed = await handleCodeForgeText(state as never, 'python');
+  expect(codeforgeApi.listLevelProblems).toHaveBeenCalledWith('s', 'genai', 'python', 'easy');
+  expect(codeforgeApi.listTopics).not.toHaveBeenCalled();
+  expect(listed.messages[0].text).toBe('Python · Beginner level: 2 Easy problems, 1 solved. Solve 50% to unlock the next level.');
+  expect(listed.messages[0].options?.map((o) => o.label)).toEqual(['✓ Print a Greeting', 'Count to Ten', 'Other technology', 'Back to courses']);
 
-  jest.mocked(codeforgeApi.listProblems).mockResolvedValueOnce({ problems: [{ ...solved, progress: 'Not Started', attempts: 0 }] } as never);
-  const moved = await handleCodeForgeText(finished.state, 'next topic');
-  expect(moved.state.topicSlug).toBe('print');
-  expect(moved.messages[0].text).toBe('Print and Input problems:');
-  expect(moved.messages[0].options?.map((o) => o.value)).toContain('back_to_topics');
+  jest.mocked(codeforgeApi.getProblem).mockResolvedValueOnce({ problem: { ...problem('count', 'Count to Ten', 'loops'), question_type: 'code',
+    input_format: '', output_format: '', constraints: '', examples: [], starter_code: '' } } as never);
+  const opened = await handleCodeForgeText(listed.state, 'count');
+  // The problem is opened in its own topic, which the level list carries.
+  expect(codeforgeApi.getProblem).toHaveBeenCalledWith('s', 'genai', 'python', 'loops', 'count');
+  expect(opened.state.step).toBe('awaiting_code');
 });

@@ -209,6 +209,28 @@ class MySqlRepository:
             problems = [self._problem_summary(row) for row in cursor.fetchall()]
         return course, technology, topic, problems
 
+    def list_level_problems(self, student_id, course_slug, technology_slug, difficulty):
+        """Every active problem of one difficulty in a technology, across all
+        its topics, in course order -- what a learner at that level practises."""
+        course, technologies = self.list_technologies(course_slug)
+        technology = next((item for item in technologies if item["slug"] == technology_slug), None)
+        if not technology:
+            raise ApiError("The technology is unavailable for this course.", 404, "technology_not_found")
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT p.id,p.name,p.slug,p.description,p.difficulty,p.max_score,p.language_key,p.question_type,p.display_order,"
+                "COALESCE(spp.status,'Not Started') progress,COALESCE(spp.best_score,0) best_score,COALESCE(spp.attempts,0) attempts,"
+                "tp.slug topic_slug,tp.name topic_name "
+                "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
+                "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
+                "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE AND p.difficulty=%s "
+                "ORDER BY tp.display_order,tp.id,p.display_order,p.id",
+                (student_id, technology["id"], difficulty),
+            )
+            problems = [{**self._problem_summary(row), "topic_slug": row["topic_slug"], "topic_name": row["topic_name"]}
+                        for row in cursor.fetchall()]
+        return course, technology, problems
+
     def get_problem(self, student_id, course_slug, technology_slug, topic_slug, problem_slug):
         course, technology, topic, problems = self.list_problems(student_id, course_slug, technology_slug, topic_slug)
         summary = next((problem for problem in problems if problem["slug"] == problem_slug), None)
