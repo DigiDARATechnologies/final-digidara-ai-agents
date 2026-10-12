@@ -3,6 +3,7 @@ import useSpeechRecognition from "../../hooks/useSpeechRecognition";
 import { transcribeGeneralAudio } from "../../lib/orchestratorApi";
 import { speakNatural, stopSpeaking } from "../../lib/voiceEngine";
 import { recognitionLocale } from "../../lib/voicePrefs";
+import { renderMessageText } from "../../lib/messageText";
 import { askAssistant, clearAssistant, fetchAssistantHistory, type AssistantTurn, type OrgFilters } from "../../lib/orgApi";
 
 interface Props {
@@ -114,7 +115,7 @@ export default function OrgAssistant({ orgId, orgName, filters, onToast }: Props
         )}
         {turns.map((turn, index) => (
           <div key={index} className={`org-msg ${turn.role === "user" ? "user" : "agent"}`}>
-            <p>{turn.content}</p>
+            <div className="org-msg-text">{turn.role === "assistant" ? renderMessageText(turn.content) : turn.content}</div>
             {turn.actions.length > 0 && (
               <ul className="org-assistant-actions">{turn.actions.map((a) => <li key={a}>✓ {a}</li>)}</ul>
             )}

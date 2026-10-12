@@ -23,6 +23,7 @@ import {
   type MemberDetail,
   type Transcript,
 } from "../../lib/orgApi";
+import { renderMessageText } from "../../lib/messageText";
 
 interface Props {
   orgId: string;
@@ -287,7 +288,7 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
             <div className="org-transcript-body">
               {transcript.messages.map((m, i) => (
                 <div key={i} className={`org-msg ${m.role === "user" ? "user" : "agent"}`}>
-                  <p>{m.content}</p>
+                  <div className="org-msg-text">{m.role === "user" ? m.content : renderMessageText(m.content)}</div>
                   <small>{m.role === "user" ? member.name : "Agent"} · {m.time}</small>
                 </div>
               ))}

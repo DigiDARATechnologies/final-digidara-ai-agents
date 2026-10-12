@@ -238,3 +238,14 @@ button.org-bar-row:hover { background: var(--surf-2); }
 .org-add-new input:focus { outline: none; border-color: var(--accent3); box-shadow: 0 0 0 3px var(--canvas-accent-soft); }
 .org-add-new { gap: 8px; }
 .org-add-new input { flex: 1; }
+
+/* Assistant and transcript replies: headings, bold, bullets and code, readable. */
+.org-msg-text { color: var(--tx-1); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.org-msg.user .org-msg-text { white-space: pre-wrap; }
+.org-msg-text .message-heading { margin: 10px 0 4px; font-size: 15px; font-weight: 700; }
+.org-msg-text .message-heading:first-child { margin-top: 0; }
+.org-msg-text .message-list-item { padding: 1px 0 1px 4px; }
+.org-msg-text strong { font-weight: 700; color: var(--tx-1); }
+.org-msg-text code { padding: 1px 5px; border-radius: 5px; background: var(--surf-2); font-size: 13px; }
+.org-msg-text .message-code { margin: 6px 0; padding: 10px; border-radius: 8px; background: var(--surf-2); overflow-x: auto; }
+.org-msg.agent { max-width: 92%; }

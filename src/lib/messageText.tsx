@@ -22,10 +22,13 @@ function renderTextBlock(text: string, keyPrefix: string): ReactNode[] {
     const key = `${keyPrefix}-${index}`;
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
     const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    // Nested items ("  - Sum of List" under "1. LeetCode") keep their depth.
+    const depth = Math.min(4, Math.floor((line.match(/^\s*/)?.[0].length ?? 0) / 2));
+    const indent = depth ? { paddingLeft: `${4 + depth * 18}px` } : undefined;
     const heading = line.match(/^\s*#{1,3}\s+(.+)$/);
     if (heading) return <div className="message-heading" key={key}>{renderInlineMessageText(heading[1])}</div>;
-    if (bullet) return <div className="message-list-item" key={key}>• {renderInlineMessageText(bullet[1])}</div>;
-    if (numbered) return <div className="message-list-item" key={key}>{numbered[1]}. {renderInlineMessageText(numbered[2])}</div>;
+    if (bullet) return <div className="message-list-item" style={indent} key={key}>{depth ? "◦" : "•"} {renderInlineMessageText(bullet[1])}</div>;
+    if (numbered) return <div className="message-list-item" style={indent} key={key}>{numbered[1]}. {renderInlineMessageText(numbered[2])}</div>;
     return <div key={key}>{line ? renderInlineMessageText(line) : " "}</div>;
   });
 }
