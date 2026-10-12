@@ -88,9 +88,9 @@ const LEVEL_DIFFICULTY: Record<LevelId, string> = { beginner: "Easy", medium: "M
 /** The four levels. With `gated`, only the next level can be chosen, and only
  * once it is unlocked (50% of the current one); lower levels stay open.
  * `scores` shows each level's own progress under its name. */
-function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, scores }: {
+function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, scores, unlockAt = 50 }: {
   value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean;
-  gated?: boolean; nextUnlocked?: boolean; scores?: Partial<Record<LevelId, number>>;
+  gated?: boolean; nextUnlocked?: boolean; scores?: Partial<Record<LevelId, number>>; unlockAt?: number;
 }) {
   const current = LEVEL_IDS.indexOf(value);
   return (
@@ -99,7 +99,7 @@ function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, scores }:
         const locked = Boolean(gated) && (index > current + 1 || (index === current + 1 && !nextUnlocked));
         const reason = index > current + 1
           ? `Unlocks after ${LEVEL_LABELS[LEVEL_IDS[index - 1]]}`
-          : `Complete 50% of ${LEVEL_LABELS[value]} to unlock`;
+          : unlockAt >= 100 ? `Complete all of ${LEVEL_LABELS[value]} to unlock` : `Complete ${unlockAt}% of ${LEVEL_LABELS[value]} to unlock`;
         const score = scores?.[level];
         return (
           <button key={level} type="button" role="radio" aria-checked={value === level} disabled={disabled || locked}
@@ -131,7 +131,9 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
       <div className="rd-bar thin"><span style={{ width: `${Math.min(100, progress)}%` }} /></div>
       <p className="rd-muted">
         {Math.round(progress)}% {what}.{" "}
-        {next ? (area.can_level_up ? `${next} is unlocked; at 100% you move up automatically.` : `50% unlocks ${next}; 100% moves you up automatically.`)
+        {next ? (area.can_level_up ? `${next} is unlocked; at 100% you move up automatically.`
+          : (area.unlock_at ?? 50) >= 100 ? `Complete all of ${LEVEL_LABELS[area.level]} to unlock ${next}; you then move up automatically.`
+            : `${area.unlock_at ?? 50}% unlocks ${next}; 100% moves you up automatically.`)
           : "This is the top level."}
       </p>
     </div>
@@ -163,7 +165,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
       )}
-      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up}
+      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} unlockAt={area.unlock_at}
         scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
       <LevelProgress area={area} />
       {area.suggested_level && area.suggested_level !== area.level && (
@@ -181,7 +183,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
+          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "complete every problem of your level to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
         </details>
       )}
     </div>

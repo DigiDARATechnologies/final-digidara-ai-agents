@@ -38,6 +38,7 @@ def _student_from_payload(payload):
 
 LEVEL_DIFFICULTY = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
 LEVEL_NAME = {"Easy": "Beginner", "Medium": "Medium", "Hard": "Hard"}
+DIFFICULTY_RANK = {"Easy": 0, "Medium": 1, "Hard": 2}
 
 
 def _level_difficulty(body):
@@ -48,13 +49,17 @@ def _level_difficulty(body):
     return LEVEL_DIFFICULTY.get(str(value or "").strip().lower())
 
 
+def _locked(level, difficulty):
+    """A level above the learner's is locked; finished lower levels stay open."""
+    return bool(level and difficulty) and DIFFICULTY_RANK.get(str(difficulty).capitalize(), 0) > DIFFICULTY_RANK[level]
+
+
 def _require_level(body, difficulty):
-    """A learner practises only the problems of their own level."""
     level = _level_difficulty(body)
-    if level and difficulty and str(difficulty).capitalize() != level:
+    if _locked(level, difficulty):
         raise ApiError(
-            f"This is a {difficulty} problem. Your Coding level is {LEVEL_NAME[level]}, so you practise "
-            f"{level} problems: complete 50% of them to unlock the next level.",
+            f"{difficulty} problems are locked. Your Coding level is {LEVEL_NAME[level]}: solve every "
+            f"{level} problem to unlock the next level.",
             403, "level_locked",
         )
 
@@ -164,6 +169,14 @@ def invoke():
             "topic": selected_topic,
             "problems": items,
         })
+
+    if action == "problem_set":
+        level = _level_difficulty(body) or "Easy"
+        languages, selected, course_slug, problems = repo().problem_set(student["id"], payload.get("technology_slug"))
+        for problem in problems:
+            problem["locked"] = _locked(level, problem["difficulty"])
+        return jsonify({"level": level, "level_name": LEVEL_NAME[level], "languages": languages,
+                        "technology_slug": selected, "course_slug": course_slug, "problems": problems})
 
     if action == "list_level_problems":
         difficulty = _level_difficulty(body) or LEVEL_DIFFICULTY.get(str(payload.get("difficulty") or "").lower()) or "Easy"

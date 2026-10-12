@@ -155,21 +155,22 @@ async def _area(agent_name: str, label: str, weight: int, user, levels: dict, pe
     if result.state != "completed":
         return {**base, "status": "unavailable", "reason": result.error or "No summary from this agent yet.",
                 "score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [],
-                "metrics": {}, "suggested_level": None, **_level_fields(level, None, "score")}
+                "metrics": {}, "suggested_level": None, **_level_fields(level, None, "score", agent_name)}
     summary = summarize_reply(result.data)
     status = "assessed" if summary["score"] is not None else "not_started"
     measured = summary["level_scores"].get(level)
     progress, basis = (measured, "level") if measured is not None else (summary["score"], "score")
-    fields = _level_fields(level, progress, basis)
+    fields = _level_fields(level, progress, basis, agent_name)
     return {**base, "status": status, **summary, **fields,
             "suggested_level": fields["next_level"] if fields["can_level_up"] else None}
 
 
-def _level_fields(level: str, progress: float | None, basis: str) -> dict:
+def _level_fields(level: str, progress: float | None, basis: str, agent_name: str = "") -> dict:
     upcoming = level_rules.next_level(level)
     return {
         "level_progress": progress, "level_progress_basis": basis, "next_level": upcoming,
-        "can_level_up": bool(upcoming) and progress is not None and progress >= level_rules.UNLOCK_PROGRESS,
+        "can_level_up": bool(upcoming) and progress is not None and progress >= level_rules.unlock_progress(agent_name),
+        "unlock_at": level_rules.unlock_progress(agent_name),
     }
 
 
@@ -201,7 +202,7 @@ def _auto_promote(user, areas: list[dict], levels: dict) -> None:
         old = area["level"]
         measured = (area.get("level_scores") or {}).get(upcoming) if area["level_progress_basis"] == "level" else None
         area.update({"promoted_from": old, "level": upcoming, "suggested_level": None,
-                     **_level_fields(upcoming, measured, area["level_progress_basis"])})
+                     **_level_fields(upcoming, measured, area["level_progress_basis"], area["agent_name"])})
         try:
             memory_service.add(
                 user.id,

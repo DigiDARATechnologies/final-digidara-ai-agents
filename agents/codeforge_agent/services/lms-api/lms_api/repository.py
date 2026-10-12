@@ -209,6 +209,52 @@ class MySqlRepository:
             problems = [self._problem_summary(row) for row in cursor.fetchall()]
         return course, technology, topic, problems
 
+    def problem_set(self, student_id, technology_slug=None):
+        """The LeetCode-style problem list: every language (technology) with
+        its solved/total counts per difficulty, and every problem of one
+        language in order (Easy first, then Medium, then Hard; by topic)."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT t.id,t.name,t.slug,MIN(c.slug) course_slug,MIN(ct.display_order) ord "
+                "FROM coding_technologies t JOIN course_technologies ct ON ct.technology_id=t.id AND ct.is_active=TRUE "
+                "JOIN coding_courses c ON c.id=ct.course_id AND c.is_active=TRUE "
+                "WHERE t.is_active=TRUE GROUP BY t.id,t.name,t.slug ORDER BY ord,t.id"
+            )
+            technologies = cursor.fetchall()
+            cursor.execute(
+                "SELECT tp.technology_id,p.difficulty,COUNT(*) total,"
+                "SUM(CASE WHEN spp.status='Solved' THEN 1 ELSE 0 END) solved "
+                "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id AND tp.is_active=TRUE "
+                "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
+                "WHERE p.is_active=TRUE GROUP BY tp.technology_id,p.difficulty",
+                (student_id,),
+            )
+            counts = {}
+            for row in cursor.fetchall():
+                counts.setdefault(row["technology_id"], {})[row["difficulty"]] = {
+                    "total": int(row["total"]), "solved": int(row["solved"] or 0)}
+            languages = [{
+                "slug": t["slug"], "name": t["name"], "course_slug": t["course_slug"],
+                "counts": {d: counts.get(t["id"], {}).get(d, {"total": 0, "solved": 0}) for d in ("Easy", "Medium", "Hard")},
+            } for t in technologies if counts.get(t["id"])]
+            selected = next((t for t in technologies if t["slug"] == technology_slug), None) \
+                or next((t for t in technologies if counts.get(t["id"])), None)
+            problems = []
+            if selected:
+                cursor.execute(
+                    "SELECT p.id,p.name,p.slug,p.description,p.difficulty,p.max_score,p.language_key,p.question_type,p.display_order,"
+                    "COALESCE(spp.status,'Not Started') progress,COALESCE(spp.best_score,0) best_score,COALESCE(spp.attempts,0) attempts,"
+                    "tp.slug topic_slug,tp.name topic_name "
+                    "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
+                    "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
+                    "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE "
+                    "ORDER BY FIELD(p.difficulty,'Easy','Medium','Hard'),tp.display_order,tp.id,p.display_order,p.id",
+                    (student_id, selected["id"]),
+                )
+                problems = [{**self._problem_summary(row), "topic_slug": row["topic_slug"], "topic_name": row["topic_name"],
+                             "number": index + 1} for index, row in enumerate(cursor.fetchall())]
+        return languages, (selected["slug"] if selected else None), (selected["course_slug"] if selected else None), problems
+
     def list_level_problems(self, student_id, course_slug, technology_slug, difficulty):
         """Every active problem of one difficulty in a technology, across all
         its topics, in course order -- what a learner at that level practises."""

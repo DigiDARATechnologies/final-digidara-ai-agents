@@ -82,11 +82,12 @@ def set_level(agent_name: str, req: LevelIn, user_id: str = Depends(get_verified
             )
         # Moving up needs half of the current level done; moving down is always allowed.
         progress = readiness_service.level_progress(user_id, agent_name, current["level"])
-        if progress is None or progress < level_rules.UNLOCK_PROGRESS:
+        needed = level_rules.unlock_progress(agent_name)
+        if progress is None or progress < needed:
             done = f"you are at {progress:g}%" if progress is not None else "you have not started it yet"
             raise HTTPException(
                 409,
-                f"Complete {level_rules.UNLOCK_PROGRESS}% of {level_rules.LEVEL_LABELS[current['level']]} in "
+                f"Complete {needed}% of {level_rules.LEVEL_LABELS[current['level']]} in "
                 f"{current['agent_label']} to move up ({done}). At 100% you move up automatically.",
             )
     try:

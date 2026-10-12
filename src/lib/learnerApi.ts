@@ -90,6 +90,8 @@ export interface ReadinessArea {
   level_progress_basis?: "level" | "score";
   next_level?: LevelId | null;
   can_level_up?: boolean;
+  /** Progress (0-100) at which the next level unlocks: 100 for Coding, 50 elsewhere. */
+  unlock_at?: number;
   /** Progress at every level (0-100), for agents that measure each level on its own results. */
   level_scores?: Partial<Record<LevelId, number>>;
   /** Set when readiness has just moved the learner up from this level. */

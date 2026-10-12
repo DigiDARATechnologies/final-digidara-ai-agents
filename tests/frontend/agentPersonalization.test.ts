@@ -62,7 +62,9 @@ test('coding practice recommends the course that fits the goal', async () => {
   jest.mocked(codeforgeApi.listCourses).mockResolvedValue({ courses: COURSES } as never);
   const { messages } = await openCodeForgeChat(user);
   expect(messages[0].text).toContain('For your goal (AI Engineer · python, llm, langgraph, rag), I recommend **Generative AI and Agentic AI**');
-  expect(messages[0].options?.[0]).toMatchObject({ value: 'genai', label: '⭐ Generative AI and Agentic AI · recommended for you' });
+  // The problem list comes first, then the courses, best fit first.
+  expect(messages[0].options?.[0]).toMatchObject({ value: '__problemset__' });
+  expect(messages[0].options?.[1]).toMatchObject({ value: 'genai', label: '⭐ Generative AI and Agentic AI · recommended for you' });
 });
 
 test('mock interview offers the target role at the learner level, straight to the question count', async () => {
@@ -121,7 +123,7 @@ test('coding practice is by level: a technology lists only the level\'s problems
   const listed = await handleCodeForgeText(state as never, 'python');
   expect(codeforgeApi.listLevelProblems).toHaveBeenCalledWith('s', 'genai', 'python', 'easy');
   expect(codeforgeApi.listTopics).not.toHaveBeenCalled();
-  expect(listed.messages[0].text).toBe('Python · Beginner level: 2 Easy problems, 1 solved. Solve 50% to unlock the next level.');
+  expect(listed.messages[0].text).toBe('Python · Beginner level: 2 Easy problems, 1 solved. Solve all of them to unlock the next level.');
   expect(listed.messages[0].options?.map((o) => o.label)).toEqual(['✓ Print a Greeting', 'Count to Ten', 'Other technology', 'Back to courses']);
 
   jest.mocked(codeforgeApi.getProblem).mockResolvedValueOnce({ problem: { ...problem('count', 'Count to Ten', 'loops'), question_type: 'code',

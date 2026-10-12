@@ -18,6 +18,7 @@ import {
 import {
   handleCodeForgeText,
   openCodeForgeChat,
+  openCodeForgeProblem,
   runCodeForgeCode,
   submitCodeForgeCode,
   type CodeForgeFlowState,
@@ -52,6 +53,7 @@ import SettingsModal from "./components/SettingsModal";
 import LowPointsModal from "./components/LowPointsModal";
 import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
+import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
 import ProfileView from "./components/ProfileView";
 import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
 import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
@@ -216,6 +218,7 @@ export default function App() {
   const [planName, setPlanName] = useState("Free");
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
+  const [problemSetOpen, setProblemSetOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -1314,6 +1317,11 @@ export default function App() {
         setPlaygroundOpen(true);
         return;
       }
+      if (text === "__problemset__") {
+        setTyping(false);
+        setProblemSetOpen(true);
+        return;
+      }
       const flowState = resumeSnapshot as CodeForgeFlowState | undefined;
       if (!flowState) {
         setTyping(false);
@@ -1549,6 +1557,21 @@ export default function App() {
       setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
       appendAgentMessages(chatId, messages);
       setCodeBusy(false);
+    });
+  }
+
+  /** A problem picked in the problem list opens in the current Coding Practice chat. */
+  function handleOpenListedProblem(target: Parameters<typeof openCodeForgeProblem>[1]) {
+    if (!currentChatId) return;
+    const chatId = currentChatId;
+    const flowState = codeforgeStates[chatId];
+    if (!flowState) return;
+    setProblemSetOpen(false);
+    setTyping(true);
+    openCodeForgeProblem(flowState, target).then(({ state: nextState, messages }) => {
+      setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, messages);
+      setTyping(false);
     });
   }
 
@@ -2114,6 +2137,8 @@ export default function App() {
 
 
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
+      <CodeForgeProblemSet open={problemSetOpen} sessionToken={codeforgeState?.sessionToken}
+        onClose={() => setProblemSetOpen(false)} onOpenProblem={handleOpenListedProblem} />
 
       <AgentDetailsModal
         agent={selectedAgent}

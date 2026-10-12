@@ -266,9 +266,12 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     statuses = {a["agent_name"]: a["status"] for a in body["areas"]}
     assert statuses["codeforge_agent"] == "assessed" and statuses["resume_builder_agent"] == "unavailable"
     coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
-    # Without a level measure the score is the progress: 80% of Beginner unlocks Medium.
+    # Without a level measure the score is the progress. Coding unlocks Medium
+    # only when all of Beginner is done; other agents unlock it at 50%.
     assert coding["level_progress"] == 80 and coding["level_progress_basis"] == "score"
-    assert coding["can_level_up"] is True and coding["suggested_level"] == "medium"
+    assert coding["can_level_up"] is False and coding["suggested_level"] is None and coding["unlock_at"] == 100
+    aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
+    assert aptitude["can_level_up"] is True and aptitude["suggested_level"] == "medium" and aptitude["unlock_at"] == 50
     assert coding["gaps"] == ["Dynamic programming"]
     assert coding["score"] == 0 and coding["quality_score"] == 80 and coding["levels_completed"] == []
     assert body["next_steps"]
@@ -288,14 +291,16 @@ def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypat
 
 def test_a_level_change_is_measured_again_at_once(app_client, agents):
     app_client.get("/learner/readiness?refresh=true", headers=auth())
-    assert app_client.put("/learner/levels/codeforge_agent", headers=auth(), json={"level": "medium"}).status_code == 200
+    # 80% of Beginner Coding is not enough: every Beginner problem must be solved first.
+    assert app_client.put("/learner/levels/codeforge_agent", headers=auth(), json={"level": "medium"}).status_code == 409
+    assert app_client.put("/learner/levels/aptitude_agent", headers=auth(), json={"level": "medium"}).status_code == 200
     calls = len(agents.calls)
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
-    assert len(agents.calls) > calls and coding["level"] == "medium" and coding["next_level"] == "hard"
+    aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
+    assert len(agents.calls) > calls and aptitude["level"] == "medium" and aptitude["next_level"] == "hard"
     # Without asking for a refresh, the stored Beginner progress is not shown as Medium's.
     cached = next(a for a in app_client.get("/learner/readiness", headers=auth()).json()["areas"]
-                  if a["agent_name"] == "codeforge_agent")
+                  if a["agent_name"] == "aptitude_agent")
     assert cached["level"] == "medium"
 
 

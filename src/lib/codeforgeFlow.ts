@@ -80,6 +80,7 @@ function courseGreeting(courses: Course[], firstName?: string): string {
 function courseOptions(courses: Course[]): ChatOption[] {
   const { ordered, recommended } = rankCourses(courses);
   return [
+    { label: "📋 Problem list", value: "__problemset__", description: "Every problem in every language, LeetCode style. Your level's problems are open." },
     ...ordered.map((c) => ({
       label: c === recommended ? `⭐ ${c.name} · recommended for you` : c.name,
       value: c.slug,
@@ -125,6 +126,7 @@ function afterProblemOptions(state: CodeForgeFlowState): ChatOption[] {
   return [
     ...(next ? [{ label: `Next problem: ${next.name}`, value: next.slug }] : []),
     { label: `All ${level} problems`, value: "choose_another_problem" },
+    { label: "📋 Problem list", value: "__problemset__" },
     { label: "Other technology", value: "back_to_technologies" },
     { label: "Back to courses", value: "back_to_courses" },
   ];
@@ -154,7 +156,7 @@ async function enterLevelProblems(state: CodeForgeFlowState): Promise<{ state: C
   }
   const heading = solved === problems.length
     ? `🎉 You've solved every ${level} (${difficulty}) problem in ${state.technologyName}. Your level moves up automatically at 100% — check Job Readiness. You can redo any of them:`
-    : `${state.technologyName} · ${level} level: ${problems.length} ${difficulty} problems, ${solved} solved. Solve 50% to unlock the next level.`;
+    : `${state.technologyName} · ${level} level: ${problems.length} ${difficulty} problems, ${solved} solved. Solve all of them to unlock the next level.`;
   return { state: next, messages: [{ text: heading, options: [...problemOptions(problems), ...navigation] }] };
 }
 
@@ -430,4 +432,22 @@ export async function handleCodeForgeText(
       }
     }
   }
+}
+
+/** Opens a problem picked in the problem list, in this chat. */
+export async function openCodeForgeProblem(
+  state: CodeForgeFlowState,
+  target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSummary },
+): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+  const next: CodeForgeFlowState = {
+    ...state,
+    step: "awaiting_problem",
+    courseSlug: target.courseSlug,
+    technologySlug: target.technologySlug,
+    technologyName: target.technologyName,
+    problems: state.technologySlug === target.technologySlug && state.problems.some((p) => p.slug === target.problem.slug)
+      ? state.problems
+      : [target.problem],
+  };
+  return handleCodeForgeText(next, target.problem.slug);
 }

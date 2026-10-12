@@ -248,3 +248,33 @@ export interface PlaygroundResult {
 export function runPlayground(languageId: number, sourceCode: string, stdin = "") {
   return invoke<PlaygroundResult>("run_playground", { languageId, sourceCode, stdin });
 }
+
+export interface ProblemSetLanguage {
+  slug: string;
+  name: string;
+  course_slug: string;
+  counts: Record<"Easy" | "Medium" | "Hard", { total: number; solved: number }>;
+}
+
+export interface ProblemSetItem extends ProblemSummary {
+  number: number;
+  topic_slug: string;
+  topic_name: string;
+  /** Above the learner's level: shown, but it opens only once they reach it. */
+  locked: boolean;
+}
+
+export interface ProblemSet {
+  level: "Easy" | "Medium" | "Hard";
+  level_name: string;
+  languages: ProblemSetLanguage[];
+  technology_slug: string | null;
+  course_slug: string | null;
+  problems: ProblemSetItem[];
+}
+
+/** The LeetCode-style list: every language, and every problem of one of
+ * them with its difficulty and status; levels above the learner's locked. */
+export function getProblemSet(sessionToken: string, technology_slug?: string) {
+  return invoke<ProblemSet>("problem_set", { sessionToken, ...(technology_slug ? { technology_slug } : {}) });
+}

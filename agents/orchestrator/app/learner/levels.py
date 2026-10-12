@@ -77,6 +77,13 @@ DIFFICULTY_ACTIONS: dict[str, frozenset[str]] = {
 # agent that cannot measure it yet uses its readiness score. At UNLOCK_PROGRESS
 # the learner may move up; at PROMOTE_PROGRESS readiness moves them up itself.
 UNLOCK_PROGRESS = 50
+# Coding unlocks the next level only once every problem of the current level
+# is solved -- which is also when the learner moves up automatically.
+UNLOCK_PROGRESS_BY_AGENT = {"codeforge_agent": 100}
+
+
+def unlock_progress(agent_name: str) -> int:
+    return UNLOCK_PROGRESS_BY_AGENT.get(agent_name, UNLOCK_PROGRESS)
 PROMOTE_PROGRESS = 100
 
 
