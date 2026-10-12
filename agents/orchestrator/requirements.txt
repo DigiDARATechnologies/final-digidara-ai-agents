@@ -25,3 +25,8 @@ gunicorn>=23.0,<24
 # pass the pip-audit/Trivy gate with; Pillow is reportlab's own dependency.
 reportlab==5.0.1
 Pillow==12.3.0
+# Organization assistant memory (app/organizations/assistant_memory.py): mem0
+# over the compose `qdrant` service. Same pins the resume builder already
+# passes the pip-audit/Trivy gate with.
+mem0ai==2.2.1
+qdrant-client==1.19.1

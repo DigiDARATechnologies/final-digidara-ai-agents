@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import OrgAssistant from "../org/OrgAssistant";
 import OrgDashboard from "../org/OrgDashboard";
 import { fetchPlatformOrgs, platformCreateOrg, platformUpdateOrg, type PlatformCreateResult, type PlatformOrg } from "../../lib/orgApi";
 import "../org/Org.css";
@@ -68,6 +69,7 @@ export default function OrganizationsPanel() {
     return (
       <div className="org-platform-open">
         <OrgDashboard org={{ id: open.id, name: open.name, kind: open.kind, role: "owner" }} onToast={setToast}
+          extraTabs={[{ name: "Assistant", render: (filters) => <OrgAssistant orgId={open.id} orgName={open.name} filters={filters} onToast={setToast} /> }]}
           headerAction={<button type="button" className="btn btn-outline btn-sm" onClick={() => setOpen(null)}>← All organizations</button>} />
         {toast && <div className="org-toast" role="status">{toast}</div>}
       </div>

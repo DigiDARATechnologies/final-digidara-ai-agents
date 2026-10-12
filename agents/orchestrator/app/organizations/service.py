@@ -491,11 +491,12 @@ def export_data(user_id: str) -> dict | None:
 
 
 def purge(user_id: str) -> None:
-    from app.models import OrgAccessLog
+    from app.models import OrgAccessLog, OrgAssistantMessage
 
     session = db.get_session()
     try:
         session.query(OrgAccessLog).filter_by(subject_user_id=user_id).delete()
+        session.query(OrgAssistantMessage).filter_by(user_id=user_id).delete()
         session.query(OrganizationMember).filter_by(user_id=user_id).delete()
         session.commit()
     finally:

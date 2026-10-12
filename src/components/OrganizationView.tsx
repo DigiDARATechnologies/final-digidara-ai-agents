@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import JoinOrganization from "./org/JoinOrganization";
+import OrgAssistant from "./org/OrgAssistant";
 import OrgDashboard from "./org/OrgDashboard";
 import { orgSharingNotice } from "../lib/orgConsent";
 import { fetchMyAccessLog, type AccessEntry } from "../lib/orgApi";
@@ -91,7 +92,10 @@ export default function OrganizationView({ summary, onSummaryChange, onBack, onT
         {!membership && <JoinOrganization onJoined={setMembership} onToast={onToast} />}
         {membership && isAdmin && (
           <OrgDashboard org={{ id: membership.organization.id, name: membership.organization.name, kind: membership.organization.kind,
-            role: membership.role === "owner" ? "owner" : "admin" }} onToast={onToast} />
+            role: membership.role === "owner" ? "owner" : "admin" }} onToast={onToast}
+            extraTabs={[{ name: "Assistant", render: (filters) => (
+              <OrgAssistant orgId={membership.organization.id} orgName={membership.organization.name} filters={filters} onToast={onToast} />
+            ) }]} />
         )}
         {membership && !isAdmin && <MemberCard membership={membership} onMembership={setMembership} onToast={onToast} />}
       </div>

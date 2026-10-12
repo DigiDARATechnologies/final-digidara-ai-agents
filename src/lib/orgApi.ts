@@ -175,3 +175,13 @@ export const platformCreateOrg = (body: { name: string; kind: string; admin_name
   request<PlatformCreateResult>("/organizations/platform", json("POST", body));
 export const platformUpdateOrg = (orgId: string, body: { status: "active" | "suspended"; member_limit?: number }) =>
   request<PlatformOrg>(`/organizations/platform/${orgId}`, json("PATCH", body));
+
+export interface AssistantTurn { role: "user" | "assistant"; content: string; actions: string[]; created_at: string | null }
+
+export const askAssistant = (orgId: string, message: string, filters: OrgFilters) =>
+  request<{ reply: string; actions: string[]; tokens: number }>(`/organizations/${orgId}/assistant`, json("POST", {
+    message,
+    filters: Object.fromEntries(Object.entries(filters).filter(([key, value]) => value && ["department", "year", "section", "code_id", "band", "status"].includes(key))),
+  }));
+export const fetchAssistantHistory = (orgId: string) => request<AssistantTurn[]>(`/organizations/${orgId}/assistant/history`);
+export const clearAssistant = (orgId: string) => request<void>(`/organizations/${orgId}/assistant/history`, json("DELETE"));

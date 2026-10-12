@@ -174,9 +174,11 @@ def _shared_member(session, admin_id: str, org_id: str, member_id: str) -> Organ
     return member
 
 
-def member_detail(admin_id: str, org_id: str, member_id: str) -> dict:
+def member_detail(admin_id: str, org_id: str, member_id: str, action: str = "profile", log: bool = True) -> dict:
     """Everything about one learner: profile, class, levels, readiness and
-    its trend, activity with each agent, their chats and what agents remember."""
+    its trend, activity with each agent, their chats and what agents remember.
+    `action` is how the access log records it ("assistant" when the
+    organization assistant looked)."""
     from app.coach import service as coach_service
     from app.memory import service as memory_service
 
@@ -200,8 +202,9 @@ def member_detail(admin_id: str, org_id: str, member_id: str) -> dict:
             for c in (session.query(Conversation).filter(Conversation.user_id == member.user_id, Conversation.deleted_at.is_(None))
                       .order_by(Conversation.updated_at.desc()).limit(200).all())
         ]
-        _log(session, org_id, admin_id, member.user_id, "profile")
-        session.commit()
+        if log:
+            _log(session, org_id, admin_id, member.user_id, action, "details" if action == "assistant" else "")
+            session.commit()
         identity = {
             "member_id": member.id, "user_id": user.id, "name": user.name, "email": user.email,
             "mobile": user.mobile or "", "external_id": member.external_id,

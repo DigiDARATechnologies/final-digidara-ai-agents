@@ -339,6 +339,24 @@ class OrgAccessLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
+class OrgAssistantMessage(Base):
+    """One turn of an organization admin's chat with the organization
+    assistant, kept so the conversation continues across sessions."""
+
+    __tablename__ = "org_assistant_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), index=True)
+    # "user" or "assistant".
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    # Actions the assistant took for this reply, shown under it.
+    actions: Mapped[list] = mapped_column(JSON, default=list)
+    # Microseconds on MySQL, so a question and its reply never share a timestamp.
+    created_at: Mapped[datetime] = mapped_column(DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"), default=_utc_now, index=True)
+
+
 class OrganizationMember(Base):
     """A learner belongs to at most one organization (the unique user_id).
 

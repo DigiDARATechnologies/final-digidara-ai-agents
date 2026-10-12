@@ -45,8 +45,12 @@ def auth(user_id="learner"):
 def app_client(database, monkeypatch):
     from app.admin import routes as admin_routes
 
+    from app.rate_limit import limiter
+
     # The platform admin check reads users through its own session import.
     monkeypatch.setattr(admin_routes, "get_session", database)
+    # Join and assistant calls are rate limited per caller; every test starts fresh.
+    limiter.reset()
     app = FastAPI()
     for module in (registry_routes, gateway, learner_routes, org_routes, a2a_routes, auth_routes):
         app.include_router(module.router)
@@ -659,3 +663,83 @@ def test_admins_filter_drill_down_and_every_look_is_logged(app_client, agents, d
     assert mine[0]["target"] == "Mock interview" and mine[0]["subject"] == "Learner"
     # A member of the organization cannot drill into anyone.
     assert app_client.get(f"/organizations/{org_id}/members/{member_id}/detail", headers=auth("other")).status_code == 403
+
+
+# --- organization assistant ---------------------------------------------------
+
+def _fake_model(monkeypatch, script):
+    """Replays `script`: each entry is ("tool", name, args) or ("text", reply)."""
+    from app.organizations import assistant
+
+    calls = []
+
+    def completion(**kwargs):
+        calls.append(list(kwargs["messages"]))
+        step = script.pop(0)
+        usage = SimpleNamespace(total_tokens=100)
+        if step[0] == "tool":
+            call = SimpleNamespace(id=f"call{len(calls)}", function=SimpleNamespace(name=step[1], arguments=json.dumps(step[2])))
+            message = SimpleNamespace(content="", tool_calls=[call])
+        else:
+            message = SimpleNamespace(content=step[1], tool_calls=None)
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+
+    monkeypatch.setattr(assistant.litellm, "completion", completion)
+    monkeypatch.setattr(assistant.assistant_memory, "recall", lambda *_a, **_k: ["Looks after the CSE batch"])
+    monkeypatch.setattr(assistant.assistant_memory, "remember", lambda *_a, **_k: None)
+    return calls
+
+
+def test_the_assistant_answers_with_the_admins_own_tools_and_charges_tokens(app_client, agents, monkeypatch):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    cs = app_client.post(f"/organizations/{org_id}/codes", headers=auth("admin"), json={"department": "CSE"}).json()
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": cs["code"]})
+    calls = _fake_model(monkeypatch, [
+        ("tool", "find_learners", {"department": "CSE", "sort": "readiness_low"}),
+        ("tool", "create_join_code", {"department": "CSE", "year": "2nd year"}),
+        ("text", "Learner is the only CSE learner. I made a code for CSE 2nd year."),
+    ])
+    before = auth_service.get_by_id("admin").token_balance
+    reply = app_client.post(f"/organizations/{org_id}/assistant", headers=auth("admin"),
+                            json={"message": "Who in CSE needs help? Also make a code for CSE 2nd year.", "filters": {"department": "CSE"}}).json()
+    assert reply["reply"].startswith("Learner is the only CSE learner")
+    assert reply["actions"][0].startswith("Created join code") and reply["tokens"] == 300
+    assert auth_service.get_by_id("admin").token_balance == before - 300
+    # The model saw the organization, the dashboard filter and the remembered fact, and got compact tool results.
+    system = calls[0][0]["content"]
+    assert "Anna University" in system and '"department": "CSE"' in system and "Looks after the CSE batch" in system
+    tool_result = calls[1][-1]["content"]
+    assert '"learners":[["Learner","CSE"' in tool_result
+    assert any(c["label"] == "CSE · 2nd year" for c in app_client.get(f"/organizations/{org_id}/codes", headers=auth("admin")).json())
+    history = app_client.get(f"/organizations/{org_id}/assistant/history", headers=auth("admin")).json()
+    assert [h["role"] for h in history] == ["user", "assistant"] and history[1]["actions"]
+
+
+def test_the_assistant_needs_confirmation_to_remove_and_stays_inside_its_organization(app_client, agents, monkeypatch):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    calls = _fake_model(monkeypatch, [
+        ("tool", "remove_learner", {"learner": "Learner", "confirmed": False}),
+        ("text", "Do you want me to remove Learner?"),
+    ])
+    reply = app_client.post(f"/organizations/{org_id}/assistant", headers=auth("admin"), json={"message": "remove Learner"}).json()
+    assert reply["actions"] == [] and "needs_confirmation" in calls[1][-1]["content"]
+    assert any(m["user_id"] == "learner" for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json())
+    # A learner of the organization cannot use its assistant.
+    assert app_client.post(f"/organizations/{org_id}/assistant", headers=auth(), json={"message": "hi"}).status_code == 403
+
+
+def test_only_the_admins_own_yes_can_remove_a_learner(app_client, agents, monkeypatch):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    url = f"/organizations/{org_id}/assistant"
+    # The model claims confirmation on its own (e.g. talked into it by text in a chat): refused.
+    _fake_model(monkeypatch, [("tool", "remove_learner", {"learner": "Learner", "confirmed": True}), ("text", "Should I remove Learner?")])
+    assert app_client.post(url, headers=auth("admin"), json={"message": "summarise Learner's chats"}).json()["actions"] == []
+    # The admin answers yes to that question: now it happens.
+    _fake_model(monkeypatch, [("tool", "remove_learner", {"learner": "Learner", "confirmed": True}), ("text", "Done.")])
+    done = app_client.post(url, headers=auth("admin"), json={"message": "yes"}).json()
+    assert done["actions"] == ["Removed Learner from the organization"]

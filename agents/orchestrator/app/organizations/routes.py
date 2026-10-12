@@ -10,7 +10,7 @@ from app.admin.routes import require_admin
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
-from app.organizations import classes, insights, service
+from app.organizations import assistant, classes, insights, service
 from app.organizations.service import OrgError
 from app.rate_limit import limiter
 from app.readiness import service as readiness_service
@@ -54,6 +54,11 @@ class CodeIn(BaseModel):
 
 class CodeUpdateIn(BaseModel):
     active: bool
+
+
+class AssistantIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    filters: dict[str, str] = Field(default_factory=dict)
 
 
 class OptionIn(BaseModel):
@@ -200,6 +205,30 @@ def member_conversation(org_id: str, member_id: str, conversation_id: str, user_
 @router.get("/{org_id}/access-log")
 def organization_access_log(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
     return _run(insights.access_log, user_id, org_id)
+
+
+@router.post("/{org_id}/assistant")
+@limiter.limit("20/minute")
+async def ask_assistant(org_id: str, req: AssistantIn, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """The organization assistant (see assistant.py)."""
+    filters = {k: str(v)[:120] for k, v in req.filters.items() if k in insights.FILTER_FIELDS + ("code_id", "band", "status")}
+    try:
+        return await assistant.ask(user_id, org_id, req.message, filters)
+    except assistant.AssistantError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    except OrgError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+
+
+@router.get("/{org_id}/assistant/history")
+def assistant_history(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return _run(assistant.history, user_id, org_id)
+
+
+@router.delete("/{org_id}/assistant/history", status_code=204)
+def clear_assistant(org_id: str, user_id: str = Depends(get_verified_user_id)) -> Response:
+    _run(assistant.clear, user_id, org_id)
+    return Response(status_code=204)
 
 
 @router.get("/{org_id}/codes")
