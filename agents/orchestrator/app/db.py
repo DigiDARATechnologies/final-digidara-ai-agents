@@ -115,6 +115,21 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        org_columns = {column["name"] for column in inspect(engine).get_columns("organizations")}
+        member_columns = {column["name"] for column in inspect(engine).get_columns("organization_members")}
+        for table, existing, column, ddl in (
+            ("organizations", org_columns, "status", "VARCHAR(16) NOT NULL DEFAULT 'active'"),
+            ("organization_members", member_columns, "department", "VARCHAR(120) NULL"),
+            ("organization_members", member_columns, "year", "VARCHAR(40) NULL"),
+            ("organization_members", member_columns, "section", "VARCHAR(40) NULL"),
+            ("organization_members", member_columns, "join_code_id", "VARCHAR(32) NULL"),
+        ):
+            if column not in existing:
+                try:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
         for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
                             ("customer_gstin", "VARCHAR(15) NULL")):

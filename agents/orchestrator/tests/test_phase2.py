@@ -42,7 +42,11 @@ def auth(user_id="learner"):
 
 
 @pytest.fixture
-def app_client(database):
+def app_client(database, monkeypatch):
+    from app.admin import routes as admin_routes
+
+    # The platform admin check reads users through its own session import.
+    monkeypatch.setattr(admin_routes, "get_session", database)
     app = FastAPI()
     for module in (registry_routes, gateway, learner_routes, org_routes, a2a_routes, auth_routes):
         app.include_router(module.router)
@@ -56,6 +60,9 @@ def users(database):
         for user_id, name in (("learner", "Learner"), ("admin", "Org Admin"), ("other", "Other")):
             session.add(User(id=user_id, name=name, email=f"{user_id}@example.test", email_verified=True,
                              token_balance=1000, password_hash="x"))
+        # DigiDARA's own platform admin, who creates organizations.
+        session.add(User(id="platform", name="DigiDARA", email="platform@example.test", email_verified=True,
+                         token_balance=1000, password_hash="x", is_admin=True))
         session.commit()
 
 
@@ -339,7 +346,12 @@ def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
 # --- organizations ----------------------------------------------------------
 
 def _make_org(client):
-    return client.post("/organizations", headers=auth("admin"), json={"name": "Anna University", "kind": "college"}).json()
+    """The platform admin creates the organization with "admin" as its owner;
+    returns the owner's membership."""
+    created = client.post("/organizations/platform", headers=auth("platform"), json={
+        "name": "Anna University", "kind": "college", "admin_email": "admin@example.test"})
+    assert created.status_code == 201, created.text
+    return client.get("/organizations/me", headers=auth("admin")).json()["membership"]
 
 
 def test_register_join_and_share(app_client, users):
@@ -551,3 +563,99 @@ def test_job_fetching_follows_the_average_of_the_other_levels(app_client, users)
     assert learner_service.learner_context("learner", "job_agent")["level"] == "medium"
     blocked = app_client.put("/learner/levels/job_agent", headers=auth(), json={"level": "hard"})
     assert blocked.status_code == 400 and "follows" in blocked.json()["detail"]
+
+
+# --- organization SaaS: platform-created orgs, class join codes, insights ----
+
+def test_only_the_platform_admin_creates_organizations(app_client, users):
+    assert app_client.post("/organizations", headers=auth("admin"), json={"name": "Self Made"}).status_code == 403
+    assert app_client.post("/organizations/platform", headers=auth("admin"), json={
+        "name": "X College", "admin_email": "x@example.test"}).status_code == 403
+    created = app_client.post("/organizations/platform", headers=auth("platform"), json={
+        "name": "New College", "kind": "college", "admin_name": "Dean", "admin_email": "Dean@NewCollege.edu",
+        "member_limit": 50}).json()
+    assert created["admin"]["status"] == "created" and created["admin"]["email"] == "dean@newcollege.edu"
+    assert len(created["admin"]["temporary_password"]) >= 10
+    assert created["organization"]["member_limit"] == 50 and created["organization"]["status"] == "active"
+    listed = app_client.get("/organizations/all", headers=auth("platform")).json()
+    assert listed[0]["admins"] == [{"name": "Dean", "email": "dean@newcollege.edu"}] and listed[0]["active_codes"] == 1
+    # The same person cannot own a second organization.
+    again = app_client.post("/organizations/platform", headers=auth("platform"), json={
+        "name": "Second", "admin_email": "dean@newcollege.edu"})
+    assert again.status_code == 409
+
+
+def test_a_class_code_places_the_learner_and_a_general_code_lets_them_choose(app_client, users):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    code = app_client.post(f"/organizations/{org_id}/codes", headers=auth("admin"), json={
+        "department": "M.Sc Computer Science", "year": "1st year", "section": "A"}).json()
+    assert code["label"] == "M.Sc Computer Science · 1st year · A" and code["active"] is True
+    preview = app_client.get(f"/organizations/join-code/{code['code'].lower()}", headers=auth()).json()
+    assert preview["organization"]["name"] == "Anna University"
+    assert preview["code"]["department"] == "M.Sc Computer Science"
+    assert "M.Sc Computer Science" in preview["options"]["department"] and "2nd year" in preview["options"]["year"]
+    # The code's class wins over anything the learner sends.
+    joined = app_client.post("/organizations/join", headers=auth(), json={
+        "join_code": code["code"], "department": "Other", "section": "Z"}).json()
+    assert (joined["department"], joined["year"], joined["section"]) == ("M.Sc Computer Science", "1st year", "A")
+
+    general = org["organization"]["join_code"]
+    other = app_client.post("/organizations/join", headers=auth("other"), json={
+        "join_code": general, "department": "  B.Sc   Physics ", "year": "3rd year"}).json()
+    assert (other["department"], other["year"], other["section"]) == ("B.Sc Physics", "3rd year", None)
+    options = app_client.get(f"/organizations/{org_id}/options", headers=auth("admin")).json()
+    assert "B.Sc Physics" in options["department"]
+    codes = {c["code"]: c for c in app_client.get(f"/organizations/{org_id}/codes", headers=auth("admin")).json()}
+    assert codes[code["code"]]["members"] == 1 and codes[general]["members"] == 1
+    # A deactivated code stops working.
+    app_client.patch(f"/organizations/{org_id}/codes/{code['id']}", headers=auth("admin"), json={"active": False})
+    assert app_client.get(f"/organizations/join-code/{code['code']}", headers=auth()).status_code == 410
+    # Learners cannot manage codes.
+    assert app_client.post(f"/organizations/{org_id}/codes", headers=auth(), json={"label": "Mine"}).status_code == 403
+
+
+def test_a_suspended_organization_locks_its_admins_and_codes_but_not_the_platform(app_client, users):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.patch(f"/organizations/platform/{org_id}", headers=auth("platform"), json={"status": "suspended"})
+    assert app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).status_code == 403
+    assert app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]}).status_code == 403
+    assert app_client.get(f"/organizations/{org_id}/members", headers=auth("platform")).status_code == 200
+
+
+def test_admins_filter_drill_down_and_every_look_is_logged(app_client, agents, database):
+    from app.models import Conversation, ConversationMessage
+
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    cs = app_client.post(f"/organizations/{org_id}/codes", headers=auth("admin"), json={"department": "CSE", "year": "2nd year"}).json()
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": cs["code"]})
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["organization"]["join_code"], "department": "ECE"})
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    with database() as session:
+        session.add(Conversation(id="c1", user_id="learner", agent_id="mock-interview", title="Mock interview", updated_at_ms=1))
+        session.add(ConversationMessage(conversation_id="c1", user_id="learner", position=0, role="user", content="hello", display_time="10:00"))
+        session.commit()
+
+    everyone = app_client.get(f"/organizations/{org_id}/analytics", headers=auth("admin")).json()
+    assert everyone["totals"]["learners"] == 2
+    assert {g["name"] for g in everyone["breakdown"]["department"]} == {"CSE", "ECE"}
+    cse = app_client.get(f"/organizations/{org_id}/analytics?department=CSE", headers=auth("admin")).json()
+    assert cse["totals"]["learners"] == 1
+    listed = app_client.get(f"/organizations/{org_id}/members?year=2nd%20year", headers=auth("admin")).json()
+    assert [m["name"] for m in listed] == ["Learner"] and listed[0]["join_code"]["code"] == cs["code"]
+
+    member_id = listed[0]["member_id"]
+    detail = app_client.get(f"/organizations/{org_id}/members/{member_id}/detail", headers=auth("admin")).json()
+    assert detail["member"]["department"] == "CSE" and detail["readiness"] is not None
+    assert detail["conversations"][0]["title"] == "Mock interview" and detail["conversations"][0]["messages"] == 1
+    chat = app_client.get(f"/organizations/{org_id}/members/{member_id}/conversations/c1", headers=auth("admin")).json()
+    assert chat["messages"][0]["content"] == "hello"
+    log = app_client.get(f"/organizations/{org_id}/access-log", headers=auth("admin")).json()
+    assert [entry["action"] for entry in log] == ["conversation", "profile"] and log[0]["viewer"] == "Org Admin"
+    # The learner sees who looked.
+    mine = app_client.get("/organizations/me/access-log", headers=auth()).json()
+    assert mine[0]["target"] == "Mock interview" and mine[0]["subject"] == "Learner"
+    # A member of the organization cannot drill into anyone.
+    assert app_client.get(f"/organizations/{org_id}/members/{member_id}/detail", headers=auth("other")).status_code == 403

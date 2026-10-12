@@ -336,6 +336,7 @@ def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
         a["agent_name"]: {
             "score": a.get("score"), "status": a.get("status"), "level": a.get("level"),
             "level_progress": a.get("level_progress"), "level_scores": a.get("level_scores") or {},
+            "levels_completed": a.get("levels_completed") or [], "quality_score": a.get("quality_score"),
         }
         for a in stored if isinstance(a, dict) and a.get("agent_name")
     }

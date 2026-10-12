@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
@@ -283,7 +283,60 @@ class Organization(Base):
     join_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     created_by: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
+    # "active" or "suspended" (a suspended organization's admins and codes stop working).
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class OrgJoinCode(Base):
+    """A join code an organization hands out. A code can carry a class --
+    department, year and section, each optional -- so everyone who joins
+    with it is placed there; a code without them lets the learner choose."""
+
+    __tablename__ = "org_join_codes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    year: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    section: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class OrgOption(Base):
+    """A department, year or section an organization uses, offered in the
+    join and filter dropdowns. Admins and joining learners can add new ones."""
+
+    __tablename__ = "org_options"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    # "department", "year" or "section".
+    kind: Mapped[str] = mapped_column(String(16))
+    value: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (UniqueConstraint("organization_id", "kind", "value", name="uq_org_option"),)
+
+
+class OrgAccessLog(Base):
+    """Every time an organization admin opens a learner's personal details or
+    a chat: who, whose, what and when (DPDP accountability)."""
+
+    __tablename__ = "org_access_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    viewer_id: Mapped[str] = mapped_column(String(32))
+    subject_user_id: Mapped[str] = mapped_column(String(32), index=True)
+    # "profile", "conversation" or "assistant".
+    action: Mapped[str] = mapped_column(String(32))
+    target: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 
 class OrganizationMember(Base):
@@ -303,6 +356,11 @@ class OrganizationMember(Base):
     # The organization's own id for this person: roll number, employee id.
     external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     progress_shared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # The learner's class, from their join code or chosen when joining.
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    year: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    section: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 

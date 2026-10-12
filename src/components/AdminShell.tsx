@@ -6,6 +6,7 @@ import DashboardPanel from "./admin/DashboardPanel";
 import UsersPanel from "./admin/UsersPanel";
 import PaymentsPanel from "./admin/PaymentsPanel";
 import AgentsPanel from "./admin/AgentsPanel";
+import OrganizationsPanel from "./admin/OrganizationsPanel";
 import AdminChangePassword from "./admin/AdminChangePassword";
 
 interface AdminShellProps {
@@ -52,6 +53,7 @@ export default function AdminShell({ user, onBack }: AdminShellProps) {
               <p>{ADMIN_PANELS.find((p) => p.id === activePanelId)!.desc}</p>
             </div>
             {activePanelId === "dashboard" && <DashboardPanel />}
+            {activePanelId === "organizations" && <OrganizationsPanel />}
             {activePanelId === "users" && <UsersPanel />}
             {activePanelId === "payments" && <PaymentsPanel />}
             {activePanelId === "agents" && <AgentsPanel />}

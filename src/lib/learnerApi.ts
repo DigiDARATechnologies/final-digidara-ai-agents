@@ -38,6 +38,7 @@ export interface Organization {
   join_code?: string;
   member_limit: number;
   member_count: number | null;
+  status?: "active" | "suspended";
   created_at: string | null;
 }
 
@@ -47,6 +48,9 @@ export interface Membership {
   member_id: string;
   external_id: string | null;
   progress_shared: boolean;
+  department?: string | null;
+  year?: string | null;
+  section?: string | null;
 }
 
 export interface LearnerSummary {
@@ -135,6 +139,11 @@ export interface OrgMember {
   readiness?: MemberReadiness | null;
   levels?: Record<string, LevelId>;
   profile?: LearnerProfile;
+  department?: string | null;
+  year?: string | null;
+  section?: string | null;
+  join_code?: { id: string; code: string; label: string } | null;
+  last_active_at?: string | null;
 }
 
 export interface OrgSummary {
