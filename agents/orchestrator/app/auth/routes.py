@@ -94,6 +94,9 @@ def login(req: LoginRequest, request: Request) -> TokenResponse:
     user = service.get_by_email(req.email.strip().lower())
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password.")
+    # Accounts made for someone (an organization's admin or learners) were
+    # never sent a code at sign-up: the verify screen they land on needs one.
+    email_verification.send_code_if_none_pending(user)
     return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
 
 

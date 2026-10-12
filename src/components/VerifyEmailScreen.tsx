@@ -15,7 +15,7 @@ interface Props {
 export default function VerifyEmailScreen({ email, onVerified, onLogout }: Props) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState(`We sent a 6-digit code to ${email}. It expires in 10 minutes.`);
+  const [notice, setNotice] = useState(`We sent a 6-digit code to ${email}. It expires in 10 minutes. Not there? Check your spam folder, or send a new code.`);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
 

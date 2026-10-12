@@ -183,3 +183,23 @@ def test_changing_the_password_signs_out_every_other_device(api):
     new_token = response.json()["access_token"]
     assert api.get("/auth/me", headers=bearer(old_token)).status_code == 401
     assert api.get("/auth/me", headers=bearer(new_token)).status_code == 200
+
+
+def test_an_account_made_for_someone_gets_its_code_at_first_sign_in(api, smtp, database):
+    from app.auth.security import hash_password
+
+    # Created by an organization or DigiDARA's admin: no sign-up, so no code yet.
+    with database() as session:
+        session.add(User(id="made", name="Org Admin", email="dean@college.edu", password_hash=hash_password("temp-pass-123")))
+        session.commit()
+    login = lambda: api.post("/auth/login", json={"email": "dean@college.edu", "password": "temp-pass-123"})  # noqa: E731
+    body = login().json()
+    assert body["user"]["verification_required"] is True
+    assert len(smtp) == 1 and smtp[0]["To"] == "dean@college.edu"
+    # Signing in again while that code still works sends nothing new.
+    login()
+    assert len(smtp) == 1
+    assert api.post("/auth/email/verify", json={"code": last_code()}, headers=bearer(body["access_token"])).status_code == 200
+    # A verified account is never emailed at sign-in.
+    login()
+    assert len(smtp) == 1
