@@ -50,6 +50,8 @@ export interface Membership {
 export interface LearnerSummary {
   profile: LearnerProfile;
   levels: AgentLevel[];
+  /** Roles worked towards before; switching back to one restores its levels. */
+  role_history?: { role: string; levels: Partial<Record<string, LevelId>> }[];
   level_choices: { id: LevelId; label: string }[];
   consent_required: boolean;
   membership: Membership | null;

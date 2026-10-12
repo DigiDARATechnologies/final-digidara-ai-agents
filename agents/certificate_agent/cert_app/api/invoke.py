@@ -141,7 +141,7 @@ async def _invoke(request: Request) -> Response:
             raise HTTPException(status_code=401, detail="Verified DigiDARA identity is required")
         from cert_app.services.readiness import student_summary
         email = str(payload.get("email") or "").strip().lower()
-        return JSONResponse(await run_in_threadpool(student_summary, email))
+        return JSONResponse(await run_in_threadpool(student_summary, email, payload.get("periods")))
 
     route_info = ACTION_ROUTE_MAP.get(action)
     if not route_info:

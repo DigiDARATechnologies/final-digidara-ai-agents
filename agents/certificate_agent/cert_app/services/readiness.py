@@ -8,6 +8,7 @@ not yet certified.
 from typing import Iterable, Optional
 
 from cert_app.db.database import get_connection
+from cert_app.services.role_periods import clean_periods, in_periods
 
 
 def _date(value) -> Optional[str]:
@@ -49,7 +50,9 @@ def build_student_summary(exams: Iterable[dict], certificates: Iterable[dict]) -
     }
 
 
-def student_summary(email: Optional[str]) -> dict:
+def student_summary(email: Optional[str], periods=None) -> dict:
+    """periods: the orchestrator's role periods; only exams and certificates inside them count."""
+    windows = clean_periods(periods)
     if not email:
         return build_student_summary([], [])
     conn = get_connection()
@@ -69,4 +72,5 @@ def student_summary(email: Optional[str]) -> dict:
     finally:
         cursor.close()
         conn.close()
-    return build_student_summary(exams, certificates)
+    return build_student_summary([e for e in exams if in_periods(e.get("completed_at"), windows)],
+                                 [c for c in certificates if in_periods(c.get("issued_at"), windows)])

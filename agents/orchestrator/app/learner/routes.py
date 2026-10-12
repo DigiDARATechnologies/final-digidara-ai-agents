@@ -48,6 +48,8 @@ def _summary(user_id: str) -> dict:
     return {
         "profile": service.get_profile(user_id),
         "levels": list(service.get_levels(user_id).values()),
+        # Roles worked towards before, whose levels come back on switching to them.
+        "role_history": service.role_history(user_id),
         "level_choices": [{"id": level, "label": level_rules.LEVEL_LABELS[level]} for level in level_rules.LEVELS],
         "consent_required": user.consent_accepted_at is None,
         "membership": org_service.my_organization(user_id),

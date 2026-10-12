@@ -124,8 +124,8 @@ def test_saving_the_profile_completes_onboarding_and_cleans_skills(app_client, u
     body = app_client.put("/learner/profile", headers=auth(), json={
         "target_role": "  Data   Analyst ", "degree": "B.Sc", "skills": ["SQL", "sql", " Python ", ""], "experience": "fresher",
     }).json()
-    assert body["profile"]["target_role"] == "Data Analyst"
-    assert body["profile"]["skills"] == ["SQL", "Python"]
+    assert body["profile"]["target_role"] == "data analyst"
+    assert body["profile"]["skills"] == ["sql", "python"]
     assert body["profile"]["onboarding_completed"] is True
 
 
@@ -148,7 +148,7 @@ def test_gateway_sends_learner_context_and_fills_difficulty(app_client, agents):
                                json={"action": "start_interview", "payload": {"role": "SDE"}})
     assert response.status_code == 200
     _, body, _ = agents.calls[-1]
-    assert body["learner"]["target_role"] == "Backend Developer"
+    assert body["learner"]["target_role"] == "backend developer"
     assert body["learner"]["level"] == "medium"
     assert body["payload"]["difficulty"] == "intermediate"
 
@@ -422,7 +422,7 @@ def test_export_and_erasure_cover_phase2_data(app_client, agents, database):
     app_client.get("/learner/readiness?refresh=true", headers=auth())
     app_client.post("/a2a/aptitude_agent", headers=auth(), json=send("dashboard"))
     exported = auth_service.export_user_data("learner")
-    assert exported["learner_profile"]["target_role"] == "Analyst"
+    assert exported["learner_profile"]["target_role"] == "analyst"
     assert exported["organization"]["organization"]["name"] == "Anna University"
     assert "join_code" not in exported["organization"]["organization"]
     assert len(exported["readiness_history"]) == 1
@@ -442,8 +442,8 @@ def test_resume_facts_join_the_profile_and_what_agents_report(app_client, agents
         "projects": [{"description": "no title, dropped"}],
     }})
     facts = app_client.get("/learner/resume-facts", headers=auth()).json()
-    assert facts["name"] == "Learner" and facts["email"] == "learner@example.test" and facts["target_role"] == "Data Analyst"
-    assert facts["skills"] == ["SQL", "Excel", "Python"]
+    assert facts["name"] == "Learner" and facts["email"] == "learner@example.test" and facts["target_role"] == "data analyst"
+    assert facts["skills"] == ["sql", "excel", "python"]
     assert facts["projects"] == [] and "project" in facts["missing"] and "phone" in facts["missing"]
     titles = [a["title"] for a in facts["achievements"]]
     # Aptitude 70 earns a line; the interview's 60 does not.
@@ -456,3 +456,38 @@ def test_completed_levels_go_on_the_resume(app_client, agents, monkeypatch):
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 100, "hard": 20}})
     facts = app_client.get("/learner/resume-facts", headers=auth()).json()
     assert "Coding: completed Beginner and Medium levels" in [a["title"] for a in facts["achievements"]]
+
+
+def test_a_new_target_role_starts_from_zero_and_switching_back_restores_it(app_client, agents):
+    save = lambda role: app_client.put("/learner/profile", headers=auth(), json={
+        "target_role": role, "degree": "M.Sc", "skills": ["Python", "python ", "SQL"], "experience": "fresher"}).json()
+    body = save("AI Engineer")
+    assert body["profile"]["target_role"] == "ai engineer" and body["profile"]["degree"] == "m.sc"
+    assert body["profile"]["skills"] == ["python", "sql"]
+    learner_service.set_level("learner", "aptitude_agent", "medium", "self")
+    # Before any switch, every activity counts: no periods go to the agents.
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    summary_calls = [body for _, body, _ in agents.calls if body["action"] == "get_student_summary"]
+    assert summary_calls and all("periods" not in call["payload"] for call in summary_calls)
+    assert readiness_service.latest("learner") is not None
+
+    # Same role in other words: not a change.
+    assert save("  AI   engineer")["role_history"] == []
+
+    body = save("Data Scientist")
+    assert {level["level"] for level in body["levels"]} == {"beginner"}
+    assert body["role_history"][0]["role"] in {"ai engineer", "data scientist"}
+    assert {r["role"]: r["levels"] for r in body["role_history"]}["ai engineer"] == {"aptitude_agent": "medium"}
+    # The new role has no readiness yet, and agents are asked only for its period.
+    assert readiness_service.latest("learner") is None
+    agents.calls.clear()
+    app_client.get("/learner/readiness?refresh=true", headers=auth())
+    periods = next(body for _, body, _ in agents.calls if body["action"] == "get_student_summary")["payload"]["periods"]
+    assert len(periods) == 1 and periods[0]["start"] and periods[0]["end"] is None
+
+    body = save("AI Engineer")
+    assert {level["agent_name"]: level["level"] for level in body["levels"]}["aptitude_agent"] == "medium"
+    assert len(readiness_service.history("learner")) == 1
+    periods = learner_service.role_periods("learner")
+    # Its first period ran from the start until the switch; the second is open.
+    assert periods[0]["start"] is None and periods[0]["end"] and periods[1]["end"] is None

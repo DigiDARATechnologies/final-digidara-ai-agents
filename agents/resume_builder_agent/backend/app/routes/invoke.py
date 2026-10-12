@@ -90,7 +90,7 @@ def invoke():
         if not USER_ID_PATTERN.fullmatch(gateway_user_id):
             return jsonify({"success": False, "message": "Verified DigiDARA identity is required"}), 401
         from ..services.readiness import student_summary
-        return jsonify(student_summary(gateway_user_id))
+        return jsonify(student_summary(gateway_user_id, payload.get("periods")))
     if action == "ensure_profile":
         user_id = payload.get("user_id")
         name = payload.get("name")

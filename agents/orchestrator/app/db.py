@@ -91,6 +91,14 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        snapshot_columns = {column["name"] for column in inspect(engine).get_columns("readiness_snapshots")}
+        if "role_key" not in snapshot_columns:
+            try:
+                connection.execute(text("ALTER TABLE readiness_snapshots ADD COLUMN role_key VARCHAR(200) NOT NULL DEFAULT ''"))
+                connection.execute(text("CREATE INDEX ix_readiness_snapshots_role_key ON readiness_snapshots (role_key)"))
+            except Exception as exc:
+                if "1060" not in str(exc) and "1061" not in str(exc):
+                    raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
         for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
                             ("customer_gstin", "VARCHAR(15) NULL")):

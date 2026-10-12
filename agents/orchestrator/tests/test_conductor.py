@@ -58,7 +58,7 @@ def test_a_typed_choice_selects_the_offered_option(api, monkeypatch):
     assert interpret(api, "the second one") == {"intent": "select_option", "option_value": "hr", "option_label": "HR interview"}
     system, data = seen[0]
     assert "- hr: HR interview" in system and "Mock Interview" in system
-    assert data["learner"]["target_role"] == "Data Analyst" and data["message"] == "the second one"
+    assert data["learner"]["target_role"] == "data analyst" and data["message"] == "the second one"
 
 
 def test_an_option_that_was_not_offered_falls_back_to_continue(api, monkeypatch):

@@ -13,6 +13,7 @@ from sqlalchemy import func
 
 from app.db.database import get_session
 from app.db.models import AssignmentStatus, ProjectAssignment, Student, Submission, SubmissionStatus
+from app.api.role_periods import clean_periods, in_periods
 
 GRADED = {SubmissionStatus.graded, SubmissionStatus.pending_viva}
 
@@ -82,12 +83,15 @@ def build_student_summary(assignments: list[ProjectAssignment], submissions: lis
     }
 
 
-def student_summary(email: str) -> dict[str, Any]:
+def student_summary(email: str, periods: Any = None) -> dict[str, Any]:
+    """periods: the orchestrator's role periods; only projects started inside them count."""
+    windows = clean_periods(periods)
     session = get_session()
     try:
         students = session.query(Student).filter(func.lower(Student.email) == email).all() if email else []
         ids = [s.id for s in students]
         assignments = session.query(ProjectAssignment).filter(ProjectAssignment.student_id.in_(ids)).all() if ids else []
+        assignments = [a for a in assignments if in_periods(a.created_at, windows)]
         assignment_ids = [a.id for a in assignments]
         submissions = (session.query(Submission).filter(Submission.assignment_id.in_(assignment_ids)).all()
                        if assignment_ids else [])

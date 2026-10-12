@@ -15,6 +15,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from .errors import ApiError
 from .readiness import build_student_summary
+from .role_periods import clean_periods, in_periods
 
 invoke_bp = Blueprint("invoke", __name__)
 
@@ -83,6 +84,9 @@ def invoke():
             raise ApiError("Verified DigiDARA identity is required.", 401, "unverified_identity")
         email = str(payload.get("email", "")).strip().lower()
         rows = repo().student_problem_rows(email) if email else []
+        # After a target-role change, only problems worked on for this role count.
+        periods = clean_periods(payload.get("periods"))
+        rows = [row for row in rows if in_periods(row.get("updated_at"), periods)]
         totals = repo().problem_totals(email) if rows else {}
         return jsonify(build_student_summary(rows, totals, payload.get("difficulty")))
 

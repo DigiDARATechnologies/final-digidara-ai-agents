@@ -236,6 +236,38 @@ async function prefillFromLearnerGoal(profile: JobFetchProfile, user: User): Pro
   }
 }
 
+/**
+ * After the learner edits their DigiDARA profile, the Job Agent searches for
+ * the new target role, with the new skills. Skills the Job Agent learned
+ * elsewhere (a resume, its own chat) stay; skills removed from the profile go.
+ */
+export async function syncJobProfileWithGoal(
+  before: { target_role: string; skills: string[] },
+  after: { target_role: string; skills: string[] },
+): Promise<void> {
+  const roleChanged = before.target_role.trim().toLowerCase() !== after.target_role.trim().toLowerCase();
+  const removed = new Set(before.skills.map((skill) => skill.toLowerCase()));
+  const skillsChanged = before.skills.join("|").toLowerCase() !== after.skills.join("|").toLowerCase();
+  if (!roleChanged && !skillsChanged) return;
+  try {
+    await ensureJobFetchProfile();
+    const profile = await getJobFetchProfile();
+    const skills: string[] = [];
+    for (const skill of [...after.skills, ...profile.skills.filter((s) => !removed.has(s.toLowerCase()))]) {
+      if (!skills.some((s) => s.toLowerCase() === skill.toLowerCase())) skills.push(skill);
+    }
+    await updateJobFetchProfile({
+      skills,
+      preferred_titles: roleChanged ? [displayRole(after.target_role)] : profile.preferred_titles,
+      preferred_locations: profile.preferred_locations,
+      preferred_work_mode: profile.preferred_work_mode || undefined,
+    });
+  } catch {
+    // The Job Agent being unreachable must not fail the profile save; its
+    // own prefill still fills anything empty the next time it opens.
+  }
+}
+
 export async function openJobFetchChat(user: User, conversationId?: string): Promise<{ state: JobFetchFlowState; messages: JobFetchFlowMessage[] }> {
   const base = createInitialState();
   try {

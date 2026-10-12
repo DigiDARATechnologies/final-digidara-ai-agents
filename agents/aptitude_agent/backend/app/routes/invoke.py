@@ -16,6 +16,7 @@ from flask import Blueprint, current_app, g, request, jsonify
 from ..extensions import db
 from ..models import AptitudeTest, Student, TopicPerformance
 from ..services.auth_service import issue_token
+from ..services.role_periods import clean_periods, in_periods
 
 bp = Blueprint("strategy_f_invoke", __name__)
 logger = logging.getLogger("backend.app.integration")
@@ -155,12 +156,16 @@ def _student_summary(payload: dict):
         return jsonify(empty)
     completed = (AptitudeTest.query.filter_by(student_id=student.id, status="completed")
                  .order_by(AptitudeTest.completed_at.desc()).all())
+    # After a target-role change, only tests taken for this role count.
+    periods = clean_periods(payload.get("periods"))
+    completed = [test for test in completed if in_periods(test.completed_at, periods)]
     if not completed:
         return jsonify(empty)
     recent = completed[:SUMMARY_RECENT_TESTS]
     score = sum(float(test.percentage or 0) for test in recent) / len(recent)
     levels = _test_levels(completed[:60])
-    topics = [t for t in TopicPerformance.query.filter_by(student_id=student.id).all() if (t.attempts or 0) >= 3]
+    # Topic accuracy is kept over all time, so it is left out for a role's own periods.
+    topics = [] if periods else [t for t in TopicPerformance.query.filter_by(student_id=student.id).all() if (t.attempts or 0) >= 3]
     ranked = sorted(topics, key=lambda t: float(t.accuracy or 0), reverse=True)
     last = recent[0].completed_at
     return jsonify({

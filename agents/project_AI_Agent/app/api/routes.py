@@ -1224,7 +1224,7 @@ async def invoke(request: Request) -> JSONResponse:
         if not str(request.headers.get("x-digidara-user-id") or "").strip():
             raise HTTPException(401, "Verified DigiDARA identity is required.")
         from app.api.readiness import student_summary
-        result = await run_in_threadpool(student_summary, str(payload.get("email") or "").strip().lower())
+        result = await run_in_threadpool(student_summary, str(payload.get("email") or "").strip().lower(), payload.get("periods"))
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

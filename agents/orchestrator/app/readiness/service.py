@@ -20,6 +20,7 @@ from app.learner import levels as level_rules
 from app.learner import service as learner_service
 from app.memory import service as memory_service
 from app.models import ReadinessSnapshot
+from sqlalchemy import or_
 
 logger = logging.getLogger("orchestrator.readiness")
 
@@ -134,9 +135,12 @@ def _level_scores(value: Any) -> dict[str, float]:
     return {level: by_difficulty[difficulty] or 0.0 for level, difficulty in level_rules.LEVEL_DIFFICULTY.items()}
 
 
-async def _area(agent_name: str, label: str, weight: int, user, levels: dict) -> dict:
+async def _area(agent_name: str, label: str, weight: int, user, levels: dict, periods: list[dict] | None = None) -> dict:
     level = levels.get(agent_name, {}).get("level", level_rules.DEFAULT_LEVEL)
-    request = {"email": user.email}
+    request: dict[str, Any] = {"email": user.email}
+    if periods:
+        # Only activity done while the current target role was the goal counts.
+        request["periods"] = periods
     if agent_name in LEVEL_PROGRESS_AGENTS:
         request["difficulty"] = level_rules.agent_difficulty(agent_name, level)
     result = await a2a_client.send(agent_name, "get_student_summary", request, user, CALLER)
@@ -230,7 +234,8 @@ def _next_steps(areas: list[dict]) -> list[str]:
 
 async def compute(user) -> dict:
     levels = learner_service.get_levels(user.id)
-    areas = list(await asyncio.gather(*(_area(name, label, weight, user, levels) for name, label, weight in AREAS)))
+    periods = learner_service.role_periods(user.id)
+    areas = list(await asyncio.gather(*(_area(name, label, weight, user, levels, periods) for name, label, weight in AREAS)))
     try:
         _auto_promote(user, areas, levels)
     except Exception:
@@ -260,10 +265,11 @@ def _store(user_id: str, result: dict) -> None:
     """Adds a snapshot; an unchanged result only moves the last one's time,
     so the history trend shows changes, not every page visit."""
     stored = {"areas": result["areas"], "next_steps": result["next_steps"]}
+    role = learner_service.role_key(user_id)
     session = db.get_session()
     try:
         last = (
-            session.query(ReadinessSnapshot).filter_by(user_id=user_id)
+            session.query(ReadinessSnapshot).filter_by(user_id=user_id, role_key=role)
             .order_by(ReadinessSnapshot.computed_at.desc()).first()
         )
         if last is not None and last.overall == result["overall"] and last.band == result["band"] and last.areas == stored:
@@ -272,7 +278,7 @@ def _store(user_id: str, result: dict) -> None:
             return
         session.add(ReadinessSnapshot(
             user_id=user_id, overall=result["overall"], band=result["band"],
-            areas=stored,
+            areas=stored, role_key=role,
         ))
         session.commit()
     finally:
@@ -292,11 +298,19 @@ def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
     }
 
 
+def _for_current_role(query, user_id: str):
+    """Snapshots of the learner's current target role. Untagged ones are from
+    before role tracks; a role change tags them with the role they were for."""
+    role = learner_service.role_key(user_id)
+    return query.filter(ReadinessSnapshot.user_id == user_id,
+                        or_(ReadinessSnapshot.role_key == role, ReadinessSnapshot.role_key == ""))
+
+
 def latest(user_id: str) -> ReadinessSnapshot | None:
     session = db.get_session()
     try:
         return (
-            session.query(ReadinessSnapshot).filter_by(user_id=user_id)
+            _for_current_role(session.query(ReadinessSnapshot), user_id)
             .order_by(ReadinessSnapshot.computed_at.desc()).first()
         )
     finally:
@@ -325,7 +339,7 @@ def history(user_id: str) -> list[dict]:
     session = db.get_session()
     try:
         rows = (
-            session.query(ReadinessSnapshot).filter_by(user_id=user_id)
+            _for_current_role(session.query(ReadinessSnapshot), user_id)
             .order_by(ReadinessSnapshot.computed_at.desc()).limit(HISTORY_LIMIT).all()
         )
     finally:

@@ -23,8 +23,8 @@ function summary(overrides: Partial<LearnerSummary> = {}): LearnerSummary {
 }
 
 function fillProfile() {
-  fireEvent.change(screen.getByPlaceholderText('e.g. Data Analyst'), { target: { value: 'Data Analyst' } });
-  const skills = screen.getByPlaceholderText('Python, SQL, Excel…');
+  fireEvent.change(screen.getByPlaceholderText('e.g. data analyst'), { target: { value: 'Data Analyst' } });
+  const skills = screen.getByPlaceholderText('python, sql, excel…');
   fireEvent.change(skills, { target: { value: 'SQL, Python' } });
   fireEvent.keyDown(skills, { key: 'Enter' });
 }
@@ -38,17 +38,17 @@ test('saves the target role, skills and experience', async () => {
   render(<OnboardingScreen name="Asha Rao" summary={summary()} onDone={onDone} onLogout={jest.fn()} />);
   expect(screen.getByText('Welcome, Asha')).toBeInTheDocument();
   fillProfile();
-  expect(screen.getByText('SQL')).toBeInTheDocument();
+  expect(screen.getByText('sql')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('radio', { name: 'Experienced' }));
   fireEvent.click(screen.getByRole('button', { name: 'Start learning' }));
   await waitFor(() => expect(onDone).toHaveBeenCalledWith(done));
-  expect(mocked.saveLearnerProfile).toHaveBeenCalledWith({ target_role: 'Data Analyst', degree: '', skills: ['SQL', 'Python'], experience: 'experienced' });
+  expect(mocked.saveLearnerProfile).toHaveBeenCalledWith({ target_role: 'data analyst', degree: '', skills: ['sql', 'python'], experience: 'experienced' });
   expect(mocked.acceptConsent).not.toHaveBeenCalled();
 });
 
 test('needs at least one skill', () => {
   render(<OnboardingScreen name="Asha" summary={summary()} onDone={jest.fn()} onLogout={jest.fn()} />);
-  fireEvent.change(screen.getByPlaceholderText('e.g. Data Analyst'), { target: { value: 'Data Analyst' } });
+  fireEvent.change(screen.getByPlaceholderText('e.g. data analyst'), { target: { value: 'Data Analyst' } });
   fireEvent.click(screen.getByRole('button', { name: 'Start learning' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Add at least one skill');
   expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();

@@ -247,6 +247,27 @@ class AgentLevel(Base):
     __table_args__ = (PrimaryKeyConstraint("user_id", "agent_name"),)
 
 
+class RoleTrack(Base):
+    """One target role a learner has worked towards. Changing the target role
+    starts the new role from zero: the levels in use are saved here for the
+    old role, and readiness only counts activity inside the new role's
+    periods. Switching back restores that role's levels and periods."""
+
+    __tablename__ = "role_tracks"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
+    # The target role, lowercased with single spaces.
+    role_key: Mapped[str] = mapped_column(String(200))
+    # agent_name -> {"level", "source"}, saved when the learner left this role.
+    levels: Mapped[dict] = mapped_column(JSON, default=dict)
+    # [[start ISO or null, end ISO or null], ...]: when this role was the target.
+    # A null start is "since the account began" (the role held before tracks existed).
+    periods: Mapped[list] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("user_id", "role_key"),)
+
+
 class Organization(Base):
     """A college, training institute or company that registers its learners
     and monitors their readiness. `join_code` lets learners attach their own
@@ -294,6 +315,8 @@ class ReadinessSnapshot(Base):
     overall: Mapped[float | None] = mapped_column(Float, nullable=True)
     band: Mapped[str] = mapped_column(String(32), default="not_started")
     areas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The target role (RoleTrack.role_key) this snapshot was computed for.
+    role_key: Mapped[str] = mapped_column(String(200), default="", index=True)
     computed_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
 
 

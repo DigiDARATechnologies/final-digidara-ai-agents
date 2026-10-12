@@ -5,6 +5,7 @@ resume that was built but never analysed has no score yet; the summary says
 so, so the readiness view can suggest running an ATS check.
 """
 from ..models import AtsAnalysis, Resume, User
+from .role_periods import clean_periods, in_periods
 
 
 def _texts(value, limit=3):
@@ -21,17 +22,19 @@ def _texts(value, limit=3):
     return result
 
 
-def student_summary(user_id):
+def student_summary(user_id, periods=None):
+    """periods: the orchestrator's role periods; only resumes and checks made inside them count."""
+    periods = clean_periods(periods)
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
     user = User.query.filter_by(user_id=user_id).first() if user_id else None
     if user is None:
         return empty
-    resumes = Resume.query.filter_by(user_id=user.user_id).all()
+    resumes = [r for r in Resume.query.filter_by(user_id=user.user_id).all() if in_periods(r.updated_at or r.created_at, periods)]
     if not resumes:
         return empty
-    analyses = (AtsAnalysis.query.filter_by(user_id=user_id)
-                .order_by(AtsAnalysis.final_score.desc(), AtsAnalysis.created_at.desc()).all())
+    analyses = [a for a in (AtsAnalysis.query.filter_by(user_id=user_id)
+                .order_by(AtsAnalysis.final_score.desc(), AtsAnalysis.created_at.desc()).all()) if in_periods(a.created_at, periods)]
     best = analyses[0] if analyses else None
     scored = [r.ats_score for r in resumes if r.ats_score is not None]
     score = best.final_score if best else (max(scored) if scored else None)

@@ -24,6 +24,7 @@ from flask import Blueprint, current_app, jsonify, request
 import db
 import learner_context
 import privacy
+from role_periods import clean_periods, in_periods
 from session_auth import InvalidSessionToken, issue_session_token, student_id_from_token
 from settings import ALLOWED_AUDIO_TYPES, MAX_AUDIO_UPLOAD_BYTES
 
@@ -156,7 +157,9 @@ def _student_summary(payload: dict):
         "ORDER BY ended_at DESC, id DESC",
         (student["id"],), fetch=True,
     )
-    rows = rows or []
+    # After a target-role change, only interviews done for this role count.
+    periods = clean_periods(payload.get("periods"))
+    rows = [row for row in rows or [] if in_periods(row.get("ended_at"), periods)]
     if not rows:
         return jsonify(empty)
     recent = rows[:SUMMARY_RECENT_INTERVIEWS]

@@ -155,7 +155,7 @@ def test_career_plan_is_built_over_a2a_and_remembered(api, monkeypatch):
     assert [t["agent_name"] for t in plan["weeks"][0]["tasks"]] == ["codeforge_agent"]
     assert plan["weeks"][1]["tasks"][0]["level"] == "beginner"
     system, data = prompts[0]
-    assert "Tamil" in system and data["target_role"] == "Data Analyst" and len(data["areas"]) == 7
+    assert "Tamil" in system and data["target_role"] == "data analyst" and len(data["areas"]) == 7
     assert any(c[1]["action"] == "get_student_summary" for c in api.remote.calls)
     assert api.get("/learner/plan", headers=auth()).json()["plan"]["headline"] == "Data Analyst in 4 weeks"
     assert any(m["text"] == "This week's plan: SQL basics" for m in memory_service.list_for("learner"))

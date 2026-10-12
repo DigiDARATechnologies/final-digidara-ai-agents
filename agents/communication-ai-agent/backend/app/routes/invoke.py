@@ -252,7 +252,7 @@ def _invoke():
         if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
             return _error("Verified DigiDARA identity is required.", "unverified_identity", 401)
         from ..services.readiness import student_summary
-        return jsonify(student_summary(str(payload.get("email") or "").strip().lower()))
+        return jsonify(student_summary(str(payload.get("email") or "").strip().lower(), payload.get("periods")))
     if action == "speaking_transcribe":
         return _transcribe(payload)
     if action == "speaking_transcribe_preview":

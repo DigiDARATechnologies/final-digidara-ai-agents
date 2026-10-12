@@ -246,3 +246,10 @@ button.og-band { cursor: pointer; }
 .rd-how summary:hover { color: var(--tx-1); }
 .rd-how p { margin: 6px 0 0; line-height: 1.5; }
 .rd-hero .rd-how { max-width: 560px; }
+
+/* Target role change confirmation, above the edit profile modal. */
+.rd-confirm-overlay { z-index: 90; }
+.rd-confirm { max-width: 460px; }
+.rd-confirm h2 { margin: 0 0 10px; font-size: 18px; }
+.rd-confirm p { margin: 0 0 10px; line-height: 1.5; color: var(--tx-1); }
+.rd-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }

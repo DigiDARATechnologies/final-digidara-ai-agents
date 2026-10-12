@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import CareerPlanPanel from "./CareerPlanPanel";
-import LearnerProfileForm, { type ProfileInput } from "./LearnerProfileForm";
+import LearnerProfileForm, { cleanProfileText, type ProfileInput } from "./LearnerProfileForm";
 import MemoryPanel from "./MemoryPanel";
+import { syncJobProfileWithGoal } from "../lib/jobFetchFlow";
 import {
   LEVEL_IDS,
   BAND_TONE,
@@ -211,6 +212,8 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** A profile with a new target role, waiting for the learner to confirm the reset. */
+  const [pendingRole, setPendingRole] = useState<ProfileInput | null>(null);
 
   const load = useCallback(async (refresh: boolean) => {
     setLoading(true);
@@ -245,12 +248,37 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
     }
   }
 
+  const currentRole = cleanProfileText(summary.profile.target_role);
+  const isRoleChange = (profile: ProfileInput) => !!currentRole && cleanProfileText(profile.target_role) !== currentRole;
+  /** Levels this role kept from the last time the learner worked towards it. */
+  const savedRole = (role: string) => summary.role_history?.find((item) => item.role === cleanProfileText(role));
+
+  function requestSave(profile: ProfileInput) {
+    if (isRoleChange(profile)) setPendingRole(profile);
+    else void saveProfile(profile);
+  }
+
   async function saveProfile(profile: ProfileInput) {
+    const roleChanged = isRoleChange(profile);
     setSaving(true);
     try {
+      const before = summary.profile;
       onSummaryChange(await saveLearnerProfile(profile));
       setEditing(false);
-      onToast("Profile saved. Every agent will use it from your next session.");
+      setPendingRole(null);
+      // The Job Agent keeps its own copy of the role and skills it searches for.
+      void syncJobProfileWithGoal(before, profile);
+      if (roleChanged) {
+        // A new role has its own levels and points: show them, not the old role's.
+        setReadiness(null);
+        setHistory([]);
+        void load(true);
+        onToast(savedRole(profile.target_role)
+          ? `Switched back to ${profile.target_role}: your levels and points for it are back.`
+          : `Switched to ${profile.target_role}: every level and point starts from zero for this role.`);
+      } else {
+        onToast("Profile saved. Every agent will use it from your next session.");
+      }
     } catch (err) {
       onToast((err as Error).message);
     } finally {
@@ -382,7 +410,38 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <h2>Edit profile</h2>
               <button type="button" className="link-btn" onClick={() => setEditing(false)}>Close</button>
             </div>
-            <LearnerProfileForm initial={profile} submitLabel="Save profile" busy={saving} onSubmit={(p) => void saveProfile(p)} />
+            <LearnerProfileForm initial={profile} submitLabel="Save profile" busy={saving} onSubmit={requestSave} />
+          </div>
+        </div>
+      )}
+
+      {pendingRole && (
+        <div className="modal-overlay open rd-confirm-overlay" onClick={(e) => e.target === e.currentTarget && !saving && setPendingRole(null)}>
+          <div className="modal rd-modal rd-confirm" role="alertdialog" aria-modal="true" aria-labelledby="rd-confirm-title">
+            <h2 id="rd-confirm-title">Change your target role?</h2>
+            <p>
+              You are changing from <strong>{currentRole}</strong> to <strong>{pendingRole.target_role}</strong>.
+            </p>
+            {savedRole(pendingRole.target_role) ? (
+              <p>
+                You have worked towards <strong>{pendingRole.target_role}</strong> before, so its levels and points come back,
+                along with anything you completed for it.
+              </p>
+            ) : (
+              <p>
+                Every agent's level goes back to <strong>Beginner</strong> and your job-readiness points start again from
+                <strong> 0</strong>. You train for this role from the beginning.
+              </p>
+            )}
+            <p className="rd-muted">
+              Your progress for <strong>{currentRole}</strong> is kept. Switch back any time and its levels and points return.
+            </p>
+            <div className="rd-confirm-actions">
+              <button type="button" className="btn btn-outline btn-sm" disabled={saving} onClick={() => setPendingRole(null)}>Cancel</button>
+              <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={() => void saveProfile(pendingRole)}>
+                {saving ? "Changing…" : "Yes, change role"}
+              </button>
+            </div>
           </div>
         </div>
       )}

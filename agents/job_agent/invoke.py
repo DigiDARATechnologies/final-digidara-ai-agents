@@ -141,6 +141,12 @@ def invoke():
     user_id = identity_headers.get("X-Digidara-User-Id")
     if not user_id:
         return jsonify({"error": "Authentication required"}), 401
+    # The gateway signs the envelope and fills `learner` from the DigiDARA
+    # profile; its degree decides which jobs the learner is eligible for.
+    learner = (body or {}).get("learner") if not is_multipart else None
+    degree = " ".join(str((learner or {}).get("degree") or "").split())[:200] if isinstance(learner, dict) else ""
+    if degree:
+        identity_headers["X-Digidara-Learner-Degree"] = degree
 
     if action == "upload_resume":
         file = request.files.get("file")

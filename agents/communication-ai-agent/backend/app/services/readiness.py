@@ -8,6 +8,7 @@ import json
 
 from ..models import PronunciationAttempt, SpeakingSession, User, WritingSession
 from ..utils.score_utils import to_score10
+from .role_periods import clean_periods, in_periods
 
 RECENT_SESSIONS = 5
 RECENT_PRONUNCIATION = 20
@@ -44,18 +45,27 @@ def _mean_out_of_100(rows):
     return round(sum(scores) / len(scores), 1) if scores else None
 
 
-def student_summary(email):
+def student_summary(email, periods=None):
+    """periods: the orchestrator's role periods; only activity inside them counts."""
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
     user = User.query.filter_by(email=email).first() if email else None
     if user is None:
         return empty
-    writing = (WritingSession.query.filter(WritingSession.user_id == user.id, WritingSession.overall_score.isnot(None))
-               .order_by(WritingSession.completed_at.desc(), WritingSession.id.desc()).limit(RECENT_SESSIONS).all())
-    speaking = (SpeakingSession.query.filter(SpeakingSession.user_id == user.id, SpeakingSession.overall_score.isnot(None))
-                .order_by(SpeakingSession.completed_at.desc(), SpeakingSession.id.desc()).limit(RECENT_SESSIONS).all())
-    pronunciation = (PronunciationAttempt.query.filter(PronunciationAttempt.user_id == user.id, PronunciationAttempt.overall_score.isnot(None))
-                     .order_by(PronunciationAttempt.created_at.desc()).limit(RECENT_PRONUNCIATION).all())
+    periods = clean_periods(periods)
+    # Without periods only the latest rows are needed; with them, filter first.
+    fetch = LEVEL_HISTORY if periods else None
+
+    def recent(query, when, limit):
+        rows = query.limit(fetch or limit).all()
+        return [row for row in rows if in_periods(getattr(row, when), periods)][:limit]
+
+    writing = recent(WritingSession.query.filter(WritingSession.user_id == user.id, WritingSession.overall_score.isnot(None))
+                     .order_by(WritingSession.completed_at.desc(), WritingSession.id.desc()), "completed_at", RECENT_SESSIONS)
+    speaking = recent(SpeakingSession.query.filter(SpeakingSession.user_id == user.id, SpeakingSession.overall_score.isnot(None))
+                      .order_by(SpeakingSession.completed_at.desc(), SpeakingSession.id.desc()), "completed_at", RECENT_SESSIONS)
+    pronunciation = recent(PronunciationAttempt.query.filter(PronunciationAttempt.user_id == user.id, PronunciationAttempt.overall_score.isnot(None))
+                           .order_by(PronunciationAttempt.created_at.desc()), "created_at", RECENT_PRONUNCIATION)
     parts = {"writing": _mean_out_of_100(writing), "speaking": _mean_out_of_100(speaking),
              "pronunciation": _mean_out_of_100(pronunciation)}
     practised = [score for score in parts.values() if score is not None]
@@ -68,8 +78,9 @@ def student_summary(email):
     missing = [name for name, score in parts.items() if score is None]
     history = []
     for model in (WritingSession, SpeakingSession):
-        history += (model.query.filter(model.user_id == user.id, model.overall_score.isnot(None))
+        history += [row for row in (model.query.filter(model.user_id == user.id, model.overall_score.isnot(None))
                     .order_by(model.completed_at.desc(), model.id.desc()).limit(LEVEL_HISTORY).all())
+                    if in_periods(row.completed_at, periods)]
     history.sort(key=lambda s: (s.completed_at is not None, s.completed_at), reverse=True)
     by_level = []
     for session in history:

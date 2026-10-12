@@ -66,7 +66,7 @@ async def gather(user) -> dict[str, Any]:
         block = area.get("resume") or {}
         used = False
         if block.get("skills"):
-            _add_unique(skills, block["skills"])
+            _add_unique(skills, [learner_service.clean_text(skill, 60) for skill in block["skills"]])
             used = True
         for key, target in (("projects", projects), ("certifications", certifications), ("achievements", achievements)):
             if block.get(key):
