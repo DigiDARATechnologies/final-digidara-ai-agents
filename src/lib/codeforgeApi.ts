@@ -275,6 +275,8 @@ export interface ProblemSet {
 
 /** The LeetCode-style list: every language, and every problem of one of
  * them with its difficulty and status; levels above the learner's locked. */
-export function getProblemSet(sessionToken: string, technology_slug?: string) {
-  return invoke<ProblemSet>("problem_set", { sessionToken, ...(technology_slug ? { technology_slug } : {}) });
+export function getProblemSet(sessionToken: string, technology_slug?: string, course_slug?: string) {
+  return invoke<ProblemSet>("problem_set", {
+    sessionToken, ...(technology_slug ? { technology_slug } : {}), ...(course_slug ? { course_slug } : {}),
+  });
 }

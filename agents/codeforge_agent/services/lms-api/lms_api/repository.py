@@ -209,16 +209,18 @@ class MySqlRepository:
             problems = [self._problem_summary(row) for row in cursor.fetchall()]
         return course, technology, topic, problems
 
-    def problem_set(self, student_id, technology_slug=None):
+    def problem_set(self, student_id, technology_slug=None, course_slug=None):
         """The LeetCode-style problem list: every language (technology) with
-        its solved/total counts per difficulty, and every problem of one
-        language in order (Easy first, then Medium, then Hard; by topic)."""
+        its solved/total counts per difficulty -- only one course's languages
+        when `course_slug` is given -- and every problem of one language in
+        order (Easy first, then Medium, then Hard; by topic)."""
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 "SELECT t.id,t.name,t.slug,MIN(c.slug) course_slug,MIN(ct.display_order) ord "
                 "FROM coding_technologies t JOIN course_technologies ct ON ct.technology_id=t.id AND ct.is_active=TRUE "
                 "JOIN coding_courses c ON c.id=ct.course_id AND c.is_active=TRUE "
-                "WHERE t.is_active=TRUE GROUP BY t.id,t.name,t.slug ORDER BY ord,t.id"
+                "WHERE t.is_active=TRUE AND (%s IS NULL OR c.slug=%s) GROUP BY t.id,t.name,t.slug ORDER BY ord,t.id",
+                (course_slug, course_slug),
             )
             technologies = cursor.fetchall()
             cursor.execute(

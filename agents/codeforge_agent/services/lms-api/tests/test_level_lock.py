@@ -24,8 +24,8 @@ class LevelRepository(FakeRepository):
         self.list_technologies(course_slug)
         return COURSE, TECH, [p for p in (EASY, MEDIUM, HARD) if p["difficulty"] == difficulty]
 
-    def problem_set(self, student_id, technology_slug=None):
-        del student_id, technology_slug
+    def problem_set(self, student_id, technology_slug=None, course_slug=None):
+        del student_id, technology_slug, course_slug
         languages = [{"slug": "python", "name": "Python", "course_slug": COURSE["slug"],
                       "counts": {"Easy": {"total": 1, "solved": 0}, "Medium": {"total": 1, "solved": 0}, "Hard": {"total": 1, "solved": 0}}}]
         return languages, "python", COURSE["slug"], [{**p, "number": i + 1} for i, p in enumerate((EASY, MEDIUM, HARD))]

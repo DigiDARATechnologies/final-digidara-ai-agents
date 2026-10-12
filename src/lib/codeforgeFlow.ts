@@ -31,6 +31,13 @@ export interface CodeForgeFlowMessage {
   options?: ChatOption[];
 }
 
+/** A flow turn; `openProblemSet` asks the app to show the problem list. */
+export interface CodeForgeResult {
+  state: CodeForgeFlowState;
+  messages: CodeForgeFlowMessage[];
+  openProblemSet?: { courseSlug?: string; technologySlug?: string };
+}
+
 export interface CodeForgeFlowState {
   step: CodeForgeStep;
   sessionToken?: string;
@@ -125,8 +132,8 @@ function afterProblemOptions(state: CodeForgeFlowState): ChatOption[] {
   const next = nextProblem(state);
   return [
     ...(next ? [{ label: `Next problem: ${next.name}`, value: next.slug }] : []),
-    { label: `All ${level} problems`, value: "choose_another_problem" },
-    { label: "📋 Problem list", value: "__problemset__" },
+    { label: `📋 ${state.technologyName ?? ""} problem list`.replace("  ", " "), value: "__problemset__",
+      description: `Every problem, ${level} level open` },
     { label: "Other technology", value: "back_to_technologies" },
     { label: "Back to courses", value: "back_to_courses" },
   ];
@@ -137,27 +144,29 @@ function mcqOptions(options: Record<string, string>): ChatOption[] {
   return Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 }
 
-/** Every problem at the learner's level in the chosen technology -- no topic
- * step: practice is by level. The server only serves this level's problems. */
-async function enterLevelProblems(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+/** The chosen technology's problems open in the problem list (a table, like
+ * LeetCode), not as chat buttons. The level's problems are kept here too, so
+ * "Next problem" works after each one. The server serves only this level. */
+async function enterLevelProblems(state: CodeForgeFlowState): Promise<CodeForgeResult> {
   const { level, difficulty } = levelNames();
   const { problems } = await listLevelProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, difficulty.toLowerCase());
   const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", problems, topics: [] };
   const solved = problems.filter((p) => p.progress === "Solved").length;
-  const navigation: ChatOption[] = [
+  const options: ChatOption[] = [
+    { label: `📋 ${state.technologyName} problem list`, value: "__problemset__", description: `${solved} of ${problems.length} ${difficulty} problems solved` },
     { label: "Other technology", value: "back_to_technologies" },
     { label: "Back to courses", value: "back_to_courses" },
   ];
-  if (!problems.length) {
-    return {
-      state: next,
-      messages: [{ text: `${state.technologyName} has no ${difficulty} problems yet for your ${level} level. Try another technology.`, options: navigation }],
-    };
-  }
-  const heading = solved === problems.length
-    ? `🎉 You've solved every ${level} (${difficulty}) problem in ${state.technologyName}. Your level moves up automatically at 100% — check Job Readiness. You can redo any of them:`
-    : `${state.technologyName} · ${level} level: ${problems.length} ${difficulty} problems, ${solved} solved. Solve all of them to unlock the next level.`;
-  return { state: next, messages: [{ text: heading, options: [...problemOptions(problems), ...navigation] }] };
+  const text = !problems.length
+    ? `${state.technologyName} has no ${difficulty} problems yet for your ${level} level. Try another technology.`
+    : solved === problems.length
+      ? `🎉 You've solved every ${level} (${difficulty}) problem in ${state.technologyName}. Your level moves up automatically — check Job Readiness.`
+      : `${state.technologyName} · ${level} level: ${problems.length} ${difficulty} problems, ${solved} solved. Pick one in the problem list; solve all of them to unlock the next level.`;
+  return {
+    state: next,
+    messages: [{ text, options }],
+    openProblemSet: problems.length ? { courseSlug: state.courseSlug, technologySlug: state.technologySlug } : undefined,
+  };
 }
 
 async function enterTechnologies(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
@@ -274,7 +283,7 @@ export async function submitCodeForgeCode(
 export async function handleCodeForgeText(
   state: CodeForgeFlowState,
   text: string,
-): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+): Promise<CodeForgeResult> {
   const trimmed = text.trim();
   const command = trimmed.toLowerCase();
 
@@ -437,17 +446,16 @@ export async function handleCodeForgeText(
 /** Opens a problem picked in the problem list, in this chat. */
 export async function openCodeForgeProblem(
   state: CodeForgeFlowState,
-  target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSummary },
-): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+  target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSummary; problems?: ProblemSummary[] },
+): Promise<CodeForgeResult> {
   const next: CodeForgeFlowState = {
     ...state,
     step: "awaiting_problem",
     courseSlug: target.courseSlug,
     technologySlug: target.technologySlug,
     technologyName: target.technologyName,
-    problems: state.technologySlug === target.technologySlug && state.problems.some((p) => p.slug === target.problem.slug)
-      ? state.problems
-      : [target.problem],
+    // The list's open problems, so "Next problem" can follow on from this one.
+    problems: target.problems?.length ? target.problems : [target.problem],
   };
   return handleCodeForgeText(next, target.problem.slug);
 }

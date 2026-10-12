@@ -5,8 +5,11 @@ import "./CodeForgeProblemSet.css";
 interface Props {
   open: boolean;
   sessionToken?: string;
+  /** Only this course's languages, starting on this technology. */
+  courseSlug?: string;
+  technologySlug?: string;
   onClose: () => void;
-  onOpenProblem: (target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSetItem }) => void;
+  onOpenProblem: (target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSetItem; problems: ProblemSetItem[] }) => void;
 }
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
@@ -22,9 +25,12 @@ function StatusIcon({ problem }: { problem: ProblemSetItem }) {
 /** Every language, and every problem of the chosen one, the way LeetCode lists
  * them. Only the learner's level (and levels they finished) open; the next
  * level unlocks once every problem of their level is solved. */
-export default function CodeForgeProblemSet({ open, sessionToken, onClose, onOpenProblem }: Props) {
+export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, technologySlug, onClose, onOpenProblem }: Props) {
   const [data, setData] = useState<ProblemSet | null>(null);
-  const [language, setLanguage] = useState<string | undefined>();
+  const [language, setLanguage] = useState<string | undefined>(technologySlug);
+
+  // Opened again for another course or technology: start there.
+  useEffect(() => { if (open) setLanguage(technologySlug); }, [open, technologySlug, courseSlug]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -35,12 +41,12 @@ export default function CodeForgeProblemSet({ open, sessionToken, onClose, onOpe
     if (!open || !sessionToken) return;
     let active = true;
     setLoading(true);
-    getProblemSet(sessionToken, language)
+    getProblemSet(sessionToken, language, courseSlug)
       .then((result) => { if (active) { setData(result); setError(""); } })
       .catch((err) => { if (active) setError((err as Error).message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [open, sessionToken, language]);
+  }, [open, sessionToken, language, courseSlug]);
 
   useEffect(() => {
     if (!open) return;
@@ -131,7 +137,8 @@ export default function CodeForgeProblemSet({ open, sessionToken, onClose, onOpe
               disabled={problem.locked}
               title={problem.locked ? `Locked: finish every ${level} problem to unlock ${problem.difficulty}.` : `Open ${problem.name}`}
               onClick={() => data && current && onOpenProblem({
-                courseSlug: current.course_slug, technologySlug: current.slug, technologyName: current.name, problem,
+                courseSlug: courseSlug ?? current.course_slug, technologySlug: current.slug, technologyName: current.name, problem,
+                problems: data.problems.filter((p) => !p.locked),
               })}>
               <StatusIcon problem={problem} />
               <span className="ps-title"><b>{problem.number}. {problem.name}</b><small>{problem.topic_name}</small></span>

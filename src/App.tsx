@@ -219,6 +219,8 @@ export default function App() {
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
   const [problemSetOpen, setProblemSetOpen] = useState(false);
+  /** The course and technology the problem list opens on. */
+  const [problemSetScope, setProblemSetScope] = useState<{ courseSlug?: string; technologySlug?: string }>({});
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -1198,6 +1200,19 @@ export default function App() {
 
     if (!text.trim() && !pendingResume && !pendingImage) return;
 
+    // Coding Practice's playground and problem list open in place: they are
+    // not messages, so they never land in the chat or become its title.
+    if (agent?.kind === "codeforge" && (text === "__problemset__" || text === "__playground__")) {
+      if (text === "__playground__") {
+        setPlaygroundOpen(true);
+      } else {
+        const flow = codeforgeStates[chatId];
+        setProblemSetScope({ courseSlug: flow?.courseSlug, technologySlug: flow?.technologySlug });
+        setProblemSetOpen(true);
+      }
+      return;
+    }
+
     if (pendingResume) {
       setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
     }
@@ -1327,10 +1342,14 @@ export default function App() {
         setTyping(false);
         return;
       }
-      handleCodeForgeText(flowState, text).then(({ state: nextState, messages }) => {
+      handleCodeForgeText(flowState, text).then(({ state: nextState, messages, openProblemSet }) => {
         setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
         appendAgentMessages(chatId, messages);
         setTyping(false);
+        if (openProblemSet) {
+          setProblemSetScope(openProblemSet);
+          setProblemSetOpen(true);
+        }
       });
       return;
     }
@@ -2138,6 +2157,7 @@ export default function App() {
 
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
       <CodeForgeProblemSet open={problemSetOpen} sessionToken={codeforgeState?.sessionToken}
+        courseSlug={problemSetScope.courseSlug} technologySlug={problemSetScope.technologySlug}
         onClose={() => setProblemSetOpen(false)} onOpenProblem={handleOpenListedProblem} />
 
       <AgentDetailsModal

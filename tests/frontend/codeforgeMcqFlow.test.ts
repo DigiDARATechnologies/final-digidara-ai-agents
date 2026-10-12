@@ -80,7 +80,7 @@ test('choosing a correct option submits it and shows positive feedback with next
   expect(messages[0].text).toContain('Correct!');
   expect(messages[0].text).toContain('h1 is the top-level heading tag.');
   // Practice is by level: move on within the level, or to another technology.
-  expect(messages[0].options?.map((o) => o.value).slice(-4)).toEqual(['choose_another_problem', '__problemset__', 'back_to_technologies', 'back_to_courses']);
+  expect(messages[0].options?.map((o) => o.value).slice(-3)).toEqual(['__problemset__', 'back_to_technologies', 'back_to_courses']);
 });
 
 test('choosing a wrong option reveals the correct answer and its text', async () => {

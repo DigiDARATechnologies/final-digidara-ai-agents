@@ -172,7 +172,8 @@ def invoke():
 
     if action == "problem_set":
         level = _level_difficulty(body) or "Easy"
-        languages, selected, course_slug, problems = repo().problem_set(student["id"], payload.get("technology_slug"))
+        languages, selected, course_slug, problems = repo().problem_set(
+            student["id"], payload.get("technology_slug"), payload.get("course_slug") or None)
         for problem in problems:
             problem["locked"] = _locked(level, problem["difficulty"])
         return jsonify({"level": level, "level_name": LEVEL_NAME[level], "languages": languages,

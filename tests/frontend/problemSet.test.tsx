@@ -33,5 +33,6 @@ test('every language is a tab, and only the learner level opens', async () => {
   fireEvent.click(screen.getByText('2. Leap Year'));
   expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ courseSlug: 'genai', technologySlug: 'python', technologyName: 'Python' }));
   fireEvent.click(screen.getByRole('button', { name: /Java/ }));
-  expect(api.getProblemSet).toHaveBeenLastCalledWith('s', 'java');
+  expect(await screen.findByText('1. Hello World')).toBeInTheDocument();
+  expect(api.getProblemSet).toHaveBeenLastCalledWith('s', 'java', undefined);
 });

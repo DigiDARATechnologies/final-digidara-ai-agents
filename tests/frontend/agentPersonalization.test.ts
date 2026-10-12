@@ -123,8 +123,10 @@ test('coding practice is by level: a technology lists only the level\'s problems
   const listed = await handleCodeForgeText(state as never, 'python');
   expect(codeforgeApi.listLevelProblems).toHaveBeenCalledWith('s', 'genai', 'python', 'easy');
   expect(codeforgeApi.listTopics).not.toHaveBeenCalled();
-  expect(listed.messages[0].text).toBe('Python · Beginner level: 2 Easy problems, 1 solved. Solve all of them to unlock the next level.');
-  expect(listed.messages[0].options?.map((o) => o.label)).toEqual(['✓ Print a Greeting', 'Count to Ten', 'Other technology', 'Back to courses']);
+  expect(listed.messages[0].text).toBe('Python · Beginner level: 2 Easy problems, 1 solved. Pick one in the problem list; solve all of them to unlock the next level.');
+  // The problems open in the problem list (a table), not as chat buttons.
+  expect(listed.openProblemSet).toEqual({ courseSlug: 'genai', technologySlug: 'python' });
+  expect(listed.messages[0].options?.map((o) => o.label)).toEqual(['📋 Python problem list', 'Other technology', 'Back to courses']);
 
   jest.mocked(codeforgeApi.getProblem).mockResolvedValueOnce({ problem: { ...problem('count', 'Count to Ten', 'loops'), question_type: 'code',
     input_format: '', output_format: '', constraints: '', examples: [], starter_code: '' } } as never);
