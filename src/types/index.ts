@@ -45,6 +45,9 @@ export interface ChatOption {
   href?: string;
   /** Suggested filename for `href` (same-origin downloads only). */
   download?: string;
+  /** A suggestion, not the only choice: shown with a star, and anything the
+   * learner types instead goes straight to the agent's flow as its own answer. */
+  suggested?: boolean;
 }
 
 export interface ChatMessage {

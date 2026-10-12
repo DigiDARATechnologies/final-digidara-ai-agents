@@ -66,8 +66,10 @@ Decide what the learner's message means. Return JSON only:
 - restart: the learner wants to change something they already chose earlier in
   THIS agent (another role, course, topic, difficulty) and no current choice fits.
 - reply: a question about this flow, the choices or DigiDARA. Answer in 1-3
-  short, warm sentences in the learner's language (Tamil if they wrote Tamil),
-  then invite them to pick one of the choices.
+  short, warm sentences in the SAME language as the message itself: English
+  for an English message, Tamil only when the message is written in Tamil
+  (never switch language because of the learner context), then invite them
+  to pick one of the choices.
 - continue: anything else, including a real answer the flow should take as it
   is (a custom topic or role, free text the step asks for). When unsure, continue.
 

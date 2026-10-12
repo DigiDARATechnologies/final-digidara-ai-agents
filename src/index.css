@@ -942,6 +942,7 @@ body.glow-off .send-btn:hover{
 .chat-options a.chat-option-link:hover{border-color:var(--accent1);background:var(--canvas-accent-soft);transform:translateY(-1px);}
 .chat-options button:not(:disabled):hover{border-color:var(--accent1);background:var(--canvas-accent-soft);transform:translateY(-1px);}
 .chat-options button:disabled{cursor:default;opacity:.55;}
+.chat-option-star{color:#f5b301;}
 .chat-options strong,.chat-options span{display:block;}
 .chat-options span{color:var(--canvas-text-dim);font-size:12px;line-height:1.4;margin-top:3px;font-weight:400;}
 .msg-time{ font-size:10.5px; color:var(--canvas-text-faint); margin-top:4px; }

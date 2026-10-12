@@ -578,7 +578,7 @@ export default function ChatView({
                           </a>
                         ) : (
                           <button key={option.value} type="button" disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
-                            <strong>{option.label}</strong>
+                            <strong>{option.suggested && <span className="chat-option-star" aria-label="Suggested">★ </span>}{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
                           </button>
                         ))}

@@ -78,7 +78,8 @@ test('capstone offers a project around the profile, at the learner level', () =>
   setLearnerContext(learner({ capstone_project_agent: 'medium' }));
   const message = initialCapstoneMessage(user);
   expect(message.text).toContain('Based on your profile (AI Engineer · python, llm, langgraph, rag)');
-  expect(message.options?.[0]).toMatchObject({ label: 'AI Engineer project', value: 'AI Engineer using python, llm, langgraph' });
+  expect(message.options?.[0]).toMatchObject({ label: 'AI Engineer project', value: 'AI Engineer using python, llm, langgraph', suggested: true });
+  expect(message.text).toContain('type any other language, role or topic');
   expect(createInitialCapstoneState(user).difficulty).toBe('medium');
 });
 

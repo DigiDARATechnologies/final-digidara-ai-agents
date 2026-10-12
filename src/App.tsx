@@ -1228,8 +1228,11 @@ export default function App() {
     const choices = lastAgentMessage?.role === "agent" ? lastAgentMessage.options ?? [] : [];
     const typed = text.trim();
     const typedAChoice = choices.some((o) => o.value.toLowerCase() === typed.toLowerCase() || o.label.toLowerCase() === typed.toLowerCase());
+    // Suggestions invite free text: what the learner typed is their own answer
+    // ("i need data science project"), not a miss to steer back to the buttons.
+    const hasSuggestions = choices.some((o) => o.suggested);
     if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined
-        && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice) {
+        && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice && !hasSuggestions) {
       const step = String((resumeSnapshot as { step?: unknown } | undefined)?.step ?? "");
       interpretTurn(agent.backendAgentName, step, choices, typed)
         .then((decision) => applyDecision(decision))

@@ -227,10 +227,10 @@ export function initialCapstoneMessage(user: User): CapstoneFlowMessage {
   const skills = goal.skills.slice(0, 3);
   const focus = skills.length ? `${role} using ${skills.join(", ")}` : role;
   return {
-    text: `Hi ${firstName}! Based on your profile (${goalLine(goal)}), shall I build your capstone project around that? Tap below, or type a different language, role or topic.`,
+    text: `Hi ${firstName}! Based on your profile (${goalLine(goal)}), here are my suggestions ★ for your capstone project. Tap one, or type any other language, role or topic (e.g. "data science") and I'll build the project around that instead.`,
     options: [
-      { label: `${role} project`, value: focus, description: skills.length ? `Uses ${skills.join(", ")}` : "Matches your target role" },
-      ...(skills[0] ? [{ label: `${skills[0]} project`, value: skills[0], description: "Focus on your top skill" }] : []),
+      { label: `${role} project`, value: focus, description: skills.length ? `Uses ${skills.join(", ")}` : "Matches your target role", suggested: true },
+      ...(skills[0] ? [{ label: `${skills[0]} project`, value: skills[0], description: "Focus on your top skill", suggested: true }] : []),
     ],
   };
 }
