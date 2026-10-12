@@ -19,6 +19,7 @@ import {
   handleCodeForgeText,
   openCodeForgeChat,
   openCodeForgeProblem,
+  enterAssessment,
   runCodeForgeCode,
   submitCodeForgeCode,
   type CodeForgeFlowState,
@@ -1594,6 +1595,21 @@ export default function App() {
     });
   }
 
+  /** Starts or continues a Professional assessment in the current Coding Practice chat. */
+  function handleStartAssessment(...args: Parameters<typeof enterAssessment> extends [unknown, ...infer Rest] ? Rest : never) {
+    if (!currentChatId) return;
+    const chatId = currentChatId;
+    const flowState = codeforgeStates[chatId];
+    if (!flowState) return;
+    setProblemSetOpen(false);
+    setTyping(true);
+    enterAssessment(flowState, ...args).then(({ state: nextState, messages }) => {
+      setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, messages);
+      setTyping(false);
+    });
+  }
+
   function handleAttachFiles(files: FileList) {
     if (!currentChatId || !user) return;
     const chatId = currentChatId;
@@ -1861,9 +1877,13 @@ export default function App() {
     }
   } else if (isCodeForgeChat && codeforgeState) {
     connectorStatus = CODEFORGE_STEP_LABELS[codeforgeState.step] ?? codeforgeState.step;
-    connectorPendingTask = codeforgeState.step === "awaiting_code" && codeforgeState.problemName
-      ? `Solve: ${codeforgeState.problemName}`
-      : null;
+    const running = codeforgeState.assessment;
+    connectorPendingTask = running
+      ? `Professional assessment · problem ${running.position} of ${running.items.length}${running.deadline
+        ? ` · ends ${new Date(running.deadline).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}`
+      : codeforgeState.step === "awaiting_code" && codeforgeState.problemName
+        ? `Solve: ${codeforgeState.problemName}`
+        : null;
   } else if (isAptitudeChat && aptitudeState) {
     connectorStatus = aptitudeState.step === "completed" ? "Test completed" : aptitudeState.step === "awaiting_next_question" ? "Next question pending" : aptitudeState.question ? `Question ${aptitudeState.question.sequence}` : "Ready to practice";
     connectorPendingTask = typing && ["awaiting_level", "awaiting_language"].includes(aptitudeState.step)
@@ -2158,7 +2178,7 @@ export default function App() {
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
       <CodeForgeProblemSet open={problemSetOpen} sessionToken={codeforgeState?.sessionToken}
         courseSlug={problemSetScope.courseSlug} technologySlug={problemSetScope.technologySlug}
-        onClose={() => setProblemSetOpen(false)} onOpenProblem={handleOpenListedProblem} />
+        onClose={() => setProblemSetOpen(false)} onOpenProblem={handleOpenListedProblem} onAssessment={handleStartAssessment} />
 
       <AgentDetailsModal
         agent={selectedAgent}

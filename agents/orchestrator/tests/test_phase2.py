@@ -748,3 +748,13 @@ def test_only_the_admins_own_yes_can_remove_a_learner(app_client, agents, monkey
     _fake_model(monkeypatch, [("tool", "remove_learner", {"learner": "Learner", "confirmed": True}), ("text", "Done.")])
     done = app_client.post(url, headers=auth("admin"), json={"message": "yes"}).json()
     assert done["actions"] == ["Removed Learner from the organization"]
+
+
+def test_coding_professional_progress_comes_from_passed_assessments(app_client, agents, monkeypatch):
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 100, "hard": 100, "professional": 33.3}})
+    learner_service.set_level("learner", "codeforge_agent", "professional", "self")
+    body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
+    # Professional is not Hard's 100% again: one of three assessments is passed.
+    assert coding["level"] == "professional" and coding["level_progress"] == 33.3
+    assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 75

@@ -24,9 +24,10 @@ def _iso(value):
 RESUME_MIN_SOLVED = 5
 
 
-def _resume_block(solved):
+def _resume_block(solved, passed_assessments=()):
     """Technologies with solved problems, and one checkable line per
-    technology with enough of them, for the learner's resume."""
+    technology with enough of them, for the learner's resume -- passed
+    Professional assessments first."""
     by_tech = {}
     for row in solved:
         tech = row.get("technology")
@@ -40,7 +41,13 @@ def _resume_block(solved):
             split = ", ".join(f"{n} {level}" for level, n in counts.items() if n)
             achievements.append({"title": f"Solved {total} {tech} coding problems",
                                  "description": f"DigiDARA Coding Practice, tested against hidden test cases ({split})."})
-    return {"skills": [tech for tech, _ in ranked], "achievements": achievements[:3]}
+    by_language = {}
+    for row in passed_assessments:
+        by_language[row["technology"]] = by_language.get(row["technology"], 0) + 1
+    professional = [{"title": f"Passed {count} Professional coding assessment{'s' if count > 1 else ''} in {tech}",
+                     "description": "DigiDARA Coding Practice: timed, no AI help, two hard problems and one real-world task each."}
+                    for tech, count in by_language.items()]
+    return {"skills": [tech for tech, _ in ranked], "achievements": (professional + achievements)[:3]}
 
 
 def _level_progress(solved, totals, difficulty):
@@ -51,7 +58,11 @@ def _level_progress(solved, totals, difficulty):
     return round(100 * sum(1 for r in solved if r.get("difficulty") == level) / total, 1)
 
 
-def build_student_summary(rows, totals=None, difficulty=None):
+# Professional is complete after this many passed assessments (any language).
+PROFESSIONAL_PASSES = 3
+
+
+def build_student_summary(rows, totals=None, difficulty=None, passed_assessments=None):
     """rows: one dict per attempted problem with difficulty, best_score,
     status, topic and updated_at (see MySqlRepository.student_problem_rows).
     totals: active problems per difficulty in the learner's technologies;
@@ -59,6 +70,7 @@ def build_student_summary(rows, totals=None, difficulty=None):
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
     attempted = [row for row in rows if row.get("status") in ("Attempted", "Solved")]
+    passed_assessments = list(passed_assessments or [])
     if not attempted:
         return empty
     weights = [DIFFICULTY_WEIGHT.get(row.get("difficulty"), 1.0) for row in attempted]
@@ -91,6 +103,7 @@ def build_student_summary(rows, totals=None, difficulty=None):
             "level_progress": _level_progress(solved, totals, difficulty),
             "level_total": (totals or {}).get(str(difficulty or "").strip().capitalize()),
         },
-        "level_scores": {level.lower(): _level_progress(solved, totals, level) or 0.0 for level in DIFFICULTY_WEIGHT} if totals else None,
-        "resume": _resume_block(solved),
+        "level_scores": {**{level.lower(): _level_progress(solved, totals, level) or 0.0 for level in DIFFICULTY_WEIGHT},
+                         "professional": round(100 * min(len(passed_assessments), PROFESSIONAL_PASSES) / PROFESSIONAL_PASSES, 1)} if totals else None,
+        "resume": _resume_block(solved, passed_assessments),
     }

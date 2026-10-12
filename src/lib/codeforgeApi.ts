@@ -280,3 +280,62 @@ export function getProblemSet(sessionToken: string, technology_slug?: string, co
     sessionToken, ...(technology_slug ? { technology_slug } : {}), ...(course_slug ? { course_slug } : {}),
   });
 }
+
+export interface AssessmentItem {
+  position: number;
+  kind: "hard" | "expert" | "real_world";
+  best_score: number;
+  attempts: number;
+  problem_id: number;
+  name: string;
+  slug: string;
+  difficulty: string;
+}
+
+export interface Assessment {
+  id: number;
+  status: "in_progress" | "submitted" | "expired";
+  technology: string;
+  started_at: string | null;
+  deadline_at: string | null;
+  finished_at: string | null;
+  score: number | null;
+  passed: boolean | null;
+  items: AssessmentItem[];
+}
+
+export interface AssessmentOverview {
+  technology: { slug: string; name: string };
+  available: boolean;
+  eligible: boolean;
+  minutes: number;
+  pass_mark: number;
+  passed: number;
+  active: Assessment | null;
+  attempts: Assessment[];
+}
+
+export interface AssessmentProblem extends ProblemDetail {
+  kind: AssessmentItem["kind"];
+  position: number;
+}
+
+export const ASSESSMENT_KIND_LABELS: Record<AssessmentItem["kind"], string> = {
+  hard: "Hard problem", expert: "Expert problem", real_world: "Real-world task",
+};
+
+export function getAssessmentOverview(sessionToken: string, technology_slug: string) {
+  return invoke<AssessmentOverview>("assessment_overview", { sessionToken, technology_slug });
+}
+
+export function startAssessment(sessionToken: string, technology_slug: string) {
+  return invoke<{ assessment: Assessment }>("start_assessment", { sessionToken, technology_slug });
+}
+
+export function getAssessmentProblem(sessionToken: string, assessment_id: number, position: number) {
+  return invoke<{ problem: AssessmentProblem }>("assessment_problem", { sessionToken, assessment_id, position });
+}
+
+export function finishAssessment(sessionToken: string, assessment_id: number) {
+  return invoke<{ assessment: Assessment }>("finish_assessment", { sessionToken, assessment_id });
+}

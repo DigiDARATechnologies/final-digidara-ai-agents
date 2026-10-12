@@ -133,13 +133,20 @@ def summarize_reply(data: Any) -> dict:
 
 
 def _level_scores(value: Any) -> dict[str, float]:
-    """An agent's progress (0-100) at easy/medium/hard, as one per learner level."""
+    """An agent's progress (0-100) at easy/medium/hard (and professional when it
+    measures that level separately), as one per learner level."""
     if not isinstance(value, dict):
         return {}
     by_difficulty = {key: _clamp_score(value.get(key)) for key in ("easy", "medium", "hard")}
     if all(score is None for score in by_difficulty.values()):
         return {}
-    return {level: by_difficulty[difficulty] or 0.0 for level, difficulty in level_rules.LEVEL_DIFFICULTY.items()}
+    scores = {level: by_difficulty[difficulty] or 0.0 for level, difficulty in level_rules.LEVEL_DIFFICULTY.items()}
+    # An agent with its own Professional measure (Coding: passed Professional
+    # assessments) reports it; otherwise Professional keeps the Hard results.
+    professional = _clamp_score(value.get("professional"))
+    if professional is not None:
+        scores["professional"] = professional
+    return scores
 
 
 async def _area(agent_name: str, label: str, weight: int, user, levels: dict, periods: list[dict] | None = None) -> dict:

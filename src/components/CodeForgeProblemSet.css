@@ -54,3 +54,18 @@
   .ps-row { grid-template-columns: 24px 1fr 48px; }
   .ps-best { display: none; }
 }
+
+/* Professional assessment panel */
+.ps-assess { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: center; margin: 8px 22px 0; padding: 14px 16px;
+  border: 1px solid var(--line-1); border-radius: 14px; background: linear-gradient(135deg, var(--canvas-accent-soft), var(--surf-1)); }
+.ps-assess.off { background: var(--surf-1); opacity: .85; }
+.ps-assess-main { display: flex; flex-direction: column; gap: 4px; color: var(--tx-2); font-size: 13px; }
+.ps-assess-main > b { color: var(--tx-1); font-size: 15px; }
+.ps-assess-main b { color: var(--tx-1); }
+.ps-assess-btn { padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent3); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
+.ps-assess-btn:disabled { opacity: .6; cursor: default; }
+.ps-attempts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
+.ps-attempts li { display: inline-flex; gap: 8px; padding: 4px 10px; border-radius: 999px; background: var(--surf-2); color: var(--tx-2); font-size: 12px; }
+.ps-attempts b { color: var(--tx-1); }
+.ps-attempts b.ok { color: #16a34a; }
+@media (max-width: 640px) { .ps-assess { grid-template-columns: 1fr; } }

@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from lms_api.catalog import COURSES, COURSE_TECHNOLOGIES, TECHNOLOGIES, TOPICS, objectives, slugify, topic_description, topic_difficulty
 from lms_api.problem_catalog import PROBLEMS
+from lms_api.professional_catalog import PRO_PROBLEMS, PRO_TECHNOLOGIES, PRO_TOPICS
 
 
 def load_local_env():
@@ -70,21 +71,36 @@ def seed():
                         (technology["id"], name, slugify(name), description, json.dumps(objectives(technology["name"], name)), json.dumps([name]), order),
                     )
 
+            # Professional topics hold the assessment-only content; they sort
+            # after every practice topic and are never listed to learners.
+            for technology_slug in PRO_TECHNOLOGIES:
+                technology = technologies[technology_slug]
+                for offset, (name, slug) in enumerate(PRO_TOPICS, start=1):
+                    cursor.execute(
+                        "INSERT INTO coding_topics (technology_id, name, slug, description, learning_objectives, suggested_concepts, display_order) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), "
+                        "display_order=VALUES(display_order), is_active=TRUE",
+                        (technology["id"], name, slug, f"{name} for {technology['name']}: used only in Professional assessments.",
+                         json.dumps([]), json.dumps([]), 1000 + offset),
+                    )
+
             cursor.execute(
                 "SELECT tp.id,t.slug,tp.slug FROM coding_topics tp JOIN coding_technologies t ON t.id=tp.technology_id"
             )
             topic_ids = {(row[1], row[2]): row[0] for row in cursor.fetchall()}
-            for problem in PROBLEMS:
+            for problem in PROBLEMS + PRO_PROBLEMS:
                 topic_id = topic_ids[(problem["technology"], problem["topic"])]
+                track = problem.get("track", "practice")
+                difficulty = problem["difficulty"] if track == "professional" else topic_difficulty(problem["technology"], problem["topic"])
                 question_type = problem.get("question_type", "code")
                 mcq_options = problem.get("mcq_options")
                 cursor.execute(
-                    "INSERT INTO coding_problems (topic_id,name,slug,description,input_format,output_format,constraints_text,examples_json,starter_code,language_key,judge0_language_id,question_type,mcq_options_json,mcq_correct_key,mcq_explanation,difficulty,max_score,display_order) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,100,%s) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),input_format=VALUES(input_format),"
+                    "INSERT INTO coding_problems (topic_id,name,slug,description,input_format,output_format,constraints_text,examples_json,starter_code,language_key,judge0_language_id,question_type,mcq_options_json,mcq_correct_key,mcq_explanation,difficulty,track,max_score,display_order) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,100,%s) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),input_format=VALUES(input_format),track=VALUES(track),"
                     "output_format=VALUES(output_format),constraints_text=VALUES(constraints_text),examples_json=VALUES(examples_json),starter_code=VALUES(starter_code),language_key=VALUES(language_key),"
                     "judge0_language_id=VALUES(judge0_language_id),question_type=VALUES(question_type),mcq_options_json=VALUES(mcq_options_json),mcq_correct_key=VALUES(mcq_correct_key),"
                     "mcq_explanation=VALUES(mcq_explanation),difficulty=VALUES(difficulty),max_score=VALUES(max_score),display_order=VALUES(display_order),is_active=TRUE",
-                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem.get("starter"), problem.get("language"), problem.get("language_id"), question_type, json.dumps(mcq_options) if mcq_options else None, problem.get("mcq_correct_key"), problem.get("mcq_explanation"), topic_difficulty(problem["technology"], problem["topic"]), problem["order"]),
+                    (topic_id, problem["name"], problem["slug"], problem["description"], problem["input_format"], problem["output_format"], problem["constraints"], json.dumps(problem["examples"]), problem.get("starter"), problem.get("language"), problem.get("language_id"), question_type, json.dumps(mcq_options) if mcq_options else None, problem.get("mcq_correct_key"), problem.get("mcq_explanation"), difficulty, track, problem["order"]),
                 )
                 problem_id = cursor.lastrowid
                 if not problem_id:

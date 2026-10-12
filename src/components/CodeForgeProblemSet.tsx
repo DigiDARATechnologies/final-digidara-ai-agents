@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { getProblemSet, type ProblemSet, type ProblemSetItem, type ProblemSetLanguage } from "../lib/codeforgeApi";
+import {
+  getAssessmentOverview,
+  getProblemSet,
+  startAssessment,
+  type Assessment,
+  type AssessmentOverview,
+  type ProblemSet,
+  type ProblemSetItem,
+  type ProblemSetLanguage,
+} from "../lib/codeforgeApi";
 import "./CodeForgeProblemSet.css";
 
 interface Props {
@@ -10,6 +19,48 @@ interface Props {
   technologySlug?: string;
   onClose: () => void;
   onOpenProblem: (target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSetItem; problems: ProblemSetItem[] }) => void;
+  /** Starts or continues a Professional assessment in the chat. */
+  onAssessment: (assessment: Assessment, technology: { slug: string; name: string; courseSlug?: string }) => void;
+}
+
+function when(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "";
+}
+
+/** The Professional level: timed assessments instead of a problem list. */
+function AssessmentPanel({ overview, busy, onStart }: { overview: AssessmentOverview; busy: boolean; onStart: () => void }) {
+  const name = overview.technology.name;
+  if (!overview.available) {
+    return <section className="ps-assess off"><b>Professional assessment</b><span>Coming soon for {name}. Available now for Python, MySQL and JavaScript.</span></section>;
+  }
+  const active = overview.active;
+  return (
+    <section className={`ps-assess${overview.eligible ? "" : " off"}`} aria-label="Professional assessment">
+      <div className="ps-assess-main">
+        <b>{overview.eligible ? "🎯" : "🔒"} Professional assessment · {name}</b>
+        <span>
+          {overview.minutes} minutes · 3 problems (a Hard problem, an Expert problem, a real-world task) · no AI tutor ·
+          {" "}{overview.pass_mark}/100 passes · <b>{Math.min(overview.passed, 3)} of 3 passed</b>
+        </span>
+        {!overview.eligible && <span>Unlocks at the Professional level: solve every Hard problem first.</span>}
+      </div>
+      {overview.eligible && (
+        <button type="button" className="ps-assess-btn" disabled={busy} onClick={onStart}>
+          {busy ? "Starting…" : active ? `Continue (ends ${when(active.deadline_at)})` : "Start assessment"}
+        </button>
+      )}
+      {overview.attempts.length > 0 && (
+        <ul className="ps-attempts">
+          {overview.attempts.slice(0, 5).map((attempt) => (
+            <li key={attempt.id}>
+              <span>{when(attempt.finished_at ?? attempt.started_at)}</span>
+              <b className={attempt.passed ? "ok" : ""}>{attempt.score ?? 0}/100 · {attempt.passed ? "Passed" : attempt.status === "expired" ? "Time up" : "Not passed"}</b>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }
 
 const DIFFICULTIES = ["Easy", "Medium", "Hard"] as const;
@@ -25,7 +76,9 @@ function StatusIcon({ problem }: { problem: ProblemSetItem }) {
 /** Every language, and every problem of the chosen one, the way LeetCode lists
  * them. Only the learner's level (and levels they finished) open; the next
  * level unlocks once every problem of their level is solved. */
-export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, technologySlug, onClose, onOpenProblem }: Props) {
+export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, technologySlug, onClose, onOpenProblem, onAssessment }: Props) {
+  const [overview, setOverview] = useState<AssessmentOverview | null>(null);
+  const [starting, setStarting] = useState(false);
   const [data, setData] = useState<ProblemSet | null>(null);
   const [language, setLanguage] = useState<string | undefined>(technologySlug);
 
@@ -47,6 +100,28 @@ export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, te
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [open, sessionToken, language, courseSlug]);
+
+  // The Professional assessment for the language on screen.
+  const shownLanguage = data?.technology_slug;
+  useEffect(() => {
+    if (!open || !sessionToken || !shownLanguage) return;
+    let active = true;
+    getAssessmentOverview(sessionToken, shownLanguage).then((o) => { if (active) setOverview(o); }).catch(() => { if (active) setOverview(null); });
+    return () => { active = false; };
+  }, [open, sessionToken, shownLanguage]);
+
+  async function start() {
+    if (!sessionToken || !overview) return;
+    setStarting(true);
+    try {
+      const assessment = overview.active ?? (await startAssessment(sessionToken, overview.technology.slug)).assessment;
+      onAssessment(assessment, { ...overview.technology, courseSlug });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setStarting(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -114,6 +189,8 @@ export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, te
             })}
           </section>
         )}
+
+        {overview && <AssessmentPanel overview={overview} busy={starting} onStart={() => void start()} />}
 
         <div className="ps-tools">
           <input type="search" placeholder="Search questions or topics" value={search} onChange={(e) => setSearch(e.target.value)} />

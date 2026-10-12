@@ -10,6 +10,11 @@ import {
   runProblem,
   submitProblem,
   submitMcqAnswer,
+  finishAssessment,
+  getAssessmentProblem,
+  ASSESSMENT_KIND_LABELS,
+  type Assessment,
+  type AssessmentItem,
   type Course,
   type EvaluationResult,
   type ProblemSummary,
@@ -59,6 +64,8 @@ export interface CodeForgeFlowState {
   mcqOptions?: Record<string, string>;
   lastResult?: EvaluationResult;
   lastGuidance?: TutorGuidance;
+  /** A running Professional assessment: its id, end time and three problems. */
+  assessment?: { id: number; deadline: string | null; technology: string; items: AssessmentItem[]; position: number };
 }
 
 function matchSlugOrName<T extends { slug: string; name: string }>(list: T[], value: string): T | undefined {
@@ -241,6 +248,87 @@ function formatGuidance(guidance: TutorGuidance): string {
   return lines.join("\n");
 }
 
+function endsAt(deadline: string | null): string {
+  return deadline ? new Date(deadline).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+}
+
+/** Move between the three problems, or finish. */
+function assessmentOptions(state: CodeForgeFlowState): ChatOption[] {
+  const a = state.assessment!;
+  return [
+    ...a.items.filter((item) => item.position !== a.position).map((item) => ({
+      label: `Problem ${item.position}: ${ASSESSMENT_KIND_LABELS[item.kind]}`,
+      value: `assessment_problem_${item.position}`,
+      description: item.best_score ? `best ${item.best_score}/100` : "not submitted yet",
+    })),
+    { label: "Finish assessment", value: "finish_assessment", description: "Score what you have submitted" },
+  ];
+}
+
+/** Opens one problem of the running assessment in the code editor. */
+async function openAssessmentProblem(state: CodeForgeFlowState, position: number): Promise<CodeForgeResult> {
+  const a = state.assessment!;
+  try {
+    const { problem } = await getAssessmentProblem(state.sessionToken!, a.id, position);
+    const next: CodeForgeFlowState = {
+      ...state, step: "awaiting_code", problemId: problem.id, problemSlug: problem.slug, problemName: problem.name,
+      starterCode: problem.starter_code, lastResult: undefined, lastGuidance: undefined,
+      assessment: { ...a, position },
+    };
+    const examples = (problem.examples ?? []).map((ex, i) => `Example ${i + 1}:\n  Input: ${ex.input || "(none)"}\n  Output: ${ex.output}`).join("\n");
+    return {
+      state: next,
+      messages: [{
+        text: `Problem ${position} of ${a.items.length} · ${ASSESSMENT_KIND_LABELS[problem.kind]} · ends at ${endsAt(a.deadline)}\n\n${problem.name}\n\n${problem.description}\n\nInput: ${problem.input_format}\nOutput: ${problem.output_format}\nConstraints: ${problem.constraints}\n\n${examples}\n\nWrite your ${problem.language} solution, then Run or Submit. Your best submission counts.`,
+        options: assessmentOptions(next),
+      }],
+    };
+  } catch (error) {
+    return endAssessment(state, (error as Error).message);
+  }
+}
+
+function resultText(assessment: Assessment): string {
+  const lines = assessment.items.map((item) => `Problem ${item.position} (${ASSESSMENT_KIND_LABELS[item.kind]}): ${item.best_score}/100`);
+  const verdict = assessment.passed ? `✅ Passed with ${assessment.score}/100.` : `Not passed: ${assessment.score ?? 0}/100 (the pass mark is 70).`;
+  return [assessment.status === "expired" ? "⏱ Time is up." : "Assessment finished.", verdict, "", ...lines].join("\n");
+}
+
+/** Finishes (or reads the finished) attempt and shows the result. */
+async function endAssessment(state: CodeForgeFlowState, reason?: string): Promise<CodeForgeResult> {
+  const a = state.assessment;
+  if (!a) return { state, messages: [] };
+  try {
+    const { assessment } = await finishAssessment(state.sessionToken!, a.id);
+    const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", assessment: undefined, problemId: undefined, starterCode: undefined };
+    return {
+      state: next,
+      messages: [{
+        text: `${reason ? `${reason}\n\n` : ""}${resultText(assessment)}${assessment.passed ? "\n\nPass 3 assessments to complete the Professional level." : ""}`,
+        options: [{ label: "📋 Problem list", value: "__problemset__", description: "See your attempts or start another" },
+          { label: "Back to courses", value: "back_to_courses" }],
+      }],
+    };
+  } catch (error) {
+    return { state: { ...state, assessment: undefined }, messages: [{ text: `Could not finish the assessment: ${(error as Error).message}` }] };
+  }
+}
+
+/** Starts (or continues) an assessment in this chat, from the problem list. */
+export async function enterAssessment(state: CodeForgeFlowState, assessment: Assessment, technology: { slug: string; name: string; courseSlug?: string }): Promise<CodeForgeResult> {
+  const next: CodeForgeFlowState = {
+    ...state, technologySlug: technology.slug, technologyName: technology.name, courseSlug: technology.courseSlug ?? state.courseSlug,
+    assessment: { id: assessment.id, deadline: assessment.deadline_at, technology: assessment.technology, items: assessment.items, position: 1 },
+  };
+  const opened = await openAssessmentProblem(next, 1);
+  return {
+    ...opened,
+    messages: [{
+      text: `🎯 Professional assessment · ${technology.name}: ${assessment.items.length} problems, ends at ${endsAt(assessment.deadline_at)}. No AI tutor until you finish; your best submission for each problem counts, and 70/100 passes.`,
+    }, ...opened.messages],
+  };
+}
+
 export async function runCodeForgeCode(
   state: CodeForgeFlowState,
   code: string,
@@ -249,6 +337,9 @@ export async function runCodeForgeCode(
   try {
     const result = await runProblem(state.sessionToken, state.problemId, code);
     const failed = result.status !== "Accepted";
+    if (state.assessment) {
+      return { state: { ...state, lastResult: result }, messages: [{ text: formatResult(result), options: assessmentOptions(state) }] };
+    }
     return {
       state: { ...state, lastResult: result, lastGuidance: undefined },
       messages: [{ text: formatResult(result), options: failed ? [{ label: "Explain this error", value: "explain_error" }] : undefined }],
@@ -265,6 +356,12 @@ export async function submitCodeForgeCode(
   if (!state.sessionToken || !state.problemId) return { state, messages: [] };
   try {
     const result = await submitProblem(state.sessionToken, state.problemId, code);
+    if (state.assessment) {
+      const a = state.assessment;
+      const items = a.items.map((item) => (item.position === a.position ? { ...item, best_score: Math.max(item.best_score, result.score) } : item));
+      const next: CodeForgeFlowState = { ...state, lastResult: result, assessment: { ...a, items } };
+      return { state: next, messages: [{ text: `${formatResult(result)}\n\nBest for this problem: ${Math.max(...items.filter((i) => i.position === a.position).map((i) => i.best_score))}/100`, options: assessmentOptions(next) }] };
+    }
     const accepted = result.status === "Accepted";
     const nextOptions: ChatOption[] = accepted
       ? [
@@ -276,6 +373,8 @@ export async function submitCodeForgeCode(
       messages: [{ text: formatResult(result), options: nextOptions }],
     };
   } catch (error) {
+    // The attempt's time ran out: show the result instead of an error.
+    if (state.assessment && /assessment|ended/i.test((error as Error).message)) return endAssessment(state, "⏱ Time is up.");
     return { state, messages: [{ text: `Could not submit your code: ${(error as Error).message}` }] };
   }
 }
@@ -286,6 +385,17 @@ export async function handleCodeForgeText(
 ): Promise<CodeForgeResult> {
   const trimmed = text.trim();
   const command = trimmed.toLowerCase();
+
+  // Inside a Professional assessment only its own commands apply.
+  if (state.assessment) {
+    const switchTo = /^assessment_problem_(\d)$/.exec(command);
+    if (switchTo) return openAssessmentProblem(state, Number(switchTo[1]));
+    if (command === "finish_assessment") return endAssessment(state);
+    if (command === "explain_error") {
+      return { state, messages: [{ text: "The AI tutor is off during the assessment. It is back as soon as you finish.", options: assessmentOptions(state) }] };
+    }
+    return { state, messages: [{ text: "You are in a Professional assessment. Use Run or Submit, switch problems, or finish.", options: assessmentOptions(state) }] };
+  }
 
   // Cross-cutting navigation commands, reachable from any step. Buttons from
   // chats saved before practice was by level ("Back to topics", "Next

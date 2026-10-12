@@ -169,9 +169,9 @@ class MySqlRepository:
                 "SELECT tp.id,tp.name,tp.slug,tp.description,tp.display_order,COUNT(DISTINCT p.id) problem_count,MIN(p.difficulty) difficulty,"
                 "COUNT(DISTINCT CASE WHEN spp.status='Solved' THEN p.id END) solved_count,"
                 "COUNT(DISTINCT CASE WHEN spp.attempts>0 THEN p.id END) attempted_count "
-                "FROM coding_topics tp LEFT JOIN coding_problems p ON p.topic_id=tp.id AND p.is_active=TRUE "
+                "FROM coding_topics tp LEFT JOIN coding_problems p ON p.topic_id=tp.id AND p.is_active=TRUE AND p.track='practice' "
                 "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
-                "WHERE tp.technology_id=%s AND tp.is_active=TRUE GROUP BY tp.id ORDER BY tp.display_order,tp.id",
+                "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND tp.slug NOT LIKE 'professional-%%' GROUP BY tp.id ORDER BY tp.display_order,tp.id",
                 (student_id or 0, technology["id"]),
             )
             topics = [self._topic_summary(row) for row in cursor.fetchall()]
@@ -203,7 +203,7 @@ class MySqlRepository:
                 "SELECT p.id,p.name,p.slug,p.description,p.difficulty,p.max_score,p.language_key,p.question_type,p.display_order,"
                 "COALESCE(spp.status,'Not Started') progress,COALESCE(spp.best_score,0) best_score,COALESCE(spp.attempts,0) attempts "
                 "FROM coding_problems p LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
-                "WHERE p.topic_id=%s AND p.is_active=TRUE ORDER BY p.display_order,p.id",
+                "WHERE p.topic_id=%s AND p.is_active=TRUE AND p.track='practice' ORDER BY p.display_order,p.id",
                 (student_id, topic["id"]),
             )
             problems = [self._problem_summary(row) for row in cursor.fetchall()]
@@ -228,7 +228,7 @@ class MySqlRepository:
                 "SUM(CASE WHEN spp.status='Solved' THEN 1 ELSE 0 END) solved "
                 "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id AND tp.is_active=TRUE "
                 "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
-                "WHERE p.is_active=TRUE GROUP BY tp.technology_id,p.difficulty",
+                "WHERE p.is_active=TRUE AND p.track='practice' GROUP BY tp.technology_id,p.difficulty",
                 (student_id,),
             )
             counts = {}
@@ -249,7 +249,7 @@ class MySqlRepository:
                     "tp.slug topic_slug,tp.name topic_name "
                     "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
                     "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
-                    "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE "
+                    "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE AND p.track='practice' "
                     "ORDER BY FIELD(p.difficulty,'Easy','Medium','Hard'),tp.display_order,tp.id,p.display_order,p.id",
                     (student_id, selected["id"]),
                 )
@@ -271,7 +271,7 @@ class MySqlRepository:
                 "tp.slug topic_slug,tp.name topic_name "
                 "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
                 "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
-                "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE AND p.difficulty=%s "
+                "WHERE tp.technology_id=%s AND tp.is_active=TRUE AND p.is_active=TRUE AND p.track='practice' AND p.difficulty=%s "
                 "ORDER BY tp.display_order,tp.id,p.display_order,p.id",
                 (student_id, technology["id"], difficulty),
             )
@@ -333,6 +333,221 @@ class MySqlRepository:
         }
         submission_id = self.save_submission(student_id, problem, f"Selected: {selected_key}", "submit", outcome)
         return {"submissionId": submission_id, "mode": "submit", **outcome}
+
+    # --- Professional assessments ------------------------------------------
+    # A timed test of three problems -- one practice Hard problem, one Expert
+    # problem and one real-world task (fix or speed up given code) -- in one
+    # language. Expert and real-world content (track 'professional') is never
+    # listed; it opens only inside the learner's own running assessment.
+
+    def _expire(self, cursor, student_id):
+        """Closes the student's attempts whose time ran out, scoring what was done."""
+        cursor.execute(
+            "SELECT id FROM coding_assessments WHERE student_id=%s AND status='in_progress' AND deadline_at < UTC_TIMESTAMP()",
+            (student_id,),
+        )
+        for row in cursor.fetchall():
+            self._close(cursor, row["id"], "expired")
+
+    def _close(self, cursor, assessment_id, status):
+        cursor.execute("SELECT COALESCE(AVG(best_score),0) score FROM coding_assessment_items WHERE assessment_id=%s", (assessment_id,))
+        score = round(float(cursor.fetchone()["score"]), 1)
+        cursor.execute(
+            "UPDATE coding_assessments SET status=%s, finished_at=UTC_TIMESTAMP(), score=%s, passed=%s WHERE id=%s AND status='in_progress'",
+            (status, score, score >= self.ASSESSMENT_PASS, assessment_id),
+        )
+
+    ASSESSMENT_PASS = 70
+
+    def _technology_by_slug(self, cursor, technology_slug):
+        cursor.execute("SELECT id,name,slug FROM coding_technologies WHERE slug=%s AND is_active=TRUE", (technology_slug,))
+        row = cursor.fetchone()
+        if not row:
+            raise ApiError("The technology is unavailable.", 404, "technology_not_found")
+        return row
+
+    def _assessment_items(self, cursor, assessment_id):
+        cursor.execute(
+            "SELECT i.position,i.kind,i.best_score,i.attempts,p.id problem_id,p.name,p.slug,p.difficulty,tp.slug topic_slug "
+            "FROM coding_assessment_items i JOIN coding_problems p ON p.id=i.problem_id JOIN coding_topics tp ON tp.id=p.topic_id "
+            "WHERE i.assessment_id=%s ORDER BY i.position",
+            (assessment_id,),
+        )
+        return [{"position": int(r["position"]), "kind": r["kind"], "best_score": int(r["best_score"]), "attempts": int(r["attempts"]),
+                 "problem_id": r["problem_id"], "name": r["name"], "slug": r["slug"], "difficulty": r["difficulty"],
+                 "topic_slug": r["topic_slug"]} for r in cursor.fetchall()]
+
+    @staticmethod
+    def _iso(value):
+        return value.isoformat() + "Z" if hasattr(value, "isoformat") else None
+
+    def _assessment_dict(self, cursor, row):
+        return {
+            "id": row["id"], "status": row["status"], "technology": row.get("technology"),
+            "started_at": self._iso(row["started_at"]), "deadline_at": self._iso(row["deadline_at"]),
+            "finished_at": self._iso(row.get("finished_at")),
+            "score": float(row["score"]) if row.get("score") is not None else None,
+            "passed": None if row.get("passed") is None else bool(row["passed"]),
+            "items": self._assessment_items(cursor, row["id"]),
+        }
+
+    def assessment_overview(self, student_id, technology_slug):
+        """Whether this language has a Professional assessment, the running
+        attempt if any, and every finished attempt."""
+        from .professional_catalog import PRO_TECHNOLOGIES
+
+        with connection() as conn, conn.cursor() as cursor:
+            technology = self._technology_by_slug(cursor, technology_slug)
+            self._expire(cursor, student_id)
+            conn.commit()
+            cursor.execute(
+                "SELECT a.*,t.name technology FROM coding_assessments a JOIN coding_technologies t ON t.id=a.technology_id "
+                "WHERE a.student_id=%s AND a.technology_id=%s ORDER BY a.started_at DESC LIMIT 20",
+                (student_id, technology["id"]),
+            )
+            attempts = [self._assessment_dict(cursor, row) for row in cursor.fetchall()]
+        active = next((a for a in attempts if a["status"] == "in_progress"), None)
+        return {
+            "technology": {"slug": technology["slug"], "name": technology["name"]},
+            "available": technology["slug"] in PRO_TECHNOLOGIES,
+            "active": active,
+            "attempts": [a for a in attempts if a["status"] != "in_progress"],
+            "passed": sum(1 for a in attempts if a["passed"]),
+            "pass_mark": self.ASSESSMENT_PASS,
+        }
+
+    def start_assessment(self, student_id, technology_slug, minutes):
+        """A new attempt with three problems, preferring ones this student has
+        not had in an earlier attempt. A running attempt is returned as is."""
+        import random
+
+        with connection() as conn, conn.cursor() as cursor:
+            technology = self._technology_by_slug(cursor, technology_slug)
+            self._expire(cursor, student_id)
+            cursor.execute(
+                "SELECT a.*,t.name technology FROM coding_assessments a JOIN coding_technologies t ON t.id=a.technology_id "
+                "WHERE a.student_id=%s AND a.status='in_progress' ORDER BY a.started_at DESC LIMIT 1",
+                (student_id,),
+            )
+            running = cursor.fetchone()
+            if running:
+                conn.commit()
+                if running["technology_id"] != technology["id"]:
+                    raise ApiError(f"Finish your running {running['technology']} assessment first.", 409, "assessment_running")
+                return self._assessment_dict(cursor, running)
+            cursor.execute(
+                "SELECT DISTINCT i.problem_id FROM coding_assessment_items i JOIN coding_assessments a ON a.id=i.assessment_id WHERE a.student_id=%s",
+                (student_id,),
+            )
+            used = {row["problem_id"] for row in cursor.fetchall()}
+            picks = []
+            for kind, condition in (
+                ("hard", "p.track='practice' AND p.difficulty='Hard' AND p.question_type='code'"),
+                ("expert", "p.track='professional' AND tp.slug='professional-challenges'"),
+                ("real_world", "p.track='professional' AND tp.slug='professional-real-world-tasks'"),
+            ):
+                cursor.execute(
+                    "SELECT p.id FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
+                    f"WHERE tp.technology_id=%s AND p.is_active=TRUE AND tp.is_active=TRUE AND {condition}",
+                    (technology["id"],),
+                )
+                ids = [row["id"] for row in cursor.fetchall()]
+                if not ids:
+                    raise ApiError(f"There is no Professional assessment for {technology['name']} yet.", 404, "assessment_unavailable")
+                fresh = [i for i in ids if i not in used] or ids
+                picks.append((kind, random.choice(fresh)))
+            cursor.execute(
+                "INSERT INTO coding_assessments (student_id,technology_id,status,started_at,deadline_at) "
+                "VALUES (%s,%s,'in_progress',UTC_TIMESTAMP(),UTC_TIMESTAMP() + INTERVAL %s MINUTE)",
+                (student_id, technology["id"], int(minutes)),
+            )
+            assessment_id = cursor.lastrowid
+            for position, (kind, problem_id) in enumerate(picks, start=1):
+                cursor.execute(
+                    "INSERT INTO coding_assessment_items (assessment_id,position,problem_id,kind) VALUES (%s,%s,%s,%s)",
+                    (assessment_id, position, problem_id, kind),
+                )
+            conn.commit()
+            cursor.execute(
+                "SELECT a.*,t.name technology FROM coding_assessments a JOIN coding_technologies t ON t.id=a.technology_id WHERE a.id=%s",
+                (assessment_id,),
+            )
+            return self._assessment_dict(cursor, cursor.fetchone())
+
+    def _running(self, cursor, student_id, assessment_id):
+        self._expire(cursor, student_id)
+        cursor.execute(
+            "SELECT a.*,t.name technology FROM coding_assessments a JOIN coding_technologies t ON t.id=a.technology_id "
+            "WHERE a.id=%s AND a.student_id=%s",
+            (assessment_id, student_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise ApiError("This assessment is unavailable.", 404, "assessment_not_found")
+        return row
+
+    def assessment_problem(self, student_id, assessment_id, position):
+        """One problem of the student's own running attempt, with its examples
+        and public tests (hidden tests stay hidden)."""
+        with connection() as conn, conn.cursor() as cursor:
+            row = self._running(cursor, student_id, assessment_id)
+            conn.commit()
+            if row["status"] != "in_progress":
+                raise ApiError("This assessment has ended.", 409, "assessment_ended")
+            item = next((i for i in self._assessment_items(cursor, assessment_id) if i["position"] == int(position)), None)
+            if item is None:
+                raise ApiError("No such problem in this assessment.", 404, "assessment_problem_not_found")
+            cursor.execute("SELECT * FROM coding_problems WHERE id=%s", (item["problem_id"],))
+            problem = cursor.fetchone()
+            cursor.execute(
+                "SELECT id,stdin_text,expected_output,display_order FROM coding_test_cases WHERE problem_id=%s AND is_hidden=FALSE ORDER BY display_order",
+                (item["problem_id"],),
+            )
+            public = [{"id": c["id"], "input": c["stdin_text"], "expectedOutput": c["expected_output"], "sequence": c["display_order"]}
+                      for c in cursor.fetchall()]
+        return {**self._problem_summary(problem), "kind": item["kind"], "position": item["position"], "best_score": item["best_score"],
+                "input_format": problem["input_format"], "output_format": problem["output_format"],
+                "constraints": problem["constraints_text"], "examples": self._json_list(problem["examples_json"]),
+                "starter_code": problem["starter_code"], "judge0_language_id": problem["judge0_language_id"], "public_tests": public}
+
+    def assessment_item_for(self, student_id, problem_id):
+        """The running assessment item for this problem, or None."""
+        with connection() as conn, conn.cursor() as cursor:
+            self._expire(cursor, student_id)
+            conn.commit()
+            cursor.execute(
+                "SELECT i.assessment_id,i.position FROM coding_assessment_items i JOIN coding_assessments a ON a.id=i.assessment_id "
+                "WHERE a.student_id=%s AND a.status='in_progress' AND i.problem_id=%s LIMIT 1",
+                (student_id, problem_id),
+            )
+            return cursor.fetchone()
+
+    def record_assessment_score(self, assessment_id, position, score):
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE coding_assessment_items SET attempts=attempts+1, best_score=GREATEST(best_score,%s) "
+                "WHERE assessment_id=%s AND position=%s",
+                (int(score), assessment_id, position),
+            )
+            conn.commit()
+
+    def finish_assessment(self, student_id, assessment_id):
+        with connection() as conn, conn.cursor() as cursor:
+            row = self._running(cursor, student_id, assessment_id)
+            if row["status"] == "in_progress":
+                self._close(cursor, assessment_id, "submitted")
+            conn.commit()
+            return self._assessment_dict(cursor, self._running(cursor, student_id, assessment_id))
+
+    def passed_assessments(self, email):
+        """Every passed attempt (technology, finished time), for readiness and the resume."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT t.name technology,a.score,a.finished_at FROM coding_assessments a JOIN students s ON s.id=a.student_id "
+                "JOIN coding_technologies t ON t.id=a.technology_id WHERE s.email=%s AND a.passed=TRUE ORDER BY a.finished_at",
+                (email,),
+            )
+            return cursor.fetchall()
 
     def problem_for_evaluation(self, student_id, problem_id):
         with connection() as conn, conn.cursor() as cursor:
@@ -404,7 +619,8 @@ class MySqlRepository:
             cursor.execute(
                 "SELECT COUNT(p.id) total_problems,COUNT(CASE WHEN spp.status='Solved' THEN 1 END) solved_problems,"
                 "COALESCE(ROUND(AVG(COALESCE(spp.best_score,0))),0) average_score "
-                "FROM coding_problems p LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s WHERE p.is_active=TRUE",
+                "FROM coding_problems p LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
+                "WHERE p.is_active=TRUE AND p.track='practice'",
                 (student_id,),
             )
             row = cursor.fetchone()
@@ -419,7 +635,7 @@ class MySqlRepository:
                 "FROM students s JOIN student_problem_progress spp ON spp.student_id=s.id "
                 "JOIN coding_problems p ON p.id=spp.problem_id JOIN coding_topics t ON t.id=p.topic_id "
                 "JOIN coding_technologies tech ON tech.id=t.technology_id "
-                "WHERE s.email=%s",
+                "WHERE s.email=%s AND p.track='practice'",
                 (email,),
             )
             return cursor.fetchall()
@@ -430,7 +646,7 @@ class MySqlRepository:
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
                 "SELECT p.difficulty, COUNT(*) total FROM coding_problems p JOIN coding_topics t ON t.id=p.topic_id "
-                "WHERE p.is_active=TRUE AND t.is_active=TRUE AND t.technology_id IN ("
+                "WHERE p.is_active=TRUE AND p.track='practice' AND t.is_active=TRUE AND t.technology_id IN ("
                 "SELECT DISTINCT t2.technology_id FROM students s JOIN student_problem_progress spp ON spp.student_id=s.id "
                 "JOIN coding_problems p2 ON p2.id=spp.problem_id JOIN coding_topics t2 ON t2.id=p2.topic_id WHERE s.email=%s) "
                 "GROUP BY p.difficulty",

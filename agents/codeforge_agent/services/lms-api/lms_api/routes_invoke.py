@@ -49,6 +49,25 @@ def _level_difficulty(body):
     return LEVEL_DIFFICULTY.get(str(value or "").strip().lower())
 
 
+ASSESSMENT_MINUTES = 75
+
+
+def _is_professional(body):
+    """Only a learner at the Professional level takes Professional assessments."""
+    learner = body.get("learner")
+    return isinstance(learner, dict) and str(learner.get("level") or "").lower() == "professional"
+
+
+def _assessment_gate(student, problem):
+    """Professional content runs only inside the learner's own running
+    assessment. Returns that assessment item (or None for practice problems
+    outside an assessment)."""
+    item = repo().assessment_item_for(student["id"], problem["id"])
+    if problem.get("track") == "professional" and item is None:
+        raise ApiError("This problem is part of a Professional assessment and opens only during your attempt.", 403, "assessment_only")
+    return item
+
+
 def _locked(level, difficulty):
     """A level above the learner's is locked; finished lower levels stay open."""
     return bool(level and difficulty) and DIFFICULTY_RANK.get(str(difficulty).capitalize(), 0) > DIFFICULTY_RANK[level]
@@ -116,7 +135,8 @@ def invoke():
         periods = clean_periods(payload.get("periods"))
         rows = [row for row in rows if in_periods(row.get("updated_at"), periods)]
         totals = repo().problem_totals(email) if rows else {}
-        return jsonify(build_student_summary(rows, totals, payload.get("difficulty")))
+        passed = [row for row in (repo().passed_assessments(email) if email else []) if in_periods(row.get("finished_at"), periods)]
+        return jsonify(build_student_summary(rows, totals, payload.get("difficulty"), passed))
 
     if action == "list_languages":
         # Static reference data from Judge0 itself — no session required.
@@ -170,6 +190,24 @@ def invoke():
             "problems": items,
         })
 
+    if action == "assessment_overview":
+        overview = repo().assessment_overview(student["id"], payload.get("technology_slug"))
+        overview.update({"eligible": _is_professional(body), "minutes": ASSESSMENT_MINUTES})
+        return jsonify(overview)
+
+    if action == "start_assessment":
+        if not _is_professional(body):
+            raise ApiError("Professional assessments open at the Professional level: complete every Hard problem first.", 403, "level_locked")
+        return jsonify({"assessment": repo().start_assessment(student["id"], payload.get("technology_slug"), ASSESSMENT_MINUTES)}), 201
+
+    if action == "assessment_problem":
+        problem = repo().assessment_problem(student["id"], _int(payload.get("assessment_id"), "assessment_id"),
+                                            _int(payload.get("position"), "position"))
+        return jsonify({"problem": problem})
+
+    if action == "finish_assessment":
+        return jsonify({"assessment": repo().finish_assessment(student["id"], _int(payload.get("assessment_id"), "assessment_id"))})
+
     if action == "problem_set":
         level = _level_difficulty(body) or "Easy"
         languages, selected, course_slug, problems = repo().problem_set(
@@ -204,16 +242,23 @@ def invoke():
 
     if action in ("run_problem", "submit_problem"):
         problem_id = _int(payload.get("problem_id"), "problem_id")
-        _require_level(body, repo().problem_for_evaluation(student["id"], problem_id).get("difficulty"))
+        problem = repo().problem_for_evaluation(student["id"], problem_id)
+        item = _assessment_gate(student, problem)
+        if item is None:
+            _require_level(body, problem.get("difficulty"))
         mode = "run" if action == "run_problem" else "submit"
         outcome = current_app.extensions["evaluation"].evaluate(
             student["id"], problem_id, payload.get("sourceCode"), mode
         )
+        if item is not None and mode == "submit":
+            repo().record_assessment_score(item["assessment_id"], item["position"], outcome.get("score", 0))
         return jsonify(outcome), 201
 
     if action == "submit_mcq_answer":
         problem_id = _int(payload.get("problem_id"), "problem_id")
-        _require_level(body, repo().problem_for_evaluation(student["id"], problem_id).get("difficulty"))
+        problem = repo().problem_for_evaluation(student["id"], problem_id)
+        if _assessment_gate(student, problem) is None:
+            _require_level(body, problem.get("difficulty"))
         selected_key = payload.get("selectedKey")
         if not isinstance(selected_key, str) or not selected_key:
             raise ApiError("selectedKey is required.", 400, "invalid_parameter")
@@ -240,6 +285,9 @@ def invoke():
         if not isinstance(submission_id, int) or not isinstance(hint_level, int) or not 1 <= hint_level <= 3:
             raise ApiError("Tutor request is invalid.", 400, "invalid_tutor_request")
         problem_row = repo().problem_for_evaluation(student["id"], problem_id)
+        # An assessment is your own work: no tutor until it is over.
+        if problem_row.get("track") == "professional" or repo().assessment_item_for(student["id"], problem_id) is not None:
+            raise ApiError("The AI tutor is off during a Professional assessment.", 403, "assessment_no_tutor")
         submission = repo().get_submission(student["id"], problem_id, submission_id)
         guidance = current_app.extensions["tutor"].explain(problem_row, submission, hint_level)
         repo().save_tutor_interaction(
