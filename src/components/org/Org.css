@@ -220,3 +220,21 @@ button.org-bar-row:hover { background: var(--surf-2); }
 .org-mic { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-1); border-radius: 12px; background: var(--surf-2); color: var(--tx-1); cursor: pointer; }
 .org-mic.on { border-color: var(--err); color: var(--err); animation: orgPulse 1.2s infinite; }
 @keyframes orgPulse { 50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, .15); } }
+
+/* Form fields inside organization cards: dropdowns match the text boxes. */
+.org-card .field, .org-join-card .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.org-card .field > span, .org-join-card .field > span { color: var(--tx-2); font-size: 13px; font-weight: 600; }
+.org-card .field select, .org-card .field input, .org-join-card .field select, .org-join-card .field input,
+.org-add-new input {
+  width: 100%; height: 44px; padding: 0 14px; border: 1px solid var(--line-1); border-radius: 12px;
+  background: var(--surf-2); color: var(--tx-1); font: inherit; font-size: 15px; box-sizing: border-box;
+}
+.org-card .field select, .org-join-card .field select {
+  appearance: none; cursor: pointer; padding-right: 40px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--tx-2) 50%), linear-gradient(135deg, var(--tx-2) 50%, transparent 50%);
+  background-position: calc(100% - 20px) 19px, calc(100% - 14px) 19px; background-size: 6px 6px; background-repeat: no-repeat;
+}
+.org-card .field select:focus, .org-card .field input:focus, .org-join-card .field select:focus, .org-join-card .field input:focus,
+.org-add-new input:focus { outline: none; border-color: var(--accent3); box-shadow: 0 0 0 3px var(--canvas-accent-soft); }
+.org-add-new { gap: 8px; }
+.org-add-new input { flex: 1; }
