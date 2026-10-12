@@ -73,7 +73,8 @@ async def gather(user) -> dict[str, Any]:
                 target.extend(block[key])
                 used = True
         rule = SCORE_ACHIEVEMENTS.get(area.get("agent_name"))
-        score = area.get("score")
+        # The agent's own score ("70% average"), not the level-based area score.
+        score = area.get("quality_score", area.get("score"))
         if rule and area.get("status") == "assessed" and isinstance(score, (int, float)) and score >= SCORE_ACHIEVEMENT_MIN:
             title, description, count_key = rule
             count = (area.get("metrics") or {}).get(count_key) or area.get("activity_count") or 0

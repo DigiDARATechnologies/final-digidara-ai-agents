@@ -248,9 +248,10 @@ def test_agent_to_agent_call_needs_a_registered_caller(app_client, agents):
 
 def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # coding 80*25 + interview 60*20 + aptitude 70*15 = 4250 / 100
-    assert body["overall"] == 42.5
-    assert body["band"] == "developing"
+    # Each level is worth 25: at Beginner, 80% -> 20, 60% -> 15, 70% -> 17.5.
+    # coding 20*25 + interview 15*20 + aptitude 17.5*15 = 1062.5 / 100
+    assert body["overall"] == 10.6
+    assert body["band"] == "not_ready"
     assert body["coverage"] == {"assessed": 3, "total": 7}
     statuses = {a["agent_name"]: a["status"] for a in body["areas"]}
     assert statuses["codeforge_agent"] == "assessed" and statuses["resume_builder_agent"] == "unavailable"
@@ -259,6 +260,7 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     assert coding["level_progress"] == 80 and coding["level_progress_basis"] == "score"
     assert coding["can_level_up"] is True and coding["suggested_level"] == "medium"
     assert coding["gaps"] == ["Dynamic programming"]
+    assert coding["score"] == 20 and coding["quality_score"] == 80
     assert body["next_steps"]
 
 
@@ -332,7 +334,7 @@ def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
     reply = _signed(app_client, "/a2a/readiness", send("get_readiness"), {
         "x-digidara-caller-agent": "job_agent", "x-digidara-on-behalf-of": "learner",
     }).json()
-    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 42.5
+    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 10.6
 
 
 # --- organizations ----------------------------------------------------------
@@ -364,9 +366,10 @@ def test_org_sees_progress_only_with_the_members_consent(app_client, agents):
     app_client.put("/organizations/me/sharing", headers=auth(), json={"share": True})
     assert app_client.put(level_url, headers=auth("admin"), json={"level": "hard"}).json()["source"] == "organization"
     refreshed = app_client.post(f"/organizations/{org_id}/members/{member_id}/readiness", headers=auth("admin")).json()
-    assert refreshed["overall"] == 42.5
+    # Aptitude at Hard: Beginner and Medium 25 each, plus 70% of Hard's 25 = 67.5.
+    assert refreshed["overall"] == 18.1
     member = next(m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json() if m["user_id"] == "learner")
-    assert member["readiness"]["overall"] == 42.5 and member["levels"]["aptitude_agent"] == "hard"
+    assert member["readiness"]["overall"] == 18.1 and member["levels"]["aptitude_agent"] == "hard"
     summary = app_client.get(f"/organizations/{org_id}/summary", headers=auth("admin")).json()
     assert summary["sharing"] == 1 and summary["levels"]["aptitude_agent"]["hard"] == 1
 
@@ -491,3 +494,21 @@ def test_a_new_target_role_starts_from_zero_and_switching_back_restores_it(app_c
     periods = learner_service.role_periods("learner")
     # Its first period ran from the start until the switch; the second is open.
     assert periods[0]["start"] is None and periods[0]["end"] and periods[1]["end"] is None
+
+
+def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
+    # Coding measures each level: Beginner done, nothing at Medium yet.
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
+    monkeypatch.setitem(SUMMARY_SCORES, "mock_interview_agent", None)
+    monkeypatch.setitem(SUMMARY_SCORES, "aptitude_agent", None)
+    body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
+    # Completing Beginner moved the learner up to Medium, with 0% there yet: 25 points.
+    assert coding["level"] == "medium" and coding["score"] == 25
+    # Coding is 25% of readiness, so one completed level there is 6.25 overall.
+    assert body["overall"] == 6.2 or body["overall"] == 6.3
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 40, "hard": 0}})
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    coding = next(a for a in app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["areas"]
+                  if a["agent_name"] == "codeforge_agent")
+    assert coding["score"] == 35

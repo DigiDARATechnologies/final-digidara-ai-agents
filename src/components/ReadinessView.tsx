@@ -50,15 +50,15 @@ export function ScoreRing({ score, band, size = 148 }: { score: number | null; b
   );
 }
 
-/** How each area's score is worked out, in the learner's words. */
+/** How each agent measures progress inside a level, in the learner's words. */
 const AREA_EXPLANATION: Record<string, string> = {
-  codeforge_agent: "Your best score on every problem you tried (Medium counts 2×, Hard 3×), scaled by how many you've solved: half credit at your first solve, full credit at 20 solved.",
-  mock_interview_agent: "The average overall score of your last 5 completed interviews (out of 10, shown out of 100).",
-  aptitude_agent: "The average percentage of your last 10 completed aptitude tests.",
-  communication_agent: "The average of your writing, speaking and pronunciation scores from your latest sessions.",
-  resume_builder_agent: "Your best ATS score across your resumes. Run an ATS check to get one.",
-  capstone_project_agent: "Your best graded capstone project score.",
-  certificate_agent: "Your best exam score in each certification topic, averaged.",
+  codeforge_agent: "the problems you solved at your level's difficulty (Easy for Beginner, then Medium, then Hard), out of every such problem in the technologies you practise.",
+  mock_interview_agent: "the average overall score of your last 5 completed interviews (out of 10, shown out of 100).",
+  aptitude_agent: "the average percentage of your last 10 completed aptitude tests.",
+  communication_agent: "the average of your writing, speaking and pronunciation scores from your latest sessions.",
+  resume_builder_agent: "your best ATS score across your resumes. Run an ATS check to get one.",
+  capstone_project_agent: "your best graded capstone project score.",
+  certificate_agent: "your best exam score in each certification topic, averaged.",
 };
 
 const METRIC_LABELS: Record<string, string> = {
@@ -136,10 +136,10 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
 
 function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (level: LevelId) => void; busy: boolean }) {
   const scored = area.status === "assessed" && area.score !== null;
-  // Agents that measure each level show the current level's own score: it
-  // starts from 0 at every new level. The area score (all levels together)
-  // is what counts toward job readiness.
-  const perLevel = scored && area.level_progress_basis === "level" && typeof area.level_progress === "number";
+  // The card shows how much of the current level is done (it starts from 0
+  // at every new level). The area score -- 25 points for each level -- is
+  // what counts toward job readiness.
+  const perLevel = scored && typeof area.level_progress === "number";
   const shown = perLevel ? area.level_progress as number : area.score as number;
   return (
     <div className={`rd-area status-${area.status}`}>
@@ -154,7 +154,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         </div>
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? Math.min(100, shown) : 0}%` }} /></div>
-      {perLevel && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · counts toward job readiness</p>}
+      {scored && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each level</p>}
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
       {area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
@@ -177,7 +177,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>{AREA_EXPLANATION[area.agent_name]} Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically. Each level starts from 0 on its own results.</p>
+          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100), and the level you are on adds its progress so far. Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
         </details>
       )}
     </div>
@@ -319,9 +319,11 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <details className="rd-how">
                 <summary>How is this calculated?</summary>
                 <p>
-                  Each area's score (0–100) counts by its weight: Coding 25%, Interview 20%, Aptitude 15%, Communication 15%,
-                  Resume 10%, Projects 10%, Certification 5%. Areas you haven't started yet count as 0, because an untested
-                  skill isn't job-ready yet.{" "}
+                  Each area's score (0–100) is earned level by level: every completed level adds 25 points (Beginner 25,
+                  Medium 50, Hard 75, Professional 100) and the level you are on adds its progress so far. The areas then
+                  count by their weight: Coding 25%, Interview 20%, Aptitude 15%, Communication 15%, Resume 10%,
+                  Projects 10%, Certification 5%. Areas you haven't started yet count as 0, because an untested skill isn't
+                  job-ready yet.{" "}
                   {readiness.overall !== null && `Yours: ${readiness.areas.filter((a) => a.status === "assessed" && a.score !== null)
                     .map((a) => `${a.label} ${Math.round(a.score as number)} × ${a.weight}%`).join(" + ")} = ${Math.round(readiness.overall)}.`}
                 </p>

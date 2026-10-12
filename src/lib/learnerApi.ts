@@ -66,7 +66,10 @@ export interface ReadinessArea {
   level: LevelId;
   status: AreaStatus;
   reason?: string;
+  /** 0-100, earned level by level: 25 points for each level completed, plus the current level's progress. */
   score: number | null;
+  /** The agent's own score (e.g. an average test percentage), before levels. */
+  quality_score?: number | null;
   activity_count: number;
   last_activity_at: string | null;
   strengths: string[];

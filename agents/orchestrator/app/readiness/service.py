@@ -1,5 +1,11 @@
 """Job readiness: one score per learner, combined from every agent over A2A.
 
+An area's score is earned level by level: each of the four levels is worth
+LEVEL_POINTS (25), so completing Beginner gives 25, Medium 50, Hard 75 and
+Professional 100. The level the learner is on adds its progress so far; a
+level below it adds what was done there (all of it for agents that do not
+measure each level). The agent's own score is kept as `quality_score`.
+
 Each scored agent answers the `get_student_summary` skill with the shared
 digidara.student_summary.v1 shape (see summarize_reply). The overall score
 is the weighted sum over ALL areas, so an area the learner has not tried yet
@@ -44,6 +50,7 @@ AREAS: tuple[tuple[str, str, int], ...] = (
     ("certificate_agent", "Certification", 5),
 )
 TOTAL_WEIGHT = sum(weight for _, _, weight in AREAS)
+LEVEL_POINTS = 100 / len(level_rules.LEVELS)
 # Agents whose summary measures progress at the learner's own level; they get
 # the level's difficulty in the request. Others fall back to their score.
 LEVEL_PROGRESS_AGENTS = frozenset({"codeforge_agent"})
@@ -205,6 +212,23 @@ def _auto_promote(user, areas: list[dict], levels: dict) -> None:
             logger.warning("level milestone not remembered", exc_info=True)
 
 
+def level_score(area: dict) -> float | None:
+    """The area's 0-100 score: LEVEL_POINTS for each level, by its progress."""
+    if area.get("status") != "assessed":
+        return None
+    current = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
+    measured = area.get("level_progress_basis") == "level"
+    scores = area.get("level_scores") or {}
+    total = 0.0
+    for name in level_rules.LEVELS[:current]:
+        done = scores.get(name) if measured else None
+        total += LEVEL_POINTS * (min(100.0, done) / 100 if isinstance(done, (int, float)) else 1)
+    progress = area.get("level_progress")
+    if isinstance(progress, (int, float)):
+        total += LEVEL_POINTS * min(100.0, max(0.0, progress)) / 100
+    return round(total, 1)
+
+
 def level_progress(user_id: str, agent_name: str, level: str) -> float | None:
     """The learner's progress at `level` with this agent, from their latest
     readiness snapshot; None when that snapshot was taken at another level."""
@@ -240,6 +264,9 @@ async def compute(user) -> dict:
         _auto_promote(user, areas, levels)
     except Exception:
         logger.warning("automatic level change failed", exc_info=True)
+    for area in areas:
+        area["quality_score"] = area["score"]
+        area["score"] = level_score(area)
     assessed = [a for a in areas if a["status"] == "assessed"]
     overall = round(sum((a["score"] or 0) * a["weight"] for a in assessed) / TOTAL_WEIGHT, 1) if assessed else None
     band = band_for(overall, len(assessed))
@@ -369,10 +396,10 @@ async def get(user, refresh: bool = False) -> dict:
         if not isinstance(area, dict) or not area.get("agent_name"):
             continue
         level = levels.get(area["agent_name"], {}).get("level", area.get("level"))
-        if level != area.get("level"):
-            measured = (area.get("level_scores") or {}).get(level) if area.get("level_progress_basis") == "level" else None
-            area = {**area, "level": level, "suggested_level": None, "promoted_from": None,
-                    **_level_fields(level, measured, area.get("level_progress_basis", "score"))}
+        if level != area.get("level") or "quality_score" not in area:
+            # A level changed, or the snapshot predates level-based scores:
+            # the area scores and the overall have to be worked out again.
+            return await compute(user)
         areas.append(area)
     return {
         "overall": snapshot.overall, "band": snapshot.band,
