@@ -20,7 +20,16 @@ def get_session() -> Session:
 def init_db() -> None:
     from app import models  # noqa: F401 — import registers the table with Base.metadata
 
-    Base.metadata.create_all(bind=engine)
+    # Every gunicorn worker runs this at startup. When a release adds a table,
+    # two workers can both find it missing and race to create it; the loser
+    # gets "already exists" (MySQL 1050) and simply checks again.
+    for attempt in range(3):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except Exception as exc:
+            if "1050" not in str(exc) or attempt == 2:
+                raise
     # create_all does not alter existing tables. Keep this small
     # compatibility migration (added for Google sign-in) until the project
     # adopts Alembic.
