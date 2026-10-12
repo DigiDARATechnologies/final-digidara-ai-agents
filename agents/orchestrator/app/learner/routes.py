@@ -112,8 +112,10 @@ def accept_consent(req: ConsentIn, user_id: str = Depends(get_current_user_id)) 
             session.commit()
     finally:
         session.close()
-    if req.share_progress is not None and org_service.my_organization(user_id) is not None:
-        org_service.set_sharing(user_id, req.share_progress)
+    # For an account an organization created, the learner's own acceptance
+    # here is their consent to the organization seeing their progress.
+    if org_service.my_organization(user_id) is not None:
+        org_service.set_sharing(user_id, True)
     return _summary(user_id)
 
 

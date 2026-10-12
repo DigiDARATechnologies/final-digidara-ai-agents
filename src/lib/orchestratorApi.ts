@@ -1,5 +1,6 @@
 import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
 import { voiceLanguagePreference } from "./voicePrefs";
+import { sessionToken } from "./session";
 const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
 
 export interface RouteResult {
@@ -26,7 +27,7 @@ export interface RouteTurn {
 /** The general chat's microphone: the recorded question, transcribed by the
  * orchestrator with OpenAI. The text is then sent like a typed message. */
 export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
-  const token = localStorage.getItem("digidara_token");
+  const token = sessionToken();
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -42,7 +43,7 @@ export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
 }
 
 export async function routeMessage(message: string, history: RouteTurn[] = []): Promise<RouteResult> {
-  const token = localStorage.getItem("digidara_token");
+  const token = sessionToken();
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/route`, {
     method: "POST",
     headers: {

@@ -346,17 +346,22 @@ def test_register_join_and_share(app_client, users):
     org = _make_org(app_client)
     assert org["role"] == "owner"
     code = org["organization"]["join_code"]
+    # Joining is consent: an old client's share_progress=False is ignored.
     joined = app_client.post("/organizations/join", headers=auth(), json={"join_code": code.lower(), "share_progress": False}).json()
-    assert joined["role"] == "member" and joined["progress_shared"] is False
+    assert joined["role"] == "member" and joined["progress_shared"] is True
     assert "join_code" not in joined["organization"]
     assert app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).status_code == 409
-    assert app_client.put("/organizations/me/sharing", headers=auth(), json={"share": True}).json()["progress_shared"] is True
 
 
-def test_org_sees_progress_only_with_the_members_consent(app_client, agents):
+def test_org_sees_progress_only_with_the_members_consent(app_client, agents, database):
     org = _make_org(app_client)
     org_id = org["organization"]["id"]
     app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    # A member who joined before joining meant consent, and never agreed.
+    session = database()
+    session.query(OrganizationMember).filter_by(user_id="learner").update({"progress_shared_at": None})
+    session.commit()
+    session.close()
     members = {m["user_id"]: m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json()}
     assert "readiness" not in members["learner"]
     member_id = members["learner"]["member_id"]
@@ -528,3 +533,21 @@ def test_overall_is_25_only_when_every_agent_completed_beginner(app_client, agen
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
     assert app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["overall"] == 25
+
+
+def test_job_fetching_follows_the_average_of_the_other_levels(app_client, users):
+    levels = lambda: {level["agent_name"]: level for level in app_client.get("/learner/profile", headers=auth()).json()["levels"]}
+    assert levels()["job_agent"]["level"] == "beginner" and levels()["job_agent"]["source"] == "derived"
+    # Six at Beginner and one at Professional averages below Medium: still Beginner.
+    learner_service.set_level("learner", "aptitude_agent", "professional", "self")
+    assert levels()["job_agent"]["level"] == "beginner"
+    for agent in ("codeforge_agent", "communication_agent", "mock_interview_agent"):
+        learner_service.set_level("learner", agent, "medium", "self")
+    # (3 + 1 + 1 + 1) / 7 rounds down to Beginner; one more Medium makes it Medium.
+    assert levels()["job_agent"]["level"] == "beginner"
+    learner_service.set_level("learner", "resume_builder_agent", "medium", "self")
+    learner_service.set_level("learner", "capstone_project_agent", "medium", "self")
+    assert levels()["job_agent"]["level"] == "medium"
+    assert learner_service.learner_context("learner", "job_agent")["level"] == "medium"
+    blocked = app_client.put("/learner/levels/job_agent", headers=auth(), json={"level": "hard"})
+    assert blocked.status_code == 400 and "follows" in blocked.json()["detail"]

@@ -12,6 +12,7 @@ import {
   type Snapshot,
   type StateMap,
 } from "../lib/agentStateStore";
+import { sessionToken } from "../lib/session";
 
 export type SaveStatus = "idle" | "loading" | "saving" | "offline" | "rejected";
 
@@ -25,7 +26,6 @@ export interface AgentStateBinding {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-const TOKEN_KEY = "digidara_token";
 const SAVE_DELAY_MS = 800;
 const RETRY_BASE_MS = 5000;
 const RETRY_MAX_MS = 30000;
@@ -85,7 +85,7 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
 
   const flush = useCallback(async (keepalive = false): Promise<void> => {
     const address = emailRef.current;
-    const token = localStorage.getItem(TOKEN_KEY);
+    const token = sessionToken();
     if (!address || !hydrated.current || !token) return;
     if (inFlight.current) {
       await inFlight.current;
@@ -164,7 +164,7 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
     setStatus("loading");
 
     const hydrate = async (attempt: number): Promise<void> => {
-      const token = localStorage.getItem(TOKEN_KEY);
+      const token = sessionToken();
       if (!token) {
         setStatus("idle");
         return;
@@ -229,7 +229,8 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
       if (document.visibilityState === "hidden" && hasUnsaved()) void flush(true);
     };
     const onUnload = (event: BeforeUnloadEvent) => {
-      if (!hasUnsaved()) return;
+      // Another tab switched the account: nothing here may be saved into it.
+      if (!sessionToken() || !hasUnsaved()) return;
       void flush(true);
       event.preventDefault();
       event.returnValue = "";

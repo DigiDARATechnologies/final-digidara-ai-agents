@@ -1,5 +1,6 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
@@ -257,7 +258,7 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
   form.append("thread_id", thread_id);
   form.append("docx_file", docxFile);
   form.append("zip_file", zipFile);
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
@@ -293,7 +294,7 @@ export async function askProjectQuestion(thread_id: string, question: string, im
   form.append("thread_id", thread_id);
   form.append("question", question);
   form.append("attachment", image);
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},

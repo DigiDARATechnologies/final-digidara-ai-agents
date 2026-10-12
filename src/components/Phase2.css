@@ -260,3 +260,6 @@ button.og-band { cursor: pointer; }
 .lp-chip-add { cursor: pointer; border: 1px dashed var(--canvas-border); background: transparent; }
 .lp-chip-add:hover { border-color: var(--accent1); }
 .lp-role-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--canvas-accent-soft); color: var(--tx-1); font-size: 14px; }
+.og-consent { margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--canvas-accent-soft); color: var(--tx-1); font-size: 13px; line-height: 1.5; }
+.rd-derived-level { color: var(--tx-2); font-size: 14px; }
+.rd-derived-level b { color: var(--tx-1); }

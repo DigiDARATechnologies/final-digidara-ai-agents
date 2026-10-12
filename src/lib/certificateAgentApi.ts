@@ -1,5 +1,6 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 const INVOKE_URL = gatewayInvokeUrl(
   import.meta.env.VITE_CERTIFICATE_AGENT_AGENT_NAME,
@@ -131,7 +132,7 @@ export async function downloadCertificatePdf(token: string, certId: number) {
   // Binary downloads bypass invokeAgent's JSON parser, so carry the same
   // DigiDARA gateway authorization header explicitly. The certificate
   // service still receives its own sessionToken in the action payload.
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: {
@@ -171,7 +172,7 @@ export async function downloadExamReportPdf(
   token: string,
   target: { sessionId: string } | { examId: number },
 ) {
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const [action, payload] = "sessionId" in target
     ? ["download_chat_exam_report", { session_id: target.sessionId }]
     : ["download_exam_report", { exam_id: target.examId }];
@@ -256,7 +257,7 @@ export async function sendCertificateChatMessage(
   message: string,
   questionIndex?: number,
 ): Promise<ChatTurnResponse> {
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
 

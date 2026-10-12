@@ -1,5 +1,6 @@
 /** Phase 2: learner profile, per-agent levels, job readiness and
  * organizations (orchestrator app/learner, app/organizations). */
+import { sessionToken } from "./session";
 const RAW_BASE = import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100";
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 
@@ -25,7 +26,8 @@ export interface AgentLevel {
   agent_name: string;
   agent_label: string;
   level: LevelId;
-  source: "default" | "self" | "organization" | "readiness";
+  /** "derived": Job Fetching, which follows the other agents' levels. */
+  source: "default" | "self" | "organization" | "readiness" | "derived";
   updated_at: string | null;
 }
 
@@ -155,7 +157,7 @@ export interface AddMemberResult {
 }
 
 function token() {
-  return localStorage.getItem("digidara_token") || "";
+  return sessionToken() || "";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

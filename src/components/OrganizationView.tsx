@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ScoreRing } from "./ReadinessView";
 import { parseMemberLines } from "../lib/memberImport";
+import { JOIN_NOTICE, orgSharingNotice } from "../lib/orgConsent";
 import {
   BAND_TONE,
   LEVEL_IDS,
@@ -64,7 +65,6 @@ function Start({ onMembership, onToast }: { onMembership: (m: Membership) => voi
   const [name, setName] = useState("");
   const [kind, setKind] = useState("college");
   const [code, setCode] = useState("");
-  const [share, setShare] = useState(true);
   const [busy, setBusy] = useState<"create" | "join" | null>(null);
 
   async function create(event: FormEvent) {
@@ -84,7 +84,7 @@ function Start({ onMembership, onToast }: { onMembership: (m: Membership) => voi
     event.preventDefault();
     setBusy("join");
     try {
-      const membership = await joinOrganization(code.trim(), share);
+      const membership = await joinOrganization(code.trim(), true);
       onMembership(membership);
       onToast(`You joined ${membership.organization.name}.`);
     } catch (err) {
@@ -115,10 +115,7 @@ function Start({ onMembership, onToast }: { onMembership: (m: Membership) => voi
         <label className="field"><span>Join code</span>
           <input value={code} maxLength={16} required placeholder="ABCD2345" className="og-code-input" onChange={(e) => setCode(e.target.value.toUpperCase())} />
         </label>
-        <label className="lp-check">
-          <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
-          <span>Let the organization see my job readiness and levels.</span>
-        </label>
+        <p className="og-consent">{JOIN_NOTICE}</p>
         <button className="btn btn-outline btn-full" disabled={busy !== null || code.trim().length < 4}>
           {busy === "join" ? "Joining…" : "Join organization"}
         </button>
@@ -455,10 +452,14 @@ export default function OrganizationView({ summary, onSummaryChange, onBack, onT
           <section className="rd-panel">
             <span className="rd-kicker">Your organization</span>
             <h1 className="og-member-title">{membership.organization.name}</h1>
-            <label className="lp-check">
-              <input type="checkbox" checked={membership.progress_shared} onChange={(e) => void toggleSharing(e.target.checked)} />
-              <span>Let {membership.organization.name} see my job readiness and levels.</span>
-            </label>
+            {membership.progress_shared ? (
+              <p className="rd-muted">{orgSharingNotice(membership.organization.name)}</p>
+            ) : (
+              <>
+                <p className="rd-muted">You joined before membership meant sharing, so only your name is visible. {orgSharingNotice(membership.organization.name)}</p>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => void toggleSharing(true)}>Agree and share</button>
+              </>
+            )}
           </section>
         )}
         {membership && membership.role !== "owner" && (

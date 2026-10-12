@@ -1,5 +1,6 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_RESUME_BUILDER_AGENT_NAME, "resume_builder_agent");
 const TIMEOUT_MS = Number(import.meta.env.VITE_RESUME_BUILDER_TIMEOUT_MS || 120000);
@@ -28,7 +29,7 @@ export interface ResumeFacts {
 
 export async function fetchResumeFacts(): Promise<ResumeFacts> {
   const base = (import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100").replace(/\/$/, "");
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(`${base}/learner/resume-facts`, {
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
   });
@@ -87,7 +88,7 @@ export async function analyzeResumeUpload(userId: string, file: File, targetRole
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const platformToken = localStorage.getItem("digidara_token");
+    const platformToken = sessionToken();
     const response = await fetch(INVOKE_URL, {
       method: "POST",
       headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
@@ -208,7 +209,7 @@ export async function suggestResumeStyle(userId: string, resume: Record<string, 
 }
 
 export async function exportResumePdf(userId: string, resumeId: number, templateChoice?: string, style?: ResumeStyle) {
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, { method: "POST", headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) }, body: JSON.stringify({ action: "export_pdf", payload: { user_id: userId, resume_id: resumeId, template_choice: templateChoice, ...(style ? { style_settings: style } : {}) } }) });
   reportPointsActivity(response.status);
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "PDF export failed");
@@ -218,7 +219,7 @@ export async function exportResumePdf(userId: string, resumeId: number, template
 
 /** Render the same saved, final resume object used for download as an inline PDF. */
 export async function previewResumePdf(userId: string, resume: Record<string, unknown>, templateChoice?: string, style?: ResumeStyle) {
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(platformToken ? { Authorization: `Bearer ${platformToken}` } : {}) },

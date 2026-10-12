@@ -172,12 +172,20 @@ def get_levels(user_id: str) -> dict[str, dict]:
             "source": row.source if row else "default",
             "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
         }
+    derived = level_rules.DERIVED_AGENT
+    if derived in result:
+        result[derived].update({
+            "level": level_rules.derived_level({name: data["level"] for name, data in result.items()}),
+            "source": "derived", "updated_at": None,
+        })
     return result
 
 
 def set_level(user_id: str, agent_name: str, level: str, source: str) -> dict:
     if agent_name not in level_rules.LEVELED_AGENTS:
         raise ValueError(f"Unknown agent {agent_name!r}.")
+    if agent_name == level_rules.DERIVED_AGENT:
+        raise ValueError("Job Fetching follows your other agents' levels; it cannot be set on its own.")
     if level not in level_rules.LEVELS:
         raise ValueError(f"Level must be one of: {', '.join(level_rules.LEVELS)}.")
     session = db.get_session()
@@ -204,7 +212,8 @@ def learner_context(user_id: str, agent_name: str) -> dict:
         row = session.get(AgentLevel, (user_id, agent_name))
     finally:
         session.close()
-    level = level_rules.normalize(row.level if row else None)
+    level = (get_levels(user_id)[agent_name]["level"] if agent_name == level_rules.DERIVED_AGENT
+             else level_rules.normalize(row.level if row else None))
     data = _profile_dict(profile)
     from app.memory import service as memory_service  # local import: memory imports nothing from here
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { changePassword } from "../../lib/authApi";
+import { sessionToken } from "../../lib/session";
 
 /** Self-service password change for the signed-in admin (or any account,
  * technically — the endpoint itself has no admin-only gate — but this is
@@ -27,7 +28,7 @@ export default function AdminChangePassword() {
       setError("New password and confirmation do not match.");
       return;
     }
-    const token = localStorage.getItem("digidara_token");
+    const token = sessionToken();
     if (!token) {
       setError("Your session has expired. Please log in again.");
       return;

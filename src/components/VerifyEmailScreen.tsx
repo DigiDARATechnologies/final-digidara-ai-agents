@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Logo } from "./Logo";
 import { sendEmailCode, verifyEmailCode, type AuthUser } from "../lib/authApi";
+import { sessionToken } from "../lib/session";
 
 interface Props {
   email: string;
@@ -18,7 +19,7 @@ export default function VerifyEmailScreen({ email, onVerified, onLogout }: Props
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const token = () => localStorage.getItem("digidara_token") || "";
+  const token = () => sessionToken() || "";
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

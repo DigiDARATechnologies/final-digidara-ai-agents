@@ -6,6 +6,7 @@
  * surfacing it to the user as a hard chat error. */
 
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 export function gatewayInvokeUrl(envVarValue: string | undefined, fallbackAgentName: string): string {
   const gatewayBase = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
@@ -46,7 +47,7 @@ export async function invokeAgent<T>(
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
     let response: Response;
     try {
-      const platformToken = localStorage.getItem("digidara_token");
+      const platformToken = sessionToken();
       response = await fetch(invokeUrl, {
         method: "POST",
         headers: {

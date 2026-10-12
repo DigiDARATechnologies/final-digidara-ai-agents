@@ -3,6 +3,7 @@ import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 import LearnerProfileForm, { type ProfileInput } from "./LearnerProfileForm";
 import { acceptConsent, saveLearnerProfile, type LearnerSummary } from "../lib/learnerApi";
+import { orgSharingNotice } from "../lib/orgConsent";
 
 interface Props {
   name: string;
@@ -21,15 +22,16 @@ export default function OnboardingScreen({ name, summary, onDone, onLogout }: Pr
   const [error, setError] = useState("");
   const [consent, setConsent] = useState(!summary.consent_required);
   const membership = summary.membership;
-  const [share, setShare] = useState(membership?.progress_shared ?? true);
   const firstName = name.split(" ")[0] || "there";
 
   async function submit(profile: ProfileInput) {
     setBusy(true);
     setError("");
     try {
-      if (summary.consent_required || (membership && share !== membership.progress_shared)) {
-        await acceptConsent(membership ? share : null);
+      // For an account an organization created, accepting here is also the
+      // consent to the organization seeing their progress (shown below).
+      if (summary.consent_required || (membership && !membership.progress_shared)) {
+        await acceptConsent(membership ? true : null);
       }
       onDone(await saveLearnerProfile(profile));
     } catch (err) {
@@ -63,12 +65,7 @@ export default function OnboardingScreen({ name, summary, onDone, onLogout }: Pr
               </span>
             </label>
           )}
-          {membership && (
-            <label className="lp-check">
-              <input type="checkbox" checked={share} onChange={(e) => setShare(e.target.checked)} />
-              <span>Let {membership.organization.name} see my job readiness and levels. You can change this later.</span>
-            </label>
-          )}
+          {membership && <p className="og-consent">{orgSharingNotice(membership.organization.name)}</p>}
         </LearnerProfileForm>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="verify-email-actions">

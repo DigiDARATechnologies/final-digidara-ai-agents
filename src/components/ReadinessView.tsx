@@ -5,6 +5,7 @@ import MemoryPanel from "./MemoryPanel";
 import SkillsInput, { uniqueSkills } from "./SkillsInput";
 import { syncJobProfileWithGoal } from "../lib/jobFetchFlow";
 import { knownRoleSkills } from "../lib/roleSkills";
+import { orgSharingNotice } from "../lib/orgConsent";
 import {
   LEVEL_IDS,
   BAND_TONE,
@@ -322,9 +323,10 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
     }
   }
 
-  async function toggleSharing(share: boolean) {
+  /** For a member who joined before joining meant sharing, and never agreed. */
+  async function agreeToShare() {
     try {
-      const membership = await setProgressSharing(share);
+      const membership = await setProgressSharing(true);
       onSummaryChange({ ...summary, membership });
     } catch (err) {
       onToast((err as Error).message);
@@ -401,8 +403,14 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
                 {otherLevels.map((level) => (
                   <div key={level.agent_name} className="rd-other-row">
                     <span>{level.agent_label}</span>
-                    <LevelPicker value={level.level} disabled={busyAgent === level.agent_name}
-                      onChange={(next) => void changeLevel(level.agent_name, next)} />
+                    {level.source === "derived" ? (
+                      <span className="rd-derived-level">
+                        <b>{LEVEL_LABELS[level.level]}</b> · follows your other agents' levels
+                      </span>
+                    ) : (
+                      <LevelPicker value={level.level} disabled={busyAgent === level.agent_name}
+                        onChange={(next) => void changeLevel(level.agent_name, next)} />
+                    )}
                   </div>
                 ))}
               </div>
@@ -432,10 +440,17 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
         {membership && (
           <section className="pv-section rd-panel">
             <h2>{membership.organization.name}</h2>
-            <label className="lp-check">
-              <input type="checkbox" checked={membership.progress_shared} onChange={(e) => void toggleSharing(e.target.checked)} />
-              <span>Let {membership.organization.name} see my job readiness and levels.</span>
-            </label>
+            {membership.progress_shared ? (
+              <p className="rd-muted">You are a member. {orgSharingNotice(membership.organization.name)}</p>
+            ) : (
+              <>
+                <p className="rd-muted">
+                  You joined before membership meant sharing, so {membership.organization.name} sees only your name.
+                  {" "}{orgSharingNotice(membership.organization.name)}
+                </p>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => void agreeToShare()}>Agree and share</button>
+              </>
+            )}
           </section>
         )}
       </div>

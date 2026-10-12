@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useAgentStatePersistence } from '../../src/hooks/useAgentStatePersistence';
 import * as api from '../../src/lib/agentStateApi';
 import { legacyKey, secretsKey } from '../../src/lib/agentStateStore';
+import { setSessionToken } from '../../src/lib/session';
 
 const mocked = jest.mocked(api);
 const EMAIL = 'asha@example.com';
@@ -33,7 +34,7 @@ const advance = async (ms: number) => { await act(async () => { jest.advanceTime
 beforeEach(() => {
   jest.useFakeTimers();
   localStorage.clear();
-  localStorage.setItem('digidara_token', 'platform-token');
+  setSessionToken('platform-token');
   mocked.fetchAgentStates.mockResolvedValue([]);
   mocked.saveAgentState.mockResolvedValue(undefined);
   mocked.deleteAgentState.mockResolvedValue(undefined);
@@ -202,7 +203,7 @@ test('switching to another account never writes the previous account state under
   mocked.saveAgentState.mockClear();
   mocked.deleteAgentState.mockClear();
   mocked.fetchAgentStates.mockResolvedValue([]);
-  localStorage.setItem('digidara_token', 'other-token');
+  setSessionToken('other-token');
   rerender({ address: 'other@example.com' });
   await flushPromises();
   await advance(3000);

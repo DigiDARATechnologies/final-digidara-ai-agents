@@ -1,6 +1,7 @@
 /** The Conductor (orchestrator POST /conductor/interpret): what the learner
  * meant when they typed at a step that offers choices. */
 import type { ChatOption } from "../types";
+import { sessionToken } from "./session";
 
 const RAW_BASE = import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100";
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
@@ -15,7 +16,7 @@ export type ConductorDecision =
 export async function interpretTurn(agentName: string, step: string, options: ChatOption[], message: string): Promise<ConductorDecision> {
   const response = await fetch(`${BASE}/conductor/interpret`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("digidara_token") || ""}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken() || ""}` },
     body: JSON.stringify({
       agent_name: agentName,
       step: step.slice(0, 60),

@@ -54,7 +54,7 @@ test('needs at least one skill', () => {
   expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();
 });
 
-test('an account an organization created gives its own consent and sharing choice', async () => {
+test('an account an organization created consents for itself, which also shares its progress', async () => {
   const membership = {
     organization: { id: 'o1', name: 'ABC College', kind: 'college', member_limit: 1000, member_count: 10, created_at: null },
     role: 'member' as const, member_id: 'm1', external_id: '21CS001', progress_shared: false,
@@ -67,7 +67,9 @@ test('an account an organization created gives its own consent and sharing choic
   const start = screen.getByRole('button', { name: 'Start learning' });
   expect(start).toBeDisabled();
   fireEvent.click(screen.getByRole('checkbox', { name: /I agree to the/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: /Let ABC College see my job readiness/ }));
+  // No sharing checkbox: the notice says what the organization sees.
+  expect(screen.getByText(/ABC College's admins can see your job readiness, levels, activity in every agent and your chats/)).toBeInTheDocument();
+  expect(screen.queryByRole('checkbox', { name: /Let ABC College see/ })).not.toBeInTheDocument();
   fireEvent.click(start);
   await waitFor(() => expect(mocked.acceptConsent).toHaveBeenCalledWith(true));
   await waitFor(() => expect(mocked.saveLearnerProfile).toHaveBeenCalled());

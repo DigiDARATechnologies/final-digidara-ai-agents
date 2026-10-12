@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { User } from "../types";
 import { changePassword } from "../lib/authApi";
 import { ACCENTS, type Accent, type AppearancePrefs, type ThemePref } from "../lib/appearance";
+import { sessionToken } from "../lib/session";
 
 interface AppearanceProps {
   themePref: ThemePref;
@@ -106,7 +107,7 @@ export function SecuritySettings({ user, onToast, onLogout }: SecurityProps) {
     setError("");
     if (next.length < 8) return setError("New password must be at least 8 characters.");
     if (next !== confirm) return setError("The new passwords do not match.");
-    const token = localStorage.getItem("digidara_token");
+    const token = sessionToken();
     if (!token) return setError("You're not signed in.");
     setBusy(true);
     try {

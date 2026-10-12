@@ -12,6 +12,7 @@
  */
 import { speakableText, splitForSpeech } from "./voiceText";
 import { loadVoicePrefs, voiceLanguagePreference, type VoicePrefs } from "./voicePrefs";
+import { sessionToken } from "./session";
 
 export interface SpeakHandlers {
   onStart?: () => void;
@@ -57,7 +58,7 @@ export function stopSpeaking(): void {
 }
 
 async function fetchChunk(text: string, prefs: VoicePrefs): Promise<Blob> {
-  const token = localStorage.getItem("digidara_token") || "";
+  const token = sessionToken() || "";
   const response = await fetch(`${BASE}/voice/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

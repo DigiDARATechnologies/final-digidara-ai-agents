@@ -6,13 +6,14 @@ jest.mock('../../src/lib/authApi', () => ({
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import VerifyEmailScreen from '../../src/components/VerifyEmailScreen';
 import * as authApi from '../../src/lib/authApi';
+import { setSessionToken } from '../../src/lib/session';
 
 const mocked = jest.mocked(authApi);
 const verifiedUser = { id: 'u1', name: 'Asha', email: 'asha@example.com', mobile: null, is_admin: false, consent_accepted_at: null, consent_policy_version: null, email_verified: true, verification_required: false };
 
 beforeEach(() => {
   jest.clearAllMocks();
-  localStorage.setItem('digidara_token', 'tok');
+  setSessionToken('tok');
 });
 
 function renderScreen() {

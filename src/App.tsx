@@ -38,6 +38,7 @@ import OrganizationView from "./components/OrganizationView";
 import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
 import { setLearnerContext } from "./lib/learnerContext";
+import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -83,7 +84,7 @@ import { routeMessage, transcribeGeneralAudio, type RouteTurn } from "./lib/orch
 
 type OpenMenu = "user" | "notif" | null;
 
-const TOKEN_KEY = "digidara_token";
+const SESSION_SWITCH_KEY = "digidara_session_switched";
 const GOOGLE_OAUTH_CALLBACK_PATH = "/auth/google/callback";
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
 const isGoogleOAuthCallback = () => window.location.pathname === GOOGLE_OAUTH_CALLBACK_PATH;
@@ -94,7 +95,7 @@ function loadUser(): User | null {
 }
 
 function loadToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionToken();
 }
 
 function toUser(authUser: AuthUser): User {
@@ -286,6 +287,31 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToastShow(false), 2600);
   }, []);
 
+  // One account per browser: signing in to another account (or signing out)
+  // in another tab switches this tab too. It reloads straight away; until
+  // then sessionToken() already refuses this tab's old token, so nothing of
+  // the old account is saved into the new one.
+  useEffect(() => onSessionSwitched((signedOut) => {
+    try {
+      sessionStorage.setItem(SESSION_SWITCH_KEY, signedOut ? "signed_out" : "switched");
+    } catch {
+      // Storage blocked: reload without the notice.
+    }
+    window.location.reload();
+  }), []);
+
+  useEffect(() => {
+    let reason: string | null = null;
+    try {
+      reason = sessionStorage.getItem(SESSION_SWITCH_KEY);
+      sessionStorage.removeItem(SESSION_SWITCH_KEY);
+    } catch {
+      return;
+    }
+    if (reason === "switched") showToast("You signed in with another account in this browser, so this tab switched to it.");
+    if (reason === "signed_out") showToast("You signed out in another tab.");
+  }, [showToast]);
+
   // Validate the cached session against the backend once on boot, rather
   // than trusting a stale/tampered localStorage user indefinitely. Skipped
   // on the Google OAuth callback URL — that load is handled by the effect
@@ -307,7 +333,7 @@ export default function App() {
       })
       .catch(() => {
         if (!active) return;
-        localStorage.removeItem(TOKEN_KEY);
+        setSessionToken(null);
         localStorage.removeItem("digidara_user");
         setUser(null);
       });
@@ -346,7 +372,7 @@ export default function App() {
     googleAuth(code, consent)
       .then((result) => {
         const newUser = toUser(result.user);
-        localStorage.setItem(TOKEN_KEY, result.access_token);
+        setSessionToken(result.access_token);
         localStorage.setItem("digidara_user", JSON.stringify(newUser));
         setUser(newUser);
         setView("chat");
@@ -607,7 +633,7 @@ export default function App() {
         : await loginApi(email, details.password);
 
       const newUser = toUser(result.user);
-      localStorage.setItem(TOKEN_KEY, result.access_token);
+      setSessionToken(result.access_token);
       localStorage.setItem("digidara_user", JSON.stringify(newUser));
       setUser(newUser);
       setView("chat");
@@ -623,7 +649,7 @@ export default function App() {
   function handleLogout() {
     void agentState.flushNow(); // starts saving before the login token is cleared
     localStorage.removeItem("digidara_user");
-    localStorage.removeItem(TOKEN_KEY);
+    setSessionToken(null);
     setUser(null);
     setCurrentChatId(null);
     setNewChatPending(true);

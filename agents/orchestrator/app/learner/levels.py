@@ -31,6 +31,19 @@ LEVELED_AGENTS: dict[str, str] = {
     "job_agent": "Job Fetching",
 }
 
+# The Job Fetching agent has no level of its own: it follows the learner's
+# level everywhere else -- the average of the other agents' levels, rounded down.
+DERIVED_AGENT = "job_agent"
+
+
+def derived_level(levels: dict[str, str]) -> str:
+    """The Job Fetching level from the other agents' levels (agent -> level)."""
+    others = [normalize(level) for name, level in levels.items() if name != DERIVED_AGENT and name in LEVELED_AGENTS]
+    if not others:
+        return DEFAULT_LEVEL
+    return LEVELS[sum(LEVELS.index(level) for level in others) // len(others)]
+
+
 _EASY_MEDIUM_HARD = {"beginner": "easy", "medium": "medium", "hard": "hard", "professional": "hard"}
 _BEGINNER_TO_ADVANCED = {
     "beginner": "beginner", "medium": "intermediate", "hard": "advanced", "professional": "advanced",

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Chat } from "../types";
 import { fetchChatHistory, syncChatHistory } from "../lib/chatApi";
+import { sessionToken } from "../lib/session";
 
 function chatsKey(email: string) {
   return `digidara_chats_${email}`;
@@ -41,7 +42,7 @@ export function useChats(email: string | undefined) {
       knownChatIds.current = nextIds;
       mutationVersion.current += 1;
 
-      const token = localStorage.getItem("digidara_token");
+      const token = sessionToken();
       if (!token) return;
       syncQueue.current = syncQueue.current
         .catch(() => undefined)
@@ -55,7 +56,7 @@ export function useChats(email: string | undefined) {
 
   const loadAccountChats = useCallback(async (localChats: Chat[]): Promise<Chat[] | null> => {
     if (!email) return [];
-    const token = localStorage.getItem("digidara_token");
+    const token = sessionToken();
     if (!token) return null;
     const versionAtStart = mutationVersion.current;
 

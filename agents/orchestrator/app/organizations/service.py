@@ -3,9 +3,12 @@ monitors their readiness and levels.
 
 Two ways in for a learner: an admin creates the account (bulk add, with a
 one-time password the admin hands over), or the learner joins with the
-organization's join code. Either way the organization only sees a member's
-readiness and levels after that member agrees to share them -- their own
-consent, recorded in progress_shared_at (DPDP Act 2023).
+organization's join code. Joining is the learner's consent (DPDP Act 2023):
+the join screen says the organization's admins will see their readiness,
+levels, activity and chats, and the time of joining (or, for an account the
+organization created, of the learner's own first sign-in) is recorded in
+progress_shared_at. Leaving the organization ends the sharing. A member who
+joined before this rule, without agreeing, stays private until they agree.
 """
 from __future__ import annotations
 
@@ -96,7 +99,9 @@ def create(user_id: str, name: str, kind: str) -> dict:
     return my_organization(user_id)
 
 
-def join(user_id: str, join_code: str, share_progress: bool) -> dict:
+def join(user_id: str, join_code: str, share_progress: bool = True) -> dict:
+    """Joining is consent to share (see the module docstring); share_progress
+    is accepted for older clients and ignored."""
     code = join_code.strip().upper()
     session = db.get_session()
     try:
@@ -108,8 +113,7 @@ def join(user_id: str, join_code: str, share_progress: bool) -> dict:
         if _count(session, org.id) >= org.member_limit:
             raise OrgError(409, "This organization has reached its member limit.")
         session.add(OrganizationMember(
-            organization_id=org.id, user_id=user_id, role="member",
-            progress_shared_at=datetime.utcnow() if share_progress else None,
+            organization_id=org.id, user_id=user_id, role="member", progress_shared_at=datetime.utcnow(),
         ))
         session.commit()
     finally:
