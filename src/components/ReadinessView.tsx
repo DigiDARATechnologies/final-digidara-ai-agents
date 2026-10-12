@@ -146,7 +146,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       <div className="rd-area-head">
         <div>
           <h3>{area.label}</h3>
-          <span className="rd-weight">{area.weight}% of readiness</span>
+          <span className="rd-weight">{area.levels_completed?.length ?? 0} of 4 levels completed</span>
         </div>
         <div className="rd-area-score">
           {scored ? <><b>{Math.round(shown)}</b><span>{perLevel ? `% ${LEVEL_LABELS[area.level]}` : "/100"}</span></> : <span className="rd-muted">
@@ -154,7 +154,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         </div>
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? Math.min(100, shown) : 0}%` }} /></div>
-      {scored && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each level</p>}
+      {scored && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each completed level</p>}
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
       {area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
@@ -177,7 +177,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100), and the level you are on adds its progress so far. Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
+          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: complete 50% of your level to unlock the next one; at 100% you move up automatically.</p>
         </details>
       )}
     </div>
@@ -319,13 +319,12 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <details className="rd-how">
                 <summary>How is this calculated?</summary>
                 <p>
-                  Each area's score (0–100) is earned level by level: every completed level adds 25 points (Beginner 25,
-                  Medium 50, Hard 75, Professional 100) and the level you are on adds its progress so far. The areas then
-                  count by their weight: Coding 25%, Interview 20%, Aptitude 15%, Communication 15%, Resume 10%,
-                  Projects 10%, Certification 5%. Areas you haven't started yet count as 0, because an untested skill isn't
-                  job-ready yet.{" "}
-                  {readiness.overall !== null && `Yours: ${readiness.areas.filter((a) => a.status === "assessed" && a.score !== null)
-                    .map((a) => `${a.label} ${Math.round(a.score as number)} × ${a.weight}%`).join(" + ")} = ${Math.round(readiness.overall)}.`}
+                  Only completed levels count. Each agent earns 25 points for every level it has completed (Beginner 25,
+                  Medium 50, Hard 75, Professional 100), and your job readiness is the average over all {readiness.areas.length}{" "}
+                  agents. So it shows 25 when every agent's Beginner level is complete, 50 when every Medium level is, and
+                  so on. Progress inside a level is shown on each card and counts once the level is complete.{" "}
+                  {readiness.overall !== null && `Yours: (${readiness.areas
+                    .map((a) => `${a.label} ${Math.round(a.status === "assessed" ? a.score ?? 0 : 0)}`).join(" + ")}) ÷ ${readiness.areas.length} = ${Math.round(readiness.overall)}.`}
                 </p>
               </details>
             )}
