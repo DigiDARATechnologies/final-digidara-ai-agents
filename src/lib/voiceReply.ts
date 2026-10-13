@@ -1,23 +1,23 @@
 /**
- * Voice in, voice out: when the learner asks the DigiDARA Assistant a
- * question with the microphone, its reply is read aloud. The question is
- * marked here when it is sent by voice; the chat view takes the mark when the
- * reply arrives. A typed question clears it, so it is never spoken.
+ * A voice conversation started on the new-chat screen carries on in the chat
+ * it creates: the screen marks it here when it sends the first question, and
+ * the chat view takes the mark when it opens, so the conversation continues
+ * (waiting for that question's reply) instead of ending.
  */
-const WAIT_MS = 90_000;
-let expectedUntil = 0;
+const WAIT_MS = 30_000;
+let continueUntil = 0;
 
-export function expectSpokenReply(): void {
-  expectedUntil = Date.now() + WAIT_MS;
+export function continueVoiceConversation(): void {
+  continueUntil = Date.now() + WAIT_MS;
 }
 
-export function cancelSpokenReply(): void {
-  expectedUntil = 0;
+export function cancelVoiceConversation(): void {
+  continueUntil = 0;
 }
 
-/** True once for the reply to a question asked by voice. */
-export function takeSpokenReply(): boolean {
-  const expected = Date.now() < expectedUntil;
-  expectedUntil = 0;
-  return expected;
+/** True once, for the chat opened by a voice conversation's first question. */
+export function takeVoiceConversation(): boolean {
+  const continuing = Date.now() < continueUntil;
+  continueUntil = 0;
+  return continuing;
 }

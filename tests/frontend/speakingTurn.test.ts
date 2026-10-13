@@ -1,5 +1,5 @@
 import { formatSpeakingTurn, parseSpeakingTurn, speakingTurnSpeech } from '../../src/lib/speakingTurn';
-import { cancelSpokenReply, expectSpokenReply, takeSpokenReply } from '../../src/lib/voiceReply';
+import { cancelVoiceConversation, continueVoiceConversation, takeVoiceConversation } from '../../src/lib/voiceReply';
 
 const turn = {
   said: 'Yeah so like I completed my chemistry',
@@ -30,12 +30,12 @@ test('the coach speaks the comment, the better sentence and the next question, n
   expect(speech).not.toContain(turn.said);
 });
 
-test('only the reply to a voice question is spoken, once', () => {
-  expect(takeSpokenReply()).toBe(false);
-  expectSpokenReply();
-  expect(takeSpokenReply()).toBe(true);
-  expect(takeSpokenReply()).toBe(false);
-  expectSpokenReply();
-  cancelSpokenReply();
-  expect(takeSpokenReply()).toBe(false);
+test('a voice conversation started on the new-chat screen carries on once in the chat it opens', () => {
+  expect(takeVoiceConversation()).toBe(false);
+  continueVoiceConversation();
+  expect(takeVoiceConversation()).toBe(true);
+  expect(takeVoiceConversation()).toBe(false);
+  continueVoiceConversation();
+  cancelVoiceConversation();
+  expect(takeVoiceConversation()).toBe(false);
 });

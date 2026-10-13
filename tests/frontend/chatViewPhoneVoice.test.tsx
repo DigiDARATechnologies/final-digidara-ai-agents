@@ -1,3 +1,4 @@
+jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
 jest.mock('../../src/lib/voiceEngine', () => ({
   isSpeaking: jest.fn(() => false),
   previewVoice: jest.fn(() => Promise.resolve(false)),

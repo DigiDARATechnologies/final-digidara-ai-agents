@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { transcribeGeneralAudio } from "../lib/orchestratorApi";
-import { recognitionLocale } from "../lib/voicePrefs";
-import { cancelSpokenReply, expectSpokenReply } from "../lib/voiceReply";
+import { audioRecordingSupported } from "../lib/voiceCapture";
+import { cancelVoiceConversation, continueVoiceConversation } from "../lib/voiceReply";
+import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
 
@@ -20,43 +19,17 @@ interface NewChatLandingProps {
 export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // The DigiDARA Assistant's voice input: recorded, then transcribed with
-  // OpenAI on the server, on every device. The words appear in the box while
-  // the learner speaks; a pause sends the question, and the reply is spoken.
-  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
-  const sendOnFinalRef = useRef(false);
-  const voiceSessionRef = useRef(0);
+  // The microphone opens a spoken conversation with the DigiDARA Assistant;
+  // its first question starts the chat, where the conversation carries on.
+  const [talking, setTalking] = useState(false);
+  const voiceSupported = audioRecordingSupported();
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
-    voiceSessionRef.current += 1;
-    if (speech.listening) speech.cancel();
-    cancelSpokenReply();
+    cancelVoiceConversation();
     onSend(input.trim());
     setInput("");
-  }
-
-  function handleMicClick() {
-    if (speech.listening) {
-      // Stops recording: the question is transcribed and sent.
-      speech.stop();
-      return;
-    }
-    setInput("");
-    sendOnFinalRef.current = true;
-    const session = ++voiceSessionRef.current;
-    speech.start((text, final) => {
-      if (voiceSessionRef.current !== session) return;
-      setInput(text);
-      if (final && sendOnFinalRef.current && text.trim()) {
-        sendOnFinalRef.current = false;
-        voiceSessionRef.current += 1;
-        expectSpokenReply();
-        onSend(text.trim());
-        setInput("");
-      }
-    }, { autoStopOnSilence: true, silenceMs: 3_000 });
   }
 
   // Same auto-grow fix as the main chat composer (ChatView.tsx) -- a
@@ -86,7 +59,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={speech.transcribing ? "Transcribing…" : speech.listening ? "Listening… pause or tap the mic to send" : "Ask anything"}
+            placeholder="Ask anything"
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -97,14 +70,13 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
               }
             }}
           />
-          {speech.supported && (
+          {voiceSupported && (
             <button
               type="button"
-              className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.listening ? "Stop recording" : "Voice input"}
-              aria-label={speech.listening ? "Stop recording" : "Voice input"}
-              disabled={speech.transcribing}
-              onClick={handleMicClick}
+              className="icon-btn"
+              title="Talk with DigiDARA"
+              aria-label="Talk with DigiDARA"
+              onClick={() => setTalking(true)}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" strokeWidth="1.8" />
@@ -124,7 +96,6 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
             </svg>
           </button>
         </form>
-        {speech.error && <div className="mic-error">{speech.error}</div>}
 
         <div className="landing-agents">
           <div className="landing-agents-label"><span>Start with an agent</span></div>
@@ -150,6 +121,10 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           </div>
         </div>
       </div>
+      {talking && (
+        <VoiceConversation messages={[]} typing={false} onClose={() => setTalking(false)}
+          onSend={(text) => { continueVoiceConversation(); onSend(text); }} />
+      )}
     </section>
   );
 }

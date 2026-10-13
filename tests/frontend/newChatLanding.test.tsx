@@ -1,4 +1,7 @@
 jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+jest.mock('../../src/lib/voiceEngine', () => ({ speakNatural: jest.fn(() => Promise.resolve(true)), stopSpeaking: jest.fn() }));
+let mockRecordingSupported = true;
+jest.mock('../../src/lib/voiceCapture', () => ({ audioRecordingSupported: () => mockRecordingSupported }));
 import { fireEvent, render, screen } from '@testing-library/react';
 import NewChatLanding from '../../src/components/NewChatLanding';
 
@@ -9,7 +12,7 @@ let mockListening = false;
 
 jest.mock('../../src/hooks/useSpeechRecognition', () => ({
   __esModule: true,
-  default: () => ({ supported: mockSupported, listening: mockListening, error: '', start: mockStart, stop: mockStop }),
+  default: () => ({ supported: mockSupported, listening: mockListening, transcribing: false, error: '', start: mockStart, stop: mockStop, cancel: jest.fn() }),
 }));
 
 beforeEach(() => {
@@ -33,26 +36,21 @@ test('the attach button calls onAttachClick instead of silently doing nothing', 
   expect(onAttachClick).toHaveBeenCalledTimes(1);
 });
 
-test('the mic button starts voice capture, which fills the textarea', () => {
-  mockStart.mockImplementation((onTranscript: (text: string) => void) => onTranscript('dictated text'));
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
-  fireEvent.click(screen.getByTitle('Voice input'));
+test('the mic opens a voice conversation; its first question starts the chat', () => {
+  const onSend = jest.fn();
+  render(<NewChatLanding onSend={onSend} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
+  fireEvent.click(screen.getByTitle('Talk with DigiDARA'));
+  expect(screen.getByRole('dialog', { name: 'Voice conversation with DigiDARA' })).toBeInTheDocument();
   expect(mockStart).toHaveBeenCalledTimes(1);
-  expect(screen.getByPlaceholderText('Ask anything')).toHaveValue('dictated text');
+  mockStart.mock.calls[0][0]('What can DigiDARA do?', true);
+  expect(onSend).toHaveBeenCalledWith('What can DigiDARA do?');
 });
 
-test('clicking the mic again while listening stops it instead of starting a second session', () => {
-  mockListening = true;
+test('the mic button is hidden when the browser cannot record audio', () => {
+  mockRecordingSupported = false;
   render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
-  fireEvent.click(screen.getByTitle('Stop recording'));
-  expect(mockStop).toHaveBeenCalledTimes(1);
-  expect(mockStart).not.toHaveBeenCalled();
-});
-
-test('the mic button is hidden entirely when the browser has no speech recognition support', () => {
-  mockSupported = false;
-  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
-  expect(screen.queryByTitle('Voice input')).not.toBeInTheDocument();
+  expect(screen.queryByTitle('Talk with DigiDARA')).not.toBeInTheDocument();
+  mockRecordingSupported = true;
 });
 
 test('the agent cards under the message box start a chat with that agent', () => {

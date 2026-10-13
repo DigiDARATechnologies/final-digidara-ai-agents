@@ -10,7 +10,8 @@ import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
 import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
-import { cancelSpokenReply, expectSpokenReply, takeSpokenReply } from "../lib/voiceReply";
+import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
+import VoiceConversation from "./VoiceConversation";
 
 interface ChatViewProps {
   chat: Chat;
@@ -181,17 +182,10 @@ export default function ChatView({
   // The reply being read aloud (Listen button, or a voice question's answer).
   const [listeningIndex, setListeningIndex] = useState<number | null>(null);
 
-  // The reply to a question asked by voice is read aloud.
-  const lastMessage = chat.messages[chat.messages.length - 1];
-  useEffect(() => {
-    if (typing || !lastMessage || lastMessage.role !== "agent") return;
-    if (!takeSpokenReply() || !isGeneralChat) return;
-    const index = chat.messages.length - 1;
-    setListeningIndex(index);
-    void speakNatural(lastMessage.text, { onEnd: () => setListeningIndex((current) => (current === index ? null : current)) }, true);
-    // Only a new reply is spoken.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat.messages.length, typing]);
+  // The DigiDARA Assistant's microphone opens a spoken conversation; one
+  // started on the new-chat screen carries on here, waiting for its reply.
+  const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
+    () => (isGeneralChat && takeVoiceConversation() ? "await" : "off"));
 
   function handleMicClick() {
     stopCoachAudio();
@@ -208,7 +202,6 @@ export default function ChatView({
       speech.stop();
       if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
       if (input.trim()) {
-        if (isGeneralChat) expectSpokenReply();
         onSend(input.trim());
         setInput("");
       }
@@ -227,8 +220,6 @@ export default function ChatView({
         sendOnFinalRef.current = false;
         if (text.trim()) {
           voiceSessionRef.current += 1;
-          // Asked by voice: the DigiDARA Assistant answers aloud too.
-          if (isGeneralChat) expectSpokenReply();
           onSend(text.trim());
           setInput("");
         }
@@ -304,7 +295,7 @@ export default function ChatView({
     setInputError("");
     voiceSessionRef.current += 1;
     if (speech.listening) speech.stop();
-    cancelSpokenReply();
+    cancelVoiceConversation();
     onSend(input);
     setInput("");
   }
@@ -775,9 +766,9 @@ export default function ChatView({
             <button
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              title={isGeneralChat ? "Talk with DigiDARA" : speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
               disabled={speech.transcribing}
-              onClick={handleMicClick}
+              onClick={isGeneralChat ? () => { stopSpeaking(); setVoiceConversation("listen"); } : handleMicClick}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" strokeWidth="1.8" />
@@ -810,6 +801,10 @@ export default function ChatView({
         <div className="voice-capture-status" role="status">Turning your recording into text…</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
+      {isGeneralChat && voiceConversation !== "off" && (
+        <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"}
+          onSend={(text) => onSend(text)} onClose={() => setVoiceConversation("off")} />
+      )}
     </section>
   );
 }
