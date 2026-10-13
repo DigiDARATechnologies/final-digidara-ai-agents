@@ -114,8 +114,10 @@ class Mem0Store:
 
         threading.Thread(target=add, name=f"mem0-{self.source}-add", daemon=True).start()
 
-    def all(self, key: str) -> list[str]:
-        """Everything remembered for `key` (the learner's data export)."""
+    def all(self, key: str, latest: int | None = None) -> list[str]:
+        """Everything remembered for `key`, oldest first; `latest` keeps only
+        the newest few. A plain read of the store (milliseconds), unlike
+        recall(), which first embeds the query with OpenAI."""
         memory = self._memory()
         if memory is None:
             return []
@@ -125,7 +127,11 @@ class Mem0Store:
             logger.warning("mem0 get_all failed", exc_info=True)
             return []
         results = found.get("results", []) if isinstance(found, dict) else found or []
-        return [str(item.get("memory")) for item in results if isinstance(item, dict) and item.get("memory")]
+        items = [item for item in results if isinstance(item, dict) and item.get("memory")]
+        items.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""))
+        if latest is not None:
+            items = items[-latest:]
+        return [str(item.get("memory"))[:300] for item in items]
 
     def forget(self, key: str) -> None:
         memory = self._memory()

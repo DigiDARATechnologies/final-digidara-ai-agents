@@ -113,7 +113,7 @@ def _learner_context(user_id: str, question: str = "") -> dict | None:
     if first_name:
         context = {**(context or {}), "first_name": first_name[:40]}
     # What Boss remembers from this learner's earlier conversations (mem0).
-    remembered = boss_memory.recall(user_id, question) if question else []
+    remembered = boss_memory.recall(user_id, question)
     if remembered:
         context = {**(context or {}), "conversation_memory": remembered}
     return context or None

@@ -24,7 +24,8 @@ class FakeStore:
     def remember(self, key, messages):
         self.added.append((key, messages))
 
-    def all(self, key):
+    def all(self, key, latest=None):
+        time.sleep(self.delay)
         return [f"{key}: {m}" for m in self.memories]
 
     def forget(self, key):

@@ -20,7 +20,11 @@ from app.organizations.assistant_memory import Mem0Store
 logger = logging.getLogger("orchestrator.boss.memory")
 
 # Recall has to be quick: Boss's reply waits for it.
-RECALL_SECONDS = 1.5
+RECALL_SECONDS = 1.0
+# mem0 keeps a learner's conversations as a few short facts, so Boss reads
+# the newest of them all (a plain read, milliseconds) rather than searching
+# by the question, which needs an OpenAI embedding first (0.5-6 s measured).
+RECALL_LATEST = 20
 
 _store = Mem0Store(
     os.getenv("MEM0_BOSS_COLLECTION", "boss_memory"),
@@ -40,9 +44,9 @@ def _key(user_id: str) -> str:
     return f"boss:{user_id}"
 
 
-def recall(user_id: str, question: str, limit: int = 6) -> list[str]:
-    """What Boss remembers that bears on this question ([] when off, slow or failing)."""
-    future = _pool.submit(_store.recall, _key(user_id), question, limit)
+def recall(user_id: str, question: str = "") -> list[str]:
+    """What Boss remembers about this learner, newest last ([] when off, slow or failing)."""
+    future = _pool.submit(_store.all, _key(user_id), RECALL_LATEST)
     try:
         return future.result(timeout=RECALL_SECONDS)
     except FutureTimeout:
