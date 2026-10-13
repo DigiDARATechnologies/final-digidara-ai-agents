@@ -11,6 +11,7 @@ import {
   microphoneErrorMessage,
   preferredRecordingType,
 } from "../lib/voiceCapture";
+import { analyserReader, VoiceDetector } from "../lib/voiceActivity";
 
 /** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
@@ -327,20 +328,15 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
             const analyser = audioContext.createAnalyser();
             analyser.fftSize = 1024;
             audioContext.createMediaStreamSource(stream).connect(analyser);
-            const samples = new Uint8Array(analyser.fftSize);
+            // Speech, not a fan or background noise (lib/voiceActivity.ts).
+            const read = analyserReader(analyser, new VoiceDetector());
             const silenceMs = options.silenceMs ?? DEFAULT_SILENCE_MS;
             const measure = () => {
               if (finished) return;
-              analyser.getByteTimeDomainData(samples);
-              let sum = 0;
-              for (const sample of samples) {
-                const value = (sample - 128) / 128;
-                sum += value * value;
-              }
-              const rms = Math.sqrt(sum / samples.length);
+              const { rms, speaking } = read();
               options.onAudioLevel?.(Math.min(1, Math.max(0, (rms - 0.012) * 8.5)));
               const now = performance.now();
-              if (rms >= 0.015) {
+              if (speaking) {
                 speechDetected = true;
                 lastLoudAt = now;
                 quietSince = 0;
@@ -592,23 +588,17 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           const analyser = audioContext.createAnalyser();
           analyser.fftSize = 1024;
           source.connect(analyser);
-          const samples = new Uint8Array(analyser.fftSize);
+          const read = analyserReader(analyser, new VoiceDetector());
           let speechDetected = false;
           let quietSince = 0;
 
           const measure = () => {
             if (disposed) return;
-            analyser.getByteTimeDomainData(samples);
-            let sum = 0;
-            for (const sample of samples) {
-              const value = (sample - 128) / 128;
-              sum += value * value;
-            }
-            const rms = Math.sqrt(sum / samples.length);
+            const { rms, speaking } = read();
             const now = performance.now();
             const normalizedLevel = Math.min(1, Math.max(0, (rms - 0.012) * 8.5));
             options.onAudioLevel?.(normalizedLevel);
-            if (rms >= 0.015) {
+            if (speaking) {
               speechDetected = true;
               quietSince = 0;
               if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {

@@ -109,7 +109,7 @@ describe("Resume Builder workflow", () => {
     });
   });
 
-  test("asks for the exact missing field without discarding the draft", async () => {
+  test("lists every missing detail with an example, without discarding the draft", async () => {
     const draft = {
       name: "Test User",
       email: "test@example.com",
@@ -124,10 +124,20 @@ describe("Resume Builder workflow", () => {
       "create_now",
     );
 
-    expect(result.state.step).toBe("awaiting_title");
+    expect(result.state.step).toBe("confirming");
     expect(result.state.draft).toEqual(draft);
-    expect(result.messages[0].text).toContain("resume title is missing");
-    expect(result.messages[0].text).toContain("other resume details are still saved");
+    const text = result.messages[0].text;
+    expect(text).toContain("Missing information (needed to create your resume)");
+    expect(text).toContain("Resume title - for example: Data Analyst Resume");
+    // Recommended details are listed too, each with its format.
+    expect(text).toContain("Recommended to add");
+    expect(text).toContain("Phone number - for example: +91 98765 43210");
+    expect(text).toContain("LinkedIn profile - for example: https://www.linkedin.com/in/");
+    const values = result.messages[0].options?.map((option) => option.value) ?? [];
+    expect(values[0]).toBe("edit title");
+    expect(values).toContain("edit phone");
+    // The resume cannot be created until the title is added.
+    expect(values).not.toContain("create_now");
   });
 
   test("hydrates enrichment choices from the saved resume", async () => {
@@ -177,10 +187,11 @@ describe("Resume Builder workflow", () => {
       "create_now",
     );
 
-    expect(result.state.step).toBe("awaiting_education");
-    expect(result.state.pendingField).toBe("education.ug");
-    expect(result.messages[0].text).toContain("A fresher resume needs your undergraduate (UG) degree");
-    expect(result.messages[0].options?.map((option) => option.value)).toEqual(["waive_ug"]);
+    expect(result.state.step).toBe("confirming");
+    expect(result.messages[0].text).toContain("UG degree - for example: UG: B.Com, Nandha College, 2019-2022");
+    const values = result.messages[0].options?.map((option) => option.value) ?? [];
+    expect(values).toEqual(expect.arrayContaining(["edit education", "waive_ug"]));
+    expect(values).not.toContain("create_now");
   });
 
   test("correcting required UG merges education and preserves the complete draft", async () => {
@@ -936,7 +947,7 @@ describe("education, typed edits and the assistant (with memory)", () => {
 
   test("a candidate with no UG degree can continue instead of looping on Skip", async () => {
     const asked = await handleResumeBuilderText({ step: "confirming", draft: baseDraft }, user, "create_now");
-    expect(asked.state.pendingField).toBe("education.ug");
+    expect(asked.messages[0].options?.map((option) => option.value)).toContain("waive_ug");
     const waived = await handleResumeBuilderText(asked.state, user, "waive_ug");
     expect(waived.state.step).toBe("confirming");
     const created = await handleResumeBuilderText(waived.state, user, "create_now");
@@ -1069,7 +1080,10 @@ describe("phone numbers and returning after editing one field", () => {
     const saved = await handleResumeBuilderText(asked.state, user, "+91 98765 43210");
     expect(saved.state.step).toBe("confirming");
     expect(saved.messages[1].text).not.toBe("old review");
-    expect(saved.messages[1].options?.map((option) => option.value)).toContain("create_now");
+    // The review is rebuilt: the phone is no longer missing; what still is, is offered.
+    const values = saved.messages[1].options?.map((option) => option.value) ?? [];
+    expect(values).not.toContain("edit phone");
+    expect(values).toContain("edit role");
   });
 });
 

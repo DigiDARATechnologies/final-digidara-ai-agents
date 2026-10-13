@@ -753,7 +753,83 @@ export function buildAtsScorecardMessage(
   };
 }
 
+export interface MissingDetail {
+  /** The field the edit command opens ("edit phone"). */
+  field: string;
+  label: string;
+  /** An example of the format to type. */
+  example: string;
+  /** The resume cannot be created without it. */
+  required: boolean;
+}
+
+/** Every detail the resume still lacks, with an example of each, so the final
+ * step can list them all at once instead of asking one after another. */
+export function missingDetails(draft: ResumeDraft): MissingDetail[] {
+  const links = draft.links || [];
+  const hasLink = (label: string) => links.some((item) => new RegExp(`^${label}\\s*:`, "i").test(item));
+  const missing: MissingDetail[] = [];
+  const add = (when: boolean, field: string, label: string, example: string, required: boolean) => {
+    if (when) missing.push({ field, label, example, required });
+  };
+  add(!draft.title, "title", "Resume title", "Data Analyst Resume", true);
+  add(!draft.name, "name", "Full name", "Priya Sharma", true);
+  add(!draft.email, "email", "Email address", "priya.sharma@gmail.com", true);
+  add(!draft.targetRole, "role", "Target role", "Data Analyst", true);
+  add(draft.experienceLevel === "fresher" && !hasUndergraduateEducation(draft.education) && !draft.skipEducation,
+    "education", "UG degree", "UG: B.Com, Nandha College, 2019-2022", true);
+  add(!(draft.projects?.length || draft.experience?.length), "project", "A project or work experience",
+    "Sales Dashboard - built a Power BI dashboard that cut weekly reporting time by 30%", true);
+  add(!draft.phone, "phone", "Phone number", "+91 98765 43210", false);
+  add(!draft.location, "location", "City and country", "Chennai, India", false);
+  add(!(draft.skills || []).length, "skills", "Skills", "Python, SQL, Excel, Power BI", false);
+  add(!draft.summary, "summary", "Professional summary",
+    "Data analyst fresher skilled in SQL and Power BI, who turns raw sales data into clear dashboards.", false);
+  add(!hasLink("LinkedIn"), "linkedin", "LinkedIn profile", "https://www.linkedin.com/in/priya-sharma", false);
+  return missing;
+}
+
+/** The missing details as text, required ones first, each with its example. */
+function missingDetailsText(missing: MissingDetail[]): string {
+  const line = (item: MissingDetail) => `• ${item.label} - for example: ${item.example}`;
+  const required = missing.filter((item) => item.required);
+  const optional = missing.filter((item) => !item.required);
+  return [
+    required.length ? `❗ Missing information (needed to create your resume):\n${required.map(line).join("\n")}` : "",
+    optional.length ? `💡 Recommended to add:\n${optional.map(line).join("\n")}` : "",
+    "Tap a detail below to add it, or type it here (for example \"edit phone\"). Everything else stays saved.",
+  ].filter(Boolean).join("\n\n");
+}
+
+/** One button per missing detail (required first): each opens that field and comes back here. */
+function missingDetailOptions(missing: MissingDetail[]): ChatOption[] {
+  return missing.slice(0, 6).map((item) => ({
+    label: `${item.required ? "Add" : "Add (optional)"} ${item.label.toLowerCase()}`,
+    value: `edit ${item.field}`,
+    description: `For example: ${item.example}`,
+  }));
+}
+
 function reviewMessage(draft: ResumeDraft): ResumeBuilderMessage {
+  const message = reviewMessageBase(draft);
+  const missing = missingDetails(draft);
+  if (!missing.length) return message;
+  const requiredMissing = missing.some((item) => item.required);
+  return {
+    text: `${message.text}\n\n${missingDetailsText(missing)}`,
+    // With a required detail missing, the resume cannot be created yet.
+    options: [
+      ...missingDetailOptions(missing),
+      // A fresher without a UG degree (for example a diploma holder) can go on without one.
+      ...(missing.some((item) => item.field === "education" && item.required)
+        ? [{ label: "Continue without a UG degree", value: WAIVE_UG, description: "Only if you do not have one." }]
+        : []),
+      ...(message.options || []).filter((option) => !requiredMissing || !["create_now", "enrich_ats"].includes(option.value)),
+    ],
+  };
+}
+
+function reviewMessageBase(draft: ResumeDraft): ResumeBuilderMessage {
   const pagePlan = draft.experienceLevel === "fresher" ? "One-page ATS resume" : "Up to two-page ATS resume";
   const education = draft.education || [];
   const ugCount = education.filter((item) => String(item.level || "").toUpperCase() === "UG" || /\b(bca|b\.?sc|b\.?tech|b\.?e|bba|b\.?a|bachelor)\b/i.test(String(item.degree || ""))).length;
@@ -803,21 +879,17 @@ async function createFromDraft(state: ResumeBuilderFlowState, user: User): Promi
   const candidateDraft = state.draft;
   const missing = missingRequiredDraftField(candidateDraft);
   if (missing) {
-    return { state: { ...state, step: missing.step, error: undefined }, messages: [{ text: `${missing.message} Your other resume details are still saved.` }] };
+    // The career level is a choice, asked on its own; anything else missing is
+    // listed together, each with an example, and can be added from there.
+    if (missing.step === "awaiting_experience_level") {
+      return { state: { ...state, step: missing.step, error: undefined }, messages: [{ text: `${missing.message} Your other resume details are still saved.` }] };
+    }
+    return { state: { ...state, step: "confirming", error: undefined }, messages: [reviewMessage(candidateDraft || {})] };
   }
   const draft = candidateDraft as ResumeDraft & { title: string; name: string; email: string; targetRole: string; experienceLevel: "fresher" | "experienced" };
 
-  if (draft.experienceLevel === "fresher" && !hasUndergraduateEducation(draft.education) && !draft.skipEducation) {
-    return {
-      state: { ...state, step: "awaiting_education", pendingField: "education.ug" },
-      messages: [ugRequiredMessage(draft.education)],
-    };
-  }
-  if (!(draft.projects?.length || draft.experience?.length)) {
-    return {
-      state: { ...state, step: "awaiting_project" },
-      messages: [{ text: "Add at least one project or experience entry before generating your resume. Short project details are enough for AI to improve later." }],
-    };
+  if (missingDetails(draft).some((item) => item.required)) {
+    return { state: { ...state, step: "confirming" }, messages: [reviewMessage(draft)] };
   }
   try {
     const resumeInput: ResumeCreateInput = {
@@ -2151,6 +2223,10 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     };
   }
   if (state.step === "confirming") {
+    if (value === WAIVE_UG) {
+      const next = updateDraft({ ...state, pendingField: undefined }, { skipEducation: true }, "confirming");
+      return { state: next, messages: [{ text: "Okay - I'll create your resume without a UG degree." }, reviewMessage(next.draft || {})] };
+    }
     if (
       value === "create_now" ||
       command === "create" ||

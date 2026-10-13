@@ -50,13 +50,14 @@ def _key(user_id: str) -> str:
     return f"boss:{user_id}"
 
 
-def recall(user_id: str, question: str = "") -> list[str]:
+def recall(user_id: str, question: str = "", latest: int = RECALL_LATEST, timeout: float | None = None) -> list[str]:
     """What Boss remembers about this learner, newest last ([] when off, slow or failing)."""
-    future = _pool.submit(_store.all, _key(user_id), RECALL_LATEST)
+    wait = RECALL_SECONDS if timeout is None else timeout
+    future = _pool.submit(_store.all, _key(user_id), latest)
     try:
-        return future.result(timeout=RECALL_SECONDS)
+        return future.result(timeout=wait)
     except FutureTimeout:
-        logger.info("boss memory recall took longer than %.1fs; answering without it", RECALL_SECONDS)
+        logger.info("boss memory recall took longer than %.1fs; answering without it", wait)
         return []
     except Exception:
         logger.warning("boss memory recall failed", exc_info=True)

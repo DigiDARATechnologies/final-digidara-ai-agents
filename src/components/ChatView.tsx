@@ -10,6 +10,7 @@ import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
 import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
+import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
 
@@ -104,6 +105,9 @@ interface ChatViewProps {
 /** Phone recording (Communication Coach): a pause this long after speaking
  * sends the answer by itself. */
 const PHONE_AUTO_SEND_SILENCE_MS = 7_000;
+/** Speaking Practice: a pause this long after speaking sends the answer
+ * (unless the learner asked for more time: "just a minute"). */
+const SPEAKING_AUTO_SEND_MS = 3_000;
 
 export default function ChatView({
   chat,
@@ -168,6 +172,8 @@ export default function ChatView({
   const sendOnFinalRef = useRef(false);
   // Seconds before a pause sends the answer (phone recording), for the hint.
   const [autoSendIn, setAutoSendIn] = useState<number | null>(null);
+  // Speaking Practice: the learner said "just a minute"; still listening.
+  const [holding, setHolding] = useState(false);
   // Recognition is `continuous: true`, so it keeps listening in the
   // background after Send unless explicitly stopped ... and a result that was
   // already in flight can still land *after* stop() and repopulate the box
@@ -328,6 +334,8 @@ export default function ChatView({
     }
 
     let latestTranscript = "";
+    // Said before "just a minute": kept, and the rest of the answer joins it.
+    let heldAnswer = "";
     let observedTranscript = "";
     let lastSpeechAt = 0;
     let submitted = false;
@@ -346,6 +354,7 @@ export default function ChatView({
       submitted = true;
       voiceSessionRef.current += 1;
       window.clearInterval(silenceCheck);
+      setHolding(false);
       speech.stop();
       onSend(latestTranscript);
       setInput("");
@@ -354,8 +363,8 @@ export default function ChatView({
     const startListening = () => {
       if (submitted || voiceSessionRef.current !== session) return;
       setAgentSpeaking(false);
-      setInput("");
-      heardVoice = false;
+      setInput(heldAnswer);
+      heardVoice = Boolean(heldAnswer);
       speech.start(
         (text, final) => {
           if (voiceSessionRef.current !== session || submitted) return;
@@ -364,11 +373,24 @@ export default function ChatView({
             setAgentSpeaking(false);
           }
           const next = text.trim();
-          latestTranscript = next;
-          setInput(text);
+          if (final && next && speech.recordingMode && isHoldRequest(next)) {
+            // "Just a minute": not an answer yet. Keep what came before it and
+            // carry on listening; the next pause sends the whole answer.
+            heldAnswer = joinAnswer(heldAnswer, withoutHoldPhrase(next));
+            latestTranscript = "";
+            setInput(heldAnswer);
+            setHolding(true);
+            promptFinishedAt = Date.now();
+            heardVoice = true;
+            window.setTimeout(startListening, 150);
+            return;
+          }
+          latestTranscript = joinAnswer(heldAnswer, next);
+          setInput(joinAnswer(heldAnswer, text));
           if (next && next !== observedTranscript) {
             observedTranscript = next;
             lastSpeechAt = Date.now();
+            setHolding(false);
           }
           // Recording mode delivers the whole answer once, after the pause that
           // ended the recording: send it straight away.
@@ -376,7 +398,7 @@ export default function ChatView({
         },
         {
           autoStopOnSilence: true,
-          silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+          silenceMs: SPEAKING_AUTO_SEND_MS,
           onSilenceCountdown: setAutoSendIn,
           onVoiceDetected: () => { heardVoice = true; },
           onAudioLevel: (lvl) => {
@@ -396,8 +418,15 @@ export default function ChatView({
       silenceCheck = window.setInterval(() => {
         if (submitted || voiceSessionRef.current !== session || isNudging) return;
 
-        // 1. Spoken answer detected: auto-submit after natural 6.5s pause (desktop / live Web Speech)
-        if (!speech.recordingMode && latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= 6500) {
+        // 1. Spoken answer detected: auto-submit after a 3s pause (desktop / live Web Speech)
+        if (!speech.recordingMode && latestTranscript && lastSpeechAt && Date.now() - lastSpeechAt >= SPEAKING_AUTO_SEND_MS) {
+          if (isHoldRequest(latestTranscript)) {
+            heldAnswer = withoutHoldPhrase(latestTranscript);
+            latestTranscript = "";
+            lastSpeechAt = 0;
+            setHolding(true);
+            return;
+          }
           submitSpokenTurn();
           return;
         }
@@ -536,7 +565,7 @@ export default function ChatView({
           {speakingTurn.better && <div className="speaking-turn-card better"><b>Better way to say it</b><p>{speakingTurn.better}</p></div>}
           {speakingTurn.comment && <p className="speaking-turn-comment">{speakingTurn.comment}</p>}
           <div className="speaking-turn-card next"><b>Next question</b><h2>{speakingTurn.next}</h2></div>
-        </div> : <h2>{activeSpeakingPrompt}</h2>}<p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        </div> : <h2>{activeSpeakingPrompt}</h2>}<p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : holding ? "Take your time - I'm still listening. Carry on when you're ready." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? "Listening... stop talking for 3 seconds, or tap the orb, to send. Say 'just a minute' if you need more time." : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"

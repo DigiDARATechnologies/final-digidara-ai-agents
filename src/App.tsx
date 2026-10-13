@@ -118,9 +118,10 @@ type Theme = "dark" | "light";
 export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => {
     try {
-      const saved = localStorage.getItem("digidara_theme");
-      return saved === "light" || saved === "dark" || saved === "system" ? saved : "dark";
-    } catch { return "dark"; }
+      // Light (white) by default; see public/theme-init.js for the key.
+      const saved = localStorage.getItem("digidara_theme_v2");
+      return saved === "light" || saved === "dark" || saved === "system" ? saved : "light";
+    } catch { return "light"; }
   });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(() => {
@@ -132,7 +133,7 @@ export default function App() {
   const theme: Theme = themePref === "system" ? (systemDark ? "dark" : "light") : themePref;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("digidara_theme", themePref); } catch { /* storage unavailable: theme just won't persist */ }
+    try { localStorage.setItem("digidara_theme_v2", themePref); } catch { /* storage unavailable: theme just won't persist */ }
   }, [theme, themePref]);
   const [appearance, setAppearance] = useState(loadAppearance);
   useEffect(() => {

@@ -107,7 +107,7 @@ test('speaking practice on a phone shows the live preview but only ever sends th
   );
   expect(mockHookArgs.at(-1)?.[2]).toBe(preview);
   const [onResult, options] = mockStart.mock.calls[0];
-  expect(options).toMatchObject({ autoStopOnSilence: true, silenceMs: 7000 });
+  expect(options).toMatchObject({ autoStopOnSilence: true, silenceMs: 3000 });
 
   act(() => { onResult('I went for', false); });
   expect(screen.getByDisplayValue('I went for')).toBeInTheDocument();
@@ -161,15 +161,28 @@ describe('speaking practice nudges ("are you here?")', () => {
     expect(mockStop).not.toHaveBeenCalled();
   });
 
-  test('on a phone, the answer is sent after the 7 second pause without waiting for live text', () => {
+  test('the answer is sent after a 3 second pause without waiting for live text', () => {
     const onSend = renderSpeaking();
     const [onResult, options] = mockStart.mock.calls[0];
-    expect(options).toMatchObject({ autoStopOnSilence: true, silenceMs: 7000 });
+    expect(options).toMatchObject({ autoStopOnSilence: true, silenceMs: 3000 });
     act(() => { options.onVoiceDetected(); });
     // No preview text ever arrived; the recording ends after the pause and
     // delivers the final transcript, which is sent.
     act(() => { onResult('I cooked dinner for my family.', true); });
     expect(onSend).toHaveBeenCalledWith('I cooked dinner for my family.');
+  });
+
+  test('"just a minute" keeps listening, and the rest of the answer is sent together', () => {
+    const onSend = renderSpeaking();
+    const [onResult] = mockStart.mock.calls[0];
+    act(() => { onResult('I worked at Infosys, just a minute', true); });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText(/Take your time/)).toBeInTheDocument();
+    act(() => { jest.advanceTimersByTime(200); });
+    expect(mockStart).toHaveBeenCalledTimes(2);
+    const [onMore] = mockStart.mock.calls[1];
+    act(() => { onMore('as a data analyst for two years.', true); });
+    expect(onSend).toHaveBeenCalledWith('I worked at Infosys as a data analyst for two years.');
   });
 
   test('on a desktop the nudge still stops listening as before', () => {

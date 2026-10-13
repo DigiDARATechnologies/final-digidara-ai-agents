@@ -16,6 +16,11 @@ jest.mock('../../src/lib/voiceEngine', () => ({
   },
 }));
 jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+const mockWatchers: Array<() => void> = [];
+const mockUnwatch = jest.fn();
+jest.mock('../../src/lib/voiceActivity', () => ({
+  watchForSpeech: (onSpeech: () => void) => { mockWatchers.push(onSpeech); return mockUnwatch; },
+}));
 jest.mock('../../src/components/Logo', () => ({ Logo: () => <span>DD</span> }));
 const mockStart = jest.fn();
 const mockStop = jest.fn();
@@ -38,6 +43,8 @@ beforeEach(() => {
   mockCancel.mockReset();
   mockStopSpeaking.mockReset();
   mockQueues.length = 0;
+  mockWatchers.length = 0;
+  mockUnwatch.mockReset();
   mockStart.mockReturnValue(true);
 });
 
@@ -103,4 +110,19 @@ test('tapping the logo while it speaks interrupts it and listens once; ending st
   fireEvent.click(screen.getByRole('button', { name: 'End voice chat' }));
   expect(mockCancel).toHaveBeenCalled();
   expect(onClose).toHaveBeenCalled();
+});
+
+test('talking over Boss interrupts it: it stops speaking and listens', () => {
+  const sent = [msg('user', 'Hello')];
+  const { rerender } = render(<VoiceConversation messages={sent} typing awaitingReply onSend={jest.fn()} onClose={jest.fn()} />);
+  expect(mockWatchers).toHaveLength(0); // not listening for interruptions while thinking
+  rerender(<VoiceConversation messages={[...sent, msg('agent', 'Hi there! Long answer.')]} typing={false} awaitingReply onSend={jest.fn()} onClose={jest.fn()} />);
+  expect(mockWatchers).toHaveLength(1);
+  act(() => { mockWatchers[0](); });
+  expect(mockStopSpeaking).toHaveBeenCalled();
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  expect(mockUnwatch).toHaveBeenCalled(); // the watch ends once it is listening
+  // The interrupted reply finishing later does not start a second listen.
+  act(() => { mockQueues[0].onEnd?.(); });
+  expect(mockStart).toHaveBeenCalledTimes(1);
 });

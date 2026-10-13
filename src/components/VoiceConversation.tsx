@@ -4,6 +4,7 @@ import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
 import { setVoiceConversationOpen } from "../lib/voiceReply";
 import { completeSentences } from "../lib/voiceText";
+import { watchForSpeech } from "../lib/voiceActivity";
 import { recognitionLocale } from "../lib/voicePrefs";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
@@ -145,6 +146,19 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, last?.text, last?.streaming, typing]);
 
+  // Talking over Boss interrupts it, like tapping the logo: it stops and
+  // listens. Only a voice counts -- not Boss's own echo or a fan.
+  useEffect(() => {
+    if (phase !== "speaking") return;
+    return watchForSpeech(() => {
+      if (!openRef.current) return;
+      awaitingFromRef.current = null;
+      listen();
+    });
+    // listen() reads refs only; the watch follows the phase.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   function handleOrbTap() {
     if (phase === "speaking") {
       // Interrupt the reply and answer straight away.
@@ -167,7 +181,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
 
   const status = speech.transcribing && phase === "listening" ? "Understanding..."
     : phase === "thinking" ? "Thinking..."
-      : phase === "speaking" ? "Speaking... tap me to interrupt"
+      : phase === "speaking" ? "Speaking... start talking or tap me to interrupt"
         : speech.listening ? sendIn !== null ? `Sending in ${sendIn}s - keep talking to continue` : "Listening... just talk"
           : speech.error ? "Tap the logo to try again" : "Starting microphone...";
 

@@ -226,7 +226,19 @@ def learner_context(user_id: str, agent_name: str) -> dict:
         "difficulty": level_rules.agent_difficulty(agent_name, level),
         # The few memories most relevant to this agent (shared + its own).
         "memory": memory_service.for_agent(user_id, agent_name),
+        # What the learner told Boss, the general assistant, in earlier
+        # conversations (mem0), so every agent can use it. A quick read with
+        # a short limit: an agent call never waits on memory.
+        "conversation_memory": _conversation_memory(user_id, agent_name),
     }
+
+
+def _conversation_memory(user_id: str, agent_name: str) -> list[str]:
+    if agent_name == "general_chat":
+        return []  # the general chat reads Boss's memory itself
+    from app.orchestrator import boss_memory  # local import: boss_memory imports the organizations package
+
+    return boss_memory.recall(user_id, latest=8, timeout=0.4)
 
 
 def export_data(user_id: str) -> dict:

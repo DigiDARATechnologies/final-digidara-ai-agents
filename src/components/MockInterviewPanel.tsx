@@ -4,13 +4,12 @@ import { microphoneErrorMessage } from "../lib/voiceCapture";
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from "../lib/mockInterviewApi";
 import { AFTER_PROMPT_END_MS, AWAY_PROMPT, secondsUntilAction, silenceAction } from "../lib/answerSilence";
 import { speakNatural as speakBrowserText } from "../lib/voiceEngine";
+import { analyserReader, VoiceDetector } from "../lib/voiceActivity";
 import type { MockInterviewAnswerTiming, MockInterviewFlowState } from "../lib/mockInterviewFlow";
 
 const TIME_LIMIT_SECONDS = { beginner: 60, intermediate: 90, advanced: 120 } as const;
 
-/** Microphone level above which the candidate counts as speaking, and for how
- * many consecutive 100ms samples -- a single click or tap is not speech. */
-const VOICE_LEVEL = 0.015;
+/** For how many consecutive 100ms samples the candidate must be heard. */
 const VOICE_SAMPLES = 2;
 /** Phone live preview: how often the answer so far is re-transcribed, and at
  * most how many times per answer (about two minutes of speech). */
@@ -206,21 +205,12 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
       context.createMediaStreamSource(stream).connect(analyser);
-      const samples = new Uint8Array(analyser.fftSize);
-      let loud = 0;
+      // Speech, not a fan or background noise (lib/voiceActivity.ts); two
+      // 100ms samples in a row, so a single click or tap is not speech.
+      const read = analyserReader(analyser, new VoiceDetector({ holdFrames: VOICE_SAMPLES }));
       const timer = window.setInterval(() => {
-        if (micPausedRef.current || ttsActiveRef.current) {
-          loud = 0;
-          return;
-        }
-        analyser.getByteTimeDomainData(samples);
-        let sum = 0;
-        for (const sample of samples) {
-          const value = (sample - 128) / 128;
-          sum += value * value;
-        }
-        loud = Math.sqrt(sum / samples.length) >= VOICE_LEVEL ? loud + 1 : 0;
-        if (loud >= VOICE_SAMPLES) markVoice();
+        if (micPausedRef.current || ttsActiveRef.current) return;
+        if (read().speaking) markVoice();
       }, 100);
       vadStopRef.current = () => {
         window.clearInterval(timer);
