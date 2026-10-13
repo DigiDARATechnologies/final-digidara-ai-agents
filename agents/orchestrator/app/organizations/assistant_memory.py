@@ -23,10 +23,6 @@ from typing import Any
 
 logger = logging.getLogger("orchestrator.org_assistant.memory")
 
-_lock = threading.Lock()
-_client: Any = None
-_failed = False
-
 
 def memory_key(org_id: str, user_id: str) -> str:
     return f"org:{org_id}:{user_id}"
@@ -36,89 +32,131 @@ def memory_enabled() -> bool:
     return os.getenv("MEM0_ENABLED", "").strip().lower() in {"1", "true", "yes"} and bool(os.getenv("OPENAI_API_KEY"))
 
 
-def _config() -> dict[str, Any]:
-    return {
-        "vector_store": {
-            "provider": "qdrant",
-            "config": {
-                "collection_name": os.getenv("MEM0_COLLECTION", "org_assistant_memory"),
-                "host": os.getenv("MEM0_QDRANT_HOST", "qdrant"),
-                "port": int(os.getenv("MEM0_QDRANT_PORT", "6333")),
-                "embedding_model_dims": 1536,
+class Mem0Store:
+    """One mem0 memory in its own Qdrant collection. Optional and never on
+    the critical path: off without MEM0_ENABLED and an OpenAI key, any
+    failure is logged and ignored, and adding a turn runs in the background."""
+
+    def __init__(self, collection: str, history_file: str, instructions: str, source: str):
+        self.collection = collection
+        self.history_file = history_file
+        self.instructions = instructions
+        self.source = source
+        self._lock = threading.Lock()
+        self._client: Any = None
+        self._failed = False
+
+    def _config(self) -> dict[str, Any]:
+        return {
+            "vector_store": {
+                "provider": "qdrant",
+                "config": {
+                    "collection_name": self.collection,
+                    "host": os.getenv("MEM0_QDRANT_HOST", "qdrant"),
+                    "port": int(os.getenv("MEM0_QDRANT_PORT", "6333")),
+                    "embedding_model_dims": 1536,
+                },
             },
-        },
-        "llm": {
-            "provider": "openai",
-            "config": {"model": os.getenv("MEM0_LLM_MODEL") or "gpt-4o-mini", "temperature": 0},
-        },
-        "embedder": {
-            "provider": "openai",
-            "config": {"model": os.getenv("MEM0_EMBEDDING_MODEL", "text-embedding-3-small")},
-        },
-        "history_db_path": os.path.join(os.getenv("MEM0_DIR", "/tmp/mem0"), "org_history.db"),
-        "custom_instructions": (
-            "Remember what an organization admin tells you about how they work: the departments, years, "
-            "sections and learners they look after, the thresholds and goals they set, recurring questions, "
-            "and preferences for how answers are given. Do not store learners' personal details or scores; "
-            "those are always read fresh. A correction replaces the earlier fact."
-        ),
-    }
+            "llm": {
+                "provider": "openai",
+                "config": {"model": os.getenv("MEM0_LLM_MODEL") or "gpt-4o-mini", "temperature": 0},
+            },
+            "embedder": {
+                "provider": "openai",
+                "config": {"model": os.getenv("MEM0_EMBEDDING_MODEL", "text-embedding-3-small")},
+            },
+            "history_db_path": os.path.join(os.getenv("MEM0_DIR", "/tmp/mem0"), self.history_file),
+            "custom_instructions": self.instructions,
+        }
 
+    def _memory(self):
+        if not memory_enabled() or self._failed:
+            return None
+        if self._client is not None:
+            return self._client
+        with self._lock:
+            if self._client is None and not self._failed:
+                try:
+                    os.environ.setdefault("MEM0_TELEMETRY", "False")
+                    os.environ.setdefault("MEM0_DIR", "/tmp/mem0")
+                    os.makedirs(os.environ["MEM0_DIR"], exist_ok=True)
+                    from mem0 import Memory
 
-def _memory():
-    global _client, _failed
-    if not memory_enabled() or _failed:
-        return None
-    if _client is not None:
-        return _client
-    with _lock:
-        if _client is None and not _failed:
+                    self._client = Memory.from_config(self._config())
+                except Exception:
+                    self._failed = True
+                    logger.warning("mem0 memory (%s) is unavailable; carrying on without it.", self.collection, exc_info=True)
+        return self._client
+
+    def recall(self, key: str, query: str, limit: int = 5) -> list[str]:
+        memory = self._memory()
+        if memory is None or not query.strip():
+            return []
+        try:
+            found = memory.search(query, top_k=limit, filters={"user_id": key})
+        except Exception:
+            logger.warning("mem0 search failed", exc_info=True)
+            return []
+        results = found.get("results", []) if isinstance(found, dict) else found or []
+        return [str(item.get("memory"))[:300] for item in results if isinstance(item, dict) and item.get("memory")]
+
+    def remember(self, key: str, messages: list[dict[str, str]]) -> None:
+        memory = self._memory()
+        turns = [m for m in messages if m.get("content")]
+        if memory is None or not turns:
+            return
+
+        def add():
             try:
-                os.environ.setdefault("MEM0_TELEMETRY", "False")
-                os.environ.setdefault("MEM0_DIR", "/tmp/mem0")
-                os.makedirs(os.environ["MEM0_DIR"], exist_ok=True)
-                from mem0 import Memory
-
-                _client = Memory.from_config(_config())
+                memory.add(turns, user_id=key, metadata={"source": self.source})
             except Exception:
-                _failed = True
-                logger.warning("mem0 memory is unavailable; the assistant continues without it.", exc_info=True)
-    return _client
+                logger.warning("mem0 add failed", exc_info=True)
+
+        threading.Thread(target=add, name=f"mem0-{self.source}-add", daemon=True).start()
+
+    def all(self, key: str) -> list[str]:
+        """Everything remembered for `key` (the learner's data export)."""
+        memory = self._memory()
+        if memory is None:
+            return []
+        try:
+            found = memory.get_all(filters={"user_id": key})
+        except Exception:
+            logger.warning("mem0 get_all failed", exc_info=True)
+            return []
+        results = found.get("results", []) if isinstance(found, dict) else found or []
+        return [str(item.get("memory")) for item in results if isinstance(item, dict) and item.get("memory")]
+
+    def forget(self, key: str) -> None:
+        memory = self._memory()
+        if memory is None:
+            return
+        try:
+            memory.delete_all(user_id=key)
+        except Exception:
+            logger.warning("mem0 delete_all failed", exc_info=True)
+
+
+_org = Mem0Store(
+    os.getenv("MEM0_COLLECTION", "org_assistant_memory"),
+    "org_history.db",
+    (
+        "Remember what an organization admin tells you about how they work: the departments, years, "
+        "sections and learners they look after, the thresholds and goals they set, recurring questions, "
+        "and preferences for how answers are given. Do not store learners' personal details or scores; "
+        "those are always read fresh. A correction replaces the earlier fact."
+    ),
+    "org_assistant",
+)
 
 
 def recall(key: str, query: str, limit: int = 5) -> list[str]:
-    memory = _memory()
-    if memory is None or not query.strip():
-        return []
-    try:
-        found = memory.search(query, top_k=limit, filters={"user_id": key})
-    except Exception:
-        logger.warning("mem0 search failed", exc_info=True)
-        return []
-    results = found.get("results", []) if isinstance(found, dict) else found or []
-    return [str(item.get("memory"))[:300] for item in results if isinstance(item, dict) and item.get("memory")]
+    return _org.recall(key, query, limit)
 
 
 def remember(key: str, messages: list[dict[str, str]]) -> None:
-    memory = _memory()
-    turns = [m for m in messages if m.get("content")]
-    if memory is None or not turns:
-        return
-
-    def add():
-        try:
-            memory.add(turns, user_id=key, metadata={"source": "org_assistant"})
-        except Exception:
-            logger.warning("mem0 add failed", exc_info=True)
-
-    threading.Thread(target=add, name="mem0-org-add", daemon=True).start()
+    _org.remember(key, messages)
 
 
 def forget(key: str) -> None:
-    memory = _memory()
-    if memory is None:
-        return
-    try:
-        memory.delete_all(user_id=key)
-    except Exception:
-        logger.warning("mem0 delete_all failed", exc_info=True)
+    _org.forget(key)

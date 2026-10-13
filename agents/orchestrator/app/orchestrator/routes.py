@@ -11,6 +11,7 @@ from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
 from app.llm import transcribe as speech
+from app.orchestrator import boss_memory
 from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
@@ -51,13 +52,15 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     multi-turn flow instead of a single stateless tool invocation."""
     logger.info("=== POST /chat/route user=%s message_chars=%d history_turns=%d", user_id, len(req.message), len(req.history))
     try:
-        result = route_message(req.message, [turn.model_dump() for turn in req.history], _learner_context(user_id))
+        result = route_message(req.message, [turn.model_dump() for turn in req.history], _learner_context(user_id, req.message))
     except Exception:
         logger.exception("router-only graph failed")
         raise HTTPException(
             502,
             "The router could not complete this turn (check LLM_MODEL / API key configuration). Please retry.",
         )
+    if not result.get("agent_name"):
+        boss_memory.remember(user_id, req.message, result.get("reply"))
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
 
 
@@ -75,12 +78,14 @@ def chat_route_stream(req: RouteStreamRequest, request: Request, user_id: str = 
     written instead of after it is finished."""
     logger.info("=== POST /chat/route/stream user=%s message_chars=%d history_turns=%d voice=%s",
                 user_id, len(req.message), len(req.history), req.voice)
-    context = _learner_context(user_id)
+    context = _learner_context(user_id, req.message)
     history = [turn.model_dump() for turn in req.history]
 
     def events():
         try:
             for event in route_message_stream(req.message, history, context, voice=req.voice):
+                if event.get("done") and not event.get("agent_name"):
+                    boss_memory.remember(user_id, req.message, event.get("reply"))
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("streamed router turn failed")
@@ -91,7 +96,7 @@ def chat_route_stream(req: RouteStreamRequest, request: Request, user_id: str = 
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-def _learner_context(user_id: str) -> dict | None:
+def _learner_context(user_id: str, question: str = "") -> dict | None:
     """Phase 2: the learner's goal, skills and shared memory, so the general
     chat answers personally. Never blocks a reply if it cannot be read."""
     try:
@@ -107,6 +112,10 @@ def _learner_context(user_id: str) -> dict | None:
         first_name = ""
     if first_name:
         context = {**(context or {}), "first_name": first_name[:40]}
+    # What Boss remembers from this learner's earlier conversations (mem0).
+    remembered = boss_memory.recall(user_id, question) if question else []
+    if remembered:
+        context = {**(context or {}), "conversation_memory": remembered}
     return context or None
 
 

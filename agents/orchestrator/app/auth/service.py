@@ -106,11 +106,13 @@ def _purge_phase2(user_id: str) -> None:
 
     from app.coach import service as coach_service
     from app.memory import service as memory_service
+    from app.orchestrator import boss_memory
 
     learner_service.purge(user_id)
     readiness_service.purge(user_id)
     org_service.purge(user_id)
     memory_service.clear(user_id)
+    boss_memory.forget(user_id)
     coach_service.purge(user_id)
     session = get_session()
     try:
@@ -124,6 +126,7 @@ def _export_phase2(user_id: str) -> dict:
     from app.coach import service as coach_service
     from app.learner import service as learner_service
     from app.memory import service as memory_service
+    from app.orchestrator import boss_memory
     from app.organizations import service as org_service
     from app.readiness import service as readiness_service
 
@@ -132,6 +135,7 @@ def _export_phase2(user_id: str) -> dict:
         "readiness_history": readiness_service.history(user_id),
         "organization": org_service.export_data(user_id),
         "memory": memory_service.list_for(user_id),
+        "boss_memory": boss_memory.export(user_id),
         "career_plan": coach_service.get(user_id),
     }
 
