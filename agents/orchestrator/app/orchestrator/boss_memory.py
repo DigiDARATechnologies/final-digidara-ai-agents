@@ -40,6 +40,12 @@ _store = Mem0Store(
 _pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="boss-recall")
 
 
+def warm_up() -> None:
+    """Load mem0 now, in the background, so this worker's first learner does
+    not wait for it (loading takes a second or more; recall would time out)."""
+    _pool.submit(_store._memory)
+
+
 def _key(user_id: str) -> str:
     return f"boss:{user_id}"
 

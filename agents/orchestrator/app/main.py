@@ -75,6 +75,10 @@ app.include_router(conductor_router)
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    # Boss's memory (mem0) loads in the background in every worker.
+    from app.orchestrator import boss_memory
+
+    boss_memory.warm_up()
     auth_service.seed_admin_from_env()
 
 
