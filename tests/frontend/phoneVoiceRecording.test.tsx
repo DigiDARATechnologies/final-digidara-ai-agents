@@ -264,6 +264,27 @@ describe('auto-send after a pause (phone recording)', () => {
     act(() => { document.dispatchEvent(new Event('pointerdown')); });
     expect(created!.resume.mock.calls.length).toBe(before + 1);
   });
+  test('with finalFromPreview, a live transcript is taken as soon as they go quiet and becomes the answer', async () => {
+    const transcribe = jest.fn().mockResolvedValue('from the full recording');
+    const preview = jest.fn().mockResolvedValue('What does the Capstone agent do?');
+    const onResult = jest.fn();
+    const { result } = renderHook(() => useSpeechRecognition('en-US', transcribe, preview));
+    act(() => { result.current.start(onResult, { autoStopOnSilence: true, silenceMs: 2000, finalFromPreview: true }); });
+    await advance(0);
+    await waitFor(() => expect(FakeRecorder.latest?.state).toBe('recording'));
+    level = 0.2;
+    await advance(1_000);
+    const before = preview.mock.calls.length;
+    level = 0;
+    // Half a second after the voice stops, the live transcript is taken at once.
+    await advance(600);
+    expect(preview.mock.calls.length).toBe(before + 1);
+    await advance(1_600);
+    await waitFor(() => expect(onResult).toHaveBeenCalledWith('What does the Capstone agent do?', true));
+    // No second transcription of the whole recording.
+    expect(transcribe).not.toHaveBeenCalled();
+  });
+
   test('with a preview transcriber, the text appears while speaking and the final text still comes from the full recording', async () => {
     const transcribe = jest.fn().mockResolvedValue('I cooked dinner for my family.');
     const preview = jest.fn()

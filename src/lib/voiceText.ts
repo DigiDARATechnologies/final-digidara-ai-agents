@@ -35,8 +35,10 @@ export function completeSentences(text: string, from: number): { text: string; n
   return end < 0 ? { text: "", next: from } : { text: rest.slice(0, end), next: from + end };
 }
 
-/** Sentence-sized chunks, joining short sentences up to MAX_CHUNK. */
-export function splitForSpeech(text: string): string[] {
+/** Sentence-sized chunks, joining short sentences up to MAX_CHUNK.
+ * `shortFirst`: make the first chunk short so speech starts sooner -- only
+ * for the start of a reply; later text is never cut mid-sentence. */
+export function splitForSpeech(text: string, shortFirst = true): string[] {
   const sentences = text.match(/[^.!?।\n]+[.!?।]*\s*/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
@@ -58,7 +60,7 @@ export function splitForSpeech(text: string): string[] {
       continue;
     }
     // Keep the first chunk short so speech starts fast.
-    const limit = chunks.length === 0 ? FIRST_CHUNK : MAX_CHUNK;
+    const limit = chunks.length === 0 && shortFirst ? FIRST_CHUNK : MAX_CHUNK;
     if (current && current.length + sentence.length + 1 > limit) {
       chunks.push(current);
       current = sentence;
@@ -68,7 +70,7 @@ export function splitForSpeech(text: string): string[] {
   }
   if (current) chunks.push(current);
   // A long first sentence: speak its opening clause first.
-  if (chunks.length && chunks[0].length > FIRST_CHUNK) {
+  if (shortFirst && chunks.length && chunks[0].length > FIRST_CHUNK) {
     const first = chunks[0];
     const comma = first.lastIndexOf(", ", FIRST_CHUNK);
     const space = first.lastIndexOf(" ", FIRST_CHUNK);

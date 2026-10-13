@@ -48,7 +48,7 @@ beforeEach(() => {
   mockStart.mockReturnValue(true);
 });
 
-test('Boss greets, then listens; a 5 second pause (or the live transcript) sends the question', () => {
+test('Boss greets, then listens; a 2 second pause (or the live transcript) sends the question', () => {
   let greetingDone: () => void = () => {};
   mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
   const onSend = jest.fn();
@@ -60,7 +60,7 @@ test('Boss greets, then listens; a 5 second pause (or the live transcript) sends
   act(() => { greetingDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS, finalFromPreview: true }));
-  expect(CONVERSATION_PAUSE_MS).toBe(5000);
+  expect(CONVERSATION_PAUSE_MS).toBe(2000);
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
   // No words on screen, only the logo.
   expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();
@@ -125,4 +125,18 @@ test('talking over Boss interrupts it: it stops speaking and listens', () => {
   // The interrupted reply finishing later does not start a second listen.
   act(() => { mockQueues[0].onEnd?.(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+test('"just a minute" keeps Boss listening, and the whole question is sent together', () => {
+  jest.useFakeTimers();
+  mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { handlers.onEnd(); return Promise.resolve(true); });
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[]} typing={false} onSend={onSend} onClose={jest.fn()} />);
+  act(() => { mockStart.mock.calls[0][0]('Tell me about the Capstone agent, just a minute', true); });
+  expect(onSend).not.toHaveBeenCalled();
+  act(() => { jest.advanceTimersByTime(150); });
+  expect(mockStart).toHaveBeenCalledTimes(2);
+  act(() => { mockStart.mock.calls[1][0]('and how long the project takes.', true); });
+  expect(onSend).toHaveBeenCalledWith('Tell me about the Capstone agent and how long the project takes.');
+  jest.useRealTimers();
 });

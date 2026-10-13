@@ -288,10 +288,13 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
     if (index < texts.length && !prepared[index]) prepared[index] = prepareVoice(texts[index], prefs);
   };
 
+  // How far ahead pieces are generated: while one plays, the next two are
+  // already being made, so there is no gap between sentences or clauses.
+  const AHEAD = 2;
+  let index = 0;
   const run = async () => {
     running = true;
     speaking = true;
-    let index = 0;
     while (mySession === session) {
       if (index >= texts.length) {
         if (closed) break;
@@ -299,14 +302,12 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
         waker.wake = null;
         continue;
       }
-      prepare(index);
+      for (let ahead = index; ahead <= index + AHEAD; ahead += 1) prepare(ahead);
       const audio = await prepared[index];
       if (mySession !== session) {
         release(audio);
         break;
       }
-      // The next piece downloads (and is generated) while this one plays.
-      prepare(index + 1);
       let heard = false;
       if (audio) {
         try {
@@ -327,9 +328,12 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
     started: startedPromise,
     push(text: string) {
       if (!enabled || closed || ended) return;
-      const pieces = splitForSpeech(speakableText(text));
+      // Only the very start of what is said is cut short to start sooner.
+      const pieces = splitForSpeech(speakableText(text), texts.length === 0);
       if (!pieces.length) return;
       texts.push(...pieces);
+      // Text arriving while earlier pieces play starts being generated now.
+      if (running) for (let ahead = index; ahead <= index + AHEAD; ahead += 1) prepare(ahead);
       if (!running) void run();
       waker.wake?.();
     },

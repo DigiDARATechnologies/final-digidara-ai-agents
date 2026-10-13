@@ -233,6 +233,7 @@ export default function ChatView({
     }, {
       autoStopOnSilence: autoStopVoiceOnSilence || speech.recordingMode,
       silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+      finalFromPreview: true,
       onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
         if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
@@ -399,6 +400,8 @@ export default function ChatView({
         {
           autoStopOnSilence: true,
           silenceMs: SPEAKING_AUTO_SEND_MS,
+          // The live transcript taken as they went quiet is the answer: no wait.
+          finalFromPreview: true,
           onSilenceCountdown: setAutoSendIn,
           onVoiceDetected: () => { heardVoice = true; },
           onAudioLevel: (lvl) => {

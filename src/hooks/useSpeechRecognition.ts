@@ -64,7 +64,10 @@ export type AudioTranscriber = (audio: Blob) => Promise<string>;
 const MAX_RECORDING_MS = 3 * 60 * 1000;
 /** Recording mode live text: how often the answer so far is re-transcribed,
  * and at most how many times per recording (about two minutes of speech). */
-const PREVIEW_INTERVAL_MS = 3_000;
+const PREVIEW_INTERVAL_MS = 2_000;
+/** A pause this long after speaking takes a live transcript at once: with
+ * finalFromPreview it becomes the answer, so no second transcription is needed. */
+const END_PREVIEW_QUIET_MS = 450;
 const MAX_PREVIEWS = 40;
 const DEFAULT_SILENCE_MS = 7000;
 
@@ -251,6 +254,10 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         // when its audio was taken (performance.now()).
         let lastLoudAt = 0;
         let latestPreview: { text: string; takenAt: number } | null = null;
+        // The live transcript taken when the learner went quiet, while it is on its way.
+        let endPreview: { promise: Promise<string>; takenAt: number } | null = null;
+        let endPreviewFor = -1;
+        let previewNow: (() => void) | null = null;
         const meterRunning = () => audioContext?.state === "running";
         let previewTimer: number | undefined;
         let lastCountdown: number | null = null;
@@ -271,10 +278,24 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           if (audioContext && audioContext.state !== "closed") void audioContext.close();
         };
 
+        const coversEverything = (takenAt: number) => lastLoudAt > 0 && takenAt >= lastLoudAt + 400;
         const deliverRecording = async () => {
-          if (options.finalFromPreview && latestPreview && lastLoudAt && latestPreview.takenAt >= lastLoudAt + 400) {
+          if (options.finalFromPreview && latestPreview && coversEverything(latestPreview.takenAt)) {
             onResult(latestPreview.text, true);
             return;
+          }
+          // Taken after they went quiet and still on its way: wait for it (it
+          // is nearly there) rather than send the whole recording again.
+          if (options.finalFromPreview && endPreview && coversEverything(endPreview.takenAt)) {
+            const text = await Promise.race([
+              endPreview.promise.then((value) => removeMobileTranscriptLoops(value), () => ""),
+              new Promise<string>((resolve) => window.setTimeout(() => resolve(""), 3_000)),
+            ]);
+            if (session !== recordSessionRef.current) return;
+            if (text) {
+              onResult(text, true);
+              return;
+            }
           }
           const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
           if (!audio.size) {
@@ -345,6 +366,11 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
                 if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
               } else if (speechDetected && options.autoStopOnSilence) {
                 if (!quietSince) quietSince = now;
+                // Went quiet: take the live transcript now, ready for the answer.
+                if (options.finalFromPreview && now - quietSince >= END_PREVIEW_QUIET_MS && endPreviewFor !== lastLoudAt) {
+                  endPreviewFor = lastLoudAt;
+                  previewNow?.();
+                }
                 const remaining = silenceMs - (now - quietSince);
                 if (remaining <= 0) {
                   finish(true);
@@ -373,21 +399,21 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           let previewCount = 0;
           let inFlight = false;
           let lastText = "";
-          previewTimer = window.setInterval(() => {
-            if (finished || inFlight || previewCount >= MAX_PREVIEWS) return;
-            if (!speechDetected && meterRunning()) return;
-            if (Date.now() - lastPreviewAt < PREVIEW_INTERVAL_MS || chunks.length <= previewChunks) return;
-            inFlight = true;
+          const takePreview = (end: boolean) => {
+            inFlight = !end || inFlight;
             previewCount += 1;
             previewChunks = chunks.length;
             lastPreviewAt = Date.now();
             const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
             const takenAt = performance.now();
-            previewTranscribe(audio)
+            const promise = previewTranscribe(audio);
+            if (end) endPreview = { promise, takenAt };
+            promise
               .then((text) => {
-                if (finished || session !== recordSessionRef.current) return;
+                if (session !== recordSessionRef.current) return;
                 const trimmed = removeMobileTranscriptLoops(text);
                 if (trimmed && (!latestPreview || takenAt > latestPreview.takenAt)) latestPreview = { text: trimmed, takenAt };
+                if (finished) return;
                 if (!trimmed || trimmed === lastText) return;
                 lastText = trimmed;
                 if (!meterRunning()) {
@@ -401,7 +427,16 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
                 // A missed preview only delays the live text; the whole
                 // recording is still transcribed when it stops.
               })
-              .finally(() => { inFlight = false; });
+              .finally(() => { if (!end) inFlight = false; });
+          };
+          previewNow = () => {
+            if (!finished && previewCount < MAX_PREVIEWS && chunks.length) takePreview(true);
+          };
+          previewTimer = window.setInterval(() => {
+            if (finished || inFlight || previewCount >= MAX_PREVIEWS) return;
+            if (!speechDetected && meterRunning()) return;
+            if (Date.now() - lastPreviewAt < PREVIEW_INTERVAL_MS || chunks.length <= previewChunks) return;
+            takePreview(false);
           }, 250);
         }
       }).catch((microphoneError) => {

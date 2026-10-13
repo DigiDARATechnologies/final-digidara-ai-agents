@@ -129,7 +129,7 @@ class TranscribeRequest(BaseModel):
 # Each call is a paid OpenAI request with up to a few minutes of audio.
 # The microphone also sends the recording so far every few seconds, so the
 # learner sees their words appear while they speak.
-_TRANSCRIBE_RATE_LIMIT = "40/minute"
+_TRANSCRIBE_RATE_LIMIT = "60/minute"
 
 
 @router.post("/chat/transcribe")
