@@ -20,6 +20,21 @@ export function speakableText(raw: string): string {
     .trim();
 }
 
+/**
+ * The finished sentences of a reply that is still being written, after
+ * character `from`: everything up to the last sentence end (. ! ? after a
+ * word, followed by a space) or line break. `next` is where to look next
+ * time; an unfinished sentence waits for more text.
+ */
+export function completeSentences(text: string, from: number): { text: string; next: number } {
+  const rest = text.slice(from);
+  let end = -1;
+  for (const match of rest.matchAll(/(?<=[\p{L})"'”’])[.!?।]+["”’)]*(?=\s)|\n/gu)) {
+    end = (match.index ?? 0) + match[0].length;
+  }
+  return end < 0 ? { text: "", next: from } : { text: rest.slice(0, end), next: from + end };
+}
+
 /** Sentence-sized chunks, joining short sentences up to MAX_CHUNK. */
 export function splitForSpeech(text: string): string[] {
   const sentences = text.match(/[^.!?।\n]+[.!?।]*\s*/g) ?? [text];

@@ -49,6 +49,11 @@ type VoiceCaptureOptions = {
    * in a live preview when the meter is not measuring). Arrives before any
    * transcript, so "has the student spoken yet?" never waits for text. */
   onVoiceDetected?: () => void;
+  /** Recording mode with live text: when the last live transcript already
+   * covers everything said before the pause, report it as the answer at
+   * once instead of transcribing the whole recording again (a voice
+   * conversation answers about a second sooner). */
+  finalFromPreview?: boolean;
 };
 
 /** Sends a recorded answer to the server and resolves with its transcript. */
@@ -241,6 +246,10 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         // Shared by the level meter and the live preview below.
         let speechDetected = false;
         let quietSince = 0;
+        // When the learner was last heard, and the newest live transcript and
+        // when its audio was taken (performance.now()).
+        let lastLoudAt = 0;
+        let latestPreview: { text: string; takenAt: number } | null = null;
         const meterRunning = () => audioContext?.state === "running";
         let previewTimer: number | undefined;
         let lastCountdown: number | null = null;
@@ -262,6 +271,10 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         };
 
         const deliverRecording = async () => {
+          if (options.finalFromPreview && latestPreview && lastLoudAt && latestPreview.takenAt >= lastLoudAt + 400) {
+            onResult(latestPreview.text, true);
+            return;
+          }
           const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
           if (!audio.size) {
             setError("No audio was recorded. Tap the microphone and try again.");
@@ -329,6 +342,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
               const now = performance.now();
               if (rms >= 0.015) {
                 speechDetected = true;
+                lastLoudAt = now;
                 quietSince = 0;
                 reportCountdown(null);
                 options.onVoiceDetected?.();
@@ -372,10 +386,12 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
             previewChunks = chunks.length;
             lastPreviewAt = Date.now();
             const audio = new Blob(chunks, { type: recorder.mimeType || type || "audio/webm" });
+            const takenAt = performance.now();
             previewTranscribe(audio)
               .then((text) => {
                 if (finished || session !== recordSessionRef.current) return;
                 const trimmed = removeMobileTranscriptLoops(text);
+                if (trimmed && (!latestPreview || takenAt > latestPreview.takenAt)) latestPreview = { text: trimmed, takenAt };
                 if (!trimmed || trimmed === lastText) return;
                 lastText = trimmed;
                 if (!meterRunning()) {

@@ -43,15 +43,8 @@ export function isSpeaking(): boolean {
 export function stopSpeaking(): void {
   session += 1;
   speaking = false;
-  if (activeAudio) {
-    try {
-      activeAudio.pause();
-      activeAudio.src = "";
-    } catch {
-      // Already stopped.
-    }
-    activeAudio = null;
-  }
+  activeAudio = null;
+  for (const audio of [...liveAudio]) release(audio);
   if (typeof window !== "undefined" && window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
@@ -135,21 +128,87 @@ function boost(audio: HTMLAudioElement): void {
   }
 }
 
-function playBlob(blob: Blob, prefs: VoicePrefs, mySession: number, onFirstPlay: () => void): Promise<void> {
+// Every downloading or playing voice element, so stopSpeaking() silences them all.
+const liveAudio = new Set<HTMLAudioElement>();
+// Turned off when the server has no streaming voice (an older deploy): the
+// whole-sentence /voice/speak is used instead.
+let streamingAvailable = true;
+
+function release(audio: HTMLAudioElement | null): void {
+  if (!audio) return;
+  liveAudio.delete(audio);
+  try {
+    audio.pause();
+    const url = audio.dataset.blobUrl;
+    audio.removeAttribute("src");
+    audio.load();
+    if (url) URL.revokeObjectURL(url);
+  } catch {
+    // Already released.
+  }
+}
+
+/** A one-use link the audio element streams the voice from: it starts
+ * playing as soon as the first words are generated. */
+async function ticketUrl(text: string, prefs: VoicePrefs): Promise<string> {
+  const token = sessionToken() || "";
+  const response = await fetch(`${BASE}/voice/ticket`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ text, language: prefs.language }),
+  });
+  if (!response.ok) throw new Error(`voice ${response.status}`);
+  const body = (await response.json()) as { url: string };
+  return `${BASE}${body.url}`;
+}
+
+function audioElement(src: string, prefs: VoicePrefs, blobUrl = false): HTMLAudioElement {
+  const audio = new Audio();
+  audio.preload = "auto";
+  if (blobUrl) audio.dataset.blobUrl = src;
+  else if (typeof window !== "undefined" && /^https?:/i.test(src) && !src.startsWith(window.location.origin)) {
+    // The API on another origin (local development): needed for the boost.
+    audio.crossOrigin = "anonymous";
+  }
+  audio.src = src;
+  audio.playbackRate = prefs.speed;
+  boost(audio);
+  liveAudio.add(audio);
+  return audio;
+}
+
+/** The natural voice for one piece of text, already downloading; null when
+ * it cannot be reached (the device voice then says that piece). */
+async function prepareVoice(text: string, prefs: VoicePrefs): Promise<HTMLAudioElement | null> {
+  if (streamingAvailable) {
+    try {
+      return audioElement(await ticketUrl(text, prefs), prefs);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (/voice (404|405)/.test(message)) streamingAvailable = false;
+      else if (/voice (401|402|403|503)/.test(message)) return null;
+    }
+  }
+  try {
+    return audioElement(URL.createObjectURL(await fetchChunk(text, prefs)), prefs, true);
+  } catch {
+    return null;
+  }
+}
+
+function playAudio(audio: HTMLAudioElement, prefs: VoicePrefs, onFirstPlay: () => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (mySession !== session) return resolve();
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.playbackRate = prefs.speed;
-    boost(audio);
     activeAudio = audio;
     const finish = (error?: unknown) => {
-      URL.revokeObjectURL(url);
       if (activeAudio === audio) activeAudio = null;
+      release(audio);
       if (error) reject(error);
       else resolve();
     };
-    audio.onplaying = onFirstPlay;
+    audio.onplaying = () => {
+      audio.playbackRate = prefs.speed;
+      onFirstPlay();
+    };
     audio.onended = () => finish();
     audio.onerror = () => finish(new Error("audio playback failed"));
     audio.play().catch(finish);
@@ -181,6 +240,107 @@ function browserSpeak(chunks: string[], prefs: VoicePrefs, mySession: number, on
   });
 }
 
+export interface SpeechQueue {
+  /** Add text to say after what is already queued (a reply as it streams in). */
+  push(text: string): void;
+  /** Nothing more will be added: onEnd fires once everything has been said. */
+  end(): void;
+  /** Resolves true once speech has started, false if nothing was said. */
+  started: Promise<boolean>;
+}
+
+/**
+ * Speaks pieces of text one after another as they are added, in the natural
+ * voice. Each piece's audio is already downloading while the one before it
+ * plays, and plays while it is still being generated, so there is no pause
+ * between sentences and the first words come quickly. Replaces anything being
+ * said now; onEnd fires exactly once (also when stopped).
+ */
+export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): SpeechQueue {
+  stopSpeaking();
+  const prefs = loadVoicePrefs();
+  const enabled = prefs.enabled || force;
+  const mySession = session;
+  const texts: string[] = [];
+  const prepared: Promise<HTMLAudioElement | null>[] = [];
+  let closed = false;
+  let running = false;
+  let started = false;
+  let ended = false;
+  const waker: { wake: (() => void) | null } = { wake: null };
+  let resolveStarted: (value: boolean) => void = () => {};
+  const startedPromise = new Promise<boolean>((resolve) => { resolveStarted = resolve; });
+
+  const markStarted = () => {
+    if (started) return;
+    started = true;
+    handlers.onStart?.();
+    resolveStarted(true);
+  };
+  const finish = () => {
+    if (ended) return;
+    ended = true;
+    if (mySession === session) speaking = false;
+    resolveStarted(started);
+    handlers.onEnd?.();
+  };
+  const prepare = (index: number) => {
+    if (index < texts.length && !prepared[index]) prepared[index] = prepareVoice(texts[index], prefs);
+  };
+
+  const run = async () => {
+    running = true;
+    speaking = true;
+    let index = 0;
+    while (mySession === session) {
+      if (index >= texts.length) {
+        if (closed) break;
+        await new Promise<void>((resolve) => { waker.wake = resolve; });
+        waker.wake = null;
+        continue;
+      }
+      prepare(index);
+      const audio = await prepared[index];
+      if (mySession !== session) {
+        release(audio);
+        break;
+      }
+      // The next piece downloads (and is generated) while this one plays.
+      prepare(index + 1);
+      let heard = false;
+      if (audio) {
+        try {
+          await playAudio(audio, prefs, markStarted);
+          heard = true;
+        } catch {
+          // Natural voice failed for this piece: the device voice says it.
+        }
+      }
+      if (!heard && mySession === session) await browserSpeak([texts[index]], prefs, mySession, markStarted);
+      index += 1;
+    }
+    for (const pending of prepared.slice(index)) void pending?.then(release);
+    finish();
+  };
+
+  return {
+    started: startedPromise,
+    push(text: string) {
+      if (!enabled || closed || ended) return;
+      const pieces = splitForSpeech(speakableText(text));
+      if (!pieces.length) return;
+      texts.push(...pieces);
+      if (!running) void run();
+      waker.wake?.();
+    },
+    end() {
+      closed = true;
+      if (!running) finish();
+      waker.wake?.();
+    },
+  };
+}
+
 /**
  * Speak `text` naturally. Resolves `true` once speech has been started (it
  * keeps playing afterwards), `false` if voice is off or there is nothing to
@@ -189,62 +349,10 @@ function browserSpeak(chunks: string[], prefs: VoicePrefs, mySession: number, on
  * "Speak replies" is switched off.
  */
 export async function speakNatural(text: string, handlers: SpeakHandlers = {}, force = false): Promise<boolean> {
-  stopSpeaking();
-  const prefs = loadVoicePrefs();
-  const chunks = splitForSpeech(speakableText(text));
-  if ((!prefs.enabled && !force) || !chunks.length) {
-    handlers.onEnd?.();
-    return false;
-  }
-  const mySession = session;
-  speaking = true;
-  let started = false;
-  let ended = false;
-  const onFirstPlay = () => {
-    if (!started) {
-      started = true;
-      handlers.onStart?.();
-    }
-  };
-  const finish = (error?: unknown) => {
-    if (ended) return;
-    ended = true;
-    if (mySession === session) speaking = false;
-    if (error) handlers.onError?.(error);
-    handlers.onEnd?.();
-  };
-
-  let resolveStarted: (value: boolean) => void = () => {};
-  const startedPromise = new Promise<boolean>((resolve) => { resolveStarted = resolve; });
-  const markStarted = () => { onFirstPlay(); resolveStarted(true); };
-
-  void (async () => {
-    let index = 0;
-    try {
-      {
-        let pending: Promise<Blob> | null = fetchChunk(chunks[0], prefs);
-        while (pending && mySession === session) {
-          const blob: Blob = await pending;
-          const next = index + 1;
-          // Fetch the next chunk while this one plays.
-          pending = next < chunks.length ? fetchChunk(chunks[next], prefs) : null;
-          pending?.catch(() => undefined);
-          await playBlob(blob, prefs, mySession, markStarted);
-          // Only a chunk that was actually heard is skipped by the fallback.
-          index = next;
-        }
-      }
-    } catch {
-      // Natural voice failed: the browser voice says the rest.
-    }
-    if (mySession === session && index < chunks.length) {
-      await browserSpeak(chunks.slice(index), prefs, mySession, markStarted);
-    }
-    resolveStarted(started);
-    finish();
-  })();
-
-  return startedPromise;
+  const queue = createSpeechQueue(handlers, force);
+  queue.push(text);
+  queue.end();
+  return queue.started;
 }
 
 /** For the voice settings' Preview button. */

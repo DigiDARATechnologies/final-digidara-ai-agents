@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
@@ -55,3 +56,47 @@ async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_
         content=audio, media_type="audio/mpeg",
         headers={"X-Voice-Language": spoken_as, "Cache-Control": "private, max-age=3600"},
     )
+
+
+class TicketRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=tts.MAX_TEXT_CHARS)
+    language: str = "auto"
+
+
+@router.post("/ticket")
+@limiter.limit(_SPEAK_RATE_LIMIT)
+def ticket(req: TicketRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """A one-use link the browser's audio player streams the voice from
+    (/voice/stream/<ticket>), so playback starts as the voice is generated.
+    Charged here, exactly like /voice/speak; a cached sentence is free."""
+    try:
+        text, spoken_as = tts.prepare(req.text, req.language)
+    except tts.VoiceError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    if tts.cached(text, spoken_as, tts.DEFAULT_PERSONA) is None:
+        user = auth_service.get_by_id(user_id)
+        if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
+            raise HTTPException(402, "Not enough points. Please top up to continue.")
+        if not os.environ.get("OPENAI_API_KEY", "").strip():
+            raise HTTPException(503, "Natural voice is not available right now.")
+        if VOICE_TOKENS_PER_CHAR:
+            auth_service.settle_tokens(user_id, len(text) * VOICE_TOKENS_PER_CHAR, "voice", "speak")
+    return {"url": f"/voice/stream/{tts.issue_ticket(text, spoken_as)}", "language": spoken_as}
+
+
+@router.get("/stream/{ticket_id}")
+@limiter.limit(_SPEAK_RATE_LIMIT)
+def stream(ticket_id: str, request: Request) -> Response:
+    """The voice for a ticket, as mp3 that plays while it downloads."""
+    data = tts.take_ticket(ticket_id) if len(ticket_id) <= 64 else None
+    if data is None:
+        raise HTTPException(404, "This voice link has expired.")
+    hit = tts.cached(data["text"], data["language"], tts.DEFAULT_PERSONA)
+    headers = {"Cache-Control": "no-store", "X-Voice-Language": data["language"]}
+    if hit is not None:
+        return Response(content=hit, media_type="audio/mpeg", headers=headers)
+    try:
+        chunks = tts.open_stream(data["text"], data["language"])
+    except tts.VoiceError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return StreamingResponse(chunks, media_type="audio/mpeg", headers={**headers, "X-Accel-Buffering": "no"})

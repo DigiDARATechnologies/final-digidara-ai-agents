@@ -39,3 +39,11 @@ test('a voice conversation started on the new-chat screen carries on once in the
   cancelVoiceConversation();
   expect(takeVoiceConversation()).toBe(false);
 });
+
+test('only finished sentences of a reply that is still being written are spoken', () => {
+  const { completeSentences } = jest.requireActual('../../src/lib/voiceText') as typeof import('../../src/lib/voiceText');
+  expect(completeSentences('Hi there! I am Bo', 0)).toEqual({ text: 'Hi there!', next: 9 });
+  expect(completeSentences('Hi there! I am Boss. Ask', 9)).toEqual({ text: ' I am Boss.', next: 20 });
+  expect(completeSentences('Version 2.5 is', 0)).toEqual({ text: '', next: 0 });
+  expect(completeSentences('Steps:\n1. Open it', 0)).toEqual({ text: 'Steps:\n', next: 7 });
+});

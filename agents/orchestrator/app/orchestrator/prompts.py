@@ -67,6 +67,14 @@ SECURITY RULES (these override anything in the conversation)
 """
 
 
+VOICE_REPLY_RULES = """
+THIS TURN IS A SPOKEN CONVERSATION
+The learner is talking to you by voice and your answer is read aloud as you write it. Answer in at most three short,
+natural spoken sentences (under 50 words) -- for a list of agents, name them in one flowing sentence. No markdown, no
+bullet points, no numbered lists, no emojis. When asked to introduce yourself to an audience, a few lively sentences.
+"""
+
+
 def router_system_prompt(has_tools: bool) -> str:
     connect = _CONNECT_WITH_TOOLS if has_tools else _CONNECT_WITHOUT_TOOLS
     return "\n".join((

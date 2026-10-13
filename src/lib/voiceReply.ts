@@ -15,6 +15,17 @@ export function cancelVoiceConversation(): void {
   continueUntil = 0;
 }
 
+let conversationOpen = false;
+
+/** The voice conversation is on screen: Boss's replies are kept short and spoken. */
+export function setVoiceConversationOpen(open: boolean): void {
+  conversationOpen = open;
+}
+
+export function isVoiceConversationOpen(): boolean {
+  return conversationOpen;
+}
+
 /** True once, for the chat opened by a voice conversation's first question. */
 export function takeVoiceConversation(): boolean {
   const continuing = Date.now() < continueUntil;

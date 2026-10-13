@@ -84,7 +84,8 @@ import { createInitialMockInterviewState, handleMockInterviewText, openMockInter
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
-import { routeMessage, transcribeGeneralAudio, type RouteTurn } from "./lib/orchestratorApi";
+import { routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
+import { isVoiceConversationOpen } from "./lib/voiceReply";
 
 type OpenMenu = "user" | "notif" | null;
 
@@ -914,17 +915,52 @@ export default function App() {
       setTyping(false);
       return;
     }
+    // Boss's answer is shown (and, in a voice conversation, spoken) while it
+    // is still being written; the finished reply is then saved.
+    let shown = false;
+    const showText = (reply: string, streaming: boolean) => {
+      const first = !shown;
+      shown = true;
+      setChats((prev) => {
+        const next = prev.map((c) => {
+          if (c.id !== chatId) return c;
+          const messages = first
+            ? [...c.messages, { role: "agent" as const, text: reply, time: nowStr(), streaming }]
+            : c.messages.map((m, i) => (i === c.messages.length - 1 ? { ...m, text: reply, streaming } : m));
+          return { ...c, messages, updatedAt: Date.now() };
+        });
+        if (!streaming) saveChats(next);
+        return next;
+      });
+      if (first) setTyping(false);
+    };
     try {
-      const result = await routeMessage(text, history);
+      let result: RouteResult;
+      try {
+        result = await routeMessageStream(text, history, { voice: isVoiceConversationOpen(), onText: (reply) => showText(reply, true) });
+      } catch (error) {
+        if (shown) throw error;
+        // No streaming (an older server, or it failed before any text): ask once more, whole.
+        result = await routeMessage(text, history);
+      }
       const matched = result.agent_name ? findAgentByBackendName(result.agent_name) : undefined;
       if (matched) {
         await handoffToAgent(chatId, matched, text);
         return;
       }
-      appendAgentMessages(chatId, [{ text: result.reply || "I'm not sure how to help with that yet — could you rephrase it?" }]);
+      showText(result.reply || "I'm not sure how to help with that yet — could you rephrase it?", false);
       setTyping(false);
     } catch {
-      scheduleReply(chatId);
+      if (shown) {
+        setChats((prev) => {
+          const next = prev.map((c) => (c.id !== chatId ? c : { ...c, messages: c.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }));
+          saveChats(next);
+          return next;
+        });
+        setTyping(false);
+      } else {
+        scheduleReply(chatId);
+      }
     }
   }
 

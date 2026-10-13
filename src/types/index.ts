@@ -54,6 +54,8 @@ export interface ChatMessage {
   role: "user" | "agent";
   text: string;
   time: string;
+  /** The reply is still arriving (Boss writes it piece by piece). */
+  streaming?: boolean;
   options?: ChatOption[];
   /** Only set on user messages in a flow-driven chat (Capstone/CodeForge/
    * Communication): a reference to that agent's flow state exactly as it

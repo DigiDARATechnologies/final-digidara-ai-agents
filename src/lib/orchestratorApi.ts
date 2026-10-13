@@ -42,6 +42,49 @@ export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
   return String(body.transcript ?? "");
 }
 
+/**
+ * routeMessage, streamed: `onText` gets the reply so far each time more of it
+ * arrives, so it can be shown (and spoken) while it is still being written.
+ * `voice`: the learner is talking to Boss, so the answer is kept short and
+ * spoken-style. Throws before any text if streaming is unavailable.
+ */
+export async function routeMessageStream(
+  message: string,
+  history: RouteTurn[],
+  options: { voice?: boolean; onText: (text: string) => void },
+): Promise<RouteResult> {
+  const token = sessionToken();
+  const response = await fetch(`${ORCHESTRATOR_BASE}/chat/route/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ message, history, voice: Boolean(options.voice) }),
+  });
+  if (!response.ok || !response.body) throw new Error(`route stream ${response.status}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const line = buffer.slice(0, boundary).trim();
+      buffer = buffer.slice(boundary + 2);
+      boundary = buffer.indexOf("\n\n");
+      if (!line.startsWith("data:")) continue;
+      const event = JSON.parse(line.slice(5)) as { delta?: string; replace?: string; done?: boolean; agent_name?: string | null; reply?: string | null; error?: string };
+      if (event.error) throw new Error(event.error);
+      if (event.delta) { text += event.delta; options.onText(text); }
+      if (event.replace !== undefined) { text = event.replace; options.onText(text); }
+      if (event.done) return { agent_name: event.agent_name ?? null, reply: event.reply ?? text };
+    }
+  }
+  if (!text) throw new Error("route stream ended early");
+  return { agent_name: null, reply: text };
+}
+
 export async function routeMessage(message: string, history: RouteTurn[] = []): Promise<RouteResult> {
   const token = sessionToken();
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/route`, {

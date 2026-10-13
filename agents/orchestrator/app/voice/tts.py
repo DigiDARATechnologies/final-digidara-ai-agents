@@ -199,3 +199,116 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     _remember(_cache_key(text, spoken_as, voice), audio, text)
     logger.info("tts %d chars as %s with %s -> %d bytes", len(text), spoken_as, persona, len(audio))
     return audio, spoken_as, False
+
+
+# --- Streaming: the browser plays the voice while it is still being made ----
+#
+# An <audio> element plays an mp3 as it downloads, so the first words are
+# heard about as soon as OpenAI starts sending them, instead of after the
+# whole sentence has been generated. An <audio> element cannot send the login
+# header, so the browser first asks for a ticket (authenticated, and charged
+# there), then plays /voice/stream/<ticket>: single use, valid a few minutes.
+
+TICKET_SECONDS = 180
+_tickets: dict[str, tuple[float, dict]] = {}
+_tickets_lock = threading.Lock()
+
+
+def prepare(text: str, language: str = "auto") -> tuple[str, str]:
+    """(normalised text, the language it will be spoken as), or VoiceError."""
+    text = " ".join(text.split())
+    if not text:
+        raise VoiceError(400, "There is no text to speak.")
+    if len(text) > MAX_TEXT_CHARS:
+        raise VoiceError(413, f"Send at most {MAX_TEXT_CHARS} characters at a time.")
+    return text, resolve_language(text, language if language in LANGUAGES else "auto")
+
+
+def issue_ticket(text: str, spoken_as: str) -> str:
+    import secrets
+    import json as _json
+    import time as _time
+
+    ticket = secrets.token_urlsafe(24)
+    data = {"text": text, "language": spoken_as}
+    client = _shared()
+    if client is not None:
+        try:
+            client.setex(f"voice-ticket:{ticket}", TICKET_SECONDS, _json.dumps(data))
+            return ticket
+        except Exception:
+            logger.warning("voice ticket shared write failed", exc_info=True)
+    now = _time.time()
+    with _tickets_lock:
+        for key in [key for key, (expires, _) in _tickets.items() if expires < now]:
+            del _tickets[key]
+        _tickets[ticket] = (now + TICKET_SECONDS, data)
+    return ticket
+
+
+def take_ticket(ticket: str) -> dict | None:
+    """The ticket's text, once; None if unknown, used or expired."""
+    import json as _json
+    import time as _time
+
+    client = _shared()
+    if client is not None:
+        try:
+            raw = client.getdel(f"voice-ticket:{ticket}")
+            if raw:
+                return _json.loads(raw)
+        except Exception:
+            logger.warning("voice ticket shared read failed", exc_info=True)
+    with _tickets_lock:
+        entry = _tickets.pop(ticket, None)
+    if entry is None or entry[0] < _time.time():
+        return None
+    return entry[1]
+
+
+def open_stream(text: str, spoken_as: str):
+    """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
+    or VoiceError before any byte is sent."""
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise VoiceError(503, "Natural voice is not available right now.")
+    client = httpx.Client(timeout=TTS_TIMEOUT_SECONDS)
+    try:
+        request = client.build_request(
+            "POST", OPENAI_SPEECH_URL,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": TTS_MODEL, "voice": VOICE, "input": text,
+                "instructions": instructions_for(spoken_as), "response_format": "mp3",
+            },
+        )
+        response = client.send(request, stream=True)
+    except httpx.HTTPError as exc:
+        client.close()
+        logger.warning("tts stream request failed: %s", type(exc).__name__)
+        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    if response.status_code != 200:
+        logger.warning("tts stream returned HTTP %s", response.status_code)
+        response.close()
+        client.close()
+        raise VoiceError(502, "The voice could not be generated. Please try again.")
+
+    def chunks():
+        parts: list[bytes] = []
+        complete = False
+        try:
+            for chunk in response.iter_bytes(4096):
+                parts.append(chunk)
+                yield chunk
+            complete = True
+        except httpx.HTTPError:
+            logger.warning("tts stream broke off", exc_info=True)
+        finally:
+            response.close()
+            client.close()
+            if complete and parts:
+                audio = b"".join(parts)
+                _remember(_cache_key(text, spoken_as, VOICE), audio, text)
+                logger.info("tts streamed %d chars as %s -> %d bytes", len(text), spoken_as, len(audio))
+
+    return chunks()

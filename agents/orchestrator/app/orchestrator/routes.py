@@ -1,15 +1,17 @@
+import json
 import logging
 import os
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
 from app.llm import transcribe as speech
-from app.orchestrator.graph import orchestrator_graph, route_message
+from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
 from app.schemas import ChatRequest, ChatResponse, RoleProfileRequest, RoleProfileResponse, RouteRequest, RouteResponse
@@ -57,6 +59,36 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
             "The router could not complete this turn (check LLM_MODEL / API key configuration). Please retry.",
         )
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
+
+
+class RouteStreamRequest(RouteRequest):
+    # The learner is talking to Boss by voice: a short spoken answer.
+    voice: bool = False
+
+
+@router.post("/chat/route/stream")
+@limiter.limit(_CHAT_RATE_LIMIT)
+def chat_route_stream(req: RouteStreamRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> StreamingResponse:
+    """/chat/route, streamed as server-sent events: {"delta"} pieces of the
+    answer as it is written, then {"done", "agent_name", "reply"}. The
+    general chat shows (and Boss speaks) the answer while it is still being
+    written instead of after it is finished."""
+    logger.info("=== POST /chat/route/stream user=%s message_chars=%d history_turns=%d voice=%s",
+                user_id, len(req.message), len(req.history), req.voice)
+    context = _learner_context(user_id)
+    history = [turn.model_dump() for turn in req.history]
+
+    def events():
+        try:
+            for event in route_message_stream(req.message, history, context, voice=req.voice):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception:
+            logger.exception("streamed router turn failed")
+            yield 'data: {"error": "The router could not complete this turn. Please retry."}\n\n'
+
+    # No proxy buffering, so each piece reaches the browser as it is written.
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 def _learner_context(user_id: str) -> dict | None:
