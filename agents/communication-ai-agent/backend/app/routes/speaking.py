@@ -1507,7 +1507,7 @@ def synthesize_speech():
 
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    voice = (data.get("voice") or "coral").strip().lower()
+    voice = (data.get("voice") or "nova").strip().lower()
     speed = float(data.get("speed") or 0.95)
 
     if not text:

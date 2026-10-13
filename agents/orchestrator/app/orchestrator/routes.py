@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
 from app.llm import transcribe as speech
@@ -62,10 +63,19 @@ def _learner_context(user_id: str) -> dict | None:
     """Phase 2: the learner's goal, skills and shared memory, so the general
     chat answers personally. Never blocks a reply if it cannot be read."""
     try:
-        return learner_service.learner_context(user_id, "general_chat")
+        context = learner_service.learner_context(user_id, "general_chat")
     except Exception:
         logger.warning("general chat: learner context unavailable", exc_info=True)
-        return None
+        context = {}
+    # Their first name, so the assistant greets them like a friend.
+    try:
+        user = auth_service.get_by_id(user_id)
+        first_name = str(user.name or "").strip().split()[0] if user and user.name else ""
+    except Exception:
+        first_name = ""
+    if first_name:
+        context = {**(context or {}), "first_name": first_name[:40]}
+    return context or None
 
 
 class TranscribeRequest(BaseModel):
@@ -76,7 +86,9 @@ class TranscribeRequest(BaseModel):
 
 
 # Each call is a paid OpenAI request with up to a few minutes of audio.
-_TRANSCRIBE_RATE_LIMIT = "15/minute"
+# The microphone also sends the recording so far every few seconds, so the
+# learner sees their words appear while they speak.
+_TRANSCRIBE_RATE_LIMIT = "40/minute"
 
 
 @router.post("/chat/transcribe")

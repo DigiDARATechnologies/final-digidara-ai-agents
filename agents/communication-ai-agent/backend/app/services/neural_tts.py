@@ -22,11 +22,12 @@ import os
 
 TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
 # One voice everywhere: a requested voice is ignored.
-DEFAULT_VOICE = os.getenv("OPENAI_TTS_VOICE", "coral")
+DEFAULT_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
 DEFAULT_SPEED = 0.95
 VOICE_STYLE = (
     "Voice: Nila, a friendly young Indian woman from Chennai who teaches students. Always the same person, "
-    "the same warm voice and the same accent. Speak slowly and very clearly, like a patient teacher talking "
+    "the same sweet, bright voice and the same accent. Speak loudly and clearly with a bright, sweet, projected "
+    "voice that is easy to hear, never soft or low. Speak slowly, like a patient teacher talking "
     "to a ten-year-old student: simple, calm, every word easy to catch, a short pause after each sentence. "
     "Speak simple, clear Indian English with a natural Indian accent, not an American or British accent."
 )

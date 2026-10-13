@@ -83,12 +83,65 @@ async function fetchChunkOnce(text: string, prefs: VoicePrefs): Promise<Blob> {
   return response.blob();
 }
 
+/**
+ * Louder speech: the voice plays through a compressor and a gain boost, so it
+ * is clearly audible on phone and laptop speakers without distorting. The
+ * audio context only exists once the learner has tapped or typed (browsers
+ * keep it silent before that); until then the voice plays at normal volume.
+ */
+const VOICE_GAIN = 1.9;
+let boostContext: AudioContext | null = null;
+
+function audioContextCtor(): typeof AudioContext | undefined {
+  if (typeof window === "undefined") return undefined;
+  return window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+}
+
+function unlockVoiceBoost(): void {
+  const Ctor = audioContextCtor();
+  if (!Ctor) return;
+  try {
+    boostContext ??= new Ctor();
+    if (boostContext.state !== "running") void boostContext.resume();
+  } catch {
+    boostContext = null;
+  }
+}
+
+if (typeof document !== "undefined") {
+  for (const type of ["pointerdown", "keydown", "touchstart"]) {
+    document.addEventListener(type, unlockVoiceBoost, { capture: true, passive: true });
+  }
+}
+
+function boost(audio: HTMLAudioElement): void {
+  audio.volume = 1;
+  const context = boostContext;
+  // A suspended context would mute the voice instead of boosting it.
+  if (!context || context.state !== "running") return;
+  try {
+    const source = context.createMediaElementSource(audio);
+    const compressor = context.createDynamicsCompressor();
+    compressor.threshold.value = -24;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    const gain = context.createGain();
+    gain.gain.value = VOICE_GAIN;
+    source.connect(compressor).connect(gain).connect(context.destination);
+  } catch {
+    // Plays at normal volume.
+  }
+}
+
 function playBlob(blob: Blob, prefs: VoicePrefs, mySession: number, onFirstPlay: () => void): Promise<void> {
   return new Promise((resolve, reject) => {
     if (mySession !== session) return resolve();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.playbackRate = prefs.speed;
+    boost(audio);
     activeAudio = audio;
     const finish = (error?: unknown) => {
       URL.revokeObjectURL(url);

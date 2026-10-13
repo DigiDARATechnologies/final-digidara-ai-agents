@@ -51,6 +51,11 @@ BILINGUAL_HINT = (
     "The learner may speak English, Tamil, or Tamil mixed with English words. "
     "தமிழில் பேசினால் தமிழ் எழுத்தில் எழுதவும்; ஆங்கில சொற்களை ஆங்கிலத்திலேயே வைக்கவும். "
 )
+# Learners often speak in a classroom or a crowd: only the main speaker counts.
+NOISE_HINT = (
+    "Transcribe only the main speaker, who is closest to the microphone. Ignore background voices, "
+    "other people talking nearby and noise. "
+)
 LANGUAGES = {"auto": None, "en": "en", "ta": "ta"}
 
 
@@ -93,7 +98,7 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
             files={"file": (f"question.{extension}", audio, base_type)},
             data={
                 "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
-                "prompt": BILINGUAL_HINT + VOCABULARY_HINT,
+                "prompt": NOISE_HINT + BILINGUAL_HINT + VOCABULARY_HINT,
                 # A fixed language when the learner chose one; otherwise the
                 # model detects it, so a Tamil question stays Tamil.
                 **({"language": LANGUAGES[language]} if LANGUAGES.get(language) else {}),

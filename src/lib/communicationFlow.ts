@@ -25,6 +25,7 @@ import {
   type WritingTurnResult,
 } from "./communicationApi";
 import { displayRole, easyMediumHard, learnerGoal } from "./learnerContext";
+import { formatSpeakingTurn } from "./speakingTurn";
 
 export type CommunicationStep =
   | "main_menu"
@@ -148,10 +149,8 @@ function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedba
   const reaction = deduplicateReaction(rawReaction, nextQuestion);
   const corrected = String(feedback?.corrected_answer || "").trim();
   const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
-  const correction = hasCorrection
-    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
-    : "";
-  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
+  // Shown as separate parts in Speaking Practice (lib/speakingTurn.ts).
+  return formatSpeakingTurn({ said: answer.trim(), better: hasCorrection ? corrected : "", comment: reaction, next: nextQuestion });
 }
 
 const DIFFICULTY_OPTIONS: ChatOption[] = [

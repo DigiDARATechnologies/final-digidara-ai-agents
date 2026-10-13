@@ -34,7 +34,7 @@ SHARED_CACHE_MAX_CHARS = 400
 # One voice for the whole platform: every agent, every device, every reply is
 # the same Indian woman, so learners always hear one familiar character.
 # A persona sent by an older client is accepted but always mapped to her.
-VOICE = os.environ.get("OPENAI_TTS_VOICE", "coral")
+VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")
 PERSONAS: dict[str, dict[str, str]] = {
     "nila": {"voice": VOICE, "label": "Nila", "description": "Friendly Indian coach"},
 }
@@ -43,10 +43,11 @@ LANGUAGES = ("auto", "en", "ta")
 
 _BASE_STYLE = (
     "Voice: Nila, a friendly young Indian woman from Chennai who teaches students. Always the same person, "
-    "the same warm voice and the same accent. Speak slowly and very clearly, like a patient teacher talking "
-    "to a ten-year-old student: simple, calm, every word easy to catch, a short pause after each sentence. "
-    "Warm and encouraging, a gentle smile in the voice. Never rushed, never robotic, never dramatic, never "
-    "like a news reader. Say numbers, scores and technical terms slowly and clearly."
+    "the same sweet, bright voice and the same accent. Speak loudly and clearly with a bright, slightly higher, "
+    "sweet tone -- a full, confident, projected voice that is easy to hear in a classroom, never soft, low or "
+    "mumbled. Speak slowly, like a patient teacher talking to a ten-year-old student: simple, every word easy "
+    "to catch, a short pause after each sentence. Cheerful and encouraging, a big smile in the voice. Never "
+    "rushed, never robotic, never like a news reader. Say numbers, scores and technical terms slowly and clearly."
 )
 _LANGUAGE_STYLE = {
     "en": (

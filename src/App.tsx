@@ -2081,9 +2081,10 @@ export default function App() {
                   ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
                   : transcribeGeneralAudio}
                 alwaysRecordVoice
+                // Live text: the words appear in the box while the learner speaks.
                 previewAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
-                  : undefined}
+                  : transcribeGeneralAudio}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."
                 multilineSubmitLabel="Submit Answer"

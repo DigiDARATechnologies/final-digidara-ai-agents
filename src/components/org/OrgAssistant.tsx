@@ -29,7 +29,7 @@ export default function OrgAssistant({ orgId, orgName, filters, onToast }: Props
   const [speak, setSpeak] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, undefined, true);
+  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
 
   useEffect(() => {
     fetchAssistantHistory(orgId).then(setTurns).catch(() => setTurns([])).finally(() => setLoaded(true));

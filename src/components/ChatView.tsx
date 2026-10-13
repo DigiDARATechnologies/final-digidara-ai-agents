@@ -9,6 +9,8 @@ import { renderMessageText } from "../lib/messageText";
 import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
 import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
+import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
+import { cancelSpokenReply, expectSpokenReply, takeSpokenReply } from "../lib/voiceReply";
 
 interface ChatViewProps {
   chat: Chat;
@@ -175,6 +177,22 @@ export default function ChatView({
 
   const orbRef = useRef<HTMLButtonElement | null>(null);
 
+  const isGeneralChat = agent.id === DEFAULT_AGENT.id;
+  // The reply being read aloud (Listen button, or a voice question's answer).
+  const [listeningIndex, setListeningIndex] = useState<number | null>(null);
+
+  // The reply to a question asked by voice is read aloud.
+  const lastMessage = chat.messages[chat.messages.length - 1];
+  useEffect(() => {
+    if (typing || !lastMessage || lastMessage.role !== "agent") return;
+    if (!takeSpokenReply() || !isGeneralChat) return;
+    const index = chat.messages.length - 1;
+    setListeningIndex(index);
+    void speakNatural(lastMessage.text, { onEnd: () => setListeningIndex((current) => (current === index ? null : current)) }, true);
+    // Only a new reply is spoken.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.messages.length, typing]);
+
   function handleMicClick() {
     stopCoachAudio();
     setAgentSpeaking(false);
@@ -190,6 +208,7 @@ export default function ChatView({
       speech.stop();
       if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
       if (input.trim()) {
+        if (isGeneralChat) expectSpokenReply();
         onSend(input.trim());
         setInput("");
       }
@@ -208,6 +227,8 @@ export default function ChatView({
         sendOnFinalRef.current = false;
         if (text.trim()) {
           voiceSessionRef.current += 1;
+          // Asked by voice: the DigiDARA Assistant answers aloud too.
+          if (isGeneralChat) expectSpokenReply();
           onSend(text.trim());
           setInput("");
         }
@@ -234,7 +255,6 @@ export default function ChatView({
   useEffect(() => () => window.clearTimeout(copiedTimerRef.current), []);
 
   // Read one reply aloud in the learner's chosen voice; tap again to stop.
-  const [listeningIndex, setListeningIndex] = useState<number | null>(null);
   function handleListen(index: number, text: string) {
     if (listeningIndex === index) {
       stopSpeaking();
@@ -284,6 +304,7 @@ export default function ChatView({
     setInputError("");
     voiceSessionRef.current += 1;
     if (speech.listening) speech.stop();
+    cancelSpokenReply();
     onSend(input);
     setInput("");
   }
@@ -301,6 +322,9 @@ export default function ChatView({
   }, [input]);
 
   const activeSpeakingPrompt = [...chat.messages].reverse().find((message) => message.role === "agent")?.text || "Speak when you are ready.";
+  // A coach turn in parts (what you said, a better way, the next question).
+  const speakingTurn = parseSpeakingTurn(activeSpeakingPrompt);
+  const spokenPrompt = speakingTurn ? speakingTurnSpeech(speakingTurn) : activeSpeakingPrompt;
   const learnerFirstName = user?.name ? user.name.trim().split(/\s+/)[0] : "";
 
   useEffect(() => {
@@ -450,7 +474,7 @@ export default function ChatView({
       }, 250);
     };
 
-    playCoachSpeech(activeSpeakingPrompt, {
+    playCoachSpeech(spokenPrompt, {
       rate: 0.92,
       voiceName: "nova",
       onStart: () => setAgentSpeaking(true),
@@ -516,7 +540,12 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span>{speakingTurn ? <div className="speaking-turn">
+          {speakingTurn.said && <div className="speaking-turn-card said"><b>You said</b><p>{speakingTurn.said}</p></div>}
+          {speakingTurn.better && <div className="speaking-turn-card better"><b>Better way to say it</b><p>{speakingTurn.better}</p></div>}
+          {speakingTurn.comment && <p className="speaking-turn-comment">{speakingTurn.comment}</p>}
+          <div className="speaking-turn-card next"><b>Next question</b><h2>{speakingTurn.next}</h2></div>
+        </div> : <h2>{activeSpeakingPrompt}</h2>}<p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { recognitionLocale } from "../lib/voicePrefs";
+import { cancelSpokenReply, expectSpokenReply } from "../lib/voiceReply";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
 
@@ -20,29 +21,42 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The DigiDARA Assistant's voice input: recorded, then transcribed with
-  // OpenAI on the server, on every device.
-  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, undefined, true);
+  // OpenAI on the server, on every device. The words appear in the box while
+  // the learner speaks; a pause sends the question, and the reply is spoken.
+  const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
+  const sendOnFinalRef = useRef(false);
   const voiceSessionRef = useRef(0);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
+    voiceSessionRef.current += 1;
+    if (speech.listening) speech.cancel();
+    cancelSpokenReply();
     onSend(input.trim());
     setInput("");
   }
 
   function handleMicClick() {
     if (speech.listening) {
-      voiceSessionRef.current += 1;
+      // Stops recording: the question is transcribed and sent.
       speech.stop();
       return;
     }
     setInput("");
+    sendOnFinalRef.current = true;
     const session = ++voiceSessionRef.current;
-    speech.start((text) => {
+    speech.start((text, final) => {
       if (voiceSessionRef.current !== session) return;
       setInput(text);
-    });
+      if (final && sendOnFinalRef.current && text.trim()) {
+        sendOnFinalRef.current = false;
+        voiceSessionRef.current += 1;
+        expectSpokenReply();
+        onSend(text.trim());
+        setInput("");
+      }
+    }, { autoStopOnSilence: true, silenceMs: 3_000 });
   }
 
   // Same auto-grow fix as the main chat composer (ChatView.tsx) -- a
@@ -72,7 +86,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={speech.transcribing ? "Transcribing…" : speech.listening ? "Listening… tap the mic again when you're done" : "Ask anything"}
+            placeholder={speech.transcribing ? "Transcribing…" : speech.listening ? "Listening… pause or tap the mic to send" : "Ask anything"}
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
