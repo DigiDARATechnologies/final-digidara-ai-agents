@@ -14,8 +14,9 @@ import uuid
 from flask import Blueprint, current_app, g, request, jsonify
 
 from ..extensions import db
-from ..models import Student
+from ..models import AptitudeTest, Student, TopicPerformance
 from ..services.auth_service import issue_token
+from ..services.role_periods import clean_periods, in_periods
 
 bp = Blueprint("strategy_f_invoke", __name__)
 logger = logging.getLogger("backend.app.integration")
@@ -96,6 +97,90 @@ def _personal_data(action: str, payload: dict):
     return client.delete("/api/aptitude/me", headers=headers)
 
 
+SUMMARY_RECENT_TESTS = 10
+
+
+# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
+# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
+# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
+# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
+# Beginner/Medium/Hard levels.
+LEVEL_SESSIONS = 5
+
+
+def level_scores(sessions):
+    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    result = {}
+    for difficulty in ("easy", "medium", "hard"):
+        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    return result
+
+
+APTITUDE_LEVEL = {"Beginner": "easy", "Intermediate": "medium", "Advanced": "hard"}
+
+
+def _test_levels(tests) -> dict:
+    """test id -> easy|medium|hard."""
+    from collections import Counter
+
+    from ..models.question import AptitudeTestQuestion
+
+    levels = {t.id: APTITUDE_LEVEL[t.selected_level] for t in tests if t.selected_level in APTITUDE_LEVEL}
+    mixed = [t.id for t in tests if t.id not in levels]
+    if mixed:
+        counts: dict = {}
+        rows = (AptitudeTestQuestion.query.with_entities(AptitudeTestQuestion.test_id, AptitudeTestQuestion.difficulty)
+                .filter(AptitudeTestQuestion.test_id.in_(mixed)).all())
+        for test_id, difficulty in rows:
+            counts.setdefault(test_id, Counter())[str(difficulty).lower()] += 1
+        for test_id, counter in counts.items():
+            levels[test_id] = counter.most_common(1)[0][0]
+    return levels
+
+
+def _student_summary(payload: dict):
+    """Phase 2 readiness skill (digidara.student_summary.v1).
+
+    The orchestrator's gateway overwrites payload.email with the verified
+    account's own address for this action, so this is always the caller's
+    own progress. Score: average percentage of the latest completed tests.
+    """
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+    email = str(payload.get("email") or "").strip().lower()
+    student = Student.query.filter_by(email=email).first() if email else None
+    empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
+             "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
+    if student is None:
+        return jsonify(empty)
+    completed = (AptitudeTest.query.filter_by(student_id=student.id, status="completed")
+                 .order_by(AptitudeTest.completed_at.desc()).all())
+    # After a target-role change, only tests taken for this role count.
+    periods = clean_periods(payload.get("periods"))
+    completed = [test for test in completed if in_periods(test.completed_at, periods)]
+    if not completed:
+        return jsonify(empty)
+    recent = completed[:SUMMARY_RECENT_TESTS]
+    score = sum(float(test.percentage or 0) for test in recent) / len(recent)
+    levels = _test_levels(completed[:60])
+    # Topic accuracy is kept over all time, so it is left out for a role's own periods.
+    topics = [] if periods else [t for t in TopicPerformance.query.filter_by(student_id=student.id).all() if (t.attempts or 0) >= 3]
+    ranked = sorted(topics, key=lambda t: float(t.accuracy or 0), reverse=True)
+    last = recent[0].completed_at
+    return jsonify({
+        "schema": "digidara.student_summary.v1",
+        "score": round(score, 1),
+        "activity_count": len(completed),
+        "last_activity_at": last.isoformat() if last else None,
+        "strengths": [f"{t.topic} ({float(t.accuracy or 0):.0f}%)" for t in ranked[:3] if float(t.accuracy or 0) >= 70],
+        "gaps": [f"{t.topic} ({float(t.accuracy or 0):.0f}%)" for t in reversed(ranked[-3:]) if float(t.accuracy or 0) < 60],
+        "metrics": {"tests_completed": len(completed), "recent_tests_averaged": len(recent),
+                    "best_percentage": round(max(float(t.percentage or 0) for t in completed), 1)},
+        "level_scores": level_scores([(levels.get(t.id), float(t.percentage or 0)) for t in completed]),
+    })
+
+
 ROUTES = {
     "dashboard": ("GET", "/api/aptitude/dashboard"),
     "history": ("GET", "/api/aptitude/history"),
@@ -161,6 +246,8 @@ def invoke():
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:
         return _personal_data(action, payload)
+    if action == "get_student_summary":
+        return _student_summary(payload)
     if action == "usage_summary":
         empty = {"agent_name": "aptitude_agent", "total_requests": 0, "total_tokens": 0,
                  "prompt_tokens": 0, "completion_tokens": 0, "by_request_type": {}}

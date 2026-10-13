@@ -306,3 +306,70 @@ def blend_job_matches(
     # Final sort preserving match quality (highest match score first!)
     blended.sort(key=lambda x: x.get("match_score", 0), reverse=True)
     return blended[:limit]
+
+
+# --- degree eligibility -------------------------------------------------------
+# A job that asks for a degree is shown only to learners who hold that level
+# (or higher): Diploma < Bachelor's < Master's < Doctorate. A job that asks
+# only for an engineering degree (B.E / B.Tech / M.E / M.Tech) needs one; a
+# B.Sc holder sees jobs open to any bachelor's. A job that names no degree is
+# open to everyone, and so is every job when the learner's degree is unknown.
+
+DIPLOMA, BACHELOR, MASTER, DOCTORATE = 1, 2, 3, 4
+DEGREE_LABELS = {DIPLOMA: "Diploma", BACHELOR: "Bachelor's", MASTER: "Master's", DOCTORATE: "Doctorate"}
+
+_ENGINEERING = r"b\.?\s?tech|m\.?\s?tech|b\.e\.?|m\.e\.?|bachelor\s+of\s+engineering|master\s+of\s+engineering|engineering\s+degree|degree\s+in\s+engineering"
+_JOB_DEGREES = (
+    (DOCTORATE, r"ph\.?\s?d|doctorate|doctoral"),
+    (MASTER, r"master'?s?|m\.?\s?tech|m\.e\.|m\.?\s?sc|mca|mba|m\.?\s?com|m\.s\.|ms\s+(?:in|degree)|post[\s-]?graduat\w*|pg\s+degree"),
+    (BACHELOR, r"bachelor'?s?|b\.?\s?tech|b\.e\.|b\.?\s?sc|bca|b\.?\s?com|bba|b\.s\.|bs\s+(?:in|degree)|under[\s-]?graduat\w*|any\s+(?:graduate|degree)|engineering\s+degree|bachelor\s+of\s+engineering"),
+    (DIPLOMA, r"diploma|12th|hsc|higher\s+secondary"),
+)
+_CANDIDATE_DEGREES = (
+    (DOCTORATE, r"ph\.?\s?d|doctor"),
+    (MASTER, r"master|m\.?\s?tech|m\.?\s?e\b|m\.?\s?sc|mca|mba|m\.?\s?com|m\.?\s?s\b|m\.?\s?a\b|post[\s-]?graduat|\bpg\b"),
+    (BACHELOR, r"bachelor|b\.?\s?tech|b\.?\s?e\b|b\.?\s?sc|bca|b\.?\s?com|bba|b\.?\s?s\b|b\.?\s?a\b|under[\s-]?graduat|graduat|degree"),
+    (DIPLOMA, r"diploma|12th|hsc|polytechnic"),
+)
+_CANDIDATE_ENGINEERING = r"b\.?\s?tech|m\.?\s?tech|\bb\.?\s?e\b|\bm\.?\s?e\b|engineering"
+_OPTIONAL = re.compile(r"^[^.;\n]{0,40}?\b(preferred|a\s+plus|is\s+a\s+plus|nice\s+to\s+have|desirable|advantage)\b")
+
+
+def candidate_degree(text: str | None) -> Tuple[int | None, bool]:
+    """(level, holds an engineering degree) from the learner's degree text."""
+    value = (text or "").lower()
+    level = next((tier for tier, pattern in _CANDIDATE_DEGREES if re.search(rf"\b(?:{pattern})", value)), None)
+    return level, bool(level and re.search(rf"\b(?:{_CANDIDATE_ENGINEERING})", value))
+
+
+def job_degree_requirement(job: Dict[str, Any]) -> Tuple[int | None, bool]:
+    """(lowest degree level the job accepts, accepts only engineering degrees).
+    A degree mentioned only as "preferred" or "a plus" is not a requirement."""
+    text = f"{job.get('title') or ''}\n{job.get('description') or ''}".lower()
+    required: set[int] = set()
+    for tier, pattern in _JOB_DEGREES:
+        for match in re.finditer(rf"\b(?:{pattern})(?![a-z])", text):
+            if not _OPTIONAL.search(text[match.end():match.end() + 60]):
+                required.add(tier)
+    if not required and re.search(r"\b(?:graduat(?:e|ion)\s+(?:degree|in)|degree\s+in|degree\s+required)\b", text):
+        # "A degree in computer science" names no level: a bachelor's.
+        required.add(BACHELOR)
+    if not required:
+        return None, False
+    lowest = min(required)
+    generic = re.search(r"\b(?:bachelor'?s?\s+(?:degree\s+)?in\s+(?!engineering)|b\.?\s?sc|bca|b\.?\s?com|bba|any\s+(?:graduate|degree)|or\s+(?:a\s+)?related|or\s+equivalent)", text)
+    engineering_only = lowest >= BACHELOR and bool(re.search(rf"\b(?:{_ENGINEERING})", text)) and not generic
+    return lowest, engineering_only
+
+
+def degree_eligible(job: Dict[str, Any], degree: str | None) -> bool:
+    level, engineering = candidate_degree(degree)
+    if level is None:
+        return True
+    required, engineering_only = job_degree_requirement(job)
+    job["degree_required"] = DEGREE_LABELS.get(required) if required else None
+    if required is None:
+        return True
+    if level < required:
+        return False
+    return engineering or not engineering_only

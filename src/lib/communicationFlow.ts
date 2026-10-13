@@ -24,6 +24,8 @@ import {
   type SpeakingTurnResult,
   type WritingTurnResult,
 } from "./communicationApi";
+import { displayRole, easyMediumHard, learnerGoal } from "./learnerContext";
+import { formatSpeakingTurn } from "./speakingTurn";
 
 export type CommunicationStep =
   | "main_menu"
@@ -147,17 +149,10 @@ function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedba
   const reaction = deduplicateReaction(rawReaction, nextQuestion);
   const corrected = String(feedback?.corrected_answer || "").trim();
   const hasCorrection = Boolean(corrected && normalizedSentence(corrected) !== normalizedSentence(answer));
-  const correction = hasCorrection
-    ? `Just a small correction. Instead of: “${answer}” You can say: “${corrected}”`
-    : "";
-  return [reaction, correction, nextQuestion].filter(Boolean).join(" ");
+  // Shown as separate parts in Speaking Practice (lib/speakingTurn.ts).
+  return formatSpeakingTurn({ said: answer.trim(), better: hasCorrection ? corrected : "", comment: reaction, next: nextQuestion });
 }
 
-const DIFFICULTY_OPTIONS: ChatOption[] = [
-  { label: "Easy", value: "easy" },
-  { label: "Medium", value: "medium" },
-  { label: "Hard", value: "hard" },
-];
 
 const WRITING_MODE_OPTIONS: ChatOption[] = [
   { label: "✍️ Write about the topic with AI", value: "writing_mode_write", description: "Answer a writing prompt in a paragraph" },
@@ -235,7 +230,8 @@ const PRONUNCIATION_MODE_OPTIONS: ChatOption[] = [
 ];
 
 function baseState(): CommunicationFlowState {
-  return { step: "main_menu", difficulty: "medium" };
+  // The learner's Communication level (Beginner -> easy ... Professional -> hard).
+  return { step: "main_menu", difficulty: easyMediumHard("communication_agent") };
 }
 
 function menuMessage(intro: string): CommunicationFlowMessage {
@@ -435,6 +431,18 @@ async function beginSpeakingPractice(state: CommunicationFlowState, difficulty: 
     medium: { title: "Ideas and Experiences", description: "Explain an experience, share an opinion, and support it with clear details." },
     hard: { title: "Professional Discussion", description: "Discuss a professional issue, analyze alternatives, and justify your position." },
   };
+  // With a target role, practise speaking for that job instead of generic topics.
+  const goal = learnerGoal();
+  if (goal) {
+    const role = displayRole(goal.targetRole);
+    const skills = goal.skills.slice(0, 3).join(", ") || "your skills";
+    topics.easy = { title: `Introduce Yourself as an Aspiring ${role}`,
+      description: `Introduce yourself for a ${role} role: your studies${goal.degree ? ` (${goal.degree})` : ""}, your skills (${skills}) and why this job excites you.` };
+    topics.medium = { title: `Explain a ${role} Project`,
+      description: `Explain a project or idea that uses ${skills}, clearly enough for a ${role} interviewer to follow.` };
+    topics.hard = { title: `${role} Interview Discussion`,
+      description: `Discuss a real ${role} challenge, compare approaches and justify your choice as you would in a job interview.` };
+  }
   try {
     const topic = topics[difficulty];
     const result = await startSpeaking(state.authToken!, { mode: "topic", difficulty, topicTitle: topic.title, topicDescription: topic.description });
@@ -519,8 +527,8 @@ export async function handleCommunicationText(
       return {
         state: { ...state, step: "awaiting_writing_topic" },
         messages: [{
+          // No level choice: practice follows the learner's Job Readiness level.
           text: "What would you like to write about? Type a topic, or 'daily' for today's Daily Writing Challenge.",
-          options: DIFFICULTY_OPTIONS,
         }],
       };
     }
@@ -529,7 +537,6 @@ export async function handleCommunicationText(
         state: { ...state, step: "awaiting_speaking_topic" },
         messages: [{
           text: "What would you like to talk about? Type a topic, or 'daily' for today's Daily Conversation.",
-          options: DIFFICULTY_OPTIONS,
         }],
       };
     }

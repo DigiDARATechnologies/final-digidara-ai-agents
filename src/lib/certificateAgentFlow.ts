@@ -17,6 +17,7 @@ import {
   updateCertificateRecipient,
   type CertificateProfileResponse,
 } from "./certificateAgentApi";
+import { beginnerToAdvanced, displayRole, goalMatchScore, learnerGoal } from "./learnerContext";
 
 export type CertificateStep =
   | "awaiting_action"
@@ -138,6 +139,37 @@ const topicOptions: ChatOption[] = DEFAULT_TOPICS.map((value) => ({
   value,
 }));
 
+/** Exam topics from the learner's goal only: their own skills, then the
+ * standard topics that fit their target role and skills. Before onboarding,
+ * the standard topics. */
+function topicChoices(): ChatOption[] {
+  const goal = learnerGoal();
+  if (!goal) return topicOptions;
+  const scored = topicOptions.map((option, index) => ({ option, index, score: goalMatchScore(goal, option.value) }));
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  const standard = scored.filter(({ score }) => score > 0).map(({ option }) => ({ ...option, label: `${option.label} · fits your goal` }));
+  const taken = new Set(DEFAULT_TOPICS.map((t) => t.toLowerCase()));
+  const fromSkills = goal.skills
+    .map((skill) => displayRole(skill))
+    .filter((skill) => skill.length >= 2 && !taken.has(skill.toLowerCase()))
+    .slice(0, 4)
+    .map((skill) => ({ label: `${skill} · your skill`, value: skill, description: `Certify the ${skill} skill on your profile` }));
+  const choices = [...fromSkills, ...standard];
+  // Nothing matched: certify the target role itself.
+  return choices.length ? choices : [{ label: `${displayRole(goal.targetRole)} · your target role`, value: displayRole(goal.targetRole) }];
+}
+
+const LEVEL_WORDS = ["beginner", "intermediate", "advanced"];
+
+/** The exam's difficulty choices with the learner's level first and marked;
+ * values stay exactly what the exam expects. */
+function withLearnerLevel(options: ChatOption[]): ChatOption[] {
+  const mine = beginnerToAdvanced("certificate_agent");
+  if (!options.some((o) => o.value.toLowerCase() === mine)) return options;
+  const marked = options.map((o) => (o.value.toLowerCase() === mine ? { ...o, label: `${o.label} · your level` } : o));
+  return [...marked.filter((o) => o.value.toLowerCase() === mine), ...marked.filter((o) => o.value.toLowerCase() !== mine)];
+}
+
 export const createInitialCertificateState = (): CertificateFlowState => ({
   step: "awaiting_action",
 });
@@ -241,7 +273,7 @@ export async function handleCertificateText(
         messages: [
           {
             text: "Select a topic for your certification exam, or type a custom topic:",
-            options: topicOptions,
+            options: topicChoices(),
           },
         ],
       };
@@ -258,7 +290,7 @@ export async function handleCertificateText(
         messages: [
           {
             text: "Select a topic for your AI Chat Exam Session:",
-            options: topicOptions,
+            options: topicChoices(),
           },
         ],
       };
@@ -994,9 +1026,20 @@ export async function handleCertificateText(
       // conversation; re-showing the start-exam topic menu made it look like
       // a brand-new session.
       const keepChatting = lastMsg?.metadata?.phase === "keep_chatting";
+      const offered = metaOpts.map((opt) => ({ label: opt, value: opt }));
+      const isDifficultyPrompt = offered.filter((o) => LEVEL_WORDS.includes(o.value.toLowerCase())).length >= 2;
+      // No level choice: the exam is taken at the learner's Job Readiness
+      // level, answered for them (once -- if it is asked again, they choose).
+      const myLevel = offered.find((o) => o.value.toLowerCase() === beginnerToAdvanced("certificate_agent"));
+      if (isDifficultyPrompt && myLevel && lower !== myLevel.value.toLowerCase()) {
+        return handleCertificateText(
+          { ...state, sessionId: currentSessionId, topic: lastMsg?.metadata?.temp_topic || state.topic || val },
+          myLevel.value, user, allowTokenRefresh,
+        );
+      }
       const messageOptions: ChatOption[] | undefined = metaOpts.length > 0
-        ? metaOpts.map((opt) => ({ label: opt, value: opt }))
-        : keepChatting ? undefined : topicOptions;
+        ? (isDifficultyPrompt ? withLearnerLevel(offered) : offered)
+        : keepChatting ? undefined : topicChoices();
 
       const currentTopic = lastMsg?.metadata?.temp_topic || state.topic || val;
 

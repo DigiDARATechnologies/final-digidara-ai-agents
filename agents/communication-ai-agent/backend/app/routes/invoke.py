@@ -35,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import User
+from ..services import learner_context
 
 invoke_bp = Blueprint("invoke", __name__)
 
@@ -218,6 +219,15 @@ def _forward(action, payload):
 
 @invoke_bp.post("/api/invoke")
 def invoke():
+    # Phase 2: the gateway's signed learner context, for this request only.
+    token = learner_context.set_from_envelope(request.get_json(silent=True))
+    try:
+        return _invoke()
+    finally:
+        learner_context.reset(token)
+
+
+def _invoke():
     body = request.get_json(silent=True)
     if not isinstance(body, dict):
         return _error("A JSON request body is required.", "invalid_json")
@@ -236,6 +246,13 @@ def invoke():
         # capstone_project_agent/codeforge_agent's own usage_summary actions.
         from ..services.groq_usage import get_usage_summary
         return jsonify(get_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
+    if action == "get_student_summary":
+        # Phase 2 readiness. The orchestrator gateway overwrites payload.email
+        # with the verified account's own address for this action.
+        if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
+            return _error("Verified DigiDARA identity is required.", "unverified_identity", 401)
+        from ..services.readiness import student_summary
+        return jsonify(student_summary(str(payload.get("email") or "").strip().lower(), payload.get("periods")))
     if action == "speaking_transcribe":
         return _transcribe(payload)
     if action == "speaking_transcribe_preview":

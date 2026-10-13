@@ -1,4 +1,5 @@
 /** Browser SpeechSynthesis helpers used by the voice interview flow. */
+import { pickIndianVoice } from "./indianVoice";
 
 let speechUnlocked = false;
 
@@ -66,8 +67,10 @@ export async function speakBrowserText(
   await waitForSpeechVoices();
   synthesis.resume();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
-  utterance.rate = 1;
+  const voice = pickIndianVoice("en");
+  if (voice) utterance.voice = voice;
+  utterance.lang = voice?.lang || "en-IN";
+  utterance.rate = 0.9;
   utterance.onstart = handlers.onStart ?? null;
   utterance.onend = handlers.onEnd ?? null;
   utterance.onerror = (event) => {

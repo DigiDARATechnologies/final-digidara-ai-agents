@@ -1,0 +1,253 @@
+/** Phase 2: learner profile, per-agent levels, job readiness and
+ * organizations (orchestrator app/learner, app/organizations). */
+import { sessionToken } from "./session";
+const RAW_BASE = import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100";
+const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
+
+export type LevelId = "beginner" | "medium" | "hard" | "professional";
+export const LEVEL_IDS: LevelId[] = ["beginner", "medium", "hard", "professional"];
+export const LEVEL_LABELS: Record<LevelId, string> = {
+  beginner: "Beginner",
+  medium: "Medium",
+  hard: "Hard",
+  professional: "Professional",
+};
+
+export interface LearnerProfile {
+  target_role: string;
+  degree: string;
+  skills: string[];
+  experience: "fresher" | "experienced";
+  onboarding_completed: boolean;
+  onboarding_completed_at: string | null;
+}
+
+export interface AgentLevel {
+  agent_name: string;
+  agent_label: string;
+  level: LevelId;
+  /** "derived": Job Agent, which follows the other agents' levels. */
+  source: "default" | "self" | "organization" | "readiness" | "derived";
+  updated_at: string | null;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  kind: string;
+  join_code?: string;
+  member_limit: number;
+  member_count: number | null;
+  status?: "active" | "suspended";
+  created_at: string | null;
+}
+
+export interface Membership {
+  organization: Organization;
+  role: "owner" | "admin" | "member";
+  member_id: string;
+  external_id: string | null;
+  progress_shared: boolean;
+  department?: string | null;
+  year?: string | null;
+  section?: string | null;
+}
+
+export interface LearnerSummary {
+  profile: LearnerProfile;
+  levels: AgentLevel[];
+  /** Roles worked towards before; switching back to one restores its levels. */
+  role_history?: { role: string; skills?: string[]; levels: Partial<Record<string, LevelId>> }[];
+  level_choices: { id: LevelId; label: string }[];
+  consent_required: boolean;
+  membership: Membership | null;
+}
+
+export type AreaStatus = "assessed" | "not_started" | "unavailable";
+
+export interface ReadinessArea {
+  agent_name: string;
+  label: string;
+  weight: number;
+  level: LevelId;
+  status: AreaStatus;
+  reason?: string;
+  /** 0-100: 25 points for each completed level. */
+  score: number | null;
+  /** The levels completed in this area, e.g. ["beginner"]. */
+  levels_completed?: LevelId[];
+  /** The agent's own score (e.g. an average test percentage), before levels. */
+  quality_score?: number | null;
+  activity_count: number;
+  last_activity_at: string | null;
+  strengths: string[];
+  gaps: string[];
+  metrics: Record<string, string | number | boolean | null>;
+  suggested_level: LevelId | null;
+  /** 0-100: how much of the current level is done; 50 unlocks the next level, 100 moves up automatically. */
+  level_progress?: number | null;
+  /** "level": measured at this level (Coding); "score": the area score stands in for it. */
+  level_progress_basis?: "level" | "score";
+  next_level?: LevelId | null;
+  can_level_up?: boolean;
+  /** Progress (0-100) at which the next level unlocks: 100 for Coding, 50 elsewhere. */
+  unlock_at?: number;
+  /** Progress at every level (0-100), for agents that measure each level on its own results. */
+  level_scores?: Partial<Record<LevelId, number>>;
+  /** Set when readiness has just moved the learner up from this level. */
+  promoted_from?: LevelId;
+}
+
+export type Band = "not_started" | "not_ready" | "developing" | "almost_ready" | "job_ready";
+
+/** Colour tone per band, used by the readiness ring and badges. */
+export const BAND_TONE: Record<Band, string> = {
+  not_started: "muted", not_ready: "low", developing: "mid", almost_ready: "good", job_ready: "top",
+};
+
+export interface Readiness {
+  overall: number | null;
+  band: Band;
+  band_label: string;
+  coverage: { assessed: number; total: number };
+  areas: ReadinessArea[];
+  next_steps: string[];
+  profile: LearnerProfile;
+  computed_at: string;
+  cached?: boolean;
+}
+
+export interface MemberReadiness {
+  overall: number | null;
+  band: Band;
+  band_label: string;
+  computed_at: string;
+  areas: Record<string, {
+    score: number | null; status: AreaStatus; level: LevelId;
+    level_progress?: number | null; level_scores?: Partial<Record<LevelId, number>>;
+  }>;
+}
+
+export interface OrgMember {
+  member_id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: Membership["role"];
+  external_id: string | null;
+  joined_at: string | null;
+  progress_shared: boolean;
+  has_signed_in: boolean;
+  readiness?: MemberReadiness | null;
+  levels?: Record<string, LevelId>;
+  profile?: LearnerProfile;
+  department?: string | null;
+  year?: string | null;
+  section?: string | null;
+  join_code?: { id: string; code: string; label: string } | null;
+  last_active_at?: string | null;
+}
+
+export interface OrgSummary {
+  members: number;
+  sharing: number;
+  signed_in: number;
+  average_readiness: number | null;
+  bands: Partial<Record<Band, number>>;
+  levels: Record<string, Record<LevelId, number>>;
+  band_labels: Record<Band, string>;
+  level_labels: Record<LevelId, string>;
+  agent_labels: Record<string, string>;
+}
+
+export interface AddMemberResult {
+  email: string;
+  name?: string;
+  status: "created" | "attached" | "invalid_email" | "limit_reached" | "already_in_organization" | "in_another_organization";
+  temporary_password?: string | null;
+}
+
+function token() {
+  return sessionToken() || "";
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}`, ...init?.headers },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const detail = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail) ? body.detail[0]?.msg : null;
+    throw new Error(detail || "Something went wrong. Please try again.");
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json();
+}
+
+const json = (method: string, body?: unknown): RequestInit => ({ method, body: body === undefined ? undefined : JSON.stringify(body) });
+
+export const fetchLearnerSummary = () => request<LearnerSummary>("/learner/profile");
+export const saveLearnerProfile = (profile: Pick<LearnerProfile, "target_role" | "degree" | "skills" | "experience">) =>
+  request<LearnerSummary>("/learner/profile", json("PUT", profile));
+/** Up to 10 skills for a role, suggested by the orchestrator's role profile writer. */
+export const suggestRoleSkills = (targetRole: string) =>
+  request<{ skills: string[] }>("/role-profiles/generate", json("POST", { target_role: targetRole.slice(0, 120) }))
+    .then((result) => result.skills);
+export const setMyLevel = (agentName: string, level: LevelId) =>
+  request<AgentLevel>(`/learner/levels/${encodeURIComponent(agentName)}`, json("PUT", { level }));
+export const acceptConsent = (shareProgress: boolean | null) =>
+  request<LearnerSummary>("/learner/consent", json("POST", { consent: true, share_progress: shareProgress }));
+export const fetchReadiness = (refresh = false) => request<Readiness>(`/learner/readiness${refresh ? "?refresh=true" : ""}`);
+export const fetchReadinessHistory = () =>
+  request<{ overall: number | null; band: Band; computed_at: string }[]>("/learner/readiness/history");
+
+export const createOrganization = (name: string, kind: string) => request<Membership>("/organizations", json("POST", { name, kind }));
+export const joinOrganization = (joinCode: string, shareProgress: boolean) =>
+  request<Membership>("/organizations/join", json("POST", { join_code: joinCode, share_progress: shareProgress }));
+export const setProgressSharing = (share: boolean) => request<Membership>("/organizations/me/sharing", json("PUT", { share }));
+export const leaveOrganization = () => request<void>("/organizations/me", json("DELETE"));
+export const fetchOrgSummary = (orgId: string) => request<OrgSummary>(`/organizations/${orgId}/summary`);
+export const fetchOrgMembers = (orgId: string) => request<OrgMember[]>(`/organizations/${orgId}/members`);
+export const addOrgMembers = (orgId: string, members: { name: string; email: string; external_id?: string }[]) =>
+  request<{ results: AddMemberResult[] }>(`/organizations/${orgId}/members`, json("POST", { members }));
+export const updateOrgMember = (orgId: string, memberId: string, change: { role?: Membership["role"]; external_id?: string }) =>
+  request<void>(`/organizations/${orgId}/members/${memberId}`, json("PATCH", change));
+export const removeOrgMember = (orgId: string, memberId: string) => request<void>(`/organizations/${orgId}/members/${memberId}`, json("DELETE"));
+export const setMemberLevel = (orgId: string, memberId: string, agentName: string, level: LevelId) =>
+  request<AgentLevel>(`/organizations/${orgId}/members/${memberId}/levels/${encodeURIComponent(agentName)}`, json("PUT", { level }));
+export const refreshMemberReadiness = (orgId: string, memberId: string) =>
+  request<Readiness>(`/organizations/${orgId}/members/${memberId}/readiness`, json("POST"));
+export const rotateJoinCode = (orgId: string) => request<Membership>(`/organizations/${orgId}/join-code`, json("POST"));
+
+export type MemoryKind = "goal" | "preference" | "strength" | "gap" | "milestone" | "note";
+
+export interface LearnerMemory {
+  id: string;
+  kind: MemoryKind;
+  text: string;
+  /** "user", "readiness", "coach", or the agent that remembered it. */
+  source: string;
+  agent_name: string | null;
+  importance: number;
+  pinned: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PlanTask { agent_name: string; agent_label: string; title: string; why: string; level: LevelId }
+export interface CareerPlan {
+  headline: string;
+  summary: string;
+  weeks: { week: number; focus: string; tasks: PlanTask[] }[];
+  encouragement: string;
+  language: "en" | "ta";
+  created_at: string;
+}
+
+export const fetchMemories = () => request<LearnerMemory[]>("/learner/memory");
+export const addMemory = (text: string, kind: MemoryKind) => request<LearnerMemory>("/learner/memory", json("POST", { text, kind }));
+export const pinMemory = (id: string, pinned: boolean) => request<LearnerMemory>(`/learner/memory/${id}/pin`, json("PUT", { pinned }));
+export const deleteMemory = (id: string) => request<void>(`/learner/memory/${id}`, json("DELETE"));
+export const fetchCareerPlan = () => request<{ plan: CareerPlan | null }>("/learner/plan");
+export const createCareerPlan = (language: "en" | "ta") => request<{ plan: CareerPlan }>("/learner/plan", json("POST", { language }));

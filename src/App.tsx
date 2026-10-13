@@ -12,12 +12,14 @@ import {
   initialCapstoneMessage,
   mergeCapstoneFiles,
   submitCapstoneFiles,
-  regenerateTopicsForDifficulty,
+  VIVA_TIME_UP_ACTION,
   type CapstoneFlowState,
 } from "./lib/capstoneFlow";
 import {
   handleCodeForgeText,
   openCodeForgeChat,
+  openCodeForgeProblem,
+  enterAssessment,
   runCodeForgeCode,
   submitCodeForgeCode,
   type CodeForgeFlowState,
@@ -32,6 +34,13 @@ import {
 import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import OnboardingScreen from "./components/OnboardingScreen";
+import ReadinessView from "./components/ReadinessView";
+import OrganizationView from "./components/OrganizationView";
+import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
+import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
+import { setLearnerContext } from "./lib/learnerContext";
+import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
 import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -45,6 +54,7 @@ import SettingsModal from "./components/SettingsModal";
 import LowPointsModal from "./components/LowPointsModal";
 import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
+import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
 import ProfileView from "./components/ProfileView";
 import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
 import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
@@ -55,6 +65,7 @@ import CodeForgeDashboard from "./components/CodeForgeDashboard";
 import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
+import CapstoneVivaPanel from "./components/CapstoneVivaPanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
 import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
 import JobFetchDashboard from "./components/JobFetchDashboard";
@@ -73,11 +84,12 @@ import { createInitialMockInterviewState, handleMockInterviewText, openMockInter
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
-import { routeMessage, transcribeGeneralAudio, type RouteTurn } from "./lib/orchestratorApi";
+import { routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
+import { isVoiceConversationOpen } from "./lib/voiceReply";
 
 type OpenMenu = "user" | "notif" | null;
 
-const TOKEN_KEY = "digidara_token";
+const SESSION_SWITCH_KEY = "digidara_session_switched";
 const GOOGLE_OAUTH_CALLBACK_PATH = "/auth/google/callback";
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
 const isGoogleOAuthCallback = () => window.location.pathname === GOOGLE_OAUTH_CALLBACK_PATH;
@@ -88,7 +100,7 @@ function loadUser(): User | null {
 }
 
 function loadToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionToken();
 }
 
 function toUser(authUser: AuthUser): User {
@@ -128,6 +140,27 @@ export default function App() {
     saveAppearance(appearance);
   }, [appearance]);
   const [user, setUser] = useState<User | null>(() => loadUser());
+  // Phase 2: target role, skills, degree and per-agent levels. Loaded once
+  // the account is verified; null while loading, or if the server does not
+  // answer -- then onboarding is skipped rather than locking the learner out.
+  const [learnerSummary, setLearnerSummary] = useState<LearnerSummary | null>(null);
+  const [learnerLoaded, setLearnerLoaded] = useState(false);
+  const learnerUserId = user && !user.needsEmailVerification ? user.id : null;
+  useEffect(() => {
+    if (!learnerUserId) {
+      setLearnerSummary(null);
+      setLearnerLoaded(false);
+      return;
+    }
+    let active = true;
+    fetchLearnerSummary()
+      .then((summary) => { if (active) setLearnerSummary(summary); })
+      .catch(() => { if (active) setLearnerSummary(null); })
+      .finally(() => { if (active) setLearnerLoaded(true); });
+    return () => { active = false; };
+  }, [learnerUserId]);
+  // Every agent's chat flow reads the learner's goal and levels from here.
+  useEffect(() => { setLearnerContext(learnerSummary); }, [learnerSummary]);
   // Signed-out visitors land on the public home page; "Login" swaps to the
   // existing login screen and mirrors it in the URL (/login) so it is linkable.
   const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login");
@@ -188,6 +221,9 @@ export default function App() {
   const [planName, setPlanName] = useState("Free");
   const [profilePrefs, setProfilePrefs] = useState<ProfilePrefs>({});
   const [playgroundOpen, setPlaygroundOpen] = useState(false);
+  const [problemSetOpen, setProblemSetOpen] = useState(false);
+  /** The course and technology the problem list opens on. */
+  const [problemSetScope, setProblemSetScope] = useState<{ courseSlug?: string; technologySlug?: string }>({});
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -259,6 +295,31 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToastShow(false), 2600);
   }, []);
 
+  // One account per browser: signing in to another account (or signing out)
+  // in another tab switches this tab too. It reloads straight away; until
+  // then sessionToken() already refuses this tab's old token, so nothing of
+  // the old account is saved into the new one.
+  useEffect(() => onSessionSwitched((signedOut) => {
+    try {
+      sessionStorage.setItem(SESSION_SWITCH_KEY, signedOut ? "signed_out" : "switched");
+    } catch {
+      // Storage blocked: reload without the notice.
+    }
+    window.location.reload();
+  }), []);
+
+  useEffect(() => {
+    let reason: string | null = null;
+    try {
+      reason = sessionStorage.getItem(SESSION_SWITCH_KEY);
+      sessionStorage.removeItem(SESSION_SWITCH_KEY);
+    } catch {
+      return;
+    }
+    if (reason === "switched") showToast("You signed in with another account in this browser, so this tab switched to it.");
+    if (reason === "signed_out") showToast("You signed out in another tab.");
+  }, [showToast]);
+
   // Validate the cached session against the backend once on boot, rather
   // than trusting a stale/tampered localStorage user indefinitely. Skipped
   // on the Google OAuth callback URL — that load is handled by the effect
@@ -280,7 +341,7 @@ export default function App() {
       })
       .catch(() => {
         if (!active) return;
-        localStorage.removeItem(TOKEN_KEY);
+        setSessionToken(null);
         localStorage.removeItem("digidara_user");
         setUser(null);
       });
@@ -319,7 +380,7 @@ export default function App() {
     googleAuth(code, consent)
       .then((result) => {
         const newUser = toUser(result.user);
-        localStorage.setItem(TOKEN_KEY, result.access_token);
+        setSessionToken(result.access_token);
         localStorage.setItem("digidara_user", JSON.stringify(newUser));
         setUser(newUser);
         setView("chat");
@@ -580,7 +641,7 @@ export default function App() {
         : await loginApi(email, details.password);
 
       const newUser = toUser(result.user);
-      localStorage.setItem(TOKEN_KEY, result.access_token);
+      setSessionToken(result.access_token);
       localStorage.setItem("digidara_user", JSON.stringify(newUser));
       setUser(newUser);
       setView("chat");
@@ -596,7 +657,7 @@ export default function App() {
   function handleLogout() {
     void agentState.flushNow(); // starts saving before the login token is cleared
     localStorage.removeItem("digidara_user");
-    localStorage.removeItem(TOKEN_KEY);
+    setSessionToken(null);
     setUser(null);
     setCurrentChatId(null);
     setNewChatPending(true);
@@ -854,17 +915,52 @@ export default function App() {
       setTyping(false);
       return;
     }
+    // Boss's answer is shown (and, in a voice conversation, spoken) while it
+    // is still being written; the finished reply is then saved.
+    let shown = false;
+    const showText = (reply: string, streaming: boolean) => {
+      const first = !shown;
+      shown = true;
+      setChats((prev) => {
+        const next = prev.map((c) => {
+          if (c.id !== chatId) return c;
+          const messages = first
+            ? [...c.messages, { role: "agent" as const, text: reply, time: nowStr(), streaming }]
+            : c.messages.map((m, i) => (i === c.messages.length - 1 ? { ...m, text: reply, streaming } : m));
+          return { ...c, messages, updatedAt: Date.now() };
+        });
+        if (!streaming) saveChats(next);
+        return next;
+      });
+      if (first) setTyping(false);
+    };
     try {
-      const result = await routeMessage(text, history);
+      let result: RouteResult;
+      try {
+        result = await routeMessageStream(text, history, { voice: isVoiceConversationOpen(), onText: (reply) => showText(reply, true) });
+      } catch (error) {
+        if (shown) throw error;
+        // No streaming (an older server, or it failed before any text): ask once more, whole.
+        result = await routeMessage(text, history);
+      }
       const matched = result.agent_name ? findAgentByBackendName(result.agent_name) : undefined;
       if (matched) {
         await handoffToAgent(chatId, matched, text);
         return;
       }
-      appendAgentMessages(chatId, [{ text: result.reply || "I'm not sure how to help with that yet — could you rephrase it?" }]);
+      showText(result.reply || "I'm not sure how to help with that yet — could you rephrase it?", false);
       setTyping(false);
     } catch {
-      scheduleReply(chatId);
+      if (shown) {
+        setChats((prev) => {
+          const next = prev.map((c) => (c.id !== chatId ? c : { ...c, messages: c.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }));
+          saveChats(next);
+          return next;
+        });
+        setTyping(false);
+      } else {
+        scheduleReply(chatId);
+      }
     }
   }
 
@@ -1133,6 +1229,7 @@ export default function App() {
     mockAnswer?: { answer: string; timing: MockInterviewAnswerTiming }
   ) {
     if (!currentChatId || !user) return;
+    const signedInUser = user;
     const chatId = currentChatId;
     const chat = chats.find((c) => c.id === chatId);
     const agent = chat ? findAgent(chat.agentId) : undefined;
@@ -1140,6 +1237,19 @@ export default function App() {
     const pendingImage = agent?.kind === "capstone" ? capstoneStates[chatId]?.imageFile : undefined;
 
     if (!text.trim() && !pendingResume && !pendingImage) return;
+
+    // Coding Practice's playground and problem list open in place: they are
+    // not messages, so they never land in the chat or become its title.
+    if (agent?.kind === "codeforge" && (text === "__problemset__" || text === "__playground__")) {
+      if (text === "__playground__") {
+        setPlaygroundOpen(true);
+      } else {
+        const flow = codeforgeStates[chatId];
+        setProblemSetScope({ courseSlug: flow?.courseSlug, technologySlug: flow?.technologySlug });
+        setProblemSetOpen(true);
+      }
+      return;
+    }
 
     if (pendingResume) {
       setJobFetchPendingFiles((prev) => ({ ...prev, [chatId]: null }));
@@ -1193,6 +1303,56 @@ export default function App() {
     persistChats(withUserMsg);
     setTyping(true);
 
+    // The Conductor: when the learner types instead of tapping a choice, it
+    // works out what they meant -- one of the choices, another agent, starting
+    // over, or a question -- so the guided flow never just asks again.
+    const lastAgentMessage = !isEdit ? chat?.messages.at(-1) : undefined;
+    const choices = lastAgentMessage?.role === "agent" ? lastAgentMessage.options ?? [] : [];
+    const typed = text.trim();
+    const typedAChoice = choices.some((o) => o.value.toLowerCase() === typed.toLowerCase() || o.label.toLowerCase() === typed.toLowerCase());
+    // Suggestions invite free text: what the learner typed is their own answer
+    // ("i need data science project"), not a miss to steer back to the buttons.
+    const hasSuggestions = choices.some((o) => o.suggested);
+    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined
+        && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice && !hasSuggestions) {
+      const step = String((resumeSnapshot as { step?: unknown } | undefined)?.step ?? "");
+      interpretTurn(agent.backendAgentName, step, choices, typed)
+        .then((decision) => applyDecision(decision))
+        .catch(() => dispatch(text));
+      return;
+    }
+    dispatch(text);
+
+    function applyDecision(decision: ConductorDecision) {
+      if (decision.intent === "select_option") {
+        dispatch(decision.option_value);
+        return;
+      }
+      if (decision.intent === "reply") {
+        appendAgentMessages(chatId, [{ text: decision.reply, options: choices }]);
+        setTyping(false);
+        return;
+      }
+      if (decision.intent === "switch_agent") {
+        const target = findAgentByBackendName(decision.agent_name);
+        if (target) {
+          setTyping(false);
+          appendAgentMessages(chatId, [{ text: `That's something ${target.name} does. Opening it for you now.` }]);
+          openAgentChat(target.id);
+          return;
+        }
+      }
+      if (decision.intent === "restart" && agent) {
+        setTyping(false);
+        appendAgentMessages(chatId, [{ text: `Sure, let's start ${agent.name} again so you can choose differently.` }]);
+        openAgentChat(agent.id);
+        return;
+      }
+      dispatch(text);
+    }
+
+    function dispatch(text: string) {
+    const user = signedInUser;
     if (agent?.kind === "capstone") {
       const flowState = (resumeSnapshot as CapstoneFlowState | undefined) ?? createInitialCapstoneState(user);
       handleCapstoneText(flowState, text).then(({ state: nextState, messages, openDashboard }) => {
@@ -1210,15 +1370,24 @@ export default function App() {
         setPlaygroundOpen(true);
         return;
       }
+      if (text === "__problemset__") {
+        setTyping(false);
+        setProblemSetOpen(true);
+        return;
+      }
       const flowState = resumeSnapshot as CodeForgeFlowState | undefined;
       if (!flowState) {
         setTyping(false);
         return;
       }
-      handleCodeForgeText(flowState, text).then(({ state: nextState, messages }) => {
+      handleCodeForgeText(flowState, text).then(({ state: nextState, messages, openProblemSet }) => {
         setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
         appendAgentMessages(chatId, messages);
         setTyping(false);
+        if (openProblemSet) {
+          setProblemSetScope(openProblemSet);
+          setProblemSetOpen(true);
+        }
       });
       return;
     }
@@ -1231,6 +1400,7 @@ export default function App() {
           if (flowState.testId && (nextState.step === "completed" || !nextState.testId)) aptitudeFinalizedAttempts.current.add(flowState.testId);
           setAptitudeStates((prev) => ({ ...prev, [chatId]: nextState as AptitudeFlowState }));
           appendAgentMessages(chatId, messages);
+          if (nextState.step === "completed" && flowState.step !== "completed") shareNewResults();
         })
         .catch((error) => {
           appendAgentMessages(chatId, [{ text: `Aptitude request failed: ${(error as Error).message}` }]);
@@ -1301,6 +1471,7 @@ export default function App() {
         .then(({ state, messages }) => {
           setMockInterviewStates((prev) => ({ ...prev, [chatId]: state }));
           appendAgentMessages(chatId, messages);
+          if (state.step === "completed" && flowState.step !== "completed") shareNewResults();
         })
         .catch((error) => {
           appendAgentMessages(chatId, [{ text: `Mock Interview request failed: ${(error as Error).message}` }]);
@@ -1353,13 +1524,21 @@ export default function App() {
           appendAgentMessages(chatId, messages);
         })
         .catch((error) => {
-          appendAgentMessages(chatId, [{ text: `Job Fetching Agent request failed: ${(error as Error).message}` }]);
+          appendAgentMessages(chatId, [{ text: `Job Agent request failed: ${(error as Error).message}` }]);
         })
         .finally(() => setTyping(false));
       return;
     }
 
     routeGeneralMessage(chatId, text, toRouteHistory(baseMessages));
+    }
+  }
+
+  /** After an interview or test finishes, refresh readiness in the background:
+   * it asks every agent over A2A and updates the shared memory, so every agent
+   * knows the new strengths and gaps in the learner's next chat. */
+  function shareNewResults() {
+    void fetchReadiness(true).catch(() => undefined);
   }
 
   function editMessage(index: number, newText: string) {
@@ -1438,6 +1617,36 @@ export default function App() {
     });
   }
 
+  /** A problem picked in the problem list opens in the current Coding Practice chat. */
+  function handleOpenListedProblem(target: Parameters<typeof openCodeForgeProblem>[1]) {
+    if (!currentChatId) return;
+    const chatId = currentChatId;
+    const flowState = codeforgeStates[chatId];
+    if (!flowState) return;
+    setProblemSetOpen(false);
+    setTyping(true);
+    openCodeForgeProblem(flowState, target).then(({ state: nextState, messages }) => {
+      setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, messages);
+      setTyping(false);
+    });
+  }
+
+  /** Starts or continues a Professional assessment in the current Coding Practice chat. */
+  function handleStartAssessment(...args: Parameters<typeof enterAssessment> extends [unknown, ...infer Rest] ? Rest : never) {
+    if (!currentChatId) return;
+    const chatId = currentChatId;
+    const flowState = codeforgeStates[chatId];
+    if (!flowState) return;
+    setProblemSetOpen(false);
+    setTyping(true);
+    enterAssessment(flowState, ...args).then(({ state: nextState, messages }) => {
+      setCodeforgeStates((prev) => ({ ...prev, [chatId]: nextState }));
+      appendAgentMessages(chatId, messages);
+      setTyping(false);
+    });
+  }
+
   function handleAttachFiles(files: FileList) {
     if (!currentChatId || !user) return;
     const chatId = currentChatId;
@@ -1483,7 +1692,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1499,6 +1708,10 @@ export default function App() {
     }
     if (action === "admin" && user?.isAdmin) {
       switchView("admin");
+      return;
+    }
+    if (action === "readiness" || action === "organization") {
+      switchView(action);
       return;
     }
     showToast("This section is coming soon.");
@@ -1567,10 +1780,26 @@ export default function App() {
     );
   }
 
+  // Every learner says what they are preparing for once, right after
+  // sign-up; an account an organization created also gives its consent.
+  if (learnerLoaded && learnerSummary && (!learnerSummary.profile.onboarding_completed || learnerSummary.consent_required)) {
+    return (
+      <OnboardingScreen
+        name={user.name}
+        summary={learnerSummary}
+        onLogout={handleLogout}
+        onDone={(summary) => {
+          setLearnerSummary(summary);
+          showToast("You are all set. Every agent now knows your goal.");
+        }}
+      />
+    );
+  }
+
   const currentChat = chats.find((c) => c.id === currentChatId) || null;
   const currentAgent = currentChat ? findAgent(currentChat.agentId) || DEFAULT_AGENT : DEFAULT_AGENT;
   const isHome = view === "chat" && newChatPending;
-  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
+  const HELP_TITLES: Partial<Record<View, string>> = { profile: "Profile", readiness: "Job readiness", organization: "Organization", "help-center": "Help center", "release-notes": "Release notes", contact: "Contact support", "bug-report": "Report a bug" };
   const topbarTitle = HELP_TITLES[view] ?? (view === "store" ? "My Agents" : !isHome && currentChat ? currentAgent.name : "");
   const isCapstoneChat = currentAgent.kind === "capstone";
   const isCodeForgeChat = currentAgent.kind === "codeforge";
@@ -1581,8 +1810,10 @@ export default function App() {
   const isJobFetchChat = currentAgent.kind === "job-fetch";
   const isMockInterviewChat = currentAgent.kind === "mock-interview";
   // The DigiDARA Assistant (general chat): voice goes to OpenAI transcription.
-  const isGeneralChat = currentAgent.id === DEFAULT_AGENT.id;
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
+  // A viva question is waiting: answered in the viva panel (voice or typing).
+  const capstoneVivaLive = isCapstoneChat && capstoneState?.step === "awaiting_viva_answer"
+    && !capstoneState.vivaRetryPending && !!capstoneState.vivaQuestionText;
   const codeforgeState = currentChat ? codeforgeStates[currentChat.id] : undefined;
   const aptitudeState = currentChat ? aptitudeStates[currentChat.id] : undefined;
   const communicationState = currentChat ? communicationStates[currentChat.id] : undefined;
@@ -1652,26 +1883,7 @@ export default function App() {
       : capstoneState.step === "awaiting_topic_choice"
         ? "Pick project A or B to continue"
         : null;
-    if ((capstoneState.step === "awaiting_topic_request" || capstoneState.step === "awaiting_topic_choice") && currentChat) {
-      const chatId = currentChat.id;
-      connectorDifficultyPicker = {
-        value: capstoneState.difficulty,
-        onChange: (value) => {
-          const flowState = capstoneStates[chatId];
-          if (!flowState || value === flowState.difficulty) return;
-          if (flowState.step !== "awaiting_topic_choice") {
-            setCapstoneStates((prev) => ({ ...prev, [chatId]: { ...prev[chatId], difficulty: value } }));
-            return;
-          }
-          setTyping(true);
-          regenerateTopicsForDifficulty(flowState, value).then(({ state: nextState, messages }) => {
-            setCapstoneStates((prev) => ({ ...prev, [chatId]: nextState }));
-            appendAgentMessages(chatId, messages);
-            setTyping(false);
-          });
-        },
-      };
-    }
+    // No difficulty picker: the project follows the learner's Job Readiness level.
     if (typing) {
       if (capstoneState.step === "awaiting_topic_request") {
         typingLabel = "Searching the web for real project ideas and generating two options…";
@@ -1685,9 +1897,13 @@ export default function App() {
     }
   } else if (isCodeForgeChat && codeforgeState) {
     connectorStatus = CODEFORGE_STEP_LABELS[codeforgeState.step] ?? codeforgeState.step;
-    connectorPendingTask = codeforgeState.step === "awaiting_code" && codeforgeState.problemName
-      ? `Solve: ${codeforgeState.problemName}`
-      : null;
+    const running = codeforgeState.assessment;
+    connectorPendingTask = running
+      ? `Professional assessment · problem ${running.position} of ${running.items.length}${running.deadline
+        ? ` · ends ${new Date(running.deadline).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}` : ""}`
+      : codeforgeState.step === "awaiting_code" && codeforgeState.problemName
+        ? `Solve: ${codeforgeState.problemName}`
+        : null;
   } else if (isAptitudeChat && aptitudeState) {
     connectorStatus = aptitudeState.step === "completed" ? "Test completed" : aptitudeState.step === "awaiting_next_question" ? "Next question pending" : aptitudeState.question ? `Question ${aptitudeState.question.sequence}` : "Ready to practice";
     connectorPendingTask = typing && ["awaiting_level", "awaiting_language"].includes(aptitudeState.step)
@@ -1829,10 +2045,23 @@ export default function App() {
 
           {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
 
+          {view === "readiness" && learnerSummary && (
+            <ReadinessView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+          )}
+
+          {view === "organization" && learnerSummary && (
+            <OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+          )}
+
+          {(view === "readiness" || view === "organization") && !learnerSummary && (
+            <div className="pv-page"><div className="pv-inner"><p className="rd-muted">{learnerLoaded ? "This page could not be loaded. Please try again shortly." : "Loading…"}</p></div></div>
+          )}
+
           {view === "chat" && newChatPending && (
             <NewChatLanding
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
+              userName={user?.name}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
           )}
@@ -1846,7 +2075,7 @@ export default function App() {
                 typing={typing}
                 typingLabel={typingLabel}
                 composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
-                hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
+                hideComposer={(isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question) || capstoneVivaLive}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
@@ -1862,13 +2091,17 @@ export default function App() {
                 codeBusy={codeBusy}
                 onRunCode={handleRunCode}
                 onSubmitCode={handleSubmitCode}
+                // Every agent's microphone is transcribed by the same OpenAI GPT
+                // model (the Communication Coach through its own backend), on
+                // every device -- never the browser's built-in recognizer.
                 transcribeAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
-                  : isGeneralChat ? transcribeGeneralAudio : undefined}
-                alwaysRecordVoice={isGeneralChat}
+                  : transcribeGeneralAudio}
+                alwaysRecordVoice
+                // Live text: the words appear in the box while the learner speaks.
                 previewAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
-                  : undefined}
+                  : transcribeGeneralAudio}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."
                 multilineSubmitLabel="Submit Answer"
@@ -1882,7 +2115,9 @@ export default function App() {
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
-                  : undefined}
+                  : capstoneVivaLive && capstoneState
+                    ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />
+                    : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
                 dailyChallengeStatus={isCommunicationChat ? dailyChallengeStatus : undefined}
@@ -1968,6 +2203,9 @@ export default function App() {
 
 
       <CodeForgePlayground open={playgroundOpen} onClose={() => setPlaygroundOpen(false)} onToast={showToast} />
+      <CodeForgeProblemSet open={problemSetOpen} sessionToken={codeforgeState?.sessionToken}
+        courseSlug={problemSetScope.courseSlug} technologySlug={problemSetScope.technologySlug}
+        onClose={() => setProblemSetOpen(false)} onOpenProblem={handleOpenListedProblem} onAssessment={handleStartAssessment} />
 
       <AgentDetailsModal
         agent={selectedAgent}

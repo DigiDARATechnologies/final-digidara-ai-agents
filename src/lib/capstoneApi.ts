@@ -1,5 +1,6 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent");
 
@@ -183,6 +184,11 @@ export interface SubmissionResult {
   viva_attempt?: number | null;
   viva_attempts_left?: number | null;
   viva_attempts_total?: number | null;
+  /** Seconds left to finish the current viva attempt (20 minutes each). */
+  viva_seconds_left?: number | null;
+  viva_time_limit_seconds?: number | null;
+  /** The attempt just ended because its time ran out. */
+  viva_timed_out?: boolean | null;
 }
 
 export interface ThreadStatus {
@@ -257,7 +263,7 @@ export async function uploadSubmission(thread_id: string, docxFile: File, zipFil
   form.append("thread_id", thread_id);
   form.append("docx_file", docxFile);
   form.append("zip_file", zipFile);
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
@@ -274,6 +280,12 @@ export function startVivaAttempt(submission_id: string) {
 
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
   return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
+}
+
+/** The viva attempt's time ran out: the server ends it (unanswered questions
+ * count as wrong) and the next attempt is offered as after a failed one. */
+export function vivaTimeUp(submission_id: string) {
+  return invoke<SubmissionResult>("viva_time_up", { submission_id });
 }
 
 export interface QAAskResult {
@@ -293,7 +305,7 @@ export async function askProjectQuestion(thread_id: string, question: string, im
   form.append("thread_id", thread_id);
   form.append("question", question);
   form.append("attachment", image);
-  const platformToken = localStorage.getItem("digidara_token");
+  const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},

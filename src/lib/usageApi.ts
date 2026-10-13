@@ -75,7 +75,7 @@ const TARGETS: AgentUsageTarget[] = [
   },
   {
     id: "codeforge_agent",
-    label: "LeetCode Agent",
+    label: "Coding Practice",
     icon: "⌨️",
     color: "#eab308",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CODEFORGE_AGENT_NAME, "codeforge_agent"),
@@ -113,7 +113,7 @@ const TARGETS: AgentUsageTarget[] = [
   },
   {
     id: "job_agent",
-    label: "Job Fetching Agent",
+    label: "Job Agent",
     icon: "🔎",
     color: "#3b82f6",
     invokeUrl: "",

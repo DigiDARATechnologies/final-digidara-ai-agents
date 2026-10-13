@@ -76,7 +76,7 @@ export default function JobFetchDashboard({ state, onClose }: JobFetchDashboardP
   return (
     <aside className="agent-dashboard">
       <div className="dashboard-head">
-        <div><span>Job Fetching Agent</span><h2>Career Dashboard</h2></div>
+        <div><span>Job Agent</span><h2>Career Dashboard</h2></div>
         <button className="icon-btn" onClick={onClose} aria-label="Close dashboard">x</button>
       </div>
 

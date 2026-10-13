@@ -8,6 +8,7 @@ jest.mock('../../src/lib/mockInterviewApi', () => ({
 }));
 
 import * as api from '../../src/lib/mockInterviewApi';
+import { setLearnerContext } from '../../src/lib/learnerContext';
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewFlowState } from '../../src/lib/mockInterviewFlow';
 
 const user = { id: 'u1', name: 'Asha Rao', email: 'asha@example.com', mobile: '', initial: 'A' };
@@ -31,17 +32,15 @@ test('a failed session surfaces a retry option instead of throwing', async () =>
   expect(messages[0].options?.[0].value).toBe('retry');
 });
 
-test('a technical custom-topic round asks for a topic, then a difficulty, then starts ten questions', async () => {
+test('a technical custom-topic round asks for a topic, then starts at the learner level with no difficulty step', async () => {
   let result = await handleMockInterviewText(withSession(), user, 'technical');
   expect(result.state.step).toBe('choose_mode');
   result = await handleMockInterviewText(result.state, user, 'custom_topic');
   expect(result.state.step).toBe('awaiting_subject');
   result = await handleMockInterviewText(result.state, user, 'Python');
-  expect(result.state).toMatchObject({ step: 'choose_difficulty', subject: 'Python' });
+  expect(result.state).toMatchObject({ step: 'choose_question_count', subject: 'Python', difficulty: 'beginner' });
 
   mocked.startMockInterview.mockResolvedValue({ interview_id: 9, question_order: 1, question: 'What is a list?', total_questions: 10 });
-  result = await handleMockInterviewText(result.state, user, 'beginner');
-  expect(result.state.step).toBe('choose_question_count');
   result = await handleMockInterviewText(result.state, user, '10');
   expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'custom_topic', subject: 'Python', difficulty: 'beginner', num_questions: 10 });
   expect(result.state).toMatchObject({ step: 'in_interview', interviewId: 9, questionOrder: 1 });
@@ -63,18 +62,17 @@ test('a technical role round sends the selected role to the backend', async () =
   result = await handleMockInterviewText(result.state, user, 'AI Engineer');
   expect(result.state.roleName).toBe('AI Engineer');
   mocked.startMockInterview.mockResolvedValue({ interview_id: 10, question_order: 1, question: 'What is retrieval?', total_questions: 10 });
-  result = await handleMockInterviewText(result.state, user, 'intermediate');
+  expect(result.state.step).toBe('choose_question_count');
   await handleMockInterviewText(result.state, user, '10');
-  expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'role', role_name: 'AI Engineer', difficulty: 'intermediate', num_questions: 10 });
+  expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'role', role_name: 'AI Engineer', difficulty: 'beginner', num_questions: 10 });
 });
 
 test('an HR round skips the topic step', async () => {
   const result = await handleMockInterviewText(withSession(), user, 'hr');
-  expect(result.state.step).toBe('choose_difficulty');
+  expect(result.state.step).toBe('choose_question_count');
   mocked.startMockInterview.mockResolvedValue({ interview_id: 11, question_order: 1, question: 'Tell me about yourself.', total_questions: 10 });
-  let next = await handleMockInterviewText(result.state, user, 'advanced');
-  await handleMockInterviewText(next.state, user, '10');
-  expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'hr', interview_mode: 'course', subject: undefined, difficulty: 'advanced', num_questions: 10 });
+  await handleMockInterviewText(result.state, user, '10');
+  expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'hr', interview_mode: 'course', subject: undefined, difficulty: 'beginner', num_questions: 10 });
 });
 
 test('answers advance with their timing and finish with the four scores and scorecard', async () => {
@@ -122,4 +120,32 @@ test('without a session token the flow reopens instead of calling the agent blin
   const result = await handleMockInterviewText(createInitialMockInterviewState(), user, 'technical');
   expect(result.state.sessionToken).toBe('fresh');
   expect(mocked.startMockInterview).not.toHaveBeenCalled();
+});
+
+describe('with a target role', () => {
+  beforeEach(() => setLearnerContext({
+    profile: { target_role: 'python developer', degree: 'B.E', skills: ['Python', 'Django', 'SQL'], experience: 'fresher',
+      onboarding_completed: true, onboarding_completed_at: '2026-10-08T00:00:00' },
+    levels: [{ agent_name: 'mock_interview_agent', agent_label: 'Mock Interview', level: 'hard' as never, source: 'readiness', updated_at: null }],
+    level_choices: [], consent_required: false, membership: null,
+  } as never));
+  afterEach(() => setLearnerContext(null));
+
+  test('every round offered comes from the target role and skills, never a level choice', async () => {
+    mocked.ensureMockInterviewSession.mockResolvedValue({ sessionToken: 'token', student_id: 1 });
+    mocked.getActiveMockInterview.mockResolvedValue({ active: false } as never);
+    const { messages } = await openMockInterviewChat(user);
+    expect(messages[0].options?.map((o) => o.label)).toEqual([
+      'Technical interview for Python Developer', 'Python interview', 'Django interview', 'SQL interview', 'HR interview for Python Developer',
+    ]);
+    expect(JSON.stringify(messages)).not.toMatch(/Beginner|Intermediate|Advanced/);
+  });
+
+  test('a skill round runs that skill at the learner Job Readiness level', async () => {
+    let result = await handleMockInterviewText(withSession(), user, 'skill:Django');
+    expect(result.state).toMatchObject({ step: 'choose_question_count', subject: 'Django', interviewMode: 'custom_topic', difficulty: 'advanced' });
+    mocked.startMockInterview.mockResolvedValue({ interview_id: 12, question_order: 1, question: 'What is an ORM?', total_questions: 5 });
+    result = await handleMockInterviewText(result.state, user, '5');
+    expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'custom_topic', subject: 'Django', difficulty: 'advanced', num_questions: 5 });
+  });
 });

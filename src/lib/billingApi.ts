@@ -1,3 +1,4 @@
+import { sessionToken } from "./session";
 const RAW_BASE = (import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100");
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 
@@ -11,7 +12,7 @@ export interface BillingPlans { plans: PlanOffer[]; }
 /** `prefill` / `readonly`: the account's own details, with the email locked in the checkout. */
 export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; prefill?: { name: string; email: string; contact: string }; readonly?: { email?: boolean }; }
 
-function token() { return localStorage.getItem("digidara_token") || ""; }
+function token() { return sessionToken() || ""; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}`, ...init?.headers } });
   if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "Billing request failed."); }

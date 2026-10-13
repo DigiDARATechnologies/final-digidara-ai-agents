@@ -43,6 +43,12 @@ services:
       # One set of rate-limit counters for all gunicorn workers (see
       # app/rate_limit.py); without it every limit was effectively 4x.
       RATE_LIMIT_STORAGE_URI: redis://ratelimit-redis:6379/0
+      # Organization assistant memory (mem0) in the qdrant service, in its
+      # own collection. Uses the orchestrator's OPENAI_API_KEY; off without one.
+      MEM0_ENABLED: "true"
+      MEM0_QDRANT_HOST: qdrant
+      MEM0_QDRANT_PORT: "6333"
+      MEM0_COLLECTION: org_assistant_memory
     depends_on:
       mysql:
         condition: service_healthy

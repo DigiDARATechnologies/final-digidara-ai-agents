@@ -1,3 +1,9 @@
+jest.mock('../../src/lib/voiceEngine', () => ({
+  isSpeaking: jest.fn(() => false),
+  previewVoice: jest.fn(() => Promise.resolve(false)),
+  speakNatural: jest.fn((_text: string, handlers?: { onEnd?: () => void }) => { handlers?.onEnd?.(); return Promise.resolve(false); }),
+  stopSpeaking: jest.fn(),
+}));
 import { fireEvent, render, screen } from '@testing-library/react';
 import ConfirmDialog from '../../src/components/ConfirmDialog';
 import Sidebar from '../../src/components/Sidebar';
@@ -84,7 +90,7 @@ describe('Settings: agent chats list', () => {
       <SettingsModal open user={user} chats={[]} glowOn initialTab="agent-chats" onClose={jest.fn()} onOpenChat={jest.fn()} onGlowToggle={jest.fn()}
         onClearHistory={jest.fn()} onToast={jest.fn()} onExportData={jest.fn()} onDeleteAccount={jest.fn()} />,
     );
-    for (const name of ['Capstone Project Agent', 'LeetCode Agent', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
+    for (const name of ['Capstone Project Agent', 'Coding Practice', 'Resume Builder Agent', 'Aptitude Trainer Agent']) {
       expect(screen.getByText(name)).toBeInTheDocument();
     }
     for (const name of ['Research Agent', 'Career Guidance Agent', 'Content Writer Agent', 'Data Analyst Agent', 'Video AI Agent', 'Business Strategy Agent', 'Coding Assistant Agent']) {

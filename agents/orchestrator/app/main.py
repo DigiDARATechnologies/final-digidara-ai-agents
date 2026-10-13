@@ -21,6 +21,11 @@ from app.billing.routes import router as billing_router  # noqa: E402
 from app.admin.routes import router as admin_router  # noqa: E402
 from app.chat_history.routes import router as chat_history_router  # noqa: E402
 from app.agent_state.routes import router as agent_state_router  # noqa: E402
+from app.a2a.routes import router as a2a_router  # noqa: E402
+from app.learner.routes import router as learner_router  # noqa: E402
+from app.organizations.routes import router as organizations_router  # noqa: E402
+from app.voice.routes import router as voice_router  # noqa: E402
+from app.conductor.routes import router as conductor_router  # noqa: E402
 
 app = FastAPI(title="DigiDARA Orchestrator", version="1.0.0")
 
@@ -60,11 +65,20 @@ app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(chat_history_router)
 app.include_router(agent_state_router)
+app.include_router(learner_router)
+app.include_router(organizations_router)
+app.include_router(a2a_router)
+app.include_router(voice_router)
+app.include_router(conductor_router)
 
 
 @app.on_event("startup")
 def on_startup() -> None:
     init_db()
+    # Boss's memory (mem0) loads in the background in every worker.
+    from app.orchestrator import boss_memory
+
+    boss_memory.warm_up()
     auth_service.seed_admin_from_env()
 
 

@@ -1,5 +1,6 @@
 /** Client for the orchestrator's platform admin API (`/platform-admin/*`). Every call
  * carries the signed-in account's token; the server refuses anyone who is not an admin. */
+import { sessionToken } from "./session";
 const RAW_BASE = (import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100");
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 
@@ -50,7 +51,7 @@ export interface AgentList { agents: RegistryAgent[]; chat_usage: AgentUsage[] }
 async function get<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined).map(([k, v]) => [k, String(v)])).toString();
   const response = await fetch(`${BASE}/platform-admin${path}${query ? `?${query}` : ""}`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem("digidara_token") || ""}` },
+    headers: { Authorization: `Bearer ${sessionToken() || ""}` },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

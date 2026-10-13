@@ -1,3 +1,9 @@
+jest.mock('../../src/lib/voiceEngine', () => ({
+  isSpeaking: jest.fn(() => false),
+  previewVoice: jest.fn(() => Promise.resolve(false)),
+  speakNatural: jest.fn((_text: string, handlers?: { onEnd?: () => void }) => { handlers?.onEnd?.(); return Promise.resolve(false); }),
+  stopSpeaking: jest.fn(),
+}));
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MockInterviewPanel from '../../src/components/MockInterviewPanel';
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from '../../src/lib/mockInterviewApi';
@@ -58,7 +64,7 @@ test('timer expiry submits an unanswered question as timed out', async () => {
   jest.useRealTimers();
 });
 
-test('voice answers use contextual audio transcription instead of an inaccurate browser transcript', async () => {
+test('on a computer too, voice answers use GPT transcription and never the browser recognizer', async () => {
   class FakeMediaRecorder {
     static isTypeSupported = () => true;
     state: RecordingState = 'inactive';
@@ -102,17 +108,14 @@ test('voice answers use contextual audio transcription instead of an inaccurate 
   });
   const onAnswer = jest.fn();
 
-  const { rerender } = render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
-  await waitFor(() => expect(screen.getByDisplayValue('It is an in the point URL that returns Jason.')).toBeInTheDocument());
-  // Pausing browser recognition must pause, rather than finalize, the complete
-  // audio capture. Resuming then preserves one blob for enhanced transcription.
-  mockSpeechListening = true;
-  rerender(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText(/Listening - your words appear below as you speak/)).toBeInTheDocument());
+  // Pausing must pause, rather than finalize, the audio capture. Resuming
+  // then preserves one blob for transcription.
   fireEvent.click(screen.getByRole('button', { name: 'Pause microphone' }));
-  mockSpeechListening = false;
-  rerender(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: 'Start microphone' }));
-  await waitFor(() => expect(mockSpeechStart).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByText(/Listening - your words appear below as you speak/)).toBeInTheDocument());
+  expect(mockSpeechStart).not.toHaveBeenCalled();
   expect(getUserMedia).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
 
@@ -250,7 +253,7 @@ describe('on a phone', () => {
     (transcribeMockInterviewAudio as jest.Mock).mockResolvedValue({ transcript: 'A list is a mutable sequence.' });
     const onAnswer = jest.fn();
     render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
-    await waitFor(() => expect(screen.getByText(/Recording your answer - press Submit when you finish/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Listening - your words appear below as you speak/)).toBeInTheDocument());
     // The browser recognizer would compete with the recorder for the microphone.
     expect(mockSpeechStart).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
@@ -344,7 +347,7 @@ describe('silence handling and live text on a phone', () => {
   async function startRecording(onAnswer = jest.fn(), onExit = jest.fn()) {
     render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={onExit} />);
     await advance(0);
-    await waitFor(() => expect(screen.getByText(/Recording your answer/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Listening - your words appear below as you speak/)).toBeInTheDocument());
     return { onAnswer, onExit };
   }
 

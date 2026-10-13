@@ -20,7 +20,16 @@ def get_session() -> Session:
 def init_db() -> None:
     from app import models  # noqa: F401 — import registers the table with Base.metadata
 
-    Base.metadata.create_all(bind=engine)
+    # Every gunicorn worker runs this at startup. When a release adds a table,
+    # two workers can both find it missing and race to create it; the loser
+    # gets "already exists" (MySQL 1050) and simply checks again.
+    for attempt in range(3):
+        try:
+            Base.metadata.create_all(bind=engine)
+            break
+        except Exception as exc:
+            if "1050" not in str(exc) or attempt == 2:
+                raise
     # create_all does not alter existing tables. Keep this small
     # compatibility migration (added for Google sign-in) until the project
     # adopts Alembic.
@@ -91,6 +100,36 @@ def init_db() -> None:
             except Exception as exc:
                 if "1060" not in str(exc):
                     raise
+        snapshot_columns = {column["name"] for column in inspect(engine).get_columns("readiness_snapshots")}
+        if "role_key" not in snapshot_columns:
+            try:
+                connection.execute(text("ALTER TABLE readiness_snapshots ADD COLUMN role_key VARCHAR(200) NOT NULL DEFAULT ''"))
+                connection.execute(text("CREATE INDEX ix_readiness_snapshots_role_key ON readiness_snapshots (role_key)"))
+            except Exception as exc:
+                if "1060" not in str(exc) and "1061" not in str(exc):
+                    raise
+        track_columns = {column["name"] for column in inspect(engine).get_columns("role_tracks")}
+        if "skills" not in track_columns:
+            try:
+                connection.execute(text("ALTER TABLE role_tracks ADD COLUMN skills JSON NULL"))
+            except Exception as exc:
+                if "1060" not in str(exc):
+                    raise
+        org_columns = {column["name"] for column in inspect(engine).get_columns("organizations")}
+        member_columns = {column["name"] for column in inspect(engine).get_columns("organization_members")}
+        for table, existing, column, ddl in (
+            ("organizations", org_columns, "status", "VARCHAR(16) NOT NULL DEFAULT 'active'"),
+            ("organization_members", member_columns, "department", "VARCHAR(120) NULL"),
+            ("organization_members", member_columns, "year", "VARCHAR(40) NULL"),
+            ("organization_members", member_columns, "section", "VARCHAR(40) NULL"),
+            ("organization_members", member_columns, "join_code_id", "VARCHAR(32) NULL"),
+        ):
+            if column not in existing:
+                try:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
         for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
                             ("customer_gstin", "VARCHAR(15) NULL")):

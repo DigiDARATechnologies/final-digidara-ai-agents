@@ -1,5 +1,6 @@
 import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { reportPointsActivity } from "./points";
+import { sessionToken } from "./session";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_JOB_AGENT_NAME, "job_agent");
 function invoke<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
@@ -226,7 +227,7 @@ export async function uploadJobFetchResume(file: File): Promise<{ message: strin
   form.append("action", "upload_resume");
   form.append("payload", "{}");
   form.append("file", file);
-  const token = localStorage.getItem("digidara_token");
+  const token = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -240,7 +241,7 @@ export async function uploadJobFetchResume(file: File): Promise<{ message: strin
 
 /** Download the authenticated user's stored resume file blob. */
 export async function downloadJobFetchResume(): Promise<Blob> {
-  const token = localStorage.getItem("digidara_token");
+  const token = sessionToken();
   const response = await fetch(INVOKE_URL, {
     method: "POST",
     headers: {

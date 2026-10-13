@@ -12,6 +12,7 @@ from flask import Blueprint, jsonify, request, send_file
 
 import db
 import groq_client
+import learner_context
 import scoring
 from http_context import log, set_log_context
 from policies import completion_progress, exit_transition
@@ -299,6 +300,12 @@ def start_interview():
                 role_skills = list(resolved_subjects)
             elif round_type == "technical" and role_skill_scope:
                 role_skills = groq_client.infer_role_skills(role_skill_scope, difficulty)
+                # The learner's own skills lead a role interview for their
+                # target role; inferred ones only fill the remaining places.
+                own = learner_context.own_skills_for(role_name) if interview_mode == "role" else []
+                if own:
+                    role_skills = own + [skill for skill in (role_skills or []) if str(skill).lower() not in own]
+                    role_skills = role_skills[:max(len(own), 6)]
             else:
                 role_skills = None
             timing["skill_inference_seconds"] = round(

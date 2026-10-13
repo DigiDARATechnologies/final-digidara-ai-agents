@@ -10,7 +10,7 @@ wiring detail (dispatcher shape, identity, action map).
 
 ## Flow
 
-1. The user opens the Job Fetching Agent card in chat; `ensure_profile`
+1. The user opens the Job Agent card in chat; `ensure_profile`
    bridges their DigiDARA login into a `user_job_profiles` row.
 2. If the profile isn't complete yet, the chat collects skills, preferred
    titles, preferred locations, work mode, and experience.

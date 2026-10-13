@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import logging
 from io import BytesIO
 
 from flask import Blueprint, current_app, jsonify, request
 
 import db
+import learner_context
 import privacy
+from role_periods import clean_periods, in_periods
 from session_auth import InvalidSessionToken, issue_session_token, student_id_from_token
 from settings import ALLOWED_AUDIO_TYPES, MAX_AUDIO_UPLOAD_BYTES
 
@@ -97,6 +100,93 @@ def _personal_data(action: str, payload: dict):
     if action == "export_user_data":
         return jsonify(privacy.export_student(email))
     return jsonify(privacy.erase_student(email))
+
+
+SUMMARY_RECENT_INTERVIEWS = 5
+BULLET_CHARS = " -*•"
+
+
+def _text_items(value) -> list[str]:
+    """strengths/weaknesses are stored as a JSON list or as plain text."""
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, list):
+        return [str(item).strip() for item in parsed if str(item).strip()]
+    return [item for item in (line.strip(BULLET_CHARS) for line in str(value).replace(";", "\n").splitlines()) if item]
+
+
+# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
+# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
+# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
+# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
+# Beginner/Medium/Hard levels.
+LEVEL_SESSIONS = 5
+
+
+def level_scores(sessions):
+    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    result = {}
+    for difficulty in ("easy", "medium", "hard"):
+        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    return result
+
+
+INTERVIEW_DIFFICULTY = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
+
+
+def _student_summary(payload: dict):
+    """Phase 2 readiness skill (digidara.student_summary.v1). The gateway
+    puts the verified account's own email in the payload for this action.
+    Score: the latest completed interviews' overall score, out of 10 -> 100."""
+    if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
+        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+    empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
+             "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
+    email = str(payload.get("email") or "").strip().lower()
+    student, _ = db.query("SELECT id FROM students WHERE email = %s", (email,), fetchone=True) if email else (None, None)
+    if student is None:
+        return jsonify(empty)
+    rows, _ = db.query(
+        "SELECT overall_score, technical_accuracy, communication_clarity, confidence, strengths, weaknesses, ended_at, difficulty "
+        "FROM interviews WHERE student_id = %s AND status = 'completed' AND overall_score IS NOT NULL "
+        "ORDER BY ended_at DESC, id DESC",
+        (student["id"],), fetch=True,
+    )
+    # After a target-role change, only interviews done for this role count.
+    periods = clean_periods(payload.get("periods"))
+    rows = [row for row in rows or [] if in_periods(row.get("ended_at"), periods)]
+    if not rows:
+        return jsonify(empty)
+    recent = rows[:SUMMARY_RECENT_INTERVIEWS]
+
+    def average(column):
+        values = [float(r[column]) for r in recent if r.get(column) is not None]
+        return round(sum(values) / len(values) * 10, 1) if values else None
+
+    latest = recent[0]
+    ended = latest.get("ended_at")
+    return jsonify({
+        "schema": "digidara.student_summary.v1",
+        "score": average("overall_score"),
+        "activity_count": len(rows),
+        "last_activity_at": ended.isoformat() if hasattr(ended, "isoformat") else None,
+        "strengths": _text_items(latest.get("strengths"))[:3],
+        "gaps": _text_items(latest.get("weaknesses"))[:3],
+        "metrics": {
+            "interviews_completed": len(rows),
+            "technical_accuracy": average("technical_accuracy"),
+            "communication_clarity": average("communication_clarity"),
+            "confidence": average("confidence"),
+        },
+        "level_scores": level_scores([
+            (INTERVIEW_DIFFICULTY.get(str(r.get("difficulty") or "").lower()), float(r["overall_score"]) * 10) for r in rows
+        ]),
+    })
 
 
 def _usage_summary(payload: dict):
@@ -230,6 +320,15 @@ def _dispatch(action: str, payload: dict):
 
 @bp.post("/invoke")
 def invoke():
+    # Phase 2: the gateway's signed learner context, for this request only.
+    token = learner_context.set_from_envelope(request.get_json(silent=True))
+    try:
+        return _invoke()
+    finally:
+        learner_context.reset(token)
+
+
+def _invoke():
     request_body = request.get_json(silent=True) or {}
     if not isinstance(request_body, dict):
         return _error("Request body must be an object", "invalid_request", 400)
@@ -246,6 +345,8 @@ def invoke():
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:
         return _personal_data(action, payload)
+    if action == "get_student_summary":
+        return _student_summary(payload)
 
     logger.info("mock_interview invoke action=%s", action)
     return _dispatch(action, payload)

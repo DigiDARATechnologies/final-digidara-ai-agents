@@ -27,7 +27,7 @@ export interface SidebarProps {
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
   onOpenHelpPage: (page: "help-center" | "release-notes" | "contact" | "bug-report") => void;
-  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin") => void;
+  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
   onUserMenuAction: (action: "profile" | "settings" | "upgrade" | "logout") => void;
   onToggleChatMenu: (chatId: string, e: React.MouseEvent) => void;
@@ -194,6 +194,25 @@ export default function Sidebar({
             </svg>
           </span>
           <span className="label">My Agents</span>
+        </button>
+        <button className="nav-item" onClick={() => onNavAction("readiness")}>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M12 12l4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              <path d="M7.5 15.5a6 6 0 019 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="label">Job Readiness</span>
+        </button>
+        <button className="nav-item" onClick={() => onNavAction("organization")}>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 20V8l8-4 8 4v12" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+              <path d="M9 20v-5h6v5M8 10.5h.01M12 10.5h.01M16 10.5h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="label">Organization</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("settings")}>
           <span className="nav-icon">

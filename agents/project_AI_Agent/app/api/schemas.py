@@ -104,6 +104,10 @@ class VivaAnswerRequest(BaseModel):
     answer: str
 
 
+class VivaTimeUpRequest(BaseModel):
+    submission_id: str
+
+
 class SubmissionResultResponse(BaseModel):
     thread_id: str
     status: str
@@ -136,6 +140,11 @@ class SubmissionResultResponse(BaseModel):
     viva_attempt: int | None = None
     viva_attempts_left: int | None = None
     viva_attempts_total: int | None = None
+    # Seconds left to finish the current attempt, and the whole limit.
+    viva_seconds_left: int | None = None
+    viva_time_limit_seconds: int | None = None
+    # The attempt just closed because its time ran out.
+    viva_timed_out: bool | None = None
 
 
 class StatusResponse(BaseModel):

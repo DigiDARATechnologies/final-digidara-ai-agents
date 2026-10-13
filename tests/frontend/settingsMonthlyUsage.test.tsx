@@ -1,3 +1,9 @@
+jest.mock('../../src/lib/voiceEngine', () => ({
+  isSpeaking: jest.fn(() => false),
+  previewVoice: jest.fn(() => Promise.resolve(false)),
+  speakNatural: jest.fn((_text: string, handlers?: { onEnd?: () => void }) => { handlers?.onEnd?.(); return Promise.resolve(false); }),
+  stopSpeaking: jest.fn(),
+}));
 import { render, screen } from '@testing-library/react';
 import SettingsModal from '../../src/components/SettingsModal';
 import * as billing from '../../src/lib/billingApi';

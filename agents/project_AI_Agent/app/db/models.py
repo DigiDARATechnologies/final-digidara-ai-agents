@@ -169,6 +169,9 @@ class Submission(Base):
     # whether it passed. viva_questions_json/viva_answers_json above always hold
     # the attempt currently in progress (or the last finished one).
     viva_attempts_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # When the current viva attempt's questions were issued: the attempt must
+    # be finished within app.viva.VIVA_TIME_LIMIT_SECONDS of this.
+    viva_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # The certificate: the name printed on it, whether the student confirmed it
     # (OK), its id and issue time. Absent until the student opens the preview.
     certificate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

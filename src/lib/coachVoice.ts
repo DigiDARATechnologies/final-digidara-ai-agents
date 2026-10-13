@@ -1,48 +1,19 @@
+import { pickIndianVoice } from "./indianVoice";
+import { speakNatural, stopSpeaking } from "./voiceEngine";
+
 /**
- * Hybrid Voice Engine: Neural TTS (Phase 2) with Seamless Browser Fallback (Phase 1).
+ * Hybrid Voice Engine: natural voice (lib/voiceEngine.ts) with browser fallback.
  *
  * Architecture:
- * 1. Checks backend `/api/speaking/synthesize` for studio-quality Neural Audio (OpenAI tts-1 'nova').
- * 2. If backend Neural TTS is unavailable, rate-limited, or offline, immediately falls back
- *    to the calibrated local browser voice (Microsoft Jenny / Aria / Google US English).
+ * playCoachSpeech goes through the orchestrator's /voice/speak (see voiceEngine.ts);
+ * the browser-voice helpers below remain for callers that build utterances.
  */
-
-const FEMALE_VOICE_PATTERNS = [
-  /Jenny.*Natural/i,
-  /Aria.*Natural/i,
-  /Microsoft Jenny/i,
-  /Microsoft Aria/i,
-  /Google US English/i,
-  /Google UK English Female/i,
-  /Samantha/i,
-  /Victoria/i,
-  /Karen/i,
-  /Zira/i,
-  /Natural.*English/i,
-  /en-US.*female/i,
-];
 
 let activeAudioElement: HTMLAudioElement | null = null;
 
+/** The device's Indian voice, used only when the platform voice is unreachable. */
 export function selectBestCoachVoice(): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices() || [];
-  if (!voices.length) return null;
-
-  for (const pattern of FEMALE_VOICE_PATTERNS) {
-    const match = voices.find((v) => pattern.test(v.name) && v.lang?.startsWith("en"));
-    if (match) return match;
-  }
-
-  const usFemale = voices.find(
-    (v) => (v.lang === "en-US" || v.lang === "en_US") && /female|woman|natural/i.test(v.name)
-  );
-  if (usFemale) return usFemale;
-
-  const usVoice = voices.find((v) => v.lang === "en-US" || v.lang === "en_US");
-  if (usVoice) return usVoice;
-
-  return voices.find((v) => v.lang?.toLowerCase().startsWith("en")) || voices[0] || null;
+  return pickIndianVoice("en");
 }
 
 export function formatCoachSpeechText(rawText: string): string {
@@ -82,6 +53,7 @@ export interface CoachSpeechOptions {
 
 /** Stop any currently playing coach audio (both neural HTML5 audio and browser speech). */
 export function stopCoachAudio(): void {
+  stopSpeaking();
   if (activeAudioElement) {
     try {
       activeAudioElement.pause();
@@ -108,12 +80,12 @@ export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions
   utterance.rate = options.rate ?? 0.90;
   utterance.pitch = options.pitch ?? 1.02;
   utterance.volume = options.volume ?? 1.0;
-  utterance.lang = "en-US";
+  utterance.lang = "en-IN";
 
   const voice = selectBestCoachVoice();
   if (voice) {
     utterance.voice = voice;
-    utterance.lang = voice.lang || "en-US";
+    utterance.lang = voice.lang || "en-IN";
   }
 
   utterance.onstart = () => options.onStart?.();
@@ -125,59 +97,14 @@ export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions
 }
 
 /**
- * Play speech using Phase 2 Neural Backend TTS, seamlessly falling back to Phase 1 browser voice.
+ * Speak as the coach, through the natural voice engine (warm persona, English
+ * or Tamil, sentence-by-sentence so it starts fast), which falls back to the
+ * browser voice on its own. Only onStart and onEnd fire: an error ends in
+ * the fallback, so callers that resume listening from both never resume twice.
  */
 export async function playCoachSpeech(text: string, options: CoachSpeechOptions = {}): Promise<void> {
   stopCoachAudio();
-
-  const preferNeural = options.preferNeural ?? true;
-  const processedText = formatCoachSpeechText(text);
-
-  if (!preferNeural || !options.authToken) {
-    playBrowserCoachSpeech(processedText, options);
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/speaking/synthesize", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${options.authToken}`,
-      },
-      body: JSON.stringify({
-        text: processedText,
-        voice: options.voiceName || "nova",
-        speed: options.rate ?? 0.92,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Neural TTS returned ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
-    activeAudioElement = audio;
-
-    audio.onplay = () => options.onStart?.();
-    audio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      activeAudioElement = null;
-      options.onEnd?.();
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(audioUrl);
-      activeAudioElement = null;
-      playBrowserCoachSpeech(processedText, options);
-    };
-
-    await audio.play();
-  } catch (err) {
-    // Zero-downtime graceful fallback to local browser voice
-    playBrowserCoachSpeech(processedText, options);
-  }
+  await speakNatural(formatCoachSpeechText(text), { onStart: options.onStart, onEnd: options.onEnd ?? options.onError });
 }
 
 /** Compatibility helper for existing SpeechSynthesisUtterance references. */
@@ -187,12 +114,12 @@ export function createCoachUtterance(text: string, options: CoachSpeechOptions =
   utterance.rate = options.rate ?? 0.90;
   utterance.pitch = options.pitch ?? 1.02;
   utterance.volume = options.volume ?? 1.0;
-  utterance.lang = "en-US";
+  utterance.lang = "en-IN";
 
   const voice = selectBestCoachVoice();
   if (voice) {
     utterance.voice = voice;
-    utterance.lang = voice.lang || "en-US";
+    utterance.lang = voice.lang || "en-IN";
   }
 
   if (options.onStart) utterance.onstart = options.onStart;

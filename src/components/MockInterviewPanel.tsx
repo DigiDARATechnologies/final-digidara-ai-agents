@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { isMobileVoiceDevice, microphoneErrorMessage } from "../lib/voiceCapture";
+import { microphoneErrorMessage } from "../lib/voiceCapture";
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from "../lib/mockInterviewApi";
 import { AFTER_PROMPT_END_MS, AWAY_PROMPT, secondsUntilAction, silenceAction } from "../lib/answerSilence";
-import { speakBrowserText } from "../lib/browserSpeech";
+import { speakNatural as speakBrowserText } from "../lib/voiceEngine";
 import type { MockInterviewAnswerTiming, MockInterviewFlowState } from "../lib/mockInterviewFlow";
 
 const TIME_LIMIT_SECONDS = { beginner: 60, intermediate: 90, advanced: 120 } as const;
@@ -117,16 +117,14 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const recordingSupported = typeof window !== "undefined"
     && "MediaRecorder" in window
     && Boolean(navigator.mediaDevices?.getUserMedia);
-  const mobileVoice = isMobileVoiceDevice();
   // Why the recorder could not start, shown instead of a bare "unavailable".
   const micErrorRef = useRef("");
 
-  /** Starts the browser's live transcript next to the recording -- except on
-   * a phone that is already recording: there the two compete for the
-   * microphone and the recording (transcribed by OpenAI at submit) is the
-   * reliable one. */
+  /** The browser's own recognizer is only a fallback for a browser that
+   * cannot record: whenever the recording runs, on every device, the live
+   * text and the answer of record both come from OpenAI's GPT transcription. */
   function startLiveTranscript(recordingStarted: boolean, onText: (text: string) => void = acceptVoiceTranscript): boolean {
-    if (!speech.supported || (mobileVoice && recordingStarted)) return false;
+    if (!speech.supported || recordingStarted) return false;
     return speech.start(onText);
   }
 
@@ -134,8 +132,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     micActiveRef.current = recordingStarted || startedListening;
     if (recordingStarted) {
       if (startedListening) return retry ? "No answer detected. Listening again - please answer the question." : "Listening - microphone is on";
-      if (mobileVoice) return `${retry ? "No answer detected. " : ""}Recording your answer - press Submit when you finish and it will be turned into text.`;
-      return retry ? "No answer detected. Recording again for OpenAI transcription." : "Recording - OpenAI will transcribe when you submit";
+      return `${retry ? "No answer detected. " : ""}Listening - your words appear below as you speak. Stop talking for 5 seconds to submit.`;
     }
     if (startedListening) return retry ? "No answer detected. Listening again - please answer the question." : "Listening with browser transcription";
     return micErrorRef.current
@@ -479,8 +476,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
 
   submitAnswerRef.current = submitAnswer;
 
-  /** Phone only: re-transcribe the answer so far so it appears in the box
-   * while the candidate is still speaking. */
+  /** Re-transcribe the answer so far so it appears in the box while the
+   * candidate is still speaking. */
   function refreshLivePreview() {
     const recorder = mediaRecorderRef.current;
     const chunks = audioChunksRef.current;
@@ -568,9 +565,9 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       if (action === "submit") void submitAnswerRef.current(typedRef.current || spokenRef.current);
       else if (action === "prompt") askAreYouThere();
       else if (action === "end") endForInactivity();
-      // Live text on a phone. Wait for the meter to hear speech only when the
-      // meter is known to work; otherwise every new stretch of audio is sent.
-      else if (mobileVoice && !speech.listening
+      // Live text (GPT transcription). Wait for the meter to hear speech only
+      // when the meter is known to work; otherwise every new stretch of audio is sent.
+      else if (!speech.listening
         && (lastVoiceAtRef.current !== null || !vadWorkingRef.current)
         && snapshot.now - lastPreviewAtRef.current >= PREVIEW_INTERVAL_MS) refreshLivePreview();
     };

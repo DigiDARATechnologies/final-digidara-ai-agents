@@ -11,7 +11,8 @@ flow changes.
 
 PLATFORM_GUIDE = """
 DIGIDARA AI AGENTS (digidaraaiagents.com)
-A learning and career platform with specialised AI agents. Open an agent from the Store, or ask the DigiDARA Assistant to connect you. Every chat is saved in the sidebar. The microphone button lets you speak instead of typing.
+A learning and career platform with specialised AI agents that make learners job-ready: practise, get feedback, build proof of skills and find jobs, all in one place. Boss is the platform's AI assistant (the general chat): it explains the agents and connects you to one. Open an agent from the Store, or ask Boss to connect you.
+WHO IT IS FOR: students, freshers, graduates and job seekers getting ready for jobs, and colleges and training institutes preparing their learners. Every agent follows the learner's target role, skills and Job Readiness level. Every chat is saved in the sidebar. The microphone button lets you speak instead of typing.
 
 POINTS AND PLANS
 - Agents use points. Every new account starts with 25 free points. Points never expire.
@@ -34,7 +35,7 @@ Steps:
   8. Answer the viva questions in the chat. You get more than one viva attempt.
   9. When both your project score and the viva pass, check how your name is spelled and get your certificate and the final report (PDF). If you do not pass, improve the project and resubmit.
 
-2. LeetCode Agent (CodeForge coding practice)
+2. Coding Practice (CodeForge)
 Purpose: practise coding problems course by course and topic by topic.
 Steps:
   1. Choose a course, then a topic, then a problem.
@@ -86,7 +87,7 @@ Steps:
   3. Score 70% or more to pass and earn the certificate.
   4. Download the PDF certificate and the exam report, or email the certificate. Use "My Certificates" to see all of them.
 
-8. Job Fetching Agent
+8. Job Agent
 Purpose: find jobs that match your skills, with a fit score for each.
 Steps:
   1. Set up your profile: skills, experience, preferred locations and work mode (Remote, Hybrid, Office or Any). Uploading a resume is optional.

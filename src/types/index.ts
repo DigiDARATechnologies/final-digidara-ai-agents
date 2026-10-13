@@ -45,12 +45,17 @@ export interface ChatOption {
   href?: string;
   /** Suggested filename for `href` (same-origin downloads only). */
   download?: string;
+  /** A suggestion, not the only choice: shown with a star, and anything the
+   * learner types instead goes straight to the agent's flow as its own answer. */
+  suggested?: boolean;
 }
 
 export interface ChatMessage {
   role: "user" | "agent";
   text: string;
   time: string;
+  /** The reply is still arriving (Boss writes it piece by piece). */
+  streaming?: boolean;
   options?: ChatOption[];
   /** Only set on user messages in a flow-driven chat (Capstone/CodeForge/
    * Communication): a reference to that agent's flow state exactly as it
@@ -80,4 +85,4 @@ export interface Chat {
   autoSubject?: string;
 }
 
-export type View = "store" | "chat" | "admin" | "profile" | "help-center" | "release-notes" | "contact" | "bug-report";
+export type View = "store" | "chat" | "admin" | "profile" | "readiness" | "organization" | "help-center" | "release-notes" | "contact" | "bug-report";

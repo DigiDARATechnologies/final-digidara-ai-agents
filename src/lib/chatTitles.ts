@@ -104,7 +104,7 @@ export function autoChatTitle(agent: Agent | undefined, chatId: string, states: 
     case "codeforge": {
       const state = states.codeforge[chatId];
       if (!state?.courseName) return undefined;
-      return { subject: short(join("LeetCode", state.courseName, state.topicName)) };
+      return { subject: short(join("Coding Practice", state.courseName, state.topicName)) };
     }
     default:
       return undefined;

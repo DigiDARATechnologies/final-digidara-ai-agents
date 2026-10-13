@@ -70,6 +70,8 @@ class FakeRepository:
         return {"id": submission_id, "status": saved[4]["status"], "source_code": saved[2], "result_json": saved[4]["tests"]}
     def save_tutor_interaction(self, *args): self.tutor_saved.append(args)
     def continue_destination(self, student_id): del student_id; return {"label": "Coding Practice", "href": "/coding", "kind": "dashboard"}
+    def assessment_item_for(self, student_id, problem_id): del student_id, problem_id; return None
+    def passed_assessments(self, email): del email; return []
     def get_profile(self, student_id): del student_id; return STUDENT
     def update_profile(self, student_id, display_name, bio, timezone): del student_id; return {**STUDENT, "display_name": display_name, "bio": bio, "timezone": timezone}
 

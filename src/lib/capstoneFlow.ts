@@ -9,6 +9,7 @@ import {
   getThreadStatus,
   startVivaAttempt,
   submitVivaAnswer,
+  vivaTimeUp,
   topicIntakeTurn,
   uploadSubmission,
   type CodeQualityScore,
@@ -20,6 +21,7 @@ import {
   type SyntaxErrorDetail,
   type TopicOption,
 } from "./capstoneApi";
+import { displayRole, easyMediumHard, goalLine, learnerGoal } from "./learnerContext";
 
 /** A rough, deliberately over-inclusive heuristic: is this message the
  * student asking something or disputing a finding, rather than a plain
@@ -76,6 +78,14 @@ export const CERTIFICATE_ACTION = "open_certificate";
 
 /** The chat option that begins the next viva attempt after a failed one. */
 export const START_VIVA_ACTION = "start_viva_attempt";
+/** Sent by the viva panel when the attempt's 20 minutes run out. */
+export const VIVA_TIME_UP_ACTION = "viva_time_up";
+
+/** When the current viva attempt must be finished (epoch ms), from the
+ * server's seconds-left so a wrong device clock does not matter. */
+function vivaDeadline(secondsLeft: number | null | undefined): number | null {
+  return secondsLeft == null ? null : Date.now() + secondsLeft * 1000;
+}
 
 function finalReportOptions(): ChatOption[] {
   return [{
@@ -190,6 +200,9 @@ export interface CapstoneFlowState {
   /** A viva attempt just failed and another is available: waiting for the student
    * to start it (there is no pending question until they do). */
   vivaRetryPending?: boolean;
+  /** When the current viva attempt's 20 minutes end (epoch ms), or null when
+   * no attempt is under way (or it began before the limit existed). */
+  vivaDeadlineAt?: number | null;
 }
 
 export interface CapstoneFlowResult {
@@ -205,7 +218,8 @@ export function createInitialCapstoneState(user: User): CapstoneFlowState {
     name: user.name,
     email: user.email,
     phone: user.mobile,
-    difficulty: "easy",
+    // The learner's Capstone level (Beginner -> easy ... Professional -> hard).
+    difficulty: easyMediumHard("capstone_project_agent"),
     pendingQuestion: "focus",
   };
 }
@@ -217,7 +231,20 @@ function projectTypeQuestion(focus: string): string {
 }
 
 export function initialCapstoneMessage(user: User): CapstoneFlowMessage {
-  return { text: `Hi ${user.name.split(" ")[0]}! ${FOCUS_QUESTION}` };
+  const firstName = user.name.split(" ")[0];
+  const goal = learnerGoal();
+  if (!goal) return { text: `Hi ${firstName}! ${FOCUS_QUESTION}` };
+  // Onboarding already told us the goal: offer it instead of asking again.
+  const role = displayRole(goal.targetRole);
+  const skills = goal.skills.slice(0, 3);
+  const focus = skills.length ? `${role} using ${skills.join(", ")}` : role;
+  return {
+    text: `Hi ${firstName}! Based on your profile (${goalLine(goal)}), here are my suggestions ★ for your capstone project. Tap one, or type any other language, role or topic (e.g. "data science") and I'll build the project around that instead.`,
+    options: [
+      { label: `${role} project`, value: focus, description: skills.length ? `Uses ${skills.join(", ")}` : "Matches your target role", suggested: true },
+      ...(skills[0] ? [{ label: `${skills[0]} project`, value: skills[0], description: "Focus on your top skill", suggested: true }] : []),
+    ],
+  };
 }
 
 function formatRequirements(req: Record<string, any>): string {
@@ -653,6 +680,7 @@ export async function handleCapstoneText(
                   vivaProgress: result.viva_progress,
                   vivaAttempt: result.viva_attempt ?? nextAttempt,
                   vivaAttemptsTotal: result.viva_attempts_total ?? total,
+                  vivaDeadlineAt: vivaDeadline(result.viva_seconds_left),
                 },
                 messages: [{
                   text: `Viva attempt ${result.viva_attempt ?? nextAttempt} of ${result.viva_attempts_total ?? total} — a new set of questions.\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
@@ -683,13 +711,14 @@ export async function handleCapstoneText(
           ],
         };
       }
+      const timeUp = trimmed === VIVA_TIME_UP_ACTION;
       if (!trimmed) {
         return { state, messages: [{ text: "Please answer the question above before continuing." }] };
       }
       if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
         return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
       }
-      if (state.threadId && looksLikeQuestionOrDispute(trimmed)) {
+      if (!timeUp && state.threadId && looksLikeQuestionOrDispute(trimmed)) {
         try {
           const qa = await askProjectQuestion(state.threadId, trimmed);
           return {
@@ -705,7 +734,9 @@ export async function handleCapstoneText(
         }
       }
       try {
-        const result = await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
+        const result = timeUp
+          ? await vivaTimeUp(state.vivaSubmissionId)
+          : await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
         if (result.status === "pending_viva" && result.viva_question) {
           return {
             state: {
@@ -713,6 +744,7 @@ export async function handleCapstoneText(
               vivaQuestionId: result.viva_question.id,
               vivaQuestionText: result.viva_question.question,
               vivaProgress: result.viva_progress,
+              vivaDeadlineAt: result.viva_seconds_left != null ? vivaDeadline(result.viva_seconds_left) : state.vivaDeadlineAt ?? null,
             },
             messages: [{ text: `Question ${result.viva_progress}:\n\n${result.viva_question.question}` }],
           };
@@ -735,9 +767,10 @@ export async function handleCapstoneText(
               vivaAttemptsTotal: total,
               vivaRating: rating,
               vivaPassed: false,
+              vivaDeadlineAt: null,
             },
             messages: [{
-              text: `Viva attempt ${attempt} of ${total} finished. Result: ${rating ?? "-"}.\n\nYou need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass, so this attempt did not pass. You have ${plural(left, "attempt")} left, and every attempt asks new questions. Review your project, then start the next attempt when you're ready.`,
+              text: `${result.viva_timed_out ? `Time's up: the 20 minutes for viva attempt ${attempt} of ${total} have ended, and the questions you did not answer count as wrong.` : `Viva attempt ${attempt} of ${total} finished.`} Result: ${rating ?? "-"}.\n\nYou need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass, so this attempt did not pass. You have ${plural(left, "attempt")} left, and every attempt asks new questions. Review your project, then start the next attempt when you're ready.`,
               options: vivaRetryOptions(attempt + 1, total),
             }],
           };
@@ -760,6 +793,7 @@ export async function handleCapstoneText(
               vivaProgress: null,
               vivaRetryPending: false,
               vivaAttempt: null,
+              vivaDeadlineAt: null,
               finalScore: result.final_score,
               passed: false,
               feedback: result.feedback,
@@ -972,9 +1006,10 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
           vivaRetryPending: false,
           vivaAttempt: result.viva_attempt ?? 1,
           vivaAttemptsTotal: result.viva_attempts_total ?? 3,
+          vivaDeadlineAt: vivaDeadline(result.viva_seconds_left),
         },
         messages: [{
-          text: `Your project passed content grading. Before your score is revealed, there is a short viva: attempt ${result.viva_attempt ?? 1} of ${result.viva_attempts_total ?? 3}. You need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass; if you don't, you can try again with new questions (up to ${result.viva_attempts_total ?? 3} attempts).\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
+          text: `Your project passed content grading. Before your score is revealed, there is a short viva: attempt ${result.viva_attempt ?? 1} of ${result.viva_attempts_total ?? 3}. You need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass; if you don't, you can try again with new questions (up to ${result.viva_attempts_total ?? 3} attempts).${result.viva_seconds_left != null ? ` Each attempt must be finished within ${Math.round((result.viva_time_limit_seconds ?? 1200) / 60)} minutes.` : ""}\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
         }],
       };
     }

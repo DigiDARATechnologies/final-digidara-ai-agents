@@ -1,7 +1,8 @@
 """Neural Text-to-Speech (TTS) Service.
 
-Provides studio-quality neural voice synthesis using OpenAI's TTS engine (tts-1),
-delivering human-like intonation, natural pauses, and conversational warmth.
+Speaks with the one DigiDARA platform voice (OpenAI gpt-4o-mini-tts, voice
+"coral", told to be Nila: a friendly Indian teacher, slow and clear enough for
+any student), the same voice the orchestrator's /voice/speak uses.
 Caches generated audio in-memory/TTL to eliminate redundant costs and latency.
 """
 
@@ -17,11 +18,19 @@ from .cache_service import get_cached, set_cached
 
 logger = logging.getLogger(__name__)
 
-# Preferred natural female voices for English coaching
-# 'nova': energetic, bright, highly articulate tutor
-# 'shimmer': gentle, warm, patient English coach
-DEFAULT_VOICE = "nova"
-DEFAULT_SPEED = 0.92  # Natural ESL pacing
+import os
+
+TTS_MODEL = os.getenv("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
+# One voice everywhere: a requested voice is ignored.
+DEFAULT_VOICE = os.getenv("OPENAI_TTS_VOICE", "nova")
+DEFAULT_SPEED = 0.95
+VOICE_STYLE = (
+    "Voice: Nila, a friendly young Indian woman from Chennai who teaches students. Always the same person, "
+    "the same sweet, bright voice and the same accent. Speak loudly and clearly with a bright, sweet, projected "
+    "voice that is easy to hear, never soft or low. Speak slowly, like a patient teacher talking "
+    "to a ten-year-old student: simple, calm, every word easy to catch, a short pause after each sentence. "
+    "Speak simple, clear Indian English with a natural Indian accent, not an American or British accent."
+)
 
 
 def _clean_speech_text(text: str) -> str:
@@ -51,7 +60,7 @@ def synthesize_neural_speech(
     voice: str = DEFAULT_VOICE,
     speed: float = DEFAULT_SPEED,
 ) -> Tuple[Optional[bytes], str]:
-    """Synthesize speech using OpenAI Neural TTS (tts-1).
+    """Synthesize speech in the platform voice (OpenAI gpt-4o-mini-tts).
 
     Returns:
         (audio_bytes, mime_type) or (None, "") on failure.
@@ -61,7 +70,8 @@ def synthesize_neural_speech(
         return None, ""
 
     # Check cache first
-    cache_key = hashlib.sha256(f"{voice}:{speed}:{cleaned}".encode("utf-8")).hexdigest()
+    voice = DEFAULT_VOICE
+    cache_key = hashlib.sha256(f"{TTS_MODEL}:{voice}:{speed}:{cleaned}".encode("utf-8")).hexdigest()
     cached_audio = get_cached("neural_tts", cache_key)
     if cached_audio:
         return cached_audio, "audio/mpeg"
@@ -82,9 +92,10 @@ def synthesize_neural_speech(
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "tts-1",
+        "model": TTS_MODEL,
         "input": cleaned[:4096],
-        "voice": voice if voice in {"nova", "shimmer", "alloy", "echo", "fable", "onyx"} else DEFAULT_VOICE,
+        "voice": voice,
+        "instructions": VOICE_STYLE,
         "response_format": "mp3",
         "speed": max(0.25, min(4.0, float(speed))),
     }

@@ -29,7 +29,7 @@ from langgraph.graph import END, StateGraph
 
 from app import config
 from app.auth.agent_signing import sign_headers
-from app.llm.client import call_text, call_with_tools
+from app.llm.client import call_text, call_with_tools, stream_with_tools
 from app.orchestrator import guard, prompts
 from app.orchestrator.tools import build_tools, endpoint_for
 from app.registry import service as registry_service
@@ -48,6 +48,8 @@ class OrchestratorState(TypedDict, total=False):
     agent_error: str | None
     agent_used: str | None
     reply: str
+    # Phase 2: the learner's goal, skills and shared memory, for a personal answer.
+    learner_context: dict[str, Any] | None
 
 
 # --- Node 1: load whatever agents are live right now (deterministic) -------
@@ -66,8 +68,11 @@ def route_node(state: OrchestratorState) -> dict:
         logger.warning("general chat: blocked a prompt-injection attempt (%d chars)", len(state["message"]))
         return {"tool_name": None, "reply": guard.OFF_LIMITS_REPLY}
     tools = state.get("tools") or []
+    system = prompts.router_system_prompt(has_tools=bool(tools))
+    if state.get("learner_context"):
+        system = f"{system}\n\n{prompts.learner_context_block(state['learner_context'])}"
     result = call_with_tools(
-        system=prompts.router_system_prompt(has_tools=bool(tools)),
+        system=system,
         user=state["message"],
         tools=tools,
         history=guard.safe_history(state.get("history")),
@@ -129,16 +134,66 @@ def summarize_node(state: OrchestratorState) -> dict:
     return {"reply": reply}
 
 
-def route_message(message: str, history: list[dict[str, str]] | None = None) -> dict:
+def route_message(message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None) -> dict:
     """load_registry + route only — no agent invocation, no summarize. Used
     by POST /chat/route for handoff-style UIs that run the matched agent's
     own dedicated multi-turn flow client-side instead of a single stateless
     tool call. Reuses load_registry_node/route_node unmodified; a second
     compiled StateGraph would be pure overhead for two sequential calls."""
-    state: OrchestratorState = {"message": message, "history": history or []}
+    state: OrchestratorState = {"message": message, "history": history or [], "learner_context": learner_context}
     state.update(load_registry_node(state))
     state.update(route_node(state))
     return {"agent_name": state.get("tool_name"), "reply": state.get("reply")}
+
+
+def route_message_stream(
+    message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None, voice: bool = False,
+):
+    """route_message, streamed for the general chat: yields {"delta": text}
+    while the answer is written, then one {"done": True, "agent_name", "reply"}.
+    The instructions-leak guard still applies: text is held back by the
+    canary's length, and a leak replaces the whole reply ({"replace": ...}).
+    `voice`: the learner is talking to Boss, so the answer is kept to a few
+    short spoken sentences (it is read aloud as it arrives)."""
+    if guard.looks_like_injection(message):
+        logger.warning("general chat: blocked a prompt-injection attempt (%d chars)", len(message))
+        yield {"done": True, "agent_name": None, "reply": guard.OFF_LIMITS_REPLY}
+        return
+    state: OrchestratorState = {"message": message, "history": history or [], "learner_context": learner_context}
+    state.update(load_registry_node(state))
+    tools = state.get("tools") or []
+    system = prompts.router_system_prompt(has_tools=bool(tools))
+    if learner_context:
+        system = f"{system}\n\n{prompts.learner_context_block(learner_context)}"
+    if voice:
+        system = f"{system}\n\n{prompts.VOICE_REPLY_RULES}"
+    hold = len(guard.CANARY)
+    text = ""
+    sent = 0
+    chosen: dict | None = None
+    for kind, value in stream_with_tools(system, message, tools, guard.safe_history(history), max_tokens=260 if voice else 700):
+        if kind == "tool":
+            chosen = value
+            continue
+        text += value
+        if guard.leaks_instructions(text):
+            logger.warning("general chat: replaced a streamed reply that leaked the instructions")
+            yield {"replace": guard.OFF_LIMITS_REPLY}
+            yield {"done": True, "agent_name": None, "reply": guard.OFF_LIMITS_REPLY}
+            return
+        if len(text) - hold > sent:
+            yield {"delta": text[sent:len(text) - hold]}
+            sent = len(text) - hold
+    if chosen and not text.strip():
+        if chosen["tool_name"] in {tool["function"]["name"] for tool in tools}:
+            yield {"done": True, "agent_name": chosen["tool_name"], "reply": None}
+            return
+        logger.warning("general chat: model chose an unknown agent %r", chosen["tool_name"])
+        yield {"done": True, "agent_name": None, "reply": guard.OFF_LIMITS_REPLY}
+        return
+    if sent < len(text):
+        yield {"delta": text[sent:]}
+    yield {"done": True, "agent_name": None, "reply": text.strip()}
 
 
 def build_orchestrator_graph():

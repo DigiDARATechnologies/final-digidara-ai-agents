@@ -41,15 +41,19 @@ from app.api.schemas import (
     TopicIntakeResponse,
     UsageSummaryResponse,
     VivaAnswerRequest,
+    VivaTimeUpRequest,
     VivaQuestionOut,
 )
 from app.viva import (
     VIVA_ATTEMPTS,
+    VIVA_GRACE_SECONDS,
     VIVA_PASS_THRESHOLD,
+    VIVA_TIME_LIMIT_SECONDS,
     generate_viva_questions,
     verify_viva_answer,
     viva_passed as viva_is_passed,
     viva_rating,
+    viva_seconds_left,
 )
 from app.db.database import get_session
 from app.db.models import (
@@ -274,6 +278,10 @@ def topic_intake(req: TopicIntakeRequest) -> TopicIntakeResponse:
 
 @router.post("/eligibility/free", response_model=EligibilityCheckResponse)
 def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
+    return free_topics_for_learner(req, None)
+
+
+def free_topics_for_learner(req: FreeTopicRequest, learner: dict | None) -> EligibilityCheckResponse:
     """Generate project topics for any language, role, or topic the student
     names -- the only entry point this app has; there is no certificate/
     enrollment gate. `req.course_name` doubles as that free-text topic here.
@@ -342,6 +350,7 @@ def eligibility_check_free(req: FreeTopicRequest) -> EligibilityCheckResponse:
             # kept unique across every student asking about the same focus,
             # whatever project type they picked.
             "topic_focus_key": (req.topic_key or req.course_name).split("|")[0],
+            "learner_brief": prompts.learner_brief(learner),
         }
     finally:
         session.close()
@@ -577,6 +586,7 @@ async def submission_upload(
             raise HTTPException(404, "Submission not found.")
         submission.viva_questions_json = questions
         submission.viva_answers_json = []
+        submission.viva_started_at = datetime.now(timezone.utc)
         submission.status = SubmissionStatus.pending_viva
         submission.score_json = {
             "final_score": result.get("final_score"),
@@ -601,6 +611,8 @@ async def submission_upload(
         viva_attempt=1,
         viva_attempts_left=VIVA_ATTEMPTS - 1,
         viva_attempts_total=VIVA_ATTEMPTS,
+        viva_seconds_left=VIVA_TIME_LIMIT_SECONDS,
+        viva_time_limit_seconds=VIVA_TIME_LIMIT_SECONDS,
     )
 
 
@@ -634,6 +646,12 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
         if req.question_id != expected_index:
             raise HTTPException(409, f"Expected an answer for question {expected_index}, got {req.question_id}.")
 
+        left = viva_seconds_left(submission.viva_started_at)
+        if _viva_overdue(submission.viva_started_at, VIVA_GRACE_SECONDS):
+            # Too late even for the grace period: the attempt ends without
+            # grading this answer.
+            return _close_viva_attempt(session, submission, questions, answers, thread_id, timed_out=True)
+
         question = next((q for q in questions if q["id"] == req.question_id), None)
         if question is None:
             raise HTTPException(404, "Unknown viva question.")
@@ -659,85 +677,137 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
                 viva_attempt=len(submission.viva_attempts_json or []) + 1,
                 viva_attempts_left=VIVA_ATTEMPTS - len(submission.viva_attempts_json or []) - 1,
                 viva_attempts_total=VIVA_ATTEMPTS,
+                viva_seconds_left=left,
+                viva_time_limit_seconds=VIVA_TIME_LIMIT_SECONDS if left is not None else None,
             )
 
         # Last question just answered -- close this attempt.
-        correct_count = sum(1 for a in answers if a["correct"])
-        total = len(questions)
-        passed_now = viva_is_passed(correct_count, total)
-        rating = viva_rating(correct_count, total)
-        history = list(submission.viva_attempts_json or [])
-        attempt_number = len(history) + 1
-        history.append({
-            "attempt": attempt_number, "questions": questions, "answers": answers,
-            "correct": correct_count, "total": total, "rating": rating, "passed": passed_now,
-        })
-        submission.viva_attempts_json = history
-        submission.viva_score = float(correct_count)
-        attempts_left = VIVA_ATTEMPTS - attempt_number
+        return _close_viva_attempt(session, submission, questions, answers, thread_id, timed_out=False)
+    finally:
+        session.close()
 
-        if not passed_now and attempts_left > 0:
-            # Not over yet: the student may take another attempt, with fresh
-            # questions. The submission stays pending_viva; the finished attempt's
-            # questions/answers stay in place until start_viva_attempt replaces them.
-            session.commit()
-            return SubmissionResultResponse(
-                thread_id=thread_id,
-                status="viva_retry",
-                submission_id=req.submission_id,
-                viva_passed=False,
-                viva_rating=rating,
-                viva_attempt=attempt_number,
-                viva_attempts_left=attempts_left,
-                viva_attempts_total=VIVA_ATTEMPTS,
-            )
 
-        submission.viva_passed = passed_now
+def _viva_overdue(started_at, extra_seconds: int = 0) -> bool:
+    """The current attempt's time (plus `extra_seconds`) has run out."""
+    if started_at is None:
+        return False
+    if started_at.tzinfo is None:  # SQLite returns naive UTC datetimes.
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) >= started_at + timedelta(seconds=VIVA_TIME_LIMIT_SECONDS + extra_seconds)
 
-        code_result = submission.score_json or {}
-        code_passed = bool(code_result.get("passed"))
-        overall_passed = code_passed and passed_now
 
-        final_status = SubmissionStatus.graded if overall_passed else SubmissionStatus.needs_revision
-        submission.status = final_status
+def _close_viva_attempt(session, submission, questions, answers, thread_id, timed_out: bool) -> SubmissionResultResponse:
+    """Ends the current attempt -- every question answered, or its time ran
+    out (`timed_out`: the unanswered questions count as wrong) -- and either
+    offers the next attempt or reveals the final result."""
+    if timed_out:
+        answered = {a["question_id"] for a in answers}
+        answers = answers + [
+            {"question_id": q["id"], "answer": "", "correct": False, "note": "Not answered in time."}
+            for q in questions if q["id"] not in answered
+        ]
+        submission.viva_answers_json = answers
+    correct_count = sum(1 for a in answers if a["correct"])
+    total = len(questions)
+    passed_now = viva_is_passed(correct_count, total)
+    rating = viva_rating(correct_count, total)
+    history = list(submission.viva_attempts_json or [])
+    attempt_number = len(history) + 1
+    history.append({
+        "attempt": attempt_number, "questions": questions, "answers": answers,
+        "correct": correct_count, "total": total, "rating": rating, "passed": passed_now,
+        "timed_out": timed_out,
+    })
+    submission.viva_attempts_json = history
+    submission.viva_score = float(correct_count)
+    attempts_left = VIVA_ATTEMPTS - attempt_number
+
+    if not passed_now and attempts_left > 0:
+        # Not over yet: the student may take another attempt, with fresh
+        # questions. The submission stays pending_viva; the finished attempt's
+        # questions/answers stay in place until start_viva_attempt replaces them.
         session.commit()
-
-        viva_note = (
-            f"\n\nViva result: {rating} "
-            f"({'passed' if passed_now else f'not passed after {VIVA_ATTEMPTS} attempts'})."
-        )
-        combined_feedback = (code_result.get("feedback") or "") + viva_note
-
-        compiled_graph.update_state(
-            _thread_config(thread_id),
-            {
-                "status": final_status.value,
-                "final_score": code_result.get("final_score"),
-                "passed": overall_passed,
-                "feedback": combined_feedback,
-                "score_reasoning": code_result.get("score_reasoning"),
-                "code_quality_score": code_result.get("code_quality_score"),
-                "review_markdown": submission.review_markdown,
-            },
-        )
-
         return SubmissionResultResponse(
             thread_id=thread_id,
-            status=final_status.value,
-            submission_id=req.submission_id,
-            final_score=code_result.get("final_score"),
-            passed=overall_passed,
-            feedback=combined_feedback,
-            score_reasoning=code_result.get("score_reasoning"),
-            code_quality_score=code_result.get("code_quality_score"),
-            review_markdown=submission.review_markdown,
-            viva_score=submission.viva_score,
-            viva_passed=passed_now,
+            status="viva_retry",
+            submission_id=submission.id,
+            viva_passed=False,
             viva_rating=rating,
             viva_attempt=attempt_number,
-            viva_attempts_left=0 if passed_now else attempts_left,
+            viva_attempts_left=attempts_left,
             viva_attempts_total=VIVA_ATTEMPTS,
+            viva_timed_out=timed_out,
         )
+
+    submission.viva_passed = passed_now
+
+    code_result = submission.score_json or {}
+    code_passed = bool(code_result.get("passed"))
+    overall_passed = code_passed and passed_now
+
+    final_status = SubmissionStatus.graded if overall_passed else SubmissionStatus.needs_revision
+    submission.status = final_status
+    session.commit()
+
+    viva_note = (
+        f"\n\nViva result: {rating} "
+        f"({'passed' if passed_now else f'not passed after {VIVA_ATTEMPTS} attempts'})."
+    )
+    combined_feedback = (code_result.get("feedback") or "") + viva_note
+
+    compiled_graph.update_state(
+        _thread_config(thread_id),
+        {
+            "status": final_status.value,
+            "final_score": code_result.get("final_score"),
+            "passed": overall_passed,
+            "feedback": combined_feedback,
+            "score_reasoning": code_result.get("score_reasoning"),
+            "code_quality_score": code_result.get("code_quality_score"),
+            "review_markdown": submission.review_markdown,
+        },
+    )
+
+    return SubmissionResultResponse(
+        thread_id=thread_id,
+        status=final_status.value,
+        submission_id=submission.id,
+        final_score=code_result.get("final_score"),
+        passed=overall_passed,
+        feedback=combined_feedback,
+        score_reasoning=code_result.get("score_reasoning"),
+        code_quality_score=code_result.get("code_quality_score"),
+        review_markdown=submission.review_markdown,
+        viva_score=submission.viva_score,
+        viva_passed=passed_now,
+        viva_rating=rating,
+        viva_attempt=attempt_number,
+        viva_attempts_left=0 if passed_now else attempts_left,
+        viva_attempts_total=VIVA_ATTEMPTS,
+        viva_timed_out=timed_out,
+    )
+
+
+def viva_time_up(req: VivaTimeUpRequest) -> SubmissionResultResponse:
+    """The student's viva timer ran out: ends the current attempt (unanswered
+    questions count as wrong) and moves on exactly as a finished attempt does.
+    Refused while the server's own clock says time remains."""
+    logger.info("=== viva time up submission=%s", req.submission_id)
+    session = get_session()
+    try:
+        submission = session.get(Submission, req.submission_id, with_for_update=True)
+        if submission is None:
+            raise HTTPException(404, "Submission not found.")
+        if submission.status != SubmissionStatus.pending_viva:
+            raise HTTPException(409, "This submission is not awaiting a viva answer.")
+        questions = submission.viva_questions_json or []
+        answers = submission.viva_answers_json or []
+        if questions and len(answers) >= len(questions):
+            raise HTTPException(409, "This viva attempt is finished. Start the next attempt to continue.")
+        # A few seconds' tolerance for a browser clock running slightly ahead.
+        if not _viva_overdue(submission.viva_started_at, -5):
+            raise HTTPException(409, "There is still time left in this viva attempt.")
+        return _close_viva_attempt(session, submission, questions, answers, submission.assignment.thread_id, timed_out=True)
     finally:
         session.close()
 
@@ -778,6 +848,7 @@ def start_viva_attempt(payload: dict) -> SubmissionResultResponse:
             raise HTTPException(502, "Could not prepare new viva questions. Please try again.")
         submission.viva_questions_json = fresh
         submission.viva_answers_json = []
+        submission.viva_started_at = datetime.now(timezone.utc)
         session.commit()
         attempt_number = len(history) + 1
         return SubmissionResultResponse(
@@ -789,6 +860,8 @@ def start_viva_attempt(payload: dict) -> SubmissionResultResponse:
             viva_attempt=attempt_number,
             viva_attempts_left=VIVA_ATTEMPTS - attempt_number,
             viva_attempts_total=VIVA_ATTEMPTS,
+            viva_seconds_left=VIVA_TIME_LIMIT_SECONDS,
+            viva_time_limit_seconds=VIVA_TIME_LIMIT_SECONDS,
         )
     finally:
         session.close()
@@ -1188,7 +1261,7 @@ async def invoke(request: Request) -> JSONResponse:
     elif action == "topic_intake_turn":
         result = await run_in_threadpool(topic_intake, TopicIntakeRequest(**payload))
     elif action == "check_eligibility_free":
-        result = await run_in_threadpool(eligibility_check_free, FreeTopicRequest(**payload))
+        result = await run_in_threadpool(free_topics_for_learner, FreeTopicRequest(**payload), body.get("learner"))
     elif action == "choose_topic":
         result = await run_in_threadpool(topic_choose, TopicChooseRequest(**payload))
     elif action == "confirm_timer":
@@ -1201,6 +1274,8 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(submit_viva_answer, VivaAnswerRequest(**payload))
     elif action == "start_viva_attempt":
         result = await run_in_threadpool(start_viva_attempt, payload)
+    elif action == "viva_time_up":
+        result = await run_in_threadpool(viva_time_up, VivaTimeUpRequest(**payload))
     elif action == "ask_project_question":
         result = await run_in_threadpool(qa_ask_action, payload)
     elif action == "download_final_report":
@@ -1213,6 +1288,13 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(certificate_download_action, payload)
     elif action in {"export_user_data", "delete_user_data"}:
         result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
+    elif action == "get_student_summary":
+        # Phase 2 readiness. The orchestrator gateway overwrites payload.email
+        # with the verified account's own address for this action.
+        if not str(request.headers.get("x-digidara-user-id") or "").strip():
+            raise HTTPException(401, "Verified DigiDARA identity is required.")
+        from app.api.readiness import student_summary
+        result = await run_in_threadpool(student_summary, str(payload.get("email") or "").strip().lower(), payload.get("periods"))
     else:
         raise HTTPException(400, f"Unknown action: {action!r}")
     return JSONResponse(content=jsonable_encoder(result))

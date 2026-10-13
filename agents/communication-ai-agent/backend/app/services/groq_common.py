@@ -11,6 +11,7 @@ import httpx
 from flask import current_app
 
 from .groq_usage import log_groq_attempt, new_trace_id, normalize_usage, persist_llm_usage, usage_from_response_json
+from . import learner_context
 
 ALLOWED_DIFFICULTIES = {"easy", "medium", "hard"}
 GROQ_RATE_LIMIT_BACKOFF_SECONDS = (1.0, 2.0, 4.0, 8.0)
@@ -804,7 +805,8 @@ def generate_practice_topics(practice_type, mode, difficulty, recent_topics=None
         "2. Descriptions must be one concise learner-facing instruction.\n"
         "3. Match the selected difficulty.\n"
         "4. Do not repeat recent topics or near-duplicate titles.\n"
-        "5. Easy uses simple daily-life subjects; medium uses education, career, workplace and experience; hard uses professional, analytical or opinion-based subjects.\n\n"
+        "5. Easy uses simple daily-life subjects; medium uses education, career, workplace and experience; hard uses professional, analytical or opinion-based subjects.\n"
+        f"{learner_context.topic_rule()}\n"
         "Return this JSON shape only:\n"
         '{"topics":[{"title":"Topic title","description":"Clear practice instruction","expected_duration_seconds":90,"minimum_word_count":null,"maximum_word_count":null}]}'
     )

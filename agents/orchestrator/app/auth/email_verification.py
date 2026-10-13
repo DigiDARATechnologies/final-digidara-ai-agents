@@ -149,6 +149,21 @@ def send_code(user_id: str, now: datetime | None = None) -> None:
     _send(email, name, code)
 
 
+def send_code_if_none_pending(user: User, now: datetime | None = None) -> None:
+    """At sign-in: email a code to an unverified account that has none it
+    can still use -- e.g. an account an organization or DigiDARA's admin
+    created, which never went through sign-up. Best effort, like sign-up."""
+    now = now or datetime.utcnow()
+    if is_verified(user):
+        return
+    if user.email_code_hash and user.email_code_expires_at and now <= user.email_code_expires_at:
+        return
+    try:
+        send_code(user.id, now)
+    except VerificationError as exc:
+        logger.warning("sign-in verification email not sent (%s)", exc.status_code)
+
+
 def verify_code(user_id: str, code: str, now: datetime | None = None) -> None:
     """Mark the email verified if `code` matches; otherwise count the attempt."""
     now = now or datetime.utcnow()

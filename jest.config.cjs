@@ -10,7 +10,11 @@ module.exports = {
   // Jest has no bundler-style asset loader, so an `import x from "./y.svg"`
   // or "./y.png" (e.g. Logo.tsx) is stubbed to a plain string instead of
   // crashing on raw binary/SVG markup being parsed as JavaScript.
-  moduleNameMapper: { '\\.(svg|png|jpe?g|gif|webp)$': '<rootDir>/tests/frontend/__mocks__/assetMock.js' },
+  // Stylesheets a component imports are not needed in tests either.
+  moduleNameMapper: {
+    '\\.(svg|png|jpe?g|gif|webp)$': '<rootDir>/tests/frontend/__mocks__/assetMock.js',
+    '\\.css$': '<rootDir>/tests/frontend/__mocks__/assetMock.js',
+  },
   clearMocks: true,
   coverageDirectory: 'artifacts/frontend-coverage',
   coverageReporters: ['text', 'lcov', 'json-summary'],

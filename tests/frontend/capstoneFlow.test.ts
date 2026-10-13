@@ -7,10 +7,11 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   getThreadStatus: jest.fn(),
   startVivaAttempt: jest.fn(),
   submitVivaAnswer: jest.fn(),
+  vivaTimeUp: jest.fn(),
   topicIntakeTurn: jest.fn(),
   uploadSubmission: jest.fn(),
 }));
-import { handleCapstoneText, mergeCapstoneFiles, submitCapstoneFiles, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
+import { handleCapstoneText, mergeCapstoneFiles, submitCapstoneFiles, VIVA_TIME_UP_ACTION, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
 import * as api from '../../src/lib/capstoneApi';
 import type { IntakeTurnResult } from '../../src/lib/capstoneApi';
 
@@ -677,5 +678,40 @@ describe('asking about an attached image', () => {
     const result = await handleCapstoneText({ ...submissionState, imageFile: image }, 'help');
     expect(result.messages[0].text).toContain('could not read that image: offline');
     expect(result.state.imageFile).toBe(image);
+  });
+});
+
+describe('the 20-minute viva timer', () => {
+  test('each answer keeps the deadline in step with the server', async () => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', viva_question: { id: 2, question: 'Next?' }, viva_progress: '3 of 10', viva_seconds_left: 600,
+    } as never);
+    const before = Date.now();
+    const result = await handleCapstoneText({ ...vivaState, vivaDeadlineAt: before + 1_000_000 }, 'Because it persists data.');
+    expect(result.state.vivaDeadlineAt).toBeGreaterThanOrEqual(before + 600_000);
+    expect(result.state.vivaDeadlineAt).toBeLessThan(before + 601_000);
+  });
+
+  test('time up ends the attempt on the server and offers the next attempt', async () => {
+    jest.mocked(api.vivaTimeUp).mockResolvedValue({
+      thread_id: 'thread', status: 'viva_retry', viva_rating: 'Bad', viva_attempt: 1, viva_attempts_left: 2, viva_attempts_total: 3, viva_timed_out: true,
+    } as never);
+    const result = await handleCapstoneText({ ...vivaState, vivaDeadlineAt: Date.now() }, VIVA_TIME_UP_ACTION);
+    expect(api.vivaTimeUp).toHaveBeenCalledWith('submission');
+    expect(api.submitVivaAnswer).not.toHaveBeenCalled();
+    expect(api.askProjectQuestion).not.toHaveBeenCalled();
+    expect(result.state.vivaRetryPending).toBe(true);
+    expect(result.state.vivaDeadlineAt).toBeNull();
+    expect(result.messages[0].text).toContain("Time's up");
+    expect(result.messages[0].options?.[0].label).toBe('Start viva attempt 2 of 3');
+  });
+
+  test('a new attempt starts a fresh 20 minutes', async () => {
+    jest.mocked(api.startVivaAttempt).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', viva_question: { id: 0, question: 'First?' }, viva_progress: '1 of 10',
+      viva_attempt: 2, viva_attempts_total: 3, viva_seconds_left: 1200,
+    } as never);
+    const result = await handleCapstoneText({ ...vivaState, vivaRetryPending: true, vivaAttempt: 1, vivaDeadlineAt: null }, 'start_viva_attempt');
+    expect(result.state.vivaDeadlineAt).toBeGreaterThan(Date.now() + 1_190_000);
   });
 });

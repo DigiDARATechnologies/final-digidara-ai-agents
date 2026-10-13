@@ -7,6 +7,11 @@ import useSpeechRecognition, { type AudioTranscriber } from "../hooks/useSpeechR
 import { unlockSpeechSynthesis } from "../lib/browserSpeech";
 import { renderMessageText } from "../lib/messageText";
 import { playCoachSpeech, stopCoachAudio } from "../lib/coachVoice";
+import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
+import { recognitionLocale } from "../lib/voicePrefs";
+import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
+import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
+import VoiceConversation from "./VoiceConversation";
 
 interface ChatViewProps {
   chat: Chat;
@@ -155,7 +160,9 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const speech = useSpeechRecognition("en-US", transcribeAudio, previewAudio, alwaysRecordVoice);
+  // The Communication Coach is English practice, so it always listens in
+  // English; every other agent listens in the learner's voice language.
+  const speech = useSpeechRecognition(agent.kind === "communication" ? "en-US" : recognitionLocale(), transcribeAudio, previewAudio, alwaysRecordVoice);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);
@@ -170,6 +177,15 @@ export default function ChatView({
   const silenceTimerRef = useRef<number | undefined>(undefined);
 
   const orbRef = useRef<HTMLButtonElement | null>(null);
+
+  const isGeneralChat = agent.id === DEFAULT_AGENT.id;
+  // The reply being read aloud (Listen button, or a voice question's answer).
+  const [listeningIndex, setListeningIndex] = useState<number | null>(null);
+
+  // The DigiDARA Assistant's microphone opens a spoken conversation; one
+  // started on the new-chat screen carries on here, waiting for its reply.
+  const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
+    () => (isGeneralChat && takeVoiceConversation() ? "await" : "off"));
 
   function handleMicClick() {
     stopCoachAudio();
@@ -229,6 +245,17 @@ export default function ChatView({
 
   useEffect(() => () => window.clearTimeout(copiedTimerRef.current), []);
 
+  // Read one reply aloud in the learner's chosen voice; tap again to stop.
+  function handleListen(index: number, text: string) {
+    if (listeningIndex === index) {
+      stopSpeaking();
+      setListeningIndex(null);
+      return;
+    }
+    setListeningIndex(index);
+    void speakNatural(text, { onEnd: () => setListeningIndex((current) => (current === index ? null : current)) }, true);
+  }
+
   async function handleCopy(index: number, text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -268,6 +295,7 @@ export default function ChatView({
     setInputError("");
     voiceSessionRef.current += 1;
     if (speech.listening) speech.stop();
+    cancelVoiceConversation();
     onSend(input);
     setInput("");
   }
@@ -285,6 +313,9 @@ export default function ChatView({
   }, [input]);
 
   const activeSpeakingPrompt = [...chat.messages].reverse().find((message) => message.role === "agent")?.text || "Speak when you are ready.";
+  // A coach turn in parts (what you said, a better way, the next question).
+  const speakingTurn = parseSpeakingTurn(activeSpeakingPrompt);
+  const spokenPrompt = speakingTurn ? speakingTurnSpeech(speakingTurn) : activeSpeakingPrompt;
   const learnerFirstName = user?.name ? user.name.trim().split(/\s+/)[0] : "";
 
   useEffect(() => {
@@ -328,8 +359,8 @@ export default function ChatView({
       speech.start(
         (text, final) => {
           if (voiceSessionRef.current !== session || submitted) return;
-          if (typeof window !== "undefined" && window.speechSynthesis?.speaking) {
-            window.speechSynthesis.cancel();
+          if (isSpeaking() || (typeof window !== "undefined" && window.speechSynthesis?.speaking)) {
+            stopCoachAudio();
             setAgentSpeaking(false);
           }
           const next = text.trim();
@@ -434,7 +465,7 @@ export default function ChatView({
       }, 250);
     };
 
-    playCoachSpeech(activeSpeakingPrompt, {
+    playCoachSpeech(spokenPrompt, {
       rate: 0.92,
       voiceName: "nova",
       onStart: () => setAgentSpeaking(true),
@@ -500,7 +531,12 @@ export default function ChatView({
       </div>
 
       <div className="chat-messages" ref={messagesRef}>
-        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span><h2>{activeSpeakingPrompt}</h2><p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
+        {immersiveSpeaking && <div className="speaking-stage"><div className="speaking-stage-copy"><span>Speaking Practice</span>{speakingTurn ? <div className="speaking-turn">
+          {speakingTurn.said && <div className="speaking-turn-card said"><b>You said</b><p>{speakingTurn.said}</p></div>}
+          {speakingTurn.better && <div className="speaking-turn-card better"><b>Better way to say it</b><p>{speakingTurn.better}</p></div>}
+          {speakingTurn.comment && <p className="speaking-turn-comment">{speakingTurn.comment}</p>}
+          <div className="speaking-turn-card next"><b>Next question</b><h2>{speakingTurn.next}</h2></div>
+        </div> : <h2>{activeSpeakingPrompt}</h2>}<p>{typing ? "Coach is preparing the next question..." : agentSpeaking ? "Coach is speaking..." : speech.transcribing ? "Turning your answer into text..." : speech.listening && autoSendIn !== null ? `Sending your answer in ${autoSendIn}s - keep talking to continue.` : speech.listening ? speech.recordingMode ? "Listening... stop talking for 7 seconds, or tap the orb, to send." : "Listening... (Pause or tap orb to send)" : speech.error ? speech.error : speech.recordingMode ? "Tap the orb and speak your answer." : "Starting conversation..."}</p></div><button ref={orbRef} type="button" aria-label={speech.listening ? "Tap to send answer" : agentSpeaking ? "Interrupt coach" : "Start speaking"} title={speech.listening ? "Tap to send answer immediately" : agentSpeaking ? "Tap to interrupt coach" : "Tap to speak"} className={`speaking-orb${speech.listening ? " listening" : ""}`} onClick={handleMicClick} /><button type="button" className="speaking-end" onClick={() => onChooseOption("end_session")}>End Session</button></div>}
         {!immersiveSpeaking && chat.messages.map((m, i) => {
           const msgAgent = findAgent(chat.agentId) || DEFAULT_AGENT;
           const rawOptions = agent.kind === "communication"
@@ -562,7 +598,7 @@ export default function ChatView({
                           </a>
                         ) : (
                           <button key={option.value} type="button" disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
-                            <strong>{option.label}</strong>
+                            <strong>{option.suggested && <span className="chat-option-star" aria-label="Suggested">★ </span>}{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
                           </button>
                         ))}
@@ -574,6 +610,12 @@ export default function ChatView({
                         <button type="button" className="msg-action-btn" title="Copy" onClick={() => handleCopy(i, m.text)}>
                           {copiedIndex === i ? "Copied" : "Copy"}
                         </button>
+                        {m.role !== "user" && m.text.trim() && (
+                          <button type="button" className="msg-action-btn" title={listeningIndex === i ? "Stop" : "Listen"}
+                            aria-pressed={listeningIndex === i} onClick={() => handleListen(i, m.text)}>
+                            {listeningIndex === i ? "Stop" : "Listen"}
+                          </button>
+                        )}
                         {m.role === "user" && onEditMessage && (
                           <button type="button" className="msg-action-btn" title="Edit" disabled={typing} onClick={() => startEdit(i, m.text)}>
                             Edit
@@ -724,9 +766,9 @@ export default function ChatView({
             <button
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              title={isGeneralChat ? "Talk with Boss" : speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
               disabled={speech.transcribing}
-              onClick={handleMicClick}
+              onClick={isGeneralChat ? () => { stopSpeaking(); setVoiceConversation("listen"); } : handleMicClick}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" strokeWidth="1.8" />
@@ -759,6 +801,10 @@ export default function ChatView({
         <div className="voice-capture-status" role="status">Turning your recording into text…</div>
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
+      {isGeneralChat && voiceConversation !== "off" && (
+        <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"} learnerName={user.name}
+          onSend={(text) => onSend(text)} onClose={() => setVoiceConversation("off")} />
+      )}
     </section>
   );
 }

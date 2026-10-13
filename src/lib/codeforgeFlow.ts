@@ -1,15 +1,20 @@
 import type { ChatOption, User } from "../types";
+import { easyMediumHard, goalLine, goalMatchScore, learnerGoal, learnerLevel } from "./learnerContext";
 import {
   askTutor,
   ensureSession,
   listCourses,
-  listProblems,
+  listLevelProblems,
   listTechnologies,
-  listTopics,
   getProblem,
   runProblem,
   submitProblem,
   submitMcqAnswer,
+  finishAssessment,
+  getAssessmentProblem,
+  ASSESSMENT_KIND_LABELS,
+  type Assessment,
+  type AssessmentItem,
   type Course,
   type EvaluationResult,
   type ProblemSummary,
@@ -29,6 +34,13 @@ export type CodeForgeStep =
 export interface CodeForgeFlowMessage {
   text: string;
   options?: ChatOption[];
+}
+
+/** A flow turn; `openProblemSet` asks the app to show the problem list. */
+export interface CodeForgeResult {
+  state: CodeForgeFlowState;
+  messages: CodeForgeFlowMessage[];
+  openProblemSet?: { courseSlug?: string; technologySlug?: string };
 }
 
 export interface CodeForgeFlowState {
@@ -52,6 +64,8 @@ export interface CodeForgeFlowState {
   mcqOptions?: Record<string, string>;
   lastResult?: EvaluationResult;
   lastGuidance?: TutorGuidance;
+  /** A running Professional assessment: its id, end time and three problems. */
+  assessment?: { id: number; deadline: string | null; technology: string; items: AssessmentItem[]; position: number };
 }
 
 function matchSlugOrName<T extends { slug: string; name: string }>(list: T[], value: string): T | undefined {
@@ -59,27 +73,77 @@ function matchSlugOrName<T extends { slug: string; name: string }>(list: T[], va
   return list.find((item) => item.slug === needle || item.name.toLowerCase() === needle);
 }
 
+/** Courses ordered by how well they fit the learner's goal; the best fit first. */
+function rankCourses(courses: Course[]): { ordered: Course[]; recommended: Course | null } {
+  const goal = learnerGoal();
+  if (!goal) return { ordered: courses, recommended: null };
+  const scored = courses.map((course, index) => ({ course, index, score: goalMatchScore(goal, course.name, course.description) }));
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  return { ordered: scored.map((s) => s.course), recommended: scored[0]?.score > 0 ? scored[0].course : null };
+}
+
+/** "Hi Asha! For your goal (Data Analyst · SQL, Excel), I recommend Data Analytics." */
+function courseGreeting(courses: Course[], firstName?: string): string {
+  const goal = learnerGoal();
+  const { recommended } = rankCourses(courses);
+  const hello = firstName ? `Hi ${firstName}! ` : "";
+  if (goal && recommended) return `${hello}For your goal (${goalLine(goal)}), I recommend **${recommended.name}**. Choose a course to practice:`;
+  return `${hello}Choose a course to practice:`;
+}
+
 function courseOptions(courses: Course[]): ChatOption[] {
+  const { ordered, recommended } = rankCourses(courses);
   return [
-    ...courses.map((c) => ({ label: c.name, value: c.slug, description: c.description })),
+    { label: "📋 Problem list", value: "__problemset__", description: "Every problem in every language, LeetCode style. Your level's problems are open." },
+    ...ordered.map((c) => ({
+      label: c === recommended ? `⭐ ${c.name} · recommended for you` : c.name,
+      value: c.slug,
+      description: c.description,
+    })),
     { label: "Code Playground", value: "__playground__", description: "Write and run any code freely, not tied to a course." },
   ];
 }
 
-function technologyOptions(technologies: Technology[]): ChatOption[] {
-  return technologies.map((t) => ({ label: t.name, value: t.slug, description: `${t.topic_count} topics` }));
+const LEVEL_LABELS = { beginner: "Beginner", medium: "Medium", hard: "Hard", professional: "Professional" } as const;
+
+/** "Beginner" and its problem difficulty, "Easy". */
+function levelNames(): { level: string; difficulty: string } {
+  const level = learnerLevel("codeforge_agent");
+  const difficulty = easyMediumHard("codeforge_agent");
+  return { level: LEVEL_LABELS[level], difficulty: difficulty.charAt(0).toUpperCase() + difficulty.slice(1) };
 }
 
-function topicOptions(topics: Topic[]): ChatOption[] {
-  return topics.map((t) => ({ label: t.name, value: t.slug, description: `${t.problem_count} problems · ${t.progress}` }));
+function technologyOptions(technologies: Technology[]): ChatOption[] {
+  const { level, difficulty } = levelNames();
+  return technologies.map((t) => ({ label: t.name, value: t.slug, description: `${level} level: ${difficulty} problems` }));
 }
 
 function problemOptions(problems: ProblemSummary[]): ChatOption[] {
   return problems.map((p) => ({
-    label: `${p.name} (${p.difficulty})`,
+    label: `${p.progress === "Solved" ? "✓ " : ""}${p.name}`,
     value: p.slug,
-    description: p.attempts > 0 ? `${p.progress} · best ${p.best_score}` : p.progress,
+    description: [p.topic_name, p.attempts > 0 ? `${p.progress} · best ${p.best_score}` : p.progress].filter(Boolean).join(" · "),
   }));
+}
+
+/** The first unsolved problem after the current one (then from the start). */
+function nextProblem(state: CodeForgeFlowState): ProblemSummary | undefined {
+  const index = state.problems.findIndex((p) => p.slug === state.problemSlug);
+  const ordered = [...state.problems.slice(index + 1), ...state.problems.slice(0, Math.max(0, index))];
+  return ordered.find((p) => p.progress !== "Solved");
+}
+
+/** Ways to move on after a problem. */
+function afterProblemOptions(state: CodeForgeFlowState): ChatOption[] {
+  const { level } = levelNames();
+  const next = nextProblem(state);
+  return [
+    ...(next ? [{ label: `Next problem: ${next.name}`, value: next.slug }] : []),
+    { label: `📋 ${state.technologyName ?? ""} problem list`.replace("  ", " "), value: "__problemset__",
+      description: `Every problem, ${level} level open` },
+    { label: "Other technology", value: "back_to_technologies" },
+    { label: "Back to courses", value: "back_to_courses" },
+  ];
 }
 
 // Same pattern as Aptitude's option map: {A: "text", B: "text", ...} -> clickable buttons.
@@ -87,19 +151,37 @@ function mcqOptions(options: Record<string, string>): ChatOption[] {
   return Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 }
 
-async function enterTopics(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
-  const { topics } = await listTopics(state.sessionToken!, state.courseSlug!, state.technologySlug!);
+/** The chosen technology's problems open in the problem list (a table, like
+ * LeetCode), not as chat buttons. The level's problems are kept here too, so
+ * "Next problem" works after each one. The server serves only this level. */
+async function enterLevelProblems(state: CodeForgeFlowState): Promise<CodeForgeResult> {
+  const { level, difficulty } = levelNames();
+  const { problems } = await listLevelProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, difficulty.toLowerCase());
+  const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", problems, topics: [] };
+  const solved = problems.filter((p) => p.progress === "Solved").length;
+  const options: ChatOption[] = [
+    { label: `📋 ${state.technologyName} problem list`, value: "__problemset__", description: `${solved} of ${problems.length} ${difficulty} problems solved` },
+    { label: "Other technology", value: "back_to_technologies" },
+    { label: "Back to courses", value: "back_to_courses" },
+  ];
+  const text = !problems.length
+    ? `${state.technologyName} has no ${difficulty} problems yet for your ${level} level. Try another technology.`
+    : solved === problems.length
+      ? `🎉 You've solved every ${level} (${difficulty}) problem in ${state.technologyName}. Your level moves up automatically — check Job Readiness.`
+      : `${state.technologyName} · ${level} level: ${problems.length} ${difficulty} problems, ${solved} solved. Pick one in the problem list; solve all of them to unlock the next level.`;
   return {
-    state: { ...state, step: "awaiting_topic", topics },
-    messages: [{ text: `${state.technologyName} topics:`, options: topicOptions(topics) }],
+    state: next,
+    messages: [{ text, options }],
+    openProblemSet: problems.length ? { courseSlug: state.courseSlug, technologySlug: state.technologySlug } : undefined,
   };
 }
 
-async function enterProblems(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
-  const { problems } = await listProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, state.topicSlug!);
+async function enterTechnologies(state: CodeForgeFlowState): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+  if (!state.courseSlug) return enterCourses(state);
+  const { technologies } = await listTechnologies(state.sessionToken!, state.courseSlug);
   return {
-    state: { ...state, step: "awaiting_problem", problems },
-    messages: [{ text: `${state.topicName} problems:`, options: problemOptions(problems) }],
+    state: { ...state, step: "awaiting_technology", technologies },
+    messages: [{ text: `${state.courseName ?? "Course"} technologies:`, options: technologyOptions(technologies) }],
   };
 }
 
@@ -107,7 +189,7 @@ async function enterCourses(state: CodeForgeFlowState): Promise<{ state: CodeFor
   const { courses } = await listCourses(state.sessionToken!);
   return {
     state: { ...state, step: "awaiting_course", courses },
-    messages: [{ text: "Choose a course to practice:", options: courseOptions(courses) }],
+    messages: [{ text: courseGreeting(courses), options: courseOptions(courses) }],
   };
 }
 
@@ -121,7 +203,7 @@ export async function openCodeForgeChat(
     return {
       state: { ...base, sessionToken, studentName: student.display_name, courses },
       messages: [{
-        text: `Hi ${student.display_name.split(" ")[0]}! Choose a course to practice:`,
+        text: courseGreeting(courses, student.display_name.split(" ")[0]),
         options: courseOptions(courses),
       }],
     };
@@ -166,6 +248,87 @@ function formatGuidance(guidance: TutorGuidance): string {
   return lines.join("\n");
 }
 
+function endsAt(deadline: string | null): string {
+  return deadline ? new Date(deadline).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
+}
+
+/** Move between the three problems, or finish. */
+function assessmentOptions(state: CodeForgeFlowState): ChatOption[] {
+  const a = state.assessment!;
+  return [
+    ...a.items.filter((item) => item.position !== a.position).map((item) => ({
+      label: `Problem ${item.position}: ${ASSESSMENT_KIND_LABELS[item.kind]}`,
+      value: `assessment_problem_${item.position}`,
+      description: item.best_score ? `best ${item.best_score}/100` : "not submitted yet",
+    })),
+    { label: "Finish assessment", value: "finish_assessment", description: "Score what you have submitted" },
+  ];
+}
+
+/** Opens one problem of the running assessment in the code editor. */
+async function openAssessmentProblem(state: CodeForgeFlowState, position: number): Promise<CodeForgeResult> {
+  const a = state.assessment!;
+  try {
+    const { problem } = await getAssessmentProblem(state.sessionToken!, a.id, position);
+    const next: CodeForgeFlowState = {
+      ...state, step: "awaiting_code", problemId: problem.id, problemSlug: problem.slug, problemName: problem.name,
+      starterCode: problem.starter_code, lastResult: undefined, lastGuidance: undefined,
+      assessment: { ...a, position },
+    };
+    const examples = (problem.examples ?? []).map((ex, i) => `Example ${i + 1}:\n  Input: ${ex.input || "(none)"}\n  Output: ${ex.output}`).join("\n");
+    return {
+      state: next,
+      messages: [{
+        text: `Problem ${position} of ${a.items.length} · ${ASSESSMENT_KIND_LABELS[problem.kind]} · ends at ${endsAt(a.deadline)}\n\n${problem.name}\n\n${problem.description}\n\nInput: ${problem.input_format}\nOutput: ${problem.output_format}\nConstraints: ${problem.constraints}\n\n${examples}\n\nWrite your ${problem.language} solution, then Run or Submit. Your best submission counts.`,
+        options: assessmentOptions(next),
+      }],
+    };
+  } catch (error) {
+    return endAssessment(state, (error as Error).message);
+  }
+}
+
+function resultText(assessment: Assessment): string {
+  const lines = assessment.items.map((item) => `Problem ${item.position} (${ASSESSMENT_KIND_LABELS[item.kind]}): ${item.best_score}/100`);
+  const verdict = assessment.passed ? `✅ Passed with ${assessment.score}/100.` : `Not passed: ${assessment.score ?? 0}/100 (the pass mark is 70).`;
+  return [assessment.status === "expired" ? "⏱ Time is up." : "Assessment finished.", verdict, "", ...lines].join("\n");
+}
+
+/** Finishes (or reads the finished) attempt and shows the result. */
+async function endAssessment(state: CodeForgeFlowState, reason?: string): Promise<CodeForgeResult> {
+  const a = state.assessment;
+  if (!a) return { state, messages: [] };
+  try {
+    const { assessment } = await finishAssessment(state.sessionToken!, a.id);
+    const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", assessment: undefined, problemId: undefined, starterCode: undefined };
+    return {
+      state: next,
+      messages: [{
+        text: `${reason ? `${reason}\n\n` : ""}${resultText(assessment)}${assessment.passed ? "\n\nPass 3 assessments to complete the Professional level." : ""}`,
+        options: [{ label: "📋 Problem list", value: "__problemset__", description: "See your attempts or start another" },
+          { label: "Back to courses", value: "back_to_courses" }],
+      }],
+    };
+  } catch (error) {
+    return { state: { ...state, assessment: undefined }, messages: [{ text: `Could not finish the assessment: ${(error as Error).message}` }] };
+  }
+}
+
+/** Starts (or continues) an assessment in this chat, from the problem list. */
+export async function enterAssessment(state: CodeForgeFlowState, assessment: Assessment, technology: { slug: string; name: string; courseSlug?: string }): Promise<CodeForgeResult> {
+  const next: CodeForgeFlowState = {
+    ...state, technologySlug: technology.slug, technologyName: technology.name, courseSlug: technology.courseSlug ?? state.courseSlug,
+    assessment: { id: assessment.id, deadline: assessment.deadline_at, technology: assessment.technology, items: assessment.items, position: 1 },
+  };
+  const opened = await openAssessmentProblem(next, 1);
+  return {
+    ...opened,
+    messages: [{
+      text: `🎯 Professional assessment · ${technology.name}: ${assessment.items.length} problems, ends at ${endsAt(assessment.deadline_at)}. No AI tutor until you finish; your best submission for each problem counts, and 70/100 passes.`,
+    }, ...opened.messages],
+  };
+}
+
 export async function runCodeForgeCode(
   state: CodeForgeFlowState,
   code: string,
@@ -174,6 +337,9 @@ export async function runCodeForgeCode(
   try {
     const result = await runProblem(state.sessionToken, state.problemId, code);
     const failed = result.status !== "Accepted";
+    if (state.assessment) {
+      return { state: { ...state, lastResult: result }, messages: [{ text: formatResult(result), options: assessmentOptions(state) }] };
+    }
     return {
       state: { ...state, lastResult: result, lastGuidance: undefined },
       messages: [{ text: formatResult(result), options: failed ? [{ label: "Explain this error", value: "explain_error" }] : undefined }],
@@ -190,12 +356,16 @@ export async function submitCodeForgeCode(
   if (!state.sessionToken || !state.problemId) return { state, messages: [] };
   try {
     const result = await submitProblem(state.sessionToken, state.problemId, code);
+    if (state.assessment) {
+      const a = state.assessment;
+      const items = a.items.map((item) => (item.position === a.position ? { ...item, best_score: Math.max(item.best_score, result.score) } : item));
+      const next: CodeForgeFlowState = { ...state, lastResult: result, assessment: { ...a, items } };
+      return { state: next, messages: [{ text: `${formatResult(result)}\n\nBest for this problem: ${Math.max(...items.filter((i) => i.position === a.position).map((i) => i.best_score))}/100`, options: assessmentOptions(next) }] };
+    }
     const accepted = result.status === "Accepted";
     const nextOptions: ChatOption[] = accepted
       ? [
-          { label: "Choose another problem", value: "choose_another_problem" },
-          { label: "Back to topics", value: "back_to_topics" },
-          { label: "Back to courses", value: "back_to_courses" },
+          ...afterProblemOptions({ ...state, problems: state.problems.map((p) => (p.slug === state.problemSlug ? { ...p, progress: "Solved" } : p)) }),
         ]
       : [{ label: "Explain this error", value: "explain_error" }];
     return {
@@ -203,6 +373,8 @@ export async function submitCodeForgeCode(
       messages: [{ text: formatResult(result), options: nextOptions }],
     };
   } catch (error) {
+    // The attempt's time ran out: show the result instead of an error.
+    if (state.assessment && /assessment|ended/i.test((error as Error).message)) return endAssessment(state, "⏱ Time is up.");
     return { state, messages: [{ text: `Could not submit your code: ${(error as Error).message}` }] };
   }
 }
@@ -210,14 +382,33 @@ export async function submitCodeForgeCode(
 export async function handleCodeForgeText(
   state: CodeForgeFlowState,
   text: string,
-): Promise<{ state: CodeForgeFlowState; messages: CodeForgeFlowMessage[] }> {
+): Promise<CodeForgeResult> {
   const trimmed = text.trim();
   const command = trimmed.toLowerCase();
 
-  // Cross-cutting navigation commands, reachable from any step.
+  // Inside a Professional assessment only its own commands apply.
+  if (state.assessment) {
+    const switchTo = /^assessment_problem_(\d)$/.exec(command);
+    if (switchTo) return openAssessmentProblem(state, Number(switchTo[1]));
+    if (command === "finish_assessment") return endAssessment(state);
+    if (command === "explain_error") {
+      return { state, messages: [{ text: "The AI tutor is off during the assessment. It is back as soon as you finish.", options: assessmentOptions(state) }] };
+    }
+    return { state, messages: [{ text: "You are in a Professional assessment. Use Run or Submit, switch problems, or finish.", options: assessmentOptions(state) }] };
+  }
+
+  // Cross-cutting navigation commands, reachable from any step. Buttons from
+  // chats saved before practice was by level ("Back to topics", "Next
+  // topic") now open the level's problem list.
   if (command === "back_to_courses") return enterCourses(state);
-  if (command === "back_to_topics") return enterTopics(state);
-  if (command === "choose_another_problem") return enterProblems(state);
+  if (command === "back_to_technologies") return enterTechnologies(state);
+  if ((command === "choose_another_problem" || command === "back_to_topics" || command === "next_topic") && state.technologySlug) {
+    return enterLevelProblems(state);
+  }
+  // A problem picked from "Next problem" while a chat is at another step.
+  if (state.step !== "awaiting_problem" && state.problems.some((p) => p.slug === command)) {
+    return handleCodeForgeText({ ...state, step: "awaiting_problem" }, trimmed);
+  }
 
   switch (state.step) {
     case "awaiting_course": {
@@ -239,32 +430,31 @@ export async function handleCodeForgeText(
       if (!technology) return { state, messages: [{ text: "Pick a technology from the list.", options: technologyOptions(state.technologies) }] };
       const next = { ...state, technologySlug: technology.slug, technologyName: technology.name };
       try {
-        return await enterTopics(next);
+        return await enterLevelProblems(next);
       } catch (error) {
-        return { state, messages: [{ text: `Could not load topics: ${(error as Error).message}`, options: technologyOptions(state.technologies) }] };
+        return { state, messages: [{ text: `Could not load problems: ${(error as Error).message}`, options: technologyOptions(state.technologies) }] };
       }
     }
 
     case "awaiting_topic": {
-      const topic = matchSlugOrName(state.topics, trimmed);
-      if (!topic) return { state, messages: [{ text: "Pick a topic from the list.", options: topicOptions(state.topics) }] };
-      const next = { ...state, topicSlug: topic.slug, topicName: topic.name };
+      // A chat saved at the old topic step: practice is by level now.
       try {
-        return await enterProblems(next);
+        return await enterLevelProblems(state);
       } catch (error) {
-        return { state, messages: [{ text: `Could not load problems: ${(error as Error).message}`, options: topicOptions(state.topics) }] };
+        return { state, messages: [{ text: `Could not load problems: ${(error as Error).message}`, options: technologyOptions(state.technologies) }] };
       }
     }
 
     case "awaiting_problem": {
       const problem = matchSlugOrName(state.problems, trimmed);
-      if (!problem) return { state, messages: [{ text: "Pick a problem from the list.", options: problemOptions(state.problems) }] };
+      if (!problem) return { state, messages: [{ text: "Pick a problem from the list.", options: [...problemOptions(state.problems), ...afterProblemOptions(state).slice(1)] }] };
+      const topicSlug = problem.topic_slug ?? state.topicSlug!;
       try {
         const { problem: detail } = await getProblem(
           state.sessionToken!,
           state.courseSlug!,
           state.technologySlug!,
-          state.topicSlug!,
+          topicSlug,
           problem.slug,
         );
         if (detail.question_type === "mcq") {
@@ -273,6 +463,8 @@ export async function handleCodeForgeText(
             state: {
               ...state,
               step: "awaiting_mcq_answer",
+              topicSlug,
+              topicName: problem.topic_name ?? state.topicName,
               problemSlug: detail.slug,
               problemId: detail.id,
               problemName: detail.name,
@@ -293,6 +485,8 @@ export async function handleCodeForgeText(
           state: {
             ...state,
             step: "awaiting_code",
+            topicSlug,
+            topicName: problem.topic_name ?? state.topicName,
             problemSlug: detail.slug,
             problemId: detail.id,
             problemName: detail.name,
@@ -347,11 +541,9 @@ export async function handleCodeForgeText(
           state: { ...state, step: "awaiting_problem" },
           messages: [{
             text: feedback,
-            options: [
-              { label: "Choose another problem", value: "choose_another_problem" },
-              { label: "Back to topics", value: "back_to_topics" },
-              { label: "Back to courses", value: "back_to_courses" },
-            ],
+            options: afterProblemOptions(result.isCorrect
+              ? { ...state, problems: state.problems.map((p) => (p.slug === state.problemSlug ? { ...p, progress: "Solved" } : p)) }
+              : state),
           }],
         };
       } catch (error) {
@@ -359,4 +551,21 @@ export async function handleCodeForgeText(
       }
     }
   }
+}
+
+/** Opens a problem picked in the problem list, in this chat. */
+export async function openCodeForgeProblem(
+  state: CodeForgeFlowState,
+  target: { courseSlug: string; technologySlug: string; technologyName: string; problem: ProblemSummary; problems?: ProblemSummary[] },
+): Promise<CodeForgeResult> {
+  const next: CodeForgeFlowState = {
+    ...state,
+    step: "awaiting_problem",
+    courseSlug: target.courseSlug,
+    technologySlug: target.technologySlug,
+    technologyName: target.technologyName,
+    // The list's open problems, so "Next problem" can follow on from this one.
+    problems: target.problems?.length ? target.problems : [target.problem],
+  };
+  return handleCodeForgeText(next, target.problem.slug);
 }

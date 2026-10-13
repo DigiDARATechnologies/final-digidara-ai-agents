@@ -1,3 +1,5 @@
+import { setSessionToken } from "./session";
+
 function getOrchestratorBase(): string {
   const globalProcess = (globalThis as unknown as { process?: { env?: Record<string, string> } }).process;
   if (globalProcess?.env?.VITE_GATEWAY_API_URL !== undefined) {
@@ -151,7 +153,7 @@ export async function changePassword(
   });
   const result = await parseAuthResponse<{ message: string; access_token?: string }>(response);
   // A password change signs every session out; this device gets a fresh token.
-  if (result.access_token) localStorage.setItem("digidara_token", result.access_token);
+  if (result.access_token) setSessionToken(result.access_token);
   return result;
 }
 

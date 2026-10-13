@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { transcribeGeneralAudio } from "../lib/orchestratorApi";
+import { audioRecordingSupported } from "../lib/voiceCapture";
+import { cancelVoiceConversation, continueVoiceConversation } from "../lib/voiceReply";
+import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
 
@@ -13,35 +14,24 @@ interface NewChatLandingProps {
   onAttachClick: () => void;
   /** Starts a chat with the chosen agent. */
   onOpenAgent: (agentId: string) => void;
+  /** The learner's name, for Boss's spoken greeting. */
+  userName?: string;
 }
 
-export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: NewChatLandingProps) {
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // The DigiDARA Assistant's voice input: recorded, then transcribed with
-  // OpenAI on the server, on every device.
-  const speech = useSpeechRecognition("en-US", transcribeGeneralAudio, undefined, true);
-  const voiceSessionRef = useRef(0);
+  // The microphone opens a spoken conversation with the DigiDARA Assistant;
+  // its first question starts the chat, where the conversation carries on.
+  const [talking, setTalking] = useState(false);
+  const voiceSupported = audioRecordingSupported();
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim()) return;
+    cancelVoiceConversation();
     onSend(input.trim());
     setInput("");
-  }
-
-  function handleMicClick() {
-    if (speech.listening) {
-      voiceSessionRef.current += 1;
-      speech.stop();
-      return;
-    }
-    setInput("");
-    const session = ++voiceSessionRef.current;
-    speech.start((text) => {
-      if (voiceSessionRef.current !== session) return;
-      setInput(text);
-    });
   }
 
   // Same auto-grow fix as the main chat composer (ChatView.tsx) -- a
@@ -71,7 +61,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={speech.transcribing ? "Transcribing…" : speech.listening ? "Listening… tap the mic again when you're done" : "Ask anything"}
+            placeholder="Ask anything"
             autoFocus
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -82,14 +72,13 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
               }
             }}
           />
-          {speech.supported && (
+          {voiceSupported && (
             <button
               type="button"
-              className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={speech.listening ? "Stop recording" : "Voice input"}
-              aria-label={speech.listening ? "Stop recording" : "Voice input"}
-              disabled={speech.transcribing}
-              onClick={handleMicClick}
+              className="icon-btn"
+              title="Talk with Boss"
+              aria-label="Talk with Boss"
+              onClick={() => setTalking(true)}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" strokeWidth="1.8" />
@@ -109,7 +98,6 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
             </svg>
           </button>
         </form>
-        {speech.error && <div className="mic-error">{speech.error}</div>}
 
         <div className="landing-agents">
           <div className="landing-agents-label"><span>Start with an agent</span></div>
@@ -135,6 +123,10 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
           </div>
         </div>
       </div>
+      {talking && (
+        <VoiceConversation messages={[]} typing={false} learnerName={userName} onClose={() => setTalking(false)}
+          onSend={(text) => { continueVoiceConversation(); onSend(text); }} />
+      )}
     </section>
   );
 }

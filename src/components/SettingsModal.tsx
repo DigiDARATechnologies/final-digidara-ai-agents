@@ -10,6 +10,7 @@ import { getDisplayRating } from "../lib/ratings";
 import { AppearanceSettings, SecuritySettings } from "./SettingsExtras";
 import type { AppearancePrefs, ThemePref } from "../lib/appearance";
 import { bridgeIdentity, getDashboard, getHistory, type DashboardData } from "../lib/communicationApi";
+import VoiceSettings from "./VoiceSettings";
 
 interface Props { themePref?: ThemePref; onThemeChange?: (pref: ThemePref) => void; appearance?: AppearancePrefs; onAppearanceChange?: (next: AppearancePrefs) => void; onLogout?: () => void; initialTab?: Tab; open: boolean; user: User; chats: Chat[]; glowOn: boolean; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
 type Tab = "general" | "appearance" | "security" | "billing" | "usage" | "agent-chats";
@@ -79,6 +80,8 @@ export default function SettingsModal({ themePref = "dark", onThemeChange = () =
       <aside className="settings-nav"><button className="settings-close" onClick={onClose}>×</button><h3>Settings</h3>{(["general", "appearance", "security", "billing", "usage", "agent-chats"] as Tab[]).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><span>{item === "general" ? "⚙" : item === "appearance" ? "◐" : item === "security" ? "⚿" : item === "billing" ? "▣" : item === "usage" ? "▤" : "◫"}</span>{item === "agent-chats" ? "Agent Chats" : item[0].toUpperCase() + item.slice(1)}</button>)}</aside>
       <main className="settings-content">
         {tab === "general" && <><h2>General</h2><div className="settings-section"><div className="setting-row"><div><b>Profile</b><p>{user.name}<br />{user.email} · {user.mobile}</p></div></div><div className="setting-row"><div><b>Accent Glow Effects</b><p>Toggle animated glow on cards and buttons.</p></div><label className="switch"><input type="checkbox" checked={glowOn} onChange={(event) => onGlowToggle(event.target.checked)} /><span className="slider" /></label></div><div className="setting-row"><div><b>Clear Chat History</b><p>Remove all saved conversations for this account.</p></div><button className="btn btn-outline btn-danger" onClick={() => setClearConfirmOpen(true)}>Clear</button></div></div>
+          <h3 className="settings-title">Voice</h3>
+          <VoiceSettings />
           <h3 className="settings-title">Privacy &amp; data</h3>
           <p className="settings-subtitle">Your rights under the Digital Personal Data Protection Act, 2023.</p>
           <div className="settings-section">

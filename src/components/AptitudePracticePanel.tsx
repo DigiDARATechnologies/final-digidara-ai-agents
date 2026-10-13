@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { AptitudeFlowState } from "../lib/aptitudeFlow";
+import { aptitudeLanguages, type AptitudeFlowState } from "../lib/aptitudeFlow";
 import { getMixedTestConfig, saveMixedTestConfig, type MixedTestCategory, type MixedTestConfig } from "../lib/aptitudeApi";
 import { renderMessageText } from "../lib/messageText";
 
@@ -164,26 +164,19 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
       </div>
       {error && <p className="aptitude-panel-error" role="alert">{error}</p>}
       <div className="aptitude-panel-actions"><span>{dirty ? "Save your changes before starting." : "Your saved configuration is ready."}</span><button type="button" onClick={save} disabled={!dirty || saving || !!limits && total > limits.max_total}>{saving ? "Saving…" : "Save configuration"}</button></div>
-      <div className="aptitude-choice-row"><span>Technical Aptitude language</span>{["Python", "Java", "C", "SQL"].map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div>
+      <div className="aptitude-choice-row"><span>Technical Aptitude language</span>{aptitudeLanguages().map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div>
     </section>;
   }
 
   if (state.step === "awaiting_category") {
     return <section className="aptitude-practice-panel" aria-label="Category Practice overview">
-      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">CATEGORY PRACTICE</span><h2>Choose a category</h2><p>10 focused questions at the level you select. ★ marks a priority topic area.</p></div>
+      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">CATEGORY PRACTICE</span><h2>Choose a category</h2><p>10 focused questions at your Job Readiness level. ★ marks a priority topic area.</p></div>
       <div className="aptitude-category-grid">{Object.entries(CATEGORY_DETAILS).map(([category, description]) => <button type="button" key={category} onClick={() => onChoose(category)}><span>{CATEGORY_ICONS[category]}</span><strong>{category}</strong><small>{description}</small><em>★ Priority topics included</em></button>)}</div>
     </section>;
   }
 
-  if (state.step === "awaiting_level") {
-    return <section className="aptitude-practice-panel" aria-label="Category Practice level selection">
-      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">{state.category}</span><h2>Choose your level</h2><p>Difficulty stays fixed for all 10 questions. Priority topics will display with ★ during practice.</p></div>
-      <div className="aptitude-level-grid">{["Beginner", "Intermediate", "Advanced"].map((level) => <button type="button" key={level} onClick={() => onChoose(level)}><strong>{level}</strong><span>{level === "Beginner" ? "60 seconds per question" : level === "Intermediate" ? "90 seconds per question" : "120 seconds per question"}</span></button>)}</div>
-    </section>;
-  }
-
   if (state.step === "awaiting_language") {
-    return <section className="aptitude-practice-panel" aria-label="Technical Aptitude language selection"><div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">TECHNICAL APTITUDE</span><h2>Choose a programming language</h2><p>Python is the default. Questions and code examples will match your selection.</p></div><div className="aptitude-choice-row">{["Python", "Java", "C", "SQL"].map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div></section>;
+    return <section className="aptitude-practice-panel" aria-label="Technical Aptitude language selection"><div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">TECHNICAL APTITUDE</span><h2>Choose a programming language</h2><p>Only the languages in your skills and target role. Questions and code examples will match your selection.</p></div><div className="aptitude-choice-row">{aptitudeLanguages().map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div></section>;
   }
 
   return null;

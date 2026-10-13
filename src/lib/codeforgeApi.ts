@@ -68,6 +68,8 @@ export interface Topic {
   problem_count: number;
   progress: string;
   sequence: number;
+  /** Easy, Medium or Hard: every problem in the topic shares it. */
+  difficulty?: string | null;
 }
 
 export function listTopics(sessionToken: string, course_slug: string, technology_slug: string) {
@@ -91,6 +93,20 @@ export interface ProblemSummary {
   best_score: number;
   attempts: number;
   sequence: number;
+  /** Present in level lists, which span every topic of a technology. */
+  topic_slug?: string;
+  topic_name?: string;
+}
+
+/** Every problem at the learner's level in one technology, across its topics.
+ * The coding agent takes the level from the learner's signed context. */
+export function listLevelProblems(sessionToken: string, course_slug: string, technology_slug: string, difficulty: string) {
+  return invoke<{ course: Course; technology: Technology; difficulty: "Easy" | "Medium" | "Hard"; problems: ProblemSummary[] }>("list_level_problems", {
+    sessionToken,
+    course_slug,
+    technology_slug,
+    difficulty,
+  });
 }
 
 export function listProblems(sessionToken: string, course_slug: string, technology_slug: string, topic_slug: string) {
@@ -231,4 +247,95 @@ export interface PlaygroundResult {
 
 export function runPlayground(languageId: number, sourceCode: string, stdin = "") {
   return invoke<PlaygroundResult>("run_playground", { languageId, sourceCode, stdin });
+}
+
+export interface ProblemSetLanguage {
+  slug: string;
+  name: string;
+  course_slug: string;
+  counts: Record<"Easy" | "Medium" | "Hard", { total: number; solved: number }>;
+}
+
+export interface ProblemSetItem extends ProblemSummary {
+  number: number;
+  topic_slug: string;
+  topic_name: string;
+  /** Above the learner's level: shown, but it opens only once they reach it. */
+  locked: boolean;
+}
+
+export interface ProblemSet {
+  level: "Easy" | "Medium" | "Hard";
+  level_name: string;
+  languages: ProblemSetLanguage[];
+  technology_slug: string | null;
+  course_slug: string | null;
+  problems: ProblemSetItem[];
+}
+
+/** The LeetCode-style list: every language, and every problem of one of
+ * them with its difficulty and status; levels above the learner's locked. */
+export function getProblemSet(sessionToken: string, technology_slug?: string, course_slug?: string) {
+  return invoke<ProblemSet>("problem_set", {
+    sessionToken, ...(technology_slug ? { technology_slug } : {}), ...(course_slug ? { course_slug } : {}),
+  });
+}
+
+export interface AssessmentItem {
+  position: number;
+  kind: "hard" | "expert" | "real_world";
+  best_score: number;
+  attempts: number;
+  problem_id: number;
+  name: string;
+  slug: string;
+  difficulty: string;
+}
+
+export interface Assessment {
+  id: number;
+  status: "in_progress" | "submitted" | "expired";
+  technology: string;
+  started_at: string | null;
+  deadline_at: string | null;
+  finished_at: string | null;
+  score: number | null;
+  passed: boolean | null;
+  items: AssessmentItem[];
+}
+
+export interface AssessmentOverview {
+  technology: { slug: string; name: string };
+  available: boolean;
+  eligible: boolean;
+  minutes: number;
+  pass_mark: number;
+  passed: number;
+  active: Assessment | null;
+  attempts: Assessment[];
+}
+
+export interface AssessmentProblem extends ProblemDetail {
+  kind: AssessmentItem["kind"];
+  position: number;
+}
+
+export const ASSESSMENT_KIND_LABELS: Record<AssessmentItem["kind"], string> = {
+  hard: "Hard problem", expert: "Expert problem", real_world: "Real-world task",
+};
+
+export function getAssessmentOverview(sessionToken: string, technology_slug: string) {
+  return invoke<AssessmentOverview>("assessment_overview", { sessionToken, technology_slug });
+}
+
+export function startAssessment(sessionToken: string, technology_slug: string) {
+  return invoke<{ assessment: Assessment }>("start_assessment", { sessionToken, technology_slug });
+}
+
+export function getAssessmentProblem(sessionToken: string, assessment_id: number, position: number) {
+  return invoke<{ problem: AssessmentProblem }>("assessment_problem", { sessionToken, assessment_id, position });
+}
+
+export function finishAssessment(sessionToken: string, assessment_id: number) {
+  return invoke<{ assessment: Assessment }>("finish_assessment", { sessionToken, assessment_id });
 }

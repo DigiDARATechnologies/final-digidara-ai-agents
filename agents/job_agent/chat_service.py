@@ -28,7 +28,7 @@ load_dotenv()
 
 from .db import get_db
 from .compensation import extract_salary_text
-from .matching import blend_job_matches, classify_job_seniority, score_job
+from .matching import blend_job_matches, classify_job_seniority, degree_eligible, score_job
 from .skills import extract_skills_from_job, extract_skills_from_user_message, normalize_skill_name
 from .tn_location import canonicalize_location, extract_known_locations, location_matches_preferences
 from .trust import candidate_trust_badge, candidate_trust_signals, evaluate_job_trust
@@ -63,6 +63,28 @@ def _parse_list(val: Any) -> List[str]:
             pass
         return [s.strip() for s in val.split(",") if s.strip()]
     return []
+
+
+def learner_degree(profile: Dict[str, Any]) -> str:
+    """The learner's degree: the DigiDARA onboarding profile (forwarded by
+    the invoke bridge from the gateway-signed envelope) wins over the degree
+    this agent picked up in chat."""
+    from flask import has_request_context, request
+
+    forwarded = request.headers.get("X-Digidara-Learner-Degree", "") if has_request_context() else ""
+    return (forwarded or profile.get("education") or "").strip().lower()
+
+
+def keep_degree_eligible(jobs: List[Dict[str, Any]], degree: str) -> List[Dict[str, Any]]:
+    """Only the jobs this degree qualifies for, each saying so in its reasons."""
+    eligible = []
+    for job in jobs:
+        if not degree_eligible(job, degree):
+            continue
+        if job.get("degree_required"):
+            job.setdefault("match_reasons", []).append(f"Eligible with your degree ({degree})")
+        eligible.append(job)
+    return eligible
 
 
 def _get_user_profile_and_missing(cursor, user_id: str) -> Tuple[Dict[str, Any], List[str]]:
@@ -379,6 +401,7 @@ def _get_top_matched_jobs(
         scored_jobs.append(job)
 
     scored_jobs.sort(key=lambda x: x["match_score"], reverse=True)
+    scored_jobs = keep_degree_eligible(scored_jobs, learner_degree(profile))
 
     if strict_titles and requested_titles:
         scored_jobs = [job for job in scored_jobs if _matches_target_role(job.get("title") or "", requested_titles)]

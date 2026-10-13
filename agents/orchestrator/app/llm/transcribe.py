@@ -38,12 +38,15 @@ AUDIO_EXTENSIONS = {
     "audio/x-wav": "wav",
 }
 
-# Helps the model spell the platform's own words right.
+# Helps the model spell the platform's own words right. Only vocabulary --
+# never instructions: on silence or a very short recording the model can
+# return its prompt as the "transcript", and an instruction would then appear
+# in the learner's message box. _is_prompt_echo() removes any echo that remains.
 VOCABULARY_HINT = (
-    "A learner asking the DigiDARA AI Agents assistant about its agents: Capstone Project Agent, "
-    "LeetCode Agent, CodeForge, Aptitude Trainer, Mock Interview, Communication Coach, Resume Builder, "
-    "AI Certification Agent, Job Fetching Agent, points, viva, ATS."
+    "DigiDARA AI Agents, Boss, Capstone Project Agent, Coding Practice, CodeForge, Aptitude Trainer, "
+    "Mock Interview, Communication Coach, Resume Builder, AI Certification Agent, Job Agent, points, viva, ATS."
 )
+LANGUAGES = {"auto": None, "en": "en", "ta": "ta"}
 
 
 class TranscriptionError(Exception):
@@ -72,7 +75,7 @@ def decode_audio(audio_base64: str, mime_type: str) -> tuple[bytes, str]:
     return audio, extension
 
 
-def transcribe(audio_base64: str, mime_type: str) -> str:
+def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str:
     audio, extension = decode_audio(audio_base64, mime_type)
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
@@ -83,7 +86,12 @@ def transcribe(audio_base64: str, mime_type: str) -> str:
             OPENAI_TRANSCRIPTIONS_URL,
             headers={"Authorization": f"Bearer {api_key}"},
             files={"file": (f"question.{extension}", audio, base_type)},
-            data={"model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0", "prompt": VOCABULARY_HINT},
+            data={
+                "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
+                "prompt": VOCABULARY_HINT,
+                # Every agent works in English: the speech is always written as English.
+                "language": "en",
+            },
             timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
         )
     except httpx.HTTPError as exc:
@@ -97,5 +105,30 @@ def transcribe(audio_base64: str, mime_type: str) -> str:
         text = str(response.json().get("text") or "").strip()
     except ValueError as exc:
         raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.") from exc
+    if _is_prompt_echo(text):
+        # Silence or noise came back as the prompt itself: nothing was said.
+        logger.info("transcription of %d bytes was the prompt echoed back; treated as silence", len(audio))
+        return ""
     logger.info("transcribed %d bytes of %s into %d chars", len(audio), base_type, len(text))
     return text
+
+
+# Phrases of prompts this service sends (and sent before), which the model
+# sometimes returns instead of the speech when it hears nothing.
+_ECHO_MARKERS = (
+    "transcribe only the main speaker", "ignore background voices", "the learner may speak english",
+    "a learner asking the digidara", "context: ###", "digidara ai agents, boss, capstone",
+)
+
+
+def _is_prompt_echo(text: str) -> bool:
+    """The transcript is (part of) the prompt rather than anything said: a
+    known prompt phrase, or six words in a row straight from the vocabulary."""
+    lowered = " ".join(text.lower().split())
+    if not lowered:
+        return False
+    if any(marker in lowered for marker in _ECHO_MARKERS):
+        return True
+    words = [w.strip(".,;:!?") for w in lowered.split()]
+    hint = " ".join(w.strip(".,;:!?") for w in VOCABULARY_HINT.lower().split())
+    return any(" ".join(words[i:i + 6]) in hint for i in range(0, max(0, len(words) - 5)))
