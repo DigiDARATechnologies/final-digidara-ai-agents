@@ -26,7 +26,7 @@ export interface AgentLevel {
   agent_name: string;
   agent_label: string;
   level: LevelId;
-  /** "derived": Job Fetching, which follows the other agents' levels. */
+  /** "derived": Job Agent, which follows the other agents' levels. */
   source: "default" | "self" | "organization" | "readiness" | "derived";
   updated_at: string | null;
 }

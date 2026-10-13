@@ -8,14 +8,14 @@ deployed agents. The platform agents are integrated through the
 - **Capstone Project Agent** (`agents/project_AI_Agent`, FastAPI + MySQL) —
   eligibility check, AI-generated project topics, a 7-day timer, and graded
   `.docx`/`.zip` submission review.
-- **CodeForge (LeetCode) Agent** (`agents/codeforge_agent`, Flask +
+- **Coding Practice** (`agents/codeforge_agent`, Flask +
   MySQL) — course/technology/topic/problem browsing, Judge0-sandboxed code
   execution (Run = public tests, Submit = public + hidden tests), and an
   OpenAI-backed AI Tutor with a deterministic offline fallback.
 - **Communication Coach Agent** (`agents/communication-ai-agent`, Flask +
   MySQL) — Pronunciation, Speaking and Writing practice loops scored live by
   an LLM, daily challenges, and a progress dashboard.
-- **Job Fetching Agent** (`agents/job_agent`, Flask + MySQL) — learner job
+- **Job Agent** (`agents/job_agent`, Flask + MySQL) — learner job
   profiles, resume upload, explainable matching, saved/application tracking,
   Greenhouse and Apify-backed ingestion, and administrator moderation.
 
@@ -59,7 +59,7 @@ for its action map, startup settings, identity bridge, and verification.
   Capstone service.
 - Student email storage and a backward-compatible database column migration.
 
-### CodeForge (LeetCode) Agent
+### Coding Practice
 
 - Chat-driven browsing: course → technology → topic → problem, each step a
   clickable chat option.
@@ -310,7 +310,7 @@ LLM cannot return a valid profile, rather than exposing malformed model output.
 16. After the project passes, a viva follows: 10 questions on the learner's own project, at least 50% correct to pass. There are up to three attempts, each with a fresh set of questions (never one already asked), and the result is shown as Good / Average / Bad — never as a mark.
 17. Once the score and the viva are both passed, the learner can download a final report PDF (score, requirements, viva results and feedback, with the DigiDARA Technologies logo on every page) and get a project certificate: a preview on the DigiDARA certificate template, the name as the only editable field, then OK, then a downloadable PDF that names the learner's own project.
 
-### 5.2 CodeForge (LeetCode) Agent
+### 5.2 Coding Practice
 
 1. The candidate opens the CodeForge Agent. The agent calls `ensure_session`
    to bridge the DigiDARA login into a CodeForge session token.

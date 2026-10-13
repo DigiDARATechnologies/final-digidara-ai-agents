@@ -185,7 +185,7 @@ def set_level(user_id: str, agent_name: str, level: str, source: str) -> dict:
     if agent_name not in level_rules.LEVELED_AGENTS:
         raise ValueError(f"Unknown agent {agent_name!r}.")
     if agent_name == level_rules.DERIVED_AGENT:
-        raise ValueError("Job Fetching follows your other agents' levels; it cannot be set on its own.")
+        raise ValueError("Job Agent follows your other agents' levels; it cannot be set on its own.")
     if level not in level_rules.LEVELS:
         raise ValueError(f"Level must be one of: {', '.join(level_rules.LEVELS)}.")
     session = db.get_session()

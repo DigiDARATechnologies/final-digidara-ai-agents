@@ -59,7 +59,7 @@ function browsingState(feed: JobFeedItem[]): JobFetchFlowState {
   };
 }
 
-describe("Job Fetching Agent flow", () => {
+describe("Job Agent flow", () => {
   test.each(["how are you?", "hi"])("legacy experience step acknowledges '%s' without advancing", async (text) => {
     const state = { ...workModeState(), step: "collecting_experience" as const };
     const result = await handleJobFetchText(state, text);

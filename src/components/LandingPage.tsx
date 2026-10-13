@@ -20,12 +20,12 @@ const INDUSTRIES = [
 
 const AGENTS = [
   { color: "#16a34a", icon: "🎓", name: "Capstone Project Agent", text: "Guides a project from idea to graded submission with eligibility checks and review." },
-  { color: "#eab308", icon: "⌨️", name: "Coding Practice Agent", text: "Real coding problems, sandboxed test runs and an AI tutor when you get stuck." },
+  { color: "#eab308", icon: "⌨️", name: "Coding Practice", text: "Real coding problems, sandboxed test runs and an AI tutor when you get stuck." },
   { color: "#f43f5e", icon: "🗣️", name: "Communication Coach", text: "Pronunciation, speaking and writing practice scored by AI, with daily challenges." },
   { color: "#f97316", icon: "🧮", name: "Aptitude Trainer", text: "Quantitative, logical and verbal practice sets with timed tests and explanations." },
   { color: "#8b5cf6", icon: "🎤", name: "Mock Interview Agent", text: "Technical and HR interview rounds with per-answer scoring and feedback." },
   { color: "#14b8a6", icon: "📄", name: "Resume Builder", text: "Create, import, analyze and export ATS-friendly resumes in a guided workflow." },
-  { color: "#3b82f6", icon: "🔎", name: "Job Fetching Agent", text: "Finds roles that match your profile and ranks them with an explainable fit score." },
+  { color: "#3b82f6", icon: "🔎", name: "Job Agent", text: "Finds roles that match your profile and ranks them with an explainable fit score." },
   { color: "#a78bfa", icon: "📜", name: "AI Certification Agent", text: "Exam generation, chat-based assessment, leaderboard and PDF certificates." },
 ];
 

@@ -41,8 +41,8 @@ AUDIO_EXTENSIONS = {
 # Helps the model spell the platform's own words right.
 VOCABULARY_HINT = (
     "A learner asking the DigiDARA AI Agents assistant about its agents: Capstone Project Agent, "
-    "LeetCode Agent, CodeForge, Aptitude Trainer, Mock Interview, Communication Coach, Resume Builder, "
-    "AI Certification Agent, Job Fetching Agent, points, viva, ATS."
+    "Coding Practice, CodeForge, Aptitude Trainer, Mock Interview, Communication Coach, Resume Builder, "
+    "AI Certification Agent, Job Agent, points, viva, ATS."
 )
 # Learners speak English, Tamil, or a mix of both. Written in both scripts so
 # a Tamil question is transcribed in Tamil script instead of being forced

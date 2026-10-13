@@ -19,16 +19,16 @@ export const AGENTS: Agent[] = [
     greeting: "Hi! I'm your Career Guidance Agent. Tell me your current role and where you'd like to be in 2 years, and I'll sketch a roadmap for you.",
   },
   {
-    id: "leetcode", name: "LeetCode Agent", icon: "⌨️", color: "#eab308", author: "DigiDARA", rating: 4.7,
+    id: "leetcode", name: "Coding Practice", icon: "⌨️", color: "#eab308", author: "DigiDARA", rating: 4.7,
     category: ["Top Picks", "Programming", "Education"], featured: true, kind: "codeforge", backendAgentName: "codeforge_agent",
     desc: "Practice real coding problems by course and topic, run and submit against sandboxed tests, and get AI tutor guidance when you're stuck.",
     greeting: "Ready to practice? Connecting you now…",
   },
   {
-    id: "job-fetch", name: "Job Fetching Agent", icon: "🔎", color: "#3b82f6", author: "DigiDARA", rating: 4.6,
+    id: "job-fetch", name: "Job Agent", icon: "🔎", color: "#3b82f6", author: "DigiDARA", rating: 4.6,
     category: ["Career", "Productivity"], featured: false, kind: "job-fetch", backendAgentName: "job_agent",
     desc: "Continuously scans job boards for roles matching your profile and ranks them by an explainable fit score.",
-    greeting: "Connecting you to the Job Fetching Agent…",
+    greeting: "Connecting you to the Job Agent…",
   },
   {
     id: "research", name: "Research Agent", icon: "📚", color: "#06b6d4", author: "DigiDARA", rating: 4.8,

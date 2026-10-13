@@ -18,7 +18,7 @@ export const ADMIN_PANELS: AdminPanelMeta[] = [
   { id: "agents", label: "Agents", icon: "🤖", desc: "Every registered agent: health, actions, endpoint and how much it is used." },
   {
     id: "job-agent",
-    label: "Job Fetching Agent",
+    label: "Job Agent",
     icon: "🔎",
     desc: "Job moderation queue, scraper source health, Greenhouse/Apify collection, and user plan tiers.",
   },

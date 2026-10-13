@@ -38,8 +38,8 @@ def test_router_prompt_carries_the_platform_guide_and_security_rules(has_tools):
 
 
 def test_the_guide_covers_every_live_agent_with_steps():
-    for name in ("Capstone Project Agent", "LeetCode Agent", "Aptitude Trainer Agent", "Mock Interview Agent",
-                 "Communication Coach Agent", "Resume Builder Agent", "AI Certification Agent", "Job Fetching Agent"):
+    for name in ("Capstone Project Agent", "Coding Practice", "Aptitude Trainer Agent", "Mock Interview Agent",
+                 "Communication Coach Agent", "Resume Builder Agent", "AI Certification Agent", "Job Agent"):
         assert name in PLATFORM_GUIDE
     assert PLATFORM_GUIDE.count("Steps:") == 8
     assert "Start 7-day timer" in PLATFORM_GUIDE and ".zip source code" in PLATFORM_GUIDE

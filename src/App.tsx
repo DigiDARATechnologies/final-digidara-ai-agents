@@ -1489,7 +1489,7 @@ export default function App() {
           appendAgentMessages(chatId, messages);
         })
         .catch((error) => {
-          appendAgentMessages(chatId, [{ text: `Job Fetching Agent request failed: ${(error as Error).message}` }]);
+          appendAgentMessages(chatId, [{ text: `Job Agent request failed: ${(error as Error).message}` }]);
         })
         .finally(() => setTyping(false));
       return;

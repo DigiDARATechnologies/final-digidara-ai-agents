@@ -40,17 +40,17 @@ export const FAQ: FaqItem[] = [
   {
     topic: "Agents",
     q: "Which agents help with getting a job?",
-    a: "The Career Guidance Agent maps your path, the Resume Builder Agent creates ATS-friendly resumes, the Job Fetching Agent finds and ranks matching roles, and the Mock Interview Agent lets you practise interviews. The Aptitude Trainer and Communication Coach agents help you prepare for tests and speak with confidence.",
+    a: "The Career Guidance Agent maps your path, the Resume Builder Agent creates ATS-friendly resumes, the Job Agent finds and ranks matching roles, and the Mock Interview Agent lets you practise interviews. The Aptitude Trainer and Communication Coach agents help you prepare for tests and speak with confidence.",
   },
   {
     topic: "Agents",
     q: "Which agents help me learn and practise?",
-    a: "The LeetCode Agent for coding practice, the Aptitude Trainer Agent for timed practice sets, the Communication Coach Agent for pronunciation, speaking and writing, the Capstone Project Agent for a guided project, and the AI Certification Agent for exams and certificates.",
+    a: "Coding Practice for coding exercises, the Aptitude Trainer Agent for timed practice sets, the Communication Coach Agent for pronunciation, speaking and writing, the Capstone Project Agent for a guided project, and the AI Certification Agent for exams and certificates.",
   },
   {
     topic: "Files & uploads",
     q: "Can I upload files to an agent?",
-    a: "Some agents accept files. Use the plus button in the message box once you are chatting with the agent. Capstone Project accepts .docx and .zip files, Resume Builder accepts .pdf, .doc, .docx and .txt files, and Job Fetching accepts .pdf, .doc and .docx files.",
+    a: "Some agents accept files. Use the plus button in the message box once you are chatting with the agent. Capstone Project accepts .docx and .zip files, Resume Builder accepts .pdf, .doc, .docx and .txt files, and Job Agent accepts .pdf, .doc and .docx files.",
   },
   {
     topic: "Files & uploads",

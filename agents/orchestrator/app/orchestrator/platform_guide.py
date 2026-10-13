@@ -34,7 +34,7 @@ Steps:
   8. Answer the viva questions in the chat. You get more than one viva attempt.
   9. When both your project score and the viva pass, check how your name is spelled and get your certificate and the final report (PDF). If you do not pass, improve the project and resubmit.
 
-2. LeetCode Agent (CodeForge coding practice)
+2. Coding Practice (CodeForge)
 Purpose: practise coding problems course by course and topic by topic.
 Steps:
   1. Choose a course, then a topic, then a problem.
@@ -86,7 +86,7 @@ Steps:
   3. Score 70% or more to pass and earn the certificate.
   4. Download the PDF certificate and the exam report, or email the certificate. Use "My Certificates" to see all of them.
 
-8. Job Fetching Agent
+8. Job Agent
 Purpose: find jobs that match your skills, with a fit score for each.
 Steps:
   1. Set up your profile: skills, experience, preferred locations and work mode (Remote, Hybrid, Office or Any). Uploading a resume is optional.
