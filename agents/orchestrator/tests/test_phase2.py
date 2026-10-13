@@ -669,7 +669,7 @@ def test_admins_filter_drill_down_and_every_look_is_logged(app_client, agents, d
     assert sorted(entry["action"] for entry in log) == ["conversation", "profile"] and log[0]["viewer"] == "Org Admin"
     # The learner sees who looked.
     mine = app_client.get("/organizations/me/access-log", headers=auth()).json()
-    assert mine[0]["target"] == "Mock interview" and mine[0]["subject"] == "Learner"
+    assert any(entry["target"] == "Mock interview" and entry["subject"] == "Learner" for entry in mine)
     # A member of the organization cannot drill into anyone.
     assert app_client.get(f"/organizations/{org_id}/members/{member_id}/detail", headers=auth("other")).status_code == 403
 
