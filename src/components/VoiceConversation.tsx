@@ -20,19 +20,25 @@ interface Props {
   /** Opened just after a question was sent (from the start screen): wait for
    * its reply and speak it, instead of listening first. */
   awaitingReply?: boolean;
+  /** The learner's first name, for Boss's greeting. */
+  learnerName?: string;
+}
+
+/** What Boss says when the conversation opens. */
+export function bossGreeting(name?: string): string {
+  const first = (name || "").trim().split(/\s+/)[0];
+  return `Hi${first ? ` ${first}` : ""}! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.`;
 }
 
 /**
- * The DigiDARA Assistant as a spoken conversation: the logo in the middle
- * listens, and a 5-second pause sends what was said (transcribed by OpenAI);
+ * Boss (the DigiDARA Assistant) as a spoken conversation: it greets the
+ * learner, then the logo in the middle listens, and a 5-second pause sends what was said (transcribed by OpenAI);
  * the reply is spoken, then it listens again -- until the learner ends it.
  * The chat carries on behind it, so every turn is still written down there.
  */
-export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false }: Props) {
+export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName }: Props) {
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [phase, setPhase] = useState<Phase>(awaitingReply ? "thinking" : "listening");
-  const [heard, setHeard] = useState("");
-  const [reply, setReply] = useState("");
   const [sendIn, setSendIn] = useState<number | null>(null);
   const orbRef = useRef<HTMLDivElement | null>(null);
   const openRef = useRef(true);
@@ -51,12 +57,9 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     if (!openRef.current) return;
     stopSpeaking();
     setPhase("listening");
-    setHeard("");
     setSendIn(null);
     speech.start((text, final) => {
-      if (!openRef.current) return;
-      setHeard(text);
-      if (!final) return;
+      if (!openRef.current || !final) return;
       setSendIn(null);
       setLevel(0);
       const question = text.trim();
@@ -78,14 +81,14 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
 
   function speak(text: string) {
     setPhase("speaking");
-    setReply(text);
     void speakNatural(text, { onEnd: () => { if (openRef.current) listen(); } }, true)
       .then((started) => { if (!started && openRef.current) listen(); });
   }
 
   useEffect(() => {
     openRef.current = true;
-    if (!awaitingReply) listen();
+    // Boss greets first, then listens.
+    if (!awaitingReply) speak(bossGreeting(learnerName));
     return () => {
       openRef.current = false;
       stopSpeaking();
@@ -131,7 +134,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
         : speech.listening ? sendIn !== null ? `Sending in ${sendIn}s - keep talking to continue` : "Listening... just talk"
           : speech.error ? "Tap the logo to try again" : "Starting microphone...";
 
-  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}`} role="dialog" aria-label="Voice conversation with DigiDARA">
+  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}`} role="dialog" aria-label="Voice conversation with Boss">
     <button type="button" className="voice-conversation-end" onClick={end}>End voice chat</button>
     <div className="voice-conversation-center">
       <div ref={orbRef} className="voice-conversation-orb">
@@ -142,9 +145,9 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
           <Logo variant="icon" size={92} />
         </button>
       </div>
-      <p className="voice-conversation-status" aria-live="polite">{status}</p>
-      {phase === "listening" && heard && <p className="voice-conversation-heard">“{heard}”</p>}
-      {phase !== "listening" && reply && <p className="voice-conversation-reply">{reply.replace(/[*_#`]/g, "")}</p>}
+      {/* No words on screen: the logo shows what is happening, and the status
+          is read out to screen readers only. */}
+      <p className="visually-hidden" aria-live="polite">{status}</p>
       {speech.error && <p className="voice-conversation-error" role="alert">{speech.error}</p>}
     </div>
   </div>;

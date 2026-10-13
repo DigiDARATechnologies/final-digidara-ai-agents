@@ -31,6 +31,22 @@ def current() -> dict | None:
     return _current.get()
 
 
+def own_skills_for(role: str | None, limit: int = 10) -> list[str]:
+    """The learner's own listed skills, when this interview is for their
+    target role -- so a role interview covers the skills they actually have
+    rather than only ones inferred from the role name. [] otherwise."""
+    learner = current()
+    target = " ".join(str((learner or {}).get("target_role") or "").lower().split())
+    if not target or " ".join(str(role or "").lower().split()) != target:
+        return []
+    skills: list[str] = []
+    for skill in learner.get("skills") or []:
+        text = " ".join(str(skill).split())[:60].lower()
+        if text and text not in skills:
+            skills.append(text)
+    return skills[:limit]
+
+
 def _texts(items, kinds=None) -> list[str]:
     result = []
     for item in items or []:

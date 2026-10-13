@@ -12,7 +12,6 @@ import {
   initialCapstoneMessage,
   mergeCapstoneFiles,
   submitCapstoneFiles,
-  regenerateTopicsForDifficulty,
   VIVA_TIME_UP_ACTION,
   type CapstoneFlowState,
 } from "./lib/capstoneFlow";
@@ -1848,26 +1847,7 @@ export default function App() {
       : capstoneState.step === "awaiting_topic_choice"
         ? "Pick project A or B to continue"
         : null;
-    if ((capstoneState.step === "awaiting_topic_request" || capstoneState.step === "awaiting_topic_choice") && currentChat) {
-      const chatId = currentChat.id;
-      connectorDifficultyPicker = {
-        value: capstoneState.difficulty,
-        onChange: (value) => {
-          const flowState = capstoneStates[chatId];
-          if (!flowState || value === flowState.difficulty) return;
-          if (flowState.step !== "awaiting_topic_choice") {
-            setCapstoneStates((prev) => ({ ...prev, [chatId]: { ...prev[chatId], difficulty: value } }));
-            return;
-          }
-          setTyping(true);
-          regenerateTopicsForDifficulty(flowState, value).then(({ state: nextState, messages }) => {
-            setCapstoneStates((prev) => ({ ...prev, [chatId]: nextState }));
-            appendAgentMessages(chatId, messages);
-            setTyping(false);
-          });
-        },
-      };
-    }
+    // No difficulty picker: the project follows the learner's Job Readiness level.
     if (typing) {
       if (capstoneState.step === "awaiting_topic_request") {
         typingLabel = "Searching the web for real project ideas and generating two options…";
@@ -2045,6 +2025,7 @@ export default function App() {
             <NewChatLanding
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
+              userName={user?.name}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
           )}

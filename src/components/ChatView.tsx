@@ -766,7 +766,7 @@ export default function ChatView({
             <button
               type="button"
               className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={isGeneralChat ? "Talk with DigiDARA" : speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              title={isGeneralChat ? "Talk with Boss" : speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
               disabled={speech.transcribing}
               onClick={isGeneralChat ? () => { stopSpeaking(); setVoiceConversation("listen"); } : handleMicClick}
             >
@@ -802,7 +802,7 @@ export default function ChatView({
       )}
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
       {isGeneralChat && voiceConversation !== "off" && (
-        <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"}
+        <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"} learnerName={user.name}
           onSend={(text) => onSend(text)} onClose={() => setVoiceConversation("off")} />
       )}
     </section>

@@ -14,9 +14,11 @@ interface NewChatLandingProps {
   onAttachClick: () => void;
   /** Starts a chat with the chosen agent. */
   onOpenAgent: (agentId: string) => void;
+  /** The learner's name, for Boss's spoken greeting. */
+  userName?: string;
 }
 
-export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: NewChatLandingProps) {
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The microphone opens a spoken conversation with the DigiDARA Assistant;
@@ -74,8 +76,8 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
             <button
               type="button"
               className="icon-btn"
-              title="Talk with DigiDARA"
-              aria-label="Talk with DigiDARA"
+              title="Talk with Boss"
+              aria-label="Talk with Boss"
               onClick={() => setTalking(true)}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -122,7 +124,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent }: N
         </div>
       </div>
       {talking && (
-        <VoiceConversation messages={[]} typing={false} onClose={() => setTalking(false)}
+        <VoiceConversation messages={[]} typing={false} learnerName={userName} onClose={() => setTalking(false)}
           onSend={(text) => { continueVoiceConversation(); onSend(text); }} />
       )}
     </section>

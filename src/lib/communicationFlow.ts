@@ -153,11 +153,6 @@ function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedba
   return formatSpeakingTurn({ said: answer.trim(), better: hasCorrection ? corrected : "", comment: reaction, next: nextQuestion });
 }
 
-const DIFFICULTY_OPTIONS: ChatOption[] = [
-  { label: "Easy", value: "easy" },
-  { label: "Medium", value: "medium" },
-  { label: "Hard", value: "hard" },
-];
 
 const WRITING_MODE_OPTIONS: ChatOption[] = [
   { label: "✍️ Write about the topic with AI", value: "writing_mode_write", description: "Answer a writing prompt in a paragraph" },
@@ -532,8 +527,8 @@ export async function handleCommunicationText(
       return {
         state: { ...state, step: "awaiting_writing_topic" },
         messages: [{
+          // No level choice: practice follows the learner's Job Readiness level.
           text: "What would you like to write about? Type a topic, or 'daily' for today's Daily Writing Challenge.",
-          options: DIFFICULTY_OPTIONS,
         }],
       };
     }
@@ -542,7 +537,6 @@ export async function handleCommunicationText(
         state: { ...state, step: "awaiting_speaking_topic" },
         messages: [{
           text: "What would you like to talk about? Type a topic, or 'daily' for today's Daily Conversation.",
-          options: DIFFICULTY_OPTIONS,
         }],
       };
     }

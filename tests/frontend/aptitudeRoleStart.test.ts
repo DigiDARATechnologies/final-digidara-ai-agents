@@ -6,7 +6,7 @@ jest.mock('../../src/lib/aptitudeApi', () => ({
 }));
 
 import * as api from '../../src/lib/aptitudeApi';
-import { handleAptitudeText, initialAptitudeMessage, roleFamily, type AptitudeFlowState } from '../../src/lib/aptitudeFlow';
+import { aptitudeLanguages, handleAptitudeText, initialAptitudeMessage, roleFamily, type AptitudeFlowState } from '../../src/lib/aptitudeFlow';
 import { setLearnerContext } from '../../src/lib/learnerContext';
 import type { LearnerSummary } from '../../src/lib/learnerApi';
 
@@ -69,4 +69,35 @@ test('the role mix becomes the mixed test setup, then the test starts', async ()
 
 test('without a profile the opening is unchanged', () => {
   expect(initialAptitudeMessage(user).options?.map((o) => o.value)).toEqual(['mixed', 'category_practice']);
+});
+
+function withSkills(role: string, skills: string[], level = 'medium'): LearnerSummary {
+  const summary = learner(role, level);
+  return { ...summary, profile: { ...summary.profile, skills } };
+}
+
+test('Technical Aptitude offers only the languages in the learner skills and role', () => {
+  setLearnerContext(withSkills('ai engineer', ['java', 'python', 'llm']));
+  expect(aptitudeLanguages()).toEqual(['Java', 'Python']);
+  setLearnerContext(withSkills('data analyst', ['excel', 'power bi']));
+  expect(aptitudeLanguages()).toEqual(['SQL']);
+  setLearnerContext(withSkills('frontend developer', ['react', 'css']));
+  expect(aptitudeLanguages()).toEqual(['Python']);
+  setLearnerContext(null);
+  expect(aptitudeLanguages()).toEqual(['Python', 'Java', 'C', 'SQL']);
+});
+
+test('Category Practice runs at the learner level with no level step, and one language starts at once', async () => {
+  setLearnerContext(withSkills('data analyst', ['sql', 'excel'], 'hard'));
+  const atCategory: AptitudeFlowState = { step: 'awaiting_category', mode: 'category_practice', sessionToken: 's' };
+  await handleAptitudeText(atCategory, 'Technical Aptitude', user);
+  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'category_practice', technical_language: 'SQL', category: 'Technical Aptitude', level: 'Advanced' });
+});
+
+test('with two languages Category Practice asks which, offering only those', async () => {
+  setLearnerContext(withSkills('ai engineer', ['java', 'python']));
+  const atCategory: AptitudeFlowState = { step: 'awaiting_category', mode: 'category_practice', sessionToken: 's' };
+  const result = await handleAptitudeText(atCategory, 'Technical Aptitude', user);
+  expect(result.state).toMatchObject({ step: 'awaiting_language', level: 'Intermediate' });
+  expect(result.messages[0].options?.map((o) => o.value)).toEqual(['Java', 'Python']);
 });

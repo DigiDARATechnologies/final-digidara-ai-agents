@@ -116,10 +116,10 @@ export const LIVE_AGENTS: Agent[] = AGENTS.filter((a) => a.kind);
 
 export const DEFAULT_AGENT: Agent = {
   id: "digidara-assistant",
-  name: "DigiDARA Assistant",
+  name: "Boss",
   icon: "⚡",
   color: "#365f91",
-  greeting: "Hi, I'm your DigiDARA Assistant. Ask me anything, or open a specialized agent from the store for focused help.",
+  greeting: "Hi, I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA, or open a specialised agent for focused help.",
 };
 
 export const CANNED_REPLIES = [

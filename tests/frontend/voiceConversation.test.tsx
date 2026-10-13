@@ -15,7 +15,7 @@ jest.mock('../../src/hooks/useSpeechRecognition', () => ({
   default: () => ({ supported: true, listening: mockListening, transcribing: false, error: '', start: mockStart, stop: mockStop, cancel: mockCancel }),
 }));
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import VoiceConversation, { CONVERSATION_PAUSE_MS } from '../../src/components/VoiceConversation';
+import VoiceConversation, { bossGreeting, CONVERSATION_PAUSE_MS } from '../../src/components/VoiceConversation';
 import type { ChatMessage } from '../../src/types';
 
 const msg = (role: 'user' | 'agent', text: string): ChatMessage => ({ role, text, time: '' });
@@ -30,24 +30,29 @@ beforeEach(() => {
   mockStart.mockReturnValue(true);
 });
 
-test('listens, sends after a 5 second pause, speaks the reply, then listens again', () => {
+test('Boss greets, listens, sends after a 5 second pause, speaks the reply, then listens again', () => {
   let speakDone: () => void = () => {};
   mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { speakDone = handlers.onEnd; return Promise.resolve(true); });
   const onSend = jest.fn();
   const messages = [msg('agent', 'Hi!')];
-  const { rerender } = render(<VoiceConversation messages={messages} typing={false} onSend={onSend} onClose={jest.fn()} />);
+  const { rerender } = render(<VoiceConversation messages={messages} typing={false} learnerName="Senthil Kumar" onSend={onSend} onClose={jest.fn()} />);
+  expect(mockSpeak).toHaveBeenCalledWith(bossGreeting('Senthil Kumar'), expect.anything(), true);
+  expect(bossGreeting('Senthil Kumar')).toBe("Hi Senthil! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.");
+  expect(mockStart).not.toHaveBeenCalled();
+  act(() => { speakDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS }));
   expect(CONVERSATION_PAUSE_MS).toBe(5000);
 
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
-  expect(screen.getByText('“What is DigiDARA”')).toBeInTheDocument();
+  // No words on screen, only the logo.
+  expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA?', true); });
   expect(onSend).toHaveBeenCalledWith('What is DigiDARA?');
-  expect(screen.getByText('Thinking...')).toBeInTheDocument();
+  expect(screen.getByText('Thinking...')).toHaveClass('visually-hidden');
 
   rerender(<VoiceConversation messages={[...messages, msg('user', 'What is DigiDARA?')]} typing onSend={onSend} onClose={jest.fn()} />);
-  expect(mockSpeak).not.toHaveBeenCalled();
+  expect(mockSpeak).toHaveBeenCalledTimes(1);
   rerender(<VoiceConversation messages={[...messages, msg('user', 'What is DigiDARA?'), msg('agent', 'Your AI career coach!')]} typing={false} onSend={onSend} onClose={jest.fn()} />);
   expect(mockSpeak).toHaveBeenCalledWith('Your AI career coach!', expect.anything(), true);
   expect(mockStart).toHaveBeenCalledTimes(1);
