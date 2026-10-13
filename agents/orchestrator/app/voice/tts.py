@@ -266,13 +266,25 @@ def take_ticket(ticket: str) -> dict | None:
     return entry[1]
 
 
+_openai_client: httpx.Client | None = None
+
+
+def _openai() -> httpx.Client:
+    """One kept-alive connection pool to OpenAI for every voice request, so a
+    sentence does not pay for a new TLS handshake (a few hundred ms)."""
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = httpx.Client(timeout=TTS_TIMEOUT_SECONDS, limits=httpx.Limits(max_keepalive_connections=8))
+    return _openai_client
+
+
 def open_stream(text: str, spoken_as: str):
     """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
     or VoiceError before any byte is sent."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
-    client = httpx.Client(timeout=TTS_TIMEOUT_SECONDS)
+    client = _openai()
     try:
         request = client.build_request(
             "POST", OPENAI_SPEECH_URL,
@@ -284,13 +296,11 @@ def open_stream(text: str, spoken_as: str):
         )
         response = client.send(request, stream=True)
     except httpx.HTTPError as exc:
-        client.close()
         logger.warning("tts stream request failed: %s", type(exc).__name__)
         raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
     if response.status_code != 200:
         logger.warning("tts stream returned HTTP %s", response.status_code)
         response.close()
-        client.close()
         raise VoiceError(502, "The voice could not be generated. Please try again.")
 
     def chunks():
@@ -305,7 +315,6 @@ def open_stream(text: str, spoken_as: str):
             logger.warning("tts stream broke off", exc_info=True)
         finally:
             response.close()
-            client.close()
             if complete and parts:
                 audio = b"".join(parts)
                 _remember(_cache_key(text, spoken_as, VOICE), audio, text)

@@ -97,7 +97,7 @@ def _fake_openai(monkeypatch, status_code=200):
         def close(self):
             pass
 
-    monkeypatch.setattr(tts, "httpx", SimpleNamespace(Client=Client, HTTPError=httpx.HTTPError))
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
 
 
 def test_a_voice_ticket_streams_once_and_is_charged_once(api, monkeypatch):  # noqa: F811
