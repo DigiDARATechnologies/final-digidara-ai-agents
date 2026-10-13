@@ -315,7 +315,8 @@ def test_completing_a_level_moves_up_once(app_client, agents, monkeypatch):
     level = learner_service.get_levels("learner")["codeforge_agent"]
     assert level["level"] == "medium" and level["source"] == "readiness"
     # No new practice since the change: a full score does not carry it on to Hard.
-    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    # Below zero: MySQL rounds the stored time to the second, so "just now" can look a moment ahead.
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
     calls = len(agents.calls)
     again = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
     assert len(agents.calls) > calls and "cached" not in again
@@ -536,7 +537,8 @@ def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
     # One agent's Beginner out of seven: 25 / 7.
     assert body["overall"] == 3.6
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 40, "hard": 0}})
-    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    # Below zero: MySQL rounds the stored time to the second, so "just now" can look a moment ahead.
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
     coding = next(a for a in app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["areas"]
                   if a["agent_name"] == "codeforge_agent")
     # 40% of Medium is not a completed level yet.
@@ -552,7 +554,8 @@ def test_overall_is_25_only_when_every_agent_completed_beginner(app_client, agen
     # Six of seven agents finished Beginner: 150 / 7.
     assert body["overall"] == 21.4
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
-    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    # Below zero: MySQL rounds the stored time to the second, so "just now" can look a moment ahead.
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
     assert app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["overall"] == 25
 
 
@@ -662,7 +665,8 @@ def test_admins_filter_drill_down_and_every_look_is_logged(app_client, agents, d
     chat = app_client.get(f"/organizations/{org_id}/members/{member_id}/conversations/c1", headers=auth("admin")).json()
     assert chat["messages"][0]["content"] == "hello"
     log = app_client.get(f"/organizations/{org_id}/access-log", headers=auth("admin")).json()
-    assert [entry["action"] for entry in log] == ["conversation", "profile"] and log[0]["viewer"] == "Org Admin"
+    # Both looks happened within the same second (MySQL keeps whole seconds), so either may be listed first.
+    assert sorted(entry["action"] for entry in log) == ["conversation", "profile"] and log[0]["viewer"] == "Org Admin"
     # The learner sees who looked.
     mine = app_client.get("/organizations/me/access-log", headers=auth()).json()
     assert mine[0]["target"] == "Mock interview" and mine[0]["subject"] == "Learner"

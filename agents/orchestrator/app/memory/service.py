@@ -37,13 +37,16 @@ def _dict(row: LearnerMemory) -> dict:
     }
 
 
-def _trim(session, user_id: str) -> None:
-    """Keep at most MAX_PER_USER: the least important, oldest unpinned go first."""
+def _trim(session, user_id: str, keep_id=None) -> None:
+    """Keep at most MAX_PER_USER: the least important, oldest unpinned go first.
+    `keep_id` (the memory just written) is never removed: MySQL stores times to
+    the second, so it can tie with older ones on age."""
     count = session.query(LearnerMemory).filter_by(user_id=user_id).count()
     if count <= MAX_PER_USER:
         return
     extra = (
         session.query(LearnerMemory).filter_by(user_id=user_id, pinned=False)
+        .filter(LearnerMemory.id != keep_id)
         .order_by(LearnerMemory.importance.asc(), LearnerMemory.updated_at.asc())
         .limit(count - MAX_PER_USER).all()
     )
@@ -74,7 +77,7 @@ def add(user_id: str, text: str, kind: str = "note", source: str = "user",
                                 agent_name=agent_name, importance=importance, pinned=pinned)
             session.add(row)
         session.flush()
-        _trim(session, user_id)
+        _trim(session, user_id, row.id)
         session.commit()
         session.refresh(row)
         return _dict(row)
