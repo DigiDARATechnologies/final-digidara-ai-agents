@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { previewVoice, stopSpeaking } from "../lib/voiceEngine";
 import {
-  VOICE_LANGUAGES,
   VOICE_PERSONAS,
   loadVoicePrefs,
   saveVoicePrefs,
@@ -40,13 +39,6 @@ export default function VoiceSettings() {
       </div>
       <div className="setting-row">
         <div><b>Voice</b><p>{VOICE_PERSONAS[0].label}: {VOICE_PERSONAS[0].description}. Every agent speaks with this same voice.</p></div>
-      </div>
-      <div className="setting-row">
-        <div><b>Language</b><p>Tamil, English, or follow each reply. Voice input uses it too.</p></div>
-        <select className="voice-select" value={prefs.language} disabled={!prefs.enabled}
-          onChange={(e) => update({ language: e.target.value as VoicePrefs["language"] })}>
-          {VOICE_LANGUAGES.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
-        </select>
       </div>
       <div className="setting-row">
         <div><b>Speed</b><p>{prefs.speed.toFixed(2)}×</p></div>

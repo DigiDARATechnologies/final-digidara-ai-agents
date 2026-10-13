@@ -35,6 +35,8 @@ export function loadVoicePrefs(): VoicePrefs {
     prefs.persona = DEFAULTS.persona;
     if (!VOICE_LANGUAGES.some((l) => l.id === prefs.language)) prefs.language = DEFAULTS.language;
     prefs.mode = "natural";
+    // Every agent speaks and listens in English.
+    prefs.language = "en";
     prefs.speed = Math.min(1.3, Math.max(0.8, Number(prefs.speed) || 1));
     prefs.enabled = prefs.enabled !== false;
     return prefs;
@@ -55,7 +57,7 @@ export function voiceLanguagePreference(): VoiceLanguage {
   return loadVoicePrefs().language;
 }
 
-/** The speech-recognition locale for voice input in the general chat. */
+/** The speech-recognition locale: every agent listens in (Indian) English. */
 export function recognitionLocale(): string {
-  return voiceLanguagePreference() === "ta" ? "ta-IN" : "en-IN";
+  return "en-IN";
 }

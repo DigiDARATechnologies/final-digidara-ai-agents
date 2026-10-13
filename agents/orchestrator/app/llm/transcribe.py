@@ -38,23 +38,13 @@ AUDIO_EXTENSIONS = {
     "audio/x-wav": "wav",
 }
 
-# Helps the model spell the platform's own words right.
+# Helps the model spell the platform's own words right. Only vocabulary --
+# never instructions: on silence or a very short recording the model can
+# return its prompt as the "transcript", and an instruction would then appear
+# in the learner's message box. _is_prompt_echo() removes any echo that remains.
 VOCABULARY_HINT = (
-    "A learner asking the DigiDARA AI Agents assistant about its agents: Capstone Project Agent, "
-    "Coding Practice, CodeForge, Aptitude Trainer, Mock Interview, Communication Coach, Resume Builder, "
-    "AI Certification Agent, Job Agent, points, viva, ATS."
-)
-# Learners speak English, Tamil, or a mix of both. Written in both scripts so
-# a Tamil question is transcribed in Tamil script instead of being forced
-# into English, and English words inside Tamil speech stay in English.
-BILINGUAL_HINT = (
-    "The learner may speak English, Tamil, or Tamil mixed with English words. "
-    "தமிழில் பேசினால் தமிழ் எழுத்தில் எழுதவும்; ஆங்கில சொற்களை ஆங்கிலத்திலேயே வைக்கவும். "
-)
-# Learners often speak in a classroom or a crowd: only the main speaker counts.
-NOISE_HINT = (
-    "Transcribe only the main speaker, who is closest to the microphone. Ignore background voices, "
-    "other people talking nearby and noise. "
+    "DigiDARA AI Agents, Boss, Capstone Project Agent, Coding Practice, CodeForge, Aptitude Trainer, "
+    "Mock Interview, Communication Coach, Resume Builder, AI Certification Agent, Job Agent, points, viva, ATS."
 )
 LANGUAGES = {"auto": None, "en": "en", "ta": "ta"}
 
@@ -98,10 +88,9 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
             files={"file": (f"question.{extension}", audio, base_type)},
             data={
                 "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
-                "prompt": NOISE_HINT + BILINGUAL_HINT + VOCABULARY_HINT,
-                # A fixed language when the learner chose one; otherwise the
-                # model detects it, so a Tamil question stays Tamil.
-                **({"language": LANGUAGES[language]} if LANGUAGES.get(language) else {}),
+                "prompt": VOCABULARY_HINT,
+                # Every agent works in English: the speech is always written as English.
+                "language": "en",
             },
             timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
         )
@@ -116,5 +105,30 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
         text = str(response.json().get("text") or "").strip()
     except ValueError as exc:
         raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.") from exc
+    if _is_prompt_echo(text):
+        # Silence or noise came back as the prompt itself: nothing was said.
+        logger.info("transcription of %d bytes was the prompt echoed back; treated as silence", len(audio))
+        return ""
     logger.info("transcribed %d bytes of %s into %d chars", len(audio), base_type, len(text))
     return text
+
+
+# Phrases of prompts this service sends (and sent before), which the model
+# sometimes returns instead of the speech when it hears nothing.
+_ECHO_MARKERS = (
+    "transcribe only the main speaker", "ignore background voices", "the learner may speak english",
+    "a learner asking the digidara", "context: ###", "digidara ai agents, boss, capstone",
+)
+
+
+def _is_prompt_echo(text: str) -> bool:
+    """The transcript is (part of) the prompt rather than anything said: a
+    known prompt phrase, or six words in a row straight from the vocabulary."""
+    lowered = " ".join(text.lower().split())
+    if not lowered:
+        return False
+    if any(marker in lowered for marker in _ECHO_MARKERS):
+        return True
+    words = [w.strip(".,;:!?") for w in lowered.split()]
+    hint = " ".join(w.strip(".,;:!?") for w in VOCABULARY_HINT.lower().split())
+    return any(" ".join(words[i:i + 6]) in hint for i in range(0, max(0, len(words) - 5)))

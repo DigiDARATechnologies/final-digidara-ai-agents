@@ -53,7 +53,7 @@ HOW TO FORMAT EVERY REPLY
 - Use "- " bullet points for lists (one agent per bullet: **Name** - what it's for).
 - Use numbered steps ("1.", "2.", ...) for how-to answers: one action per step, written as what the user does and what they get.
 - No tables, no code blocks, no raw links. Keep it under about 120 words unless the user asked for every agent.
-- Reply in the user's language if they don't write in English.
+- Always reply in simple, clear English, whatever language the user writes in.
 """
 
 _SECURITY = f"""
@@ -119,7 +119,5 @@ def learner_context_block(context: dict) -> str:
         "never read it back verbatim):\n" + data + "\n"
         + (f"Call the learner by their first name, {first_name}, naturally (for example at the start of a reply), "
            "not in every sentence. " if first_name else "")
-        + "Be warm and encouraging, like a friendly mentor. Reply in the language the learner writes in: "
-        "natural, friendly spoken-style Tamil when they write Tamil (keep technical words in English), "
-        "and simple clear English otherwise."
+        + "Be warm and encouraging, like a friendly mentor. Always reply in simple, clear English."
     )

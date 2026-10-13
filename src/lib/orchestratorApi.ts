@@ -1,5 +1,4 @@
 import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
-import { voiceLanguagePreference } from "./voicePrefs";
 import { sessionToken } from "./session";
 const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
 
@@ -32,7 +31,7 @@ export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     // The learner's voice language: Tamil questions stay in Tamil script.
-    body: JSON.stringify({ audio_base64: await audioBlobToBase64(audio), mime_type: baseAudioType(audio), language: voiceLanguagePreference() }),
+    body: JSON.stringify({ audio_base64: await audioBlobToBase64(audio), mime_type: baseAudioType(audio), language: "en" }),
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

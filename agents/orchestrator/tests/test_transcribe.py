@@ -88,8 +88,26 @@ def test_it_is_rate_limited_per_user(api, monkeypatch):
     assert codes[:40] == [200] * 40 and codes[40] == 429
 
 
-def test_only_the_main_speaker_is_transcribed_in_a_crowd(api, monkeypatch):
+@pytest.mark.parametrize("echo", [
+    "context: ### Transcribe only the main speaker, who is closest to the microphone. Ignore background voices ###",
+    "The learner may speak English, Tamil, or Tamil mixed with English words.",
+    "DigiDARA AI Agents, Boss, Capstone Project Agent, Coding Practice, CodeForge, Aptitude Trainer",
+])
+def test_the_prompt_echoed_back_on_silence_is_never_shown_as_speech(api, monkeypatch, echo):
+    openai_replies(monkeypatch, body={"text": echo})
+    response = api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
+    assert response.status_code == 200 and response.json() == {"transcript": ""}
+
+
+def test_real_questions_about_the_agents_are_kept(api, monkeypatch):
+    openai_replies(monkeypatch, body={"text": "What does the Capstone Project Agent do?"})
+    assert api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers()).json()["transcript"] == "What does the Capstone Project Agent do?"
+
+
+def test_speech_is_always_english_and_the_prompt_is_only_vocabulary(api, monkeypatch):
     post = openai_replies(monkeypatch)
-    api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
-    prompt = post.call_args.kwargs["data"]["prompt"]
-    assert "main speaker" in prompt and "background voices" in prompt
+    api.post("/chat/transcribe", json={"audio_base64": AUDIO, "language": "ta"}, headers=headers())
+    data = post.call_args.kwargs["data"]
+    assert data["language"] == "en" and data["prompt"] == speech.VOCABULARY_HINT
+    assert "transcribe" not in data["prompt"].lower()
+
