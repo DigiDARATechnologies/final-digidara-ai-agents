@@ -219,13 +219,24 @@ def test_speak_returns_mp3_with_a_friendly_tamil_style_and_caches(api, monkeypat
     response = api.post("/voice/speak", headers=auth(), json={"text": text, "persona": "arjun"})
     assert response.status_code == 200 and response.content == b"ID3fake-mp3"
     assert response.headers["content-type"] == "audio/mpeg" and response.headers["x-voice-language"] == "ta"
-    assert calls[0]["voice"] == "ash" and "spoken Tamil" in calls[0]["instructions"]
+    # Every request is the one platform voice, whatever persona is sent.
+    assert calls[0]["voice"] == tts.VOICE and "spoken Tamil" in calls[0]["instructions"]
     assert "friendly" in calls[0]["instructions"]
     charged = 100000 - auth_service.get_by_id("learner").token_balance
     assert charged == len(text) * voice_routes.VOICE_TOKENS_PER_CHAR
     api.post("/voice/speak", headers=auth(), json={"text": text, "persona": "arjun"})
     assert len(calls) == 1
     assert 100000 - auth_service.get_by_id("learner").token_balance == charged
+
+
+def test_english_is_spoken_in_one_clear_indian_voice(api, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    calls = []
+    monkeypatch.setattr(tts.httpx, "post", lambda url, **kw: calls.append(kw["json"]) or httpx.Response(200, content=b"x"))
+    for persona in ("nila", "meera", "kavin"):
+        api.post("/voice/speak", headers=auth(), json={"text": f"Hello from {persona}.", "persona": persona})
+    assert {c["voice"] for c in calls} == {tts.VOICE}
+    assert all("Indian English" in c["instructions"] and "slowly" in c["instructions"] for c in calls)
 
 
 def test_english_text_is_never_read_as_tamil(api, monkeypatch):

@@ -175,6 +175,64 @@ def test_passing_on_a_later_attempt_grades_the_project(client, workflow, databas
         assert [a["passed"] for a in row.viva_attempts_json] == [False, True]
 
 
+def time_up(client, submission_id):
+    return client.post("/api/invoke", json={"action": "viva_time_up", "payload": {"submission_id": submission_id}})
+
+
+def age_attempt(database, submission_id, seconds):
+    with database() as session:
+        row = session.get(Submission, submission_id)
+        row.viva_started_at = datetime.now(timezone.utc) - timedelta(seconds=seconds)
+        session.commit()
+
+
+def test_each_viva_attempt_has_twenty_minutes(client, workflow, database, monkeypatch):
+    body = upload(client).json()
+    assert body["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS == 20 * 60
+    submission_id = body["submission_id"]
+    assert time_up(client, submission_id).status_code == 409               # time remains
+    monkeypatch.setattr(routes, "verify_viva_answer", Mock(return_value={"correct": True, "note": "ok"}))
+    age_attempt(database, submission_id, 5 * 60)
+    progress = answer(client, submission_id, 0).json()
+    assert 14 * 60 <= progress["viva_seconds_left"] <= 15 * 60
+
+
+def test_running_out_of_time_ends_the_attempt_and_offers_the_next_one(client, workflow, database, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    monkeypatch.setattr(routes, "verify_viva_answer", Mock(return_value={"correct": True, "note": "ok"}))
+    for index in range(3):
+        assert answer(client, submission_id, index).status_code == 200
+    age_attempt(database, submission_id, viva.VIVA_TIME_LIMIT_SECONDS)
+    result = time_up(client, submission_id).json()
+    assert result["status"] == "viva_retry" and result["viva_timed_out"] is True
+    assert result["viva_attempt"] == 1 and result["viva_attempts_left"] == 2 and result["viva_rating"] == "Bad"
+    with database() as session:
+        attempt = session.get(Submission, submission_id).viva_attempts_json[0]
+        assert attempt["timed_out"] is True and attempt["correct"] == 3 and len(attempt["answers"]) == 10
+    started = start_attempt(client, submission_id).json()
+    assert started["viva_attempt"] == 2 and started["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS
+
+
+def test_an_answer_long_after_the_limit_is_not_graded(client, workflow, database, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    verdict = Mock(return_value={"correct": True, "note": "ok"})
+    monkeypatch.setattr(routes, "verify_viva_answer", verdict)
+    age_attempt(database, submission_id, viva.VIVA_TIME_LIMIT_SECONDS + viva.VIVA_GRACE_SECONDS + 1)
+    result = answer(client, submission_id, 0).json()
+    assert result["status"] == "viva_retry" and result["viva_timed_out"] is True
+    verdict.assert_not_called()
+
+
+def test_an_answer_just_inside_the_grace_period_is_graded(client, workflow, database, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    verdict = Mock(return_value={"correct": True, "note": "ok"})
+    monkeypatch.setattr(routes, "verify_viva_answer", verdict)
+    age_attempt(database, submission_id, viva.VIVA_TIME_LIMIT_SECONDS + 5)
+    result = answer(client, submission_id, 0).json()
+    assert result["status"] == "pending_viva" and result["viva_seconds_left"] == 0
+    verdict.assert_called_once()
+
+
 def test_start_viva_attempt_guards(client, workflow, monkeypatch):
     assert start_attempt(client, "missing").status_code == 404
     submission_id = upload(client).json()["submission_id"]

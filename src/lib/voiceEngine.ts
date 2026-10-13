@@ -6,13 +6,17 @@
  * Speed: the reply is split into sentence-sized chunks. The first chunk is
  * requested at once and plays as soon as it arrives, while the next one is
  * already being fetched, so speech starts after one sentence, not after the
- * whole reply. If natural voice is unavailable (offline, no points, server
- * error), the browser's own voice continues from the same point -- a Tamil
- * voice for Tamil text when the device has one.
+ * whole reply. Every agent on every device speaks with the same voice (Nila,
+ * a friendly Indian coach). Only if it cannot be reached at all (offline, no
+ * points) does the device's Indian voice continue from the same point -- a
+ * Tamil voice for Tamil text when the device has one.
  */
 import { speakableText, splitForSpeech } from "./voiceText";
 import { loadVoicePrefs, voiceLanguagePreference, type VoicePrefs } from "./voicePrefs";
 import { sessionToken } from "./session";
+import { pickIndianVoice } from "./indianVoice";
+
+export { pickIndianVoice };
 
 export interface SpeakHandlers {
   onStart?: () => void;
@@ -57,7 +61,18 @@ export function stopSpeaking(): void {
   }
 }
 
+/** One retry on a failed chunk, so a brief network blip does not switch the
+ * learner to a different (device) voice halfway through a reply. */
 async function fetchChunk(text: string, prefs: VoicePrefs): Promise<Blob> {
+  try {
+    return await fetchChunkOnce(text, prefs);
+  } catch (error) {
+    if (error instanceof Error && /voice (401|402|403|503)/.test(error.message)) throw error;
+    return fetchChunkOnce(text, prefs);
+  }
+}
+
+async function fetchChunkOnce(text: string, prefs: VoicePrefs): Promise<Blob> {
   const token = sessionToken() || "";
   const response = await fetch(`${BASE}/voice/speak`, {
     method: "POST",
@@ -88,17 +103,6 @@ function playBlob(blob: Blob, prefs: VoicePrefs, mySession: number, onFirstPlay:
   });
 }
 
-function pickBrowserVoice(lang: "ta" | "en"): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis?.getVoices() ?? [];
-  if (lang === "ta") return voices.find((v) => v.lang?.toLowerCase().startsWith("ta")) ?? null;
-  const preferred = [/Natural/i, /Google UK English Female/i, /Google US English/i, /Microsoft (Neerja|Heera|Jenny|Aria)/i];
-  for (const pattern of preferred) {
-    const voice = voices.find((v) => pattern.test(v.name) && v.lang?.toLowerCase().startsWith("en"));
-    if (voice) return voice;
-  }
-  return voices.find((v) => v.lang === "en-IN") ?? voices.find((v) => v.lang?.startsWith("en")) ?? null;
-}
-
 function browserSpeak(chunks: string[], prefs: VoicePrefs, mySession: number, onFirstPlay: () => void): Promise<void> {
   return new Promise((resolve) => {
     const synthesis = typeof window !== "undefined" ? window.speechSynthesis : undefined;
@@ -109,11 +113,12 @@ function browserSpeak(chunks: string[], prefs: VoicePrefs, mySession: number, on
       const text = chunks[index++];
       const lang = TAMIL.test(text) ? "ta" : "en";
       const utterance = new SpeechSynthesisUtterance(text);
-      const voice = pickBrowserVoice(lang);
+      const voice = pickIndianVoice(lang);
       if (voice) utterance.voice = voice;
       utterance.lang = voice?.lang || (lang === "ta" ? "ta-IN" : "en-IN");
-      utterance.rate = Math.min(1.4, Math.max(0.7, prefs.speed * 0.96));
-      utterance.pitch = 1.03;
+      // A little slower than the device default, so every student can follow.
+      utterance.rate = Math.min(1.3, Math.max(0.7, prefs.speed * 0.9));
+      utterance.pitch = 1;
       utterance.onstart = onFirstPlay;
       utterance.onend = next;
       utterance.onerror = next;
@@ -163,7 +168,7 @@ export async function speakNatural(text: string, handlers: SpeakHandlers = {}, f
   void (async () => {
     let index = 0;
     try {
-      if (prefs.mode === "natural") {
+      {
         let pending: Promise<Blob> | null = fetchChunk(chunks[0], prefs);
         while (pending && mySession === session) {
           const blob: Blob = await pending;

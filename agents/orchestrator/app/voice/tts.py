@@ -1,8 +1,8 @@
 """Natural, friendly speech for every agent, in English, Tamil, or both.
 
-One place turns agent text into speech: OpenAI's steerable TTS model, told
-how to sound (a warm coach, natural spoken Tamil, relaxed pace) instead of a
-flat reading voice. The browser asks for one or two sentences at a time and
+One place turns agent text into speech: OpenAI's steerable TTS model, with
+one fixed voice (Nila, a friendly Indian teacher) told how to sound -- slow,
+simple and clear enough for any student -- instead of a flat reading voice. The browser asks for one or two sentences at a time and
 plays them back to back, so speech starts after the first sentence instead
 of after the whole reply. Recent results are cached -- in this process and,
 when Redis is configured, shared by every worker -- so a repeated prompt (an
@@ -31,24 +31,28 @@ CACHE_ENTRIES = 300
 SHARED_CACHE_SECONDS = 12 * 3600
 SHARED_CACHE_MAX_CHARS = 400
 
-# Persona id -> OpenAI voice and how it is described to learners.
+# One voice for the whole platform: every agent, every device, every reply is
+# the same Indian woman, so learners always hear one familiar character.
+# A persona sent by an older client is accepted but always mapped to her.
+VOICE = os.environ.get("OPENAI_TTS_VOICE", "coral")
 PERSONAS: dict[str, dict[str, str]] = {
-    "nila": {"voice": "coral", "label": "Nila", "description": "Warm, cheerful coach"},
-    "arjun": {"voice": "ash", "label": "Arjun", "description": "Friendly, encouraging mentor"},
-    "meera": {"voice": "sage", "label": "Meera", "description": "Calm, patient guide"},
-    "kavin": {"voice": "verse", "label": "Kavin", "description": "Energetic study buddy"},
+    "nila": {"voice": VOICE, "label": "Nila", "description": "Friendly Indian coach"},
 }
 DEFAULT_PERSONA = "nila"
 LANGUAGES = ("auto", "en", "ta")
 
 _BASE_STYLE = (
-    "You are a warm, friendly learning coach talking with a student in India. Sound like a supportive "
-    "friend who is genuinely happy to help: relaxed and natural, a smile in the voice, gentle emphasis on "
-    "the important words, short natural pauses between sentences. Never sound robotic, rushed or like a "
-    "news reader. Read numbers, scores and technical terms clearly."
+    "Voice: Nila, a friendly young Indian woman from Chennai who teaches students. Always the same person, "
+    "the same warm voice and the same accent. Speak slowly and very clearly, like a patient teacher talking "
+    "to a ten-year-old student: simple, calm, every word easy to catch, a short pause after each sentence. "
+    "Warm and encouraging, a gentle smile in the voice. Never rushed, never robotic, never dramatic, never "
+    "like a news reader. Say numbers, scores and technical terms slowly and clearly."
 )
 _LANGUAGE_STYLE = {
-    "en": "Speak clear, natural English with a light, friendly Indian accent.",
+    "en": (
+        "Speak simple, clear Indian English with a natural Indian accent, the way a good teacher in an Indian "
+        "school speaks. Not an American or British accent."
+    ),
     "ta": (
         "The text is Tamil. Speak natural, everyday spoken Tamil with a neutral Tamil Nadu accent, the way a "
         "friendly teacher talks, not stiff formal written Tamil. Say English technical words such as Python, "
@@ -108,7 +112,9 @@ def _shared():
 
 
 def _cache_key(text: str, language: str, voice: str) -> str:
-    return hashlib.sha256(f"{TTS_MODEL}|{voice}|{language}|{text}".encode()).hexdigest()
+    # The style is part of the key: a changed voice never replays old audio.
+    style = hashlib.sha256(instructions_for(language).encode()).hexdigest()[:12]
+    return hashlib.sha256(f"{TTS_MODEL}|{voice}|{style}|{language}|{text}".encode()).hexdigest()
 
 
 def _remember(key: str, audio: bytes, text: str) -> None:
@@ -125,8 +131,7 @@ def _remember(key: str, audio: bytes, text: str) -> None:
 
 
 def cached(text: str, language: str, persona: str) -> bytes | None:
-    voice = PERSONAS.get(persona, PERSONAS[DEFAULT_PERSONA])["voice"]
-    key = _cache_key(text, language, voice)
+    key = _cache_key(text, language, VOICE)
     with _cache_lock:
         audio = _cache.get(key)
         if audio is not None:
@@ -163,7 +168,7 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
         raise VoiceError(400, "There is no text to speak.")
     if len(text) > MAX_TEXT_CHARS:
         raise VoiceError(413, f"Send at most {MAX_TEXT_CHARS} characters at a time.")
-    persona = persona if persona in PERSONAS else DEFAULT_PERSONA
+    persona = DEFAULT_PERSONA
     spoken_as = resolve_language(text, language if language in LANGUAGES else "auto")
     hit = cached(text, spoken_as, persona)
     if hit is not None:
@@ -171,7 +176,7 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
-    voice = PERSONAS[persona]["voice"]
+    voice = VOICE
     try:
         response = httpx.post(
             OPENAI_SPEECH_URL,

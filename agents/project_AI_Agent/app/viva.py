@@ -10,11 +10,15 @@ trying to make the graph itself resumable again.
 A student gets VIVA_ATTEMPTS attempts. Every attempt asks a fresh set of
 questions (never one already asked in an earlier attempt), needs at least
 VIVA_PASS_PERCENT of the answers correct, and is reported to the student as
-Good / Average / Bad rather than as a mark.
+Good / Average / Bad rather than as a mark. Each attempt must be finished
+within VIVA_TIME_LIMIT_SECONDS of its questions being issued; an attempt that
+runs out of time ends there, its unanswered questions counting as wrong, and
+the student moves on to the next attempt exactly as after a failed one.
 """
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 
 from app.graph import prompts
 from app.llm.client import call_json
@@ -25,8 +29,23 @@ VIVA_PASS_PERCENT = 50
 # Kept for callers that show the pass mark as a count of correct answers.
 VIVA_PASS_THRESHOLD = VIVA_QUESTION_COUNT * VIVA_PASS_PERCENT // 100
 VIVA_GOOD_PERCENT = 80
+VIVA_TIME_LIMIT_SECONDS = 20 * 60
+# An answer sent in the last moments (still being transcribed, or slow network)
+# is accepted for this long after the limit.
+VIVA_GRACE_SECONDS = 30
 # Extra generation rounds allowed to replace questions that repeat an earlier one.
 _TOP_UP_ROUNDS = 3
+
+
+def viva_seconds_left(started_at: datetime | None, now: datetime | None = None) -> int | None:
+    """Whole seconds left in the current attempt (0 once over), or None for an
+    attempt that began before the time limit existed."""
+    if started_at is None:
+        return None
+    if started_at.tzinfo is None:  # SQLite returns naive UTC datetimes.
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    elapsed = ((now or datetime.now(timezone.utc)) - started_at).total_seconds()
+    return max(0, int(VIVA_TIME_LIMIT_SECONDS - elapsed))
 
 
 def viva_passed(correct: int, total: int) -> bool:

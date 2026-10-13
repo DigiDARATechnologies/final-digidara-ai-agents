@@ -1,3 +1,4 @@
+import { pickIndianVoice } from "./indianVoice";
 import { speakNatural, stopSpeaking } from "./voiceEngine";
 
 /**
@@ -8,42 +9,11 @@ import { speakNatural, stopSpeaking } from "./voiceEngine";
  * the browser-voice helpers below remain for callers that build utterances.
  */
 
-const FEMALE_VOICE_PATTERNS = [
-  /Jenny.*Natural/i,
-  /Aria.*Natural/i,
-  /Microsoft Jenny/i,
-  /Microsoft Aria/i,
-  /Google US English/i,
-  /Google UK English Female/i,
-  /Samantha/i,
-  /Victoria/i,
-  /Karen/i,
-  /Zira/i,
-  /Natural.*English/i,
-  /en-US.*female/i,
-];
-
 let activeAudioElement: HTMLAudioElement | null = null;
 
+/** The device's Indian voice, used only when the platform voice is unreachable. */
 export function selectBestCoachVoice(): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !window.speechSynthesis) return null;
-  const voices = window.speechSynthesis.getVoices() || [];
-  if (!voices.length) return null;
-
-  for (const pattern of FEMALE_VOICE_PATTERNS) {
-    const match = voices.find((v) => pattern.test(v.name) && v.lang?.startsWith("en"));
-    if (match) return match;
-  }
-
-  const usFemale = voices.find(
-    (v) => (v.lang === "en-US" || v.lang === "en_US") && /female|woman|natural/i.test(v.name)
-  );
-  if (usFemale) return usFemale;
-
-  const usVoice = voices.find((v) => v.lang === "en-US" || v.lang === "en_US");
-  if (usVoice) return usVoice;
-
-  return voices.find((v) => v.lang?.toLowerCase().startsWith("en")) || voices[0] || null;
+  return pickIndianVoice("en");
 }
 
 export function formatCoachSpeechText(rawText: string): string {
@@ -110,12 +80,12 @@ export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions
   utterance.rate = options.rate ?? 0.90;
   utterance.pitch = options.pitch ?? 1.02;
   utterance.volume = options.volume ?? 1.0;
-  utterance.lang = "en-US";
+  utterance.lang = "en-IN";
 
   const voice = selectBestCoachVoice();
   if (voice) {
     utterance.voice = voice;
-    utterance.lang = voice.lang || "en-US";
+    utterance.lang = voice.lang || "en-IN";
   }
 
   utterance.onstart = () => options.onStart?.();
@@ -144,12 +114,12 @@ export function createCoachUtterance(text: string, options: CoachSpeechOptions =
   utterance.rate = options.rate ?? 0.90;
   utterance.pitch = options.pitch ?? 1.02;
   utterance.volume = options.volume ?? 1.0;
-  utterance.lang = "en-US";
+  utterance.lang = "en-IN";
 
   const voice = selectBestCoachVoice();
   if (voice) {
     utterance.voice = voice;
-    utterance.lang = voice.lang || "en-US";
+    utterance.lang = voice.lang || "en-IN";
   }
 
   if (options.onStart) utterance.onstart = options.onStart;

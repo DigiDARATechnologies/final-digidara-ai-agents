@@ -13,6 +13,7 @@ import {
   mergeCapstoneFiles,
   submitCapstoneFiles,
   regenerateTopicsForDifficulty,
+  VIVA_TIME_UP_ACTION,
   type CapstoneFlowState,
 } from "./lib/capstoneFlow";
 import {
@@ -65,6 +66,7 @@ import CodeForgeDashboard from "./components/CodeForgeDashboard";
 import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
+import CapstoneVivaPanel from "./components/CapstoneVivaPanel";
 import CommunicationDashboard from "./components/CommunicationDashboard";
 import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
 import JobFetchDashboard from "./components/JobFetchDashboard";
@@ -1773,8 +1775,10 @@ export default function App() {
   const isJobFetchChat = currentAgent.kind === "job-fetch";
   const isMockInterviewChat = currentAgent.kind === "mock-interview";
   // The DigiDARA Assistant (general chat): voice goes to OpenAI transcription.
-  const isGeneralChat = currentAgent.id === DEFAULT_AGENT.id;
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
+  // A viva question is waiting: answered in the viva panel (voice or typing).
+  const capstoneVivaLive = isCapstoneChat && capstoneState?.step === "awaiting_viva_answer"
+    && !capstoneState.vivaRetryPending && !!capstoneState.vivaQuestionText;
   const codeforgeState = currentChat ? codeforgeStates[currentChat.id] : undefined;
   const aptitudeState = currentChat ? aptitudeStates[currentChat.id] : undefined;
   const communicationState = currentChat ? communicationStates[currentChat.id] : undefined;
@@ -2054,7 +2058,7 @@ export default function App() {
                 typing={typing}
                 typingLabel={typingLabel}
                 composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
-                hideComposer={isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question}
+                hideComposer={(isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question) || capstoneVivaLive}
                 onBack={handleChatBack}
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
@@ -2070,10 +2074,13 @@ export default function App() {
                 codeBusy={codeBusy}
                 onRunCode={handleRunCode}
                 onSubmitCode={handleSubmitCode}
+                // Every agent's microphone is transcribed by the same OpenAI GPT
+                // model (the Communication Coach through its own backend), on
+                // every device -- never the browser's built-in recognizer.
                 transcribeAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
-                  : isGeneralChat ? transcribeGeneralAudio : undefined}
-                alwaysRecordVoice={isGeneralChat}
+                  : transcribeGeneralAudio}
+                alwaysRecordVoice
                 previewAudio={isCommunicationChat && communicationState?.authToken
                   ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
                   : undefined}
@@ -2090,7 +2097,9 @@ export default function App() {
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
-                  : undefined}
+                  : capstoneVivaLive && capstoneState
+                    ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />
+                    : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
                 dailyChallengeStatus={isCommunicationChat ? dailyChallengeStatus : undefined}

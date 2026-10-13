@@ -39,24 +39,7 @@ export default function VoiceSettings() {
         </label>
       </div>
       <div className="setting-row">
-        <div><b>Natural voice</b><p>A warm, human-like voice. Off uses your device's built-in voice.</p></div>
-        <label className="switch">
-          <input type="checkbox" checked={prefs.mode === "natural"} disabled={!prefs.enabled}
-            onChange={(e) => update({ mode: e.target.checked ? "natural" : "device" })} />
-          <span className="slider" />
-        </label>
-      </div>
-      <div className="setting-row voice-personas-row">
-        <div><b>Voice</b><p>Choose who speaks to you.</p></div>
-        <div className="voice-personas" role="radiogroup" aria-label="Voice">
-          {VOICE_PERSONAS.map((persona) => (
-            <button key={persona.id} type="button" role="radio" aria-checked={prefs.persona === persona.id}
-              disabled={!prefs.enabled || prefs.mode !== "natural"}
-              className={prefs.persona === persona.id ? "active" : ""} onClick={() => update({ persona: persona.id })}>
-              <b>{persona.label}</b><span>{persona.description}</span>
-            </button>
-          ))}
-        </div>
+        <div><b>Voice</b><p>{VOICE_PERSONAS[0].label}: {VOICE_PERSONAS[0].description}. Every agent speaks with this same voice.</p></div>
       </div>
       <div className="setting-row">
         <div><b>Language</b><p>Tamil, English, or follow each reply. Voice input uses it too.</p></div>

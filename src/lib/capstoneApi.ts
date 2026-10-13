@@ -184,6 +184,11 @@ export interface SubmissionResult {
   viva_attempt?: number | null;
   viva_attempts_left?: number | null;
   viva_attempts_total?: number | null;
+  /** Seconds left to finish the current viva attempt (20 minutes each). */
+  viva_seconds_left?: number | null;
+  viva_time_limit_seconds?: number | null;
+  /** The attempt just ended because its time ran out. */
+  viva_timed_out?: boolean | null;
 }
 
 export interface ThreadStatus {
@@ -275,6 +280,12 @@ export function startVivaAttempt(submission_id: string) {
 
 export function submitVivaAnswer(submission_id: string, question_id: number, answer: string) {
   return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
+}
+
+/** The viva attempt's time ran out: the server ends it (unanswered questions
+ * count as wrong) and the next attempt is offered as after a failed one. */
+export function vivaTimeUp(submission_id: string) {
+  return invoke<SubmissionResult>("viva_time_up", { submission_id });
 }
 
 export interface QAAskResult {

@@ -2403,3 +2403,4 @@ a{ color:var(--accent3); }
 .verify-email-card{ max-width:420px; margin:auto; }
 .verify-email-card .field input{ letter-spacing:.35em; font-size:20px; text-align:center; }
 .verify-email-actions{ display:flex; justify-content:space-between; gap:12px; margin-top:14px; flex-wrap:wrap; }
+.capstone-viva-mode{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.capstone-viva-mode .btn{font-size:12px;padding:7px 12px}

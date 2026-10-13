@@ -1,11 +1,12 @@
 /** The learner's voice settings, kept on this device. */
-export type VoicePersona = "nila" | "arjun" | "meera" | "kavin";
+/** One voice for the whole platform: Nila, a friendly Indian coach. */
+export type VoicePersona = "nila";
 export type VoiceLanguage = "auto" | "en" | "ta";
 
 export interface VoicePrefs {
   enabled: boolean;
-  /** "natural": DigiDARA's natural voice; "device": the browser's own voice only. */
-  mode: "natural" | "device";
+  /** Always "natural": every agent speaks with the one DigiDARA voice. */
+  mode: "natural";
   persona: VoicePersona;
   language: VoiceLanguage;
   /** Playback speed, 0.8 to 1.3. */
@@ -13,10 +14,7 @@ export interface VoicePrefs {
 }
 
 export const VOICE_PERSONAS: { id: VoicePersona; label: string; description: string }[] = [
-  { id: "nila", label: "Nila", description: "Warm, cheerful coach" },
-  { id: "arjun", label: "Arjun", description: "Friendly, encouraging mentor" },
-  { id: "meera", label: "Meera", description: "Calm, patient guide" },
-  { id: "kavin", label: "Kavin", description: "Energetic study buddy" },
+  { id: "nila", label: "Nila", description: "Friendly Indian coach, slow and clear" },
 ];
 
 export const VOICE_LANGUAGES: { id: VoiceLanguage; label: string }[] = [
@@ -32,9 +30,11 @@ export function loadVoicePrefs(): VoicePrefs {
   try {
     const stored = JSON.parse(localStorage.getItem(KEY) || "{}") as Partial<VoicePrefs>;
     const prefs = { ...DEFAULTS, ...stored };
-    if (!VOICE_PERSONAS.some((p) => p.id === prefs.persona)) prefs.persona = DEFAULTS.persona;
+    // Earlier versions let learners pick other voices or the device voice;
+    // everyone now hears the same voice.
+    prefs.persona = DEFAULTS.persona;
     if (!VOICE_LANGUAGES.some((l) => l.id === prefs.language)) prefs.language = DEFAULTS.language;
-    if (prefs.mode !== "device") prefs.mode = "natural";
+    prefs.mode = "natural";
     prefs.speed = Math.min(1.3, Math.max(0.8, Number(prefs.speed) || 1));
     prefs.enabled = prefs.enabled !== false;
     return prefs;

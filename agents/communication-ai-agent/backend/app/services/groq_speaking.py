@@ -76,28 +76,32 @@ DAILY_FALLBACK_QUESTIONS = [
 ]
 
 
+GPT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+
+
 def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", content_type="audio/webm"):
     if not audio_bytes:
         raise ValueError("No audio bytes were provided for transcription")
     if len(audio_bytes) > 10 * 1024 * 1024:
         raise ValueError("Audio file is too large for transcription")
 
-    provider = str(current_app.config.get("AI_PROVIDER") or "auto").strip().lower()
+    # Speech is always transcribed by OpenAI's GPT transcription model, the
+    # same one every other DigiDARA microphone uses; Groq only when there is
+    # no OpenAI key at all.
     openai_key = current_app.config.get("OPENAI_API_KEY")
     groq_key = current_app.config.get("GROQ_API_KEY")
-    use_openai = provider == "openai" or (
-        provider == "auto" and (openai_key or str(groq_key or "").startswith("sk-"))
-    )
+    use_openai = bool(openai_key) or str(groq_key or "").startswith("sk-")
     provider_name = "OpenAI" if use_openai else "Groq"
     api_key = openai_key or groq_key if use_openai else groq_key
     if not api_key:
         raise RuntimeError(f"{provider_name.upper()}_API_KEY is not set in backend/.env")
 
-    model = (
-        current_app.config.get("OPENAI_TRANSCRIPTION_MODEL", "whisper-1")
-        if use_openai
-        else current_app.config.get("GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo")
-    )
+    if use_openai:
+        model = str(current_app.config.get("OPENAI_TRANSCRIPTION_MODEL") or GPT_TRANSCRIPTION_MODEL)
+        if model.startswith("whisper"):
+            model = GPT_TRANSCRIPTION_MODEL
+    else:
+        model = current_app.config.get("GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo")
     endpoint_url = (
         "https://api.openai.com/v1/audio/transcriptions"
         if use_openai

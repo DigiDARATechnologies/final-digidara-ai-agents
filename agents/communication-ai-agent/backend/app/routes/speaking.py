@@ -1507,8 +1507,8 @@ def synthesize_speech():
 
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    voice = (data.get("voice") or "nova").strip().lower()
-    speed = float(data.get("speed") or 0.92)
+    voice = (data.get("voice") or "coral").strip().lower()
+    speed = float(data.get("speed") or 0.95)
 
     if not text:
         return _api_error("text is required for speech synthesis.", "MISSING_TEXT", 400)
