@@ -16,6 +16,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.utils.score_utils import to_score10
+
 TEAL = colors.HexColor("#0E90B4")
 INK = colors.HexColor("#1A202C")
 MUTED = colors.HexColor("#5A6A80")
@@ -190,17 +192,18 @@ def generate_speaking_report_pdf(session, learner_name="Learner"):
     story.append(Spacer(1, 10))
 
     # Overall Scorecard Banner
-    overall_val = round(float(session.overall_score), 1) if session.overall_score is not None else 8.0
-    fluency_val = round(float(session.fluency_score), 1) if getattr(session, "fluency_score", None) is not None else overall_val
-    grammar_val = round(float(session.grammar_score), 1) if getattr(session, "grammar_score", None) is not None else overall_val
-    confidence_val = round(float(session.confidence_score), 1) if getattr(session, "confidence_score", None) is not None else overall_val
+    # Session scores are 0-100; shown out of 10. A score that was never given
+    # is shown as not scored -- never a default number.
+    def _score_cell(value):
+        score = to_score10(value)
+        return Paragraph("— <font size=10>not scored</font>" if score is None else f"{score} <font size=10>/ 10</font>", score_big)
 
     score_data = [
         [
-            Paragraph(f"{overall_val} <font size=10>/ 10</font>", score_big),
-            Paragraph(f"{fluency_val} <font size=10>/ 10</font>", score_big),
-            Paragraph(f"{grammar_val} <font size=10>/ 10</font>", score_big),
-            Paragraph(f"{confidence_val} <font size=10>/ 10</font>", score_big),
+            _score_cell(session.overall_score),
+            _score_cell(getattr(session, "fluency_score", None)),
+            _score_cell(getattr(session, "grammar_score", None)),
+            _score_cell(getattr(session, "confidence_score", None)),
         ],
         [
             Paragraph("OVERALL SCORE", score_label),
@@ -222,7 +225,12 @@ def generate_speaking_report_pdf(session, learner_name="Learner"):
     story.append(Spacer(1, 10))
 
     # Executive Summary
-    summary_text = getattr(session, "summary_feedback", None) or "You completed the speaking practice session. You expressed your ideas clearly and kept the conversation moving."
+    answered_count = len([t for t in session.turns if t.user_answer])
+    summary_text = getattr(session, "summary_feedback", None) or (
+        "No answers were given in this session, so there is nothing to score yet."
+        if not answered_count
+        else "You completed the speaking practice session."
+    )
     story.append(Paragraph("Coach Evaluation Summary", section_h1))
     story.append(Paragraph(_plain(summary_text), body_style))
     story.append(Spacer(1, 8))
@@ -235,16 +243,16 @@ def generate_speaking_report_pdf(session, learner_name="Learner"):
         except Exception:
             pass
     if not strengths:
-        strengths = ["Engaged enthusiastically with the topic.", "Used clear vocabulary to communicate thoughts."]
+        strengths = ["Not enough answers to judge yet."] if not answered_count else ["Keep practising to build up your strengths."]
 
     improvements = []
-    if getattr(session, "areas_to_improve_json", None):
+    if getattr(session, "weaknesses_json", None):
         try:
-            improvements = json.loads(session.areas_to_improve_json)
+            improvements = json.loads(session.weaknesses_json)
         except Exception:
             pass
     if not improvements:
-        improvements = ["Add specific examples when answering questions.", "Practice full sentence structures for smoother flow."]
+        improvements = ["Answer at least one question so your speaking can be assessed."] if not answered_count else ["Add specific examples when answering questions."]
 
     perf_cols = [
         [

@@ -47,6 +47,18 @@ def own_skills_for(role: str | None, limit: int = 10) -> list[str]:
     return skills[:limit]
 
 
+def _plain(items) -> list[str]:
+    """Short remembered facts (plain strings), capped like the memories."""
+    result = []
+    for item in items or []:
+        text = " ".join(str(item).split())[:MAX_TEXT] if isinstance(item, str) else ""
+        if text:
+            result.append(text)
+        if len(result) == MAX_ITEMS:
+            break
+    return result
+
+
 def _texts(items, kinds=None) -> list[str]:
     result = []
     for item in items or []:
@@ -79,6 +91,9 @@ def prompt_block() -> str:
     notes = _texts(learner.get("memory"), {"preference", "goal"})
     if notes:
         parts.append(f"their preferences and goals: {'; '.join(notes)}")
+    told = _plain(learner.get("conversation_memory"))
+    if told:
+        parts.append(f"what they told DigiDARA's assistant earlier: {'; '.join(told)}")
     if not parts:
         return ""
     return (

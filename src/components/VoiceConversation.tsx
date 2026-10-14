@@ -4,12 +4,15 @@ import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
 import { setVoiceConversationOpen } from "../lib/voiceReply";
 import { completeSentences } from "../lib/voiceText";
+import { watchForSpeech } from "../lib/voiceActivity";
+import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
 
-/** A pause this long after the learner has spoken sends what they said. */
-export const CONVERSATION_PAUSE_MS = 5_000;
+/** A pause this long after the learner has spoken sends what they said --
+ * about a natural conversational turn. "Just a minute" keeps it listening. */
+export const CONVERSATION_PAUSE_MS = 2_000;
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -55,6 +58,8 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   const replyRef = useRef<{ index: number; queued: number; queue: SpeechQueue } | null>(null);
   // Bumped whenever speech is interrupted: a stale end never starts listening.
   const turnRef = useRef(0);
+  // Said before "just a minute": the rest of the question joins it.
+  const heldRef = useRef("");
 
   function setLevel(level: number) {
     orbRef.current?.style.setProperty("--voice-level", level.toFixed(2));
@@ -71,12 +76,20 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       if (!openRef.current || !final) return;
       setSendIn(null);
       setLevel(0);
-      const question = text.trim();
-      if (!question) {
+      const said = text.trim();
+      if (said && isHoldRequest(said)) {
+        // "Just a minute": keep what came before and carry on listening.
+        heldRef.current = joinAnswer(heldRef.current, withoutHoldPhrase(said));
+        window.setTimeout(listen, 100);
+        return;
+      }
+      const question = joinAnswer(heldRef.current, said);
+      if (!said) {
         // Nothing understood: keep listening (an error is shown meanwhile).
         window.setTimeout(listen, 1_200);
         return;
       }
+      heldRef.current = "";
       awaitingFromRef.current = messagesRef.current.length;
       setPhase("thinking");
       onSend(question);
@@ -145,6 +158,19 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, last?.text, last?.streaming, typing]);
 
+  // Talking over Boss interrupts it, like tapping the logo: it stops and
+  // listens. Only a voice counts -- not Boss's own echo or a fan.
+  useEffect(() => {
+    if (phase !== "speaking") return;
+    return watchForSpeech(() => {
+      if (!openRef.current) return;
+      awaitingFromRef.current = null;
+      listen();
+    });
+    // listen() reads refs only; the watch follows the phase.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   function handleOrbTap() {
     if (phase === "speaking") {
       // Interrupt the reply and answer straight away.
@@ -167,7 +193,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
 
   const status = speech.transcribing && phase === "listening" ? "Understanding..."
     : phase === "thinking" ? "Thinking..."
-      : phase === "speaking" ? "Speaking... tap me to interrupt"
+      : phase === "speaking" ? "Speaking... start talking or tap me to interrupt"
         : speech.listening ? sendIn !== null ? `Sending in ${sendIn}s - keep talking to continue` : "Listening... just talk"
           : speech.error ? "Tap the logo to try again" : "Starting microphone...";
 

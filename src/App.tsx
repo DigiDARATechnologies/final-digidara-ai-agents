@@ -76,7 +76,7 @@ import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
 import { checkCommunicationHealth, getDailyChallengeToday, previewCommunicationAudio, transcribeCommunicationAudio } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
+import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, isResumeChangeRequest, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth, clearJobConversations, deleteJobConversation } from "./lib/jobFetchApi";
@@ -118,9 +118,10 @@ type Theme = "dark" | "light";
 export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => {
     try {
-      const saved = localStorage.getItem("digidara_theme");
-      return saved === "light" || saved === "dark" || saved === "system" ? saved : "dark";
-    } catch { return "dark"; }
+      // Light (white) by default; see public/theme-init.js for the key.
+      const saved = localStorage.getItem("digidara_theme_v2");
+      return saved === "light" || saved === "dark" || saved === "system" ? saved : "light";
+    } catch { return "light"; }
   });
   const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   useEffect(() => {
@@ -132,7 +133,7 @@ export default function App() {
   const theme: Theme = themePref === "system" ? (systemDark ? "dark" : "light") : themePref;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("digidara_theme", themePref); } catch { /* storage unavailable: theme just won't persist */ }
+    try { localStorage.setItem("digidara_theme_v2", themePref); } catch { /* storage unavailable: theme just won't persist */ }
   }, [theme, themePref]);
   const [appearance, setAppearance] = useState(loadAppearance);
   useEffect(() => {
@@ -1313,7 +1314,11 @@ export default function App() {
     // Suggestions invite free text: what the learner typed is their own answer
     // ("i need data science project"), not a miss to steer back to the buttons.
     const hasSuggestions = choices.some((o) => o.suggested);
-    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined
+    // "i need update project details", or a corrected answer after "Are you
+    // sure?": the Resume Builder reads these itself.
+    const resumeBuilderReadsIt = agent?.kind === "resume-builder"
+      && (isResumeChangeRequest(typed) || Boolean((resumeSnapshot as ResumeBuilderFlowState | undefined)?.pendingCheck));
+    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined && !resumeBuilderReadsIt
         && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice && !hasSuggestions) {
       const step = String((resumeSnapshot as { step?: unknown } | undefined)?.step ?? "");
       interpretTurn(agent.backendAgentName, step, choices, typed)

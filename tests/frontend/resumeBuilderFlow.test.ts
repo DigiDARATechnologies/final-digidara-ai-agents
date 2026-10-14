@@ -1,4 +1,4 @@
-import { checkPhoneNumber, createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName } from "../../src/lib/resumeBuilderFlow";
+import { checkPhoneNumber, createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, parseEducationInput, parseExperienceInput, EXPERIENCE_PROMPT_TEXT, isValidHumanCandidateName, isResumeChangeRequest } from "../../src/lib/resumeBuilderFlow";
 
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
   ensureResumeProfile: jest.fn().mockResolvedValue({ user_id: "test-user" }),
@@ -61,6 +61,7 @@ jest.mock("../../src/lib/resumeBuilderApi", () => ({
   ]),
   resumeChatTurn: jest.fn(),
   suggestResumeWording: jest.fn().mockResolvedValue(null),
+  checkResumeAnswer: jest.fn().mockResolvedValue({ verdict: "ok", concern: "" }),
   suggestResumeEdit: jest.fn(),
 }));
 
@@ -109,7 +110,7 @@ describe("Resume Builder workflow", () => {
     });
   });
 
-  test("asks for the exact missing field without discarding the draft", async () => {
+  test("lists every missing detail with an example, without discarding the draft", async () => {
     const draft = {
       name: "Test User",
       email: "test@example.com",
@@ -124,10 +125,20 @@ describe("Resume Builder workflow", () => {
       "create_now",
     );
 
-    expect(result.state.step).toBe("awaiting_title");
+    expect(result.state.step).toBe("confirming");
     expect(result.state.draft).toEqual(draft);
-    expect(result.messages[0].text).toContain("resume title is missing");
-    expect(result.messages[0].text).toContain("other resume details are still saved");
+    const text = result.messages[0].text;
+    expect(text).toContain("Missing information (needed to create your resume)");
+    expect(text).toContain("Resume title - for example: Data Analyst Resume");
+    // Recommended details are listed too, each with its format.
+    expect(text).toContain("Recommended to add");
+    expect(text).toContain("Phone number - for example: +91 98765 43210");
+    expect(text).toContain("LinkedIn profile - for example: https://www.linkedin.com/in/");
+    const values = result.messages[0].options?.map((option) => option.value) ?? [];
+    expect(values[0]).toBe("edit title");
+    expect(values).toContain("edit phone");
+    // The resume cannot be created until the title is added.
+    expect(values).not.toContain("create_now");
   });
 
   test("hydrates enrichment choices from the saved resume", async () => {
@@ -177,10 +188,11 @@ describe("Resume Builder workflow", () => {
       "create_now",
     );
 
-    expect(result.state.step).toBe("awaiting_education");
-    expect(result.state.pendingField).toBe("education.ug");
-    expect(result.messages[0].text).toContain("A fresher resume needs your undergraduate (UG) degree");
-    expect(result.messages[0].options?.map((option) => option.value)).toEqual(["waive_ug"]);
+    expect(result.state.step).toBe("confirming");
+    expect(result.messages[0].text).toContain("UG degree - for example: UG: B.Com, Nandha College, 2019-2022");
+    const values = result.messages[0].options?.map((option) => option.value) ?? [];
+    expect(values).toEqual(expect.arrayContaining(["edit education", "waive_ug"]));
+    expect(values).not.toContain("create_now");
   });
 
   test("correcting required UG merges education and preserves the complete draft", async () => {
@@ -936,7 +948,7 @@ describe("education, typed edits and the assistant (with memory)", () => {
 
   test("a candidate with no UG degree can continue instead of looping on Skip", async () => {
     const asked = await handleResumeBuilderText({ step: "confirming", draft: baseDraft }, user, "create_now");
-    expect(asked.state.pendingField).toBe("education.ug");
+    expect(asked.messages[0].options?.map((option) => option.value)).toContain("waive_ug");
     const waived = await handleResumeBuilderText(asked.state, user, "waive_ug");
     expect(waived.state.step).toBe("confirming");
     const created = await handleResumeBuilderText(waived.state, user, "create_now");
@@ -1069,7 +1081,10 @@ describe("phone numbers and returning after editing one field", () => {
     const saved = await handleResumeBuilderText(asked.state, user, "+91 98765 43210");
     expect(saved.state.step).toBe("confirming");
     expect(saved.messages[1].text).not.toBe("old review");
-    expect(saved.messages[1].options?.map((option) => option.value)).toContain("create_now");
+    // The review is rebuilt: the phone is no longer missing; what still is, is offered.
+    const values = saved.messages[1].options?.map((option) => option.value) ?? [];
+    expect(values).not.toContain("edit phone");
+    expect(values).toContain("edit role");
   });
 });
 
@@ -1227,5 +1242,105 @@ describe("project answers that are really requests, and removing one entry", () 
     api.suggestResumeEdit.mockReset().mockResolvedValueOnce({ resume: saved, changes: ["Asked which one"], warnings: [], requires_confirmation: true });
     await handleResumeBuilderText(reviewing, user, "remove some projects");
     expect(api.suggestResumeEdit).toHaveBeenCalled();
+  });
+});
+
+describe("typed changes and answers that look wrong", () => {
+  const api = jest.requireMock("../../src/lib/resumeBuilderApi") as Record<string, jest.Mock>;
+  const user = { id: "test-user", name: "Prem", email: "prem@example.com", mobile: "", initial: "P" };
+  const draft = { title: "AI Engineer Resume", name: "Prem Kumar", email: "prem@example.com", targetRole: "AI Engineer", experienceLevel: "fresher" as const, skills: ["Python"] };
+  const saved = { id: 7, title: "AI Engineer Resume", projects: [{ title: "Parkinson Prediction", description: "ML model" }] };
+  const askedLocation = { text: "Which city and country should appear?" };
+
+  beforeEach(() => {
+    api.checkResumeAnswer.mockReset().mockResolvedValue({ verdict: "ok", concern: "" });
+    api.suggestResumeWording.mockReset().mockResolvedValue(null);
+    api.resumeChatTurn.mockReset();
+    api.suggestResumeEdit.mockReset();
+  });
+
+  test.each(["i need update project detilas", "change my projects", "please update the project details"])(
+    "%p on a finished resume asks what to change, showing the projects, instead of refusing", async (request) => {
+      api.getResume.mockResolvedValueOnce(saved);
+      const asked = await handleResumeBuilderText({ step: "completed", resumeId: 7, draft }, user, request);
+      expect(asked.state.step).toBe("awaiting_edit_instruction");
+      expect(asked.state.editTopic?.key).toBe("projects");
+      expect(asked.messages[0].text).toContain("1. Parkinson Prediction - ML model");
+      expect(api.suggestResumeEdit).not.toHaveBeenCalled();
+    });
+
+  test("the next message becomes a reviewed proposal for that section", async () => {
+    api.getResume.mockResolvedValue(saved);
+    api.suggestResumeEdit.mockResolvedValueOnce({ resume: saved, changes: ["Updated project 1 description"], warnings: [], requires_confirmation: true });
+    const asked = await handleResumeBuilderText({ step: "completed", resumeId: 7, draft }, user, "i need update project details");
+    const proposed = await handleResumeBuilderText(asked.state, user, "description should say it uses a random forest on voice data");
+    expect(api.suggestResumeEdit).toHaveBeenCalledWith("test-user", saved, "Change the projects section of my resume: description should say it uses a random forest on voice data");
+    expect(proposed.state.step).toBe("awaiting_edit_confirmation");
+    expect(proposed.state.editTopic).toBeUndefined();
+  });
+
+  test("a change typed while the template list is showing is proposed, not refused", async () => {
+    api.getResume.mockResolvedValueOnce(saved);
+    api.suggestResumeEdit.mockResolvedValueOnce({ resume: saved, changes: ["Renamed"], warnings: [], requires_confirmation: true });
+    const proposed = await handleResumeBuilderText({ step: "awaiting_template", resumeId: 7, draft }, user, "change my name to Prem K");
+    expect(proposed.state.step).toBe("awaiting_edit_confirmation");
+  });
+
+  test("an answer that looks wrong asks 'Are you sure?' and is not saved yet", async () => {
+    api.checkResumeAnswer.mockResolvedValueOnce({ verdict: "doubtful", concern: "That looks like a job role, not a city." });
+    const state = { step: "awaiting_location" as const, draft, lastMessage: askedLocation };
+    const held = await handleResumeBuilderText(state, user, "Python Developer");
+    expect(held.state.step).toBe("awaiting_location");
+    expect(held.state.draft?.location).toBeUndefined();
+    expect(held.messages[0].text).toContain("Are you sure");
+    expect(held.messages[0].text).toContain("That looks like a job role, not a city.");
+    expect(held.messages[0].options?.map((option) => option.value)).toEqual(["confirm_answer", "fix_answer"]);
+
+    const kept = await handleResumeBuilderText(held.state, user, "confirm_answer");
+    expect(kept.state.draft?.location).toBe("Python Developer");
+    expect(kept.state.step).not.toBe("awaiting_location");
+    expect(kept.state.pendingCheck).toBeUndefined();
+  });
+
+  test("after 'Are you sure?', a typed correction is saved instead (and checked again)", async () => {
+    api.checkResumeAnswer.mockResolvedValueOnce({ verdict: "doubtful", concern: "That looks like a job role, not a city." });
+    const held = await handleResumeBuilderText({ step: "awaiting_location", draft, lastMessage: askedLocation }, user, "Python Developer");
+    const fixed = await handleResumeBuilderText(held.state, user, "Chennai, India");
+    expect(fixed.state.draft?.location).toBe("Chennai, India");
+    expect(api.checkResumeAnswer).toHaveBeenCalledTimes(2);
+  });
+
+  test("'Let me fix it' asks the same question again", async () => {
+    api.checkResumeAnswer.mockResolvedValueOnce({ verdict: "doubtful", concern: "Looks like a role." });
+    const held = await handleResumeBuilderText({ step: "awaiting_location", draft, lastMessage: askedLocation }, user, "Python Developer");
+    const again = await handleResumeBuilderText(held.state, user, "fix_answer");
+    expect(again.state.step).toBe("awaiting_location");
+    expect(again.state.draft?.location).toBeUndefined();
+    expect(again.messages.map((message) => message.text)).toContain(askedLocation.text);
+  });
+
+  test("a request typed at a question is carried out, not saved as the answer", async () => {
+    api.checkResumeAnswer.mockResolvedValueOnce({ verdict: "not_an_answer", concern: "" });
+    api.resumeChatTurn.mockResolvedValueOnce({ intent: "edit", updates: { name: "Prem K" }, reply: "Updated your name to Prem K." });
+    const result = await handleResumeBuilderText({ step: "awaiting_location", draft, lastMessage: askedLocation }, user, "actually my name should read Prem K please");
+    expect(result.state.step).toBe("awaiting_location");
+    expect(result.state.draft?.location).toBeUndefined();
+    expect(result.state.draft?.name).toBe("Prem K");
+    expect(result.messages.map((message) => message.text)).toEqual(["Updated your name to Prem K.", askedLocation.text]);
+  });
+
+  test("a failed answer check never blocks the candidate", async () => {
+    api.checkResumeAnswer.mockResolvedValueOnce({ verdict: "ok", concern: "" });
+    const result = await handleResumeBuilderText({ step: "awaiting_location", draft, lastMessage: askedLocation }, user, "Chennai, India");
+    expect(result.state.draft?.location).toBe("Chennai, India");
+  });
+});
+
+describe("change requests are recognised", () => {
+  test.each([
+    ["i need update project detilas", true], ["i want to change my college", true], ["remove the second project", true],
+    ["add Docker to my skills", true], ["Chennai, India", false], ["Open download panel", false],
+  ])("%p -> %p", (text, expected) => {
+    expect(isResumeChangeRequest(text)).toBe(expected);
   });
 });

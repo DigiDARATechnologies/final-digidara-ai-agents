@@ -1,6 +1,7 @@
 /** Resume Builder: "Build from my DigiDARA profile" fills the draft from what
  * the other agents know and asks only what is missing. */
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
+  checkResumeAnswer: jest.fn().mockResolvedValue({ verdict: "ok", concern: "" }),
   ensureResumeProfile: jest.fn().mockResolvedValue({ user_id: "u1" }),
   fetchResumeFacts: jest.fn(),
   createResume: jest.fn(), getResume: jest.fn(), updateResume: jest.fn(), suggestResumeWording: jest.fn().mockResolvedValue({ suggestion: "" }),

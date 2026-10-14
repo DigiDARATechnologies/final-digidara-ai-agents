@@ -83,9 +83,10 @@ def test_without_an_openai_key_voice_is_unavailable(api, monkeypatch):
 
 def test_it_is_rate_limited_per_user(api, monkeypatch):
     openai_replies(monkeypatch)
-    # The live text sends the recording so far every few seconds: 40 a minute.
-    codes = [api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers()).status_code for _ in range(41)]
-    assert codes[:40] == [200] * 40 and codes[40] == 429
+    # The live text sends the recording so far every two seconds, and once more
+    # as the learner goes quiet: 60 a minute.
+    codes = [api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers()).status_code for _ in range(61)]
+    assert codes[:60] == [200] * 60 and codes[60] == 429
 
 
 @pytest.mark.parametrize("echo", [

@@ -5,7 +5,12 @@ WORKDIR /app
 
 # tesseract-ocr + poppler-utils are required by app/services/import_review.py
 # (pytesseract OCR and pdf2image, which shells out to poppler's pdftoppm).
-RUN apt-get update \
+# Changing SECURITY_UPDATES rebuilds the step below, so `apt-get upgrade`
+# fetches current Debian security fixes instead of reusing a cached layer
+# (CI passes today's date; bump the default to refresh the servers' images).
+ARG SECURITY_UPDATES=2026-10-14
+RUN echo "security updates: ${SECURITY_UPDATES}" \
+    && apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends tesseract-ocr poppler-utils \
     && rm -rf /var/lib/apt/lists/*

@@ -16,6 +16,11 @@ jest.mock('../../src/lib/voiceEngine', () => ({
   },
 }));
 jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+const mockWatchers: Array<() => void> = [];
+const mockUnwatch = jest.fn();
+jest.mock('../../src/lib/voiceActivity', () => ({
+  watchForSpeech: (onSpeech: () => void) => { mockWatchers.push(onSpeech); return mockUnwatch; },
+}));
 jest.mock('../../src/components/Logo', () => ({ Logo: () => <span>DD</span> }));
 const mockStart = jest.fn();
 const mockStop = jest.fn();
@@ -38,10 +43,12 @@ beforeEach(() => {
   mockCancel.mockReset();
   mockStopSpeaking.mockReset();
   mockQueues.length = 0;
+  mockWatchers.length = 0;
+  mockUnwatch.mockReset();
   mockStart.mockReturnValue(true);
 });
 
-test('Boss greets, then listens; a 5 second pause (or the live transcript) sends the question', () => {
+test('Boss greets, then listens; a 2 second pause (or the live transcript) sends the question', () => {
   let greetingDone: () => void = () => {};
   mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
   const onSend = jest.fn();
@@ -53,7 +60,7 @@ test('Boss greets, then listens; a 5 second pause (or the live transcript) sends
   act(() => { greetingDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS, finalFromPreview: true }));
-  expect(CONVERSATION_PAUSE_MS).toBe(5000);
+  expect(CONVERSATION_PAUSE_MS).toBe(2000);
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
   // No words on screen, only the logo.
   expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();
@@ -103,4 +110,33 @@ test('tapping the logo while it speaks interrupts it and listens once; ending st
   fireEvent.click(screen.getByRole('button', { name: 'End voice chat' }));
   expect(mockCancel).toHaveBeenCalled();
   expect(onClose).toHaveBeenCalled();
+});
+
+test('talking over Boss interrupts it: it stops speaking and listens', () => {
+  const sent = [msg('user', 'Hello')];
+  const { rerender } = render(<VoiceConversation messages={sent} typing awaitingReply onSend={jest.fn()} onClose={jest.fn()} />);
+  expect(mockWatchers).toHaveLength(0); // not listening for interruptions while thinking
+  rerender(<VoiceConversation messages={[...sent, msg('agent', 'Hi there! Long answer.')]} typing={false} awaitingReply onSend={jest.fn()} onClose={jest.fn()} />);
+  expect(mockWatchers).toHaveLength(1);
+  act(() => { mockWatchers[0](); });
+  expect(mockStopSpeaking).toHaveBeenCalled();
+  expect(mockStart).toHaveBeenCalledTimes(1);
+  expect(mockUnwatch).toHaveBeenCalled(); // the watch ends once it is listening
+  // The interrupted reply finishing later does not start a second listen.
+  act(() => { mockQueues[0].onEnd?.(); });
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+test('"just a minute" keeps Boss listening, and the whole question is sent together', () => {
+  jest.useFakeTimers();
+  mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { handlers.onEnd(); return Promise.resolve(true); });
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[]} typing={false} onSend={onSend} onClose={jest.fn()} />);
+  act(() => { mockStart.mock.calls[0][0]('Tell me about the Capstone agent, just a minute', true); });
+  expect(onSend).not.toHaveBeenCalled();
+  act(() => { jest.advanceTimersByTime(150); });
+  expect(mockStart).toHaveBeenCalledTimes(2);
+  act(() => { mockStart.mock.calls[1][0]('and how long the project takes.', true); });
+  expect(onSend).toHaveBeenCalledWith('Tell me about the Capstone agent and how long the project takes.');
+  jest.useRealTimers();
 });

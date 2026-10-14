@@ -30,6 +30,7 @@ ACTION_ROUTE_MAP = {
 }
 # The chat's wording suggestions (app/routes/chat_turn.py).
 ACTION_ROUTE_MAP["suggest_wording"] = ("POST", "/api/ai/suggest-wording")
+ACTION_ROUTE_MAP["check_answer"] = ("POST", "/api/ai/check-answer")
 
 
 def _identity_headers(payload: dict) -> dict[str, str]:

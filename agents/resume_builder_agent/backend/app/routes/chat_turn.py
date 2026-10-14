@@ -181,6 +181,60 @@ def chat_turn():
     return jsonify({"success": True, "intent": intent, "updates": updates, "reply": reply, "memories_used": len(memories)})
 
 
+VERDICTS = {"ok", "doubtful", "not_an_answer"}
+CHECK_DRAFT_FIELDS = ("name", "targetRole", "experienceLevel", "location", "education", "experience", "projects")
+
+
+@chat_turn_bp.post("/ai/check-answer")
+@rate_limit(60)
+def check_answer():
+    """A second look at an answer the chat has just accepted, before moving on:
+    "ok", "doubtful" (very likely a mistake -- the chat asks "are you sure?"
+    with `concern`), or "not_an_answer" (a request or question typed at the
+    question, which must not be saved as the answer). Lenient by design: any
+    failure or unclear case is "ok", so the check can only ever ask, never block."""
+    payload = request.get_json(silent=True) or {}
+    answer = _text(payload.get("answer"), 3000)
+    if not answer:
+        return error_response("answer is required", 400)
+    draft = payload.get("draft") if isinstance(payload.get("draft"), dict) else {}
+    known = {key: draft[key] for key in CHECK_DRAFT_FIELDS if draft.get(key)}
+    prompt = f"""You double-check one answer a candidate typed while building their resume in a chat.
+Today is {date.today():%d %b %Y}.
+
+QUESTION THE CHAT ASKED (step "{_text(payload.get('step'), 60) or ''}"): {_text(payload.get('asked'), 800) or "unknown"}
+RESUME SO FAR: {json.dumps(known, ensure_ascii=False)[:3000]}
+CANDIDATE'S ANSWER: {json.dumps(answer, ensure_ascii=False)}
+
+Return one verdict:
+- "not_an_answer": ONLY when the message is a request or a question addressed to the assistant --
+  to change or update something ("i need update project details", "change my name"), to go back
+  or skip, or asking how something works. It must not be saved as the answer.
+- "doubtful": it reads as an answer (a value, not a request), but very likely a mistake for THIS
+  question. A value of the wrong kind is ALWAYS "doubtful", never "not_an_answer" (a job title such
+  as "Python Developer" typed for the city is "doubtful"). Mistakes include: the wrong kind of
+  information (a college or a skill given as a location, a degree given as a name, a sentence given
+  as a skills list), a date range that ends before it starts, a year before 1960 or more than 6 years
+  ahead, a CGPA above 10 or a percentage above 100, an obvious misspelling of a well-known word,
+  technology or degree ("Pyhton", "Bachlor"), or a clear contradiction with the resume so far.
+- "ok": anything plausible. Be generous: unusual names, small towns, short or informal answers,
+  Indian English, and future graduation dates for students are all fine. When unsure, "ok".
+
+"concern": for "doubtful" only, one short, friendly sentence naming exactly what looks wrong and what
+was probably meant ("Pyhton looks like a typo for Python."); otherwise "".
+
+OUTPUT (strict JSON only): {{"verdict": "ok|doubtful|not_an_answer", "concern": "..."}}"""
+    try:
+        parsed = get_ai_json_response(prompt, max_tokens=200)
+    except (RuntimeError, json.JSONDecodeError):
+        return jsonify({"verdict": "ok", "concern": ""}), 200
+    verdict = parsed.get("verdict") if parsed.get("verdict") in VERDICTS else "ok"
+    concern = _text(parsed.get("concern"), 300) or ""
+    if verdict == "doubtful" and not concern:
+        verdict = "ok"
+    return jsonify({"verdict": verdict, "concern": concern if verdict == "doubtful" else ""}), 200
+
+
 WORDING_FIELDS = {
     "summary": "professional summary (2-3 sentences)",
     "project": "project description (1-2 sentences)",

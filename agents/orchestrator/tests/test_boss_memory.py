@@ -80,3 +80,20 @@ def test_boss_memories_are_exported_and_erased_with_the_account(api, monkeypatch
     assert exported["boss_memory"] == ["boss:learner: Wants to be a data analyst"]
     auth_service.delete_user("learner")
     assert store.forgotten == ["boss:learner"]
+
+
+def test_every_agent_receives_what_the_learner_told_boss(monkeypatch):
+    from app.learner import service as learner_service
+
+    monkeypatch.setattr(boss_memory, "_store", FakeStore(["Feels weak in SQL joins"]))
+    seen = {}
+    original = boss_memory.recall
+
+    def spy(user_id, question="", latest=boss_memory.RECALL_LATEST, timeout=None):
+        seen.update(latest=latest, timeout=timeout)
+        return original(user_id, question, latest, timeout)
+
+    monkeypatch.setattr(boss_memory, "recall", spy)
+    assert learner_service._conversation_memory("learner", "mock_interview_agent") == ["boss:learner: Feels weak in SQL joins"]
+    assert seen == {"latest": 8, "timeout": 0.4}   # a quick read: agent calls never wait on memory
+    assert learner_service._conversation_memory("learner", "general_chat") == []
