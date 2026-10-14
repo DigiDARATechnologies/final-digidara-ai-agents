@@ -207,10 +207,12 @@ RESUME SO FAR: {json.dumps(known, ensure_ascii=False)[:3000]}
 CANDIDATE'S ANSWER: {json.dumps(answer, ensure_ascii=False)}
 
 Return one verdict:
-- "not_an_answer": the message is not an answer to the question but a request or a question --
-  to change or update something else ("i need update project details", "change my name"), to go
-  back or skip, or asking how something works. It must not be saved as the answer.
-- "doubtful": it is an answer, but very likely a mistake for THIS question: the wrong kind of
+- "not_an_answer": ONLY when the message is a request or a question addressed to the assistant --
+  to change or update something ("i need update project details", "change my name"), to go back
+  or skip, or asking how something works. It must not be saved as the answer.
+- "doubtful": it reads as an answer (a value, not a request), but very likely a mistake for THIS
+  question. A value of the wrong kind is ALWAYS "doubtful", never "not_an_answer" (a job title such
+  as "Python Developer" typed for the city is "doubtful"). Mistakes include: the wrong kind of
   information (a college or a skill given as a location, a degree given as a name, a sentence given
   as a skills list), a date range that ends before it starts, a year before 1960 or more than 6 years
   ahead, a CGPA above 10 or a percentage above 100, an obvious misspelling of a well-known word,
