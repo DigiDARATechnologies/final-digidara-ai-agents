@@ -140,7 +140,31 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         len(audio_bytes),
         latency_ms / 1000,
     )
+    if is_silence_transcript(transcript):
+        current_app.logger.info("Speaking transcription of silence/noise discarded: %r", transcript[:80])
+        return ""
     return transcript
+
+
+# What speech-to-text models write for a silent or noise-only recording.
+# Taken as the whole transcript, none of these is an answer to score.
+_SILENCE_TRANSCRIPTS = {
+    "", "you", "thank you", "thank you very much", "thanks", "thanks for watching",
+    "thank you for watching", "thanks for watching and see you next time", "please subscribe",
+    "subscribe", "hmm", "um", "uh", "ah", "oh",
+    "music", "silence", "applause", "laughter", "blank audio", "no speech", "inaudible",
+}
+
+
+def is_silence_transcript(text):
+    """True when a transcript holds no real speech: empty, only punctuation or
+    [bracketed] sound tags, or one of the phrases models invent from silence."""
+    value = re.sub(r"[\[\(][^\]\)]*[\]\)]", " ", str(text or ""))
+    value = re.sub(r"[^a-z' ]+", " ", value.lower())
+    value = " ".join(value.split())
+    return value in _SILENCE_TRANSCRIPTS
+
+
 DAILY_FALLBACK_VOCABULARY = ["productive", "catch up", "schedule"]
 
 
@@ -888,6 +912,23 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
         return feedback
 
 
+def _judged_scores(raw, keys):
+    """The 0-100 scores the model gave for `keys`; a missing or unreadable
+    one is left out rather than guessed."""
+    judged = {}
+    for key in keys:
+        value = raw.get(key) if isinstance(raw, dict) else None
+        if isinstance(value, bool):
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= number <= 100:
+            judged[key] = int(round(number))
+    return judged
+
+
 def summarize_speaking_session(mode, topic_title, turns):
     turns_text = "\n\n".join(
         f"Q{t.get('turn_number', i+1)}: {t.get('ai_question', '')}\nA{t.get('turn_number', i+1)}: {t.get('user_answer', '')}"
@@ -905,13 +946,8 @@ def summarize_speaking_session(mode, topic_title, turns):
         '    "better": "A professional, articulate, natural rewrite expressing the exact same thought smoothly"\n'
         "  },\n"
         '  "scores_breakdown": {\n'
-        '    "overall": 75,\n'
-        '    "grammar": 70,\n'
-        '    "vocabulary": 75,\n'
-        '    "clarity": 72,\n'
-        '    "sentence_structure": 68,\n'
-        '    "fluency": 74,\n'
-        '    "confidence": 76\n'
+        '    "vocabulary": <0-100, judged only from the answers given>,\n'
+        '    "sentence_structure": <0-100, judged only from the answers given>\n'
         "  },\n"
         '  "strengths": ["Clear idea expression", "Good turn taking"],\n'
         '  "areas_to_improve": ["Singular vs plural agreement", "Sentence structure variety"],\n'
@@ -924,7 +960,7 @@ def summarize_speaking_session(mode, topic_title, turns):
         f"Mode: {mode}. Topic: {topic_title or 'Spoken English Coaching'}.\n"
         f"Full conversation:\n{turns_text}\n\n"
         "Evaluate thoroughly: Extract the user's best idea for 'you_did_well', identify their main pattern issue in 'key_improvement_area', "
-        "pick their weakest sentence and provide an executive-level 'golden_rewrite', calculate the 0-100 score breakdown, and recommend a clear next drill."
+        "pick their weakest sentence and provide an executive-level 'golden_rewrite', score vocabulary and sentence structure 0-100 from what was actually said, and recommend a clear next drill."
     )
     try:
         data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.3, max_tokens=1100, retry_rate_limit=False, timeout=10, operation="speaking.session_summary", module="speaking", service="groq_speaking.summarize_speaking_session"))
@@ -948,15 +984,10 @@ def summarize_speaking_session(mode, topic_title, turns):
             "original": str(rewrite_obj.get("original") or default_rewrite["original"]).strip(),
             "better": str(rewrite_obj.get("better") or default_rewrite["better"]).strip(),
         },
-        "scores_breakdown": {
-            "overall": int(scores_breakdown.get("overall") or 74),
-            "grammar": int(scores_breakdown.get("grammar") or 70),
-            "vocabulary": int(scores_breakdown.get("vocabulary") or 75),
-            "clarity": int(scores_breakdown.get("clarity") or 72),
-            "sentence_structure": int(scores_breakdown.get("sentence_structure") or 68),
-            "fluency": int(scores_breakdown.get("fluency") or 74),
-            "confidence": int(scores_breakdown.get("confidence") or 76),
-        },
+        # Only what the model actually judged, never a made-up default. The
+        # scores computed from the turns (overall, grammar, fluency...) are
+        # added when the session is finalised.
+        "scores_breakdown": _judged_scores(scores_breakdown, ("vocabulary", "sentence_structure")),
         "strengths": data.get("strengths") if isinstance(data.get("strengths"), list) else ["Clear main ideas", "Good conversational flow"],
         "areas_to_improve": data.get("areas_to_improve") if isinstance(data.get("areas_to_improve"), list) else ["Sentence structure variety", "Complete sentence forms"],
         "common_mistakes": data.get("common_mistakes") if isinstance(data.get("common_mistakes"), list) else [],

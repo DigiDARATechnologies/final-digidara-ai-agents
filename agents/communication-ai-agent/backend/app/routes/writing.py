@@ -204,14 +204,7 @@ def _finalize_writing_session(session, mark_daily_completion=False, result_id=No
     session.overall_score = _avg(
         session.grammar_score, session.vocabulary_score, session.clarity_score, session.knowledge_score
     )
-    if session.overall_score is None and turns:
-        session.overall_score = 75.0
-    if session.grammar_score is None and turns:
-        session.grammar_score = 75.0
-    if session.vocabulary_score is None and turns:
-        session.vocabulary_score = 75.0
-    if session.clarity_score is None and turns:
-        session.clarity_score = 75.0
+    # Only scores the evaluator actually gave; an unscored answer is never a flat 75.
     session.status = "completed"
     session.completed_at = datetime.utcnow()
 

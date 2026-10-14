@@ -89,35 +89,57 @@ function normalizedSentence(value?: string): string {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function formatExecutiveScorecard(summary: Record<string, any>): string {
-  const scorecard = summary.executive_scorecard || {};
-  const scores = scorecard.scores_breakdown || {
-    overall: Math.round(Number(summary.overall_score || 7.5) * 10),
-    grammar: Math.round(Number(summary.grammar_score || 7.0) * 10),
-    vocabulary: 76,
-    clarity: Math.round(Number(summary.clarity_score || 7.2) * 10),
-    sentence_structure: 68,
-    fluency: Math.round(Number(summary.fluency_score || 7.4) * 10),
-    confidence: Math.round(Number(summary.confidence_score || 7.6) * 10),
-  };
+/** A 0-100 score, or undefined when it was never given. 0 is a real score. */
+function realScore(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 && number <= 100 ? Math.round(number) : undefined;
+}
 
-  const youDidWell = scorecard.you_did_well || (summary.strengths?.[0] ? `Clearly expressed your thoughts on ${summary.topic_title || "the topic"}.` : "Communicated ideas actively.");
-  const improve = scorecard.key_improvement_area || (summary.areas_to_improve?.[0] ? summary.areas_to_improve[0] : "Sentence structure and grammatical precision.");
+/** The end-of-session scorecard. Every number comes from the evaluated
+ * answers; a session with no scored answer says so instead of showing a
+ * made-up score (it used to show 75/100 for a session with no answers). */
+export function formatExecutiveScorecard(summary: Record<string, any>): string {
+  const scorecard = summary.executive_scorecard || {};
+  const answered = Number(summary.answered_turns ?? (Array.isArray(summary.turns) ? summary.turns.filter((turn: { user_answer?: string }) => turn.user_answer).length : 0)) || 0;
+  // The breakdown is 0-100; the session's own scores come back out of 10.
+  const outOf10 = (value: unknown) => {
+    const score = realScore(value);
+    return score === undefined ? undefined : Math.round(Number(value) * 10);
+  };
+  const breakdown = scorecard.scores_breakdown || {};
+  const scores: Array<[string, number | undefined]> = [
+    ["Overall", realScore(breakdown.overall) ?? outOf10(summary.overall_score)],
+    ["Grammar", realScore(breakdown.grammar) ?? outOf10(summary.grammar_score)],
+    ["Vocabulary", realScore(breakdown.vocabulary)],
+    ["Clarity", realScore(breakdown.clarity) ?? outOf10(summary.clarity_score)],
+    ["Sentence Structure", realScore(breakdown.sentence_structure)],
+    ["Fluency", realScore(breakdown.fluency) ?? outOf10(summary.fluency_score)],
+    ["Confidence", realScore(breakdown.confidence) ?? outOf10(summary.confidence_score)],
+  ];
+
+  if (!answered || scores.every(([, score]) => score === undefined)) {
+    return [
+      "🏁 **Session ended - no score yet**",
+      answered
+        ? "Your answers could not be scored this time (they may not have been recognised clearly). Nothing was added to your progress."
+        : "You didn't answer any questions in this session, so there is nothing to score. Nothing was added to your progress.",
+      "🎤 Next time, tap the microphone, speak your answer in a full sentence or two, and send it.",
+    ].join("\n\n");
+  }
+
+  const youDidWell = scorecard.you_did_well || summary.strengths?.[0];
+  const improve = scorecard.key_improvement_area || summary.areas_to_improve?.[0];
   const rewrite = scorecard.golden_rewrite;
-  const recommendation = summary.recommendation || scorecard.recommended_next_step || "10-minute workplace communication practice";
+  const recommendation = summary.recommendation || scorecard.recommended_next_step || "Try another speaking session to keep improving.";
 
   let out = `🏆 **Communication Practice Complete**\n\n`;
-  out += `📊 **Performance Scorecard:**\n`;
-  out += `• **Overall:** ${scores.overall || 75}/100\n`;
-  out += `• **Grammar:** ${scores.grammar || 70}/100\n`;
-  out += `• **Vocabulary:** ${scores.vocabulary || 76}/100\n`;
-  out += `• **Clarity:** ${scores.clarity || 72}/100\n`;
-  out += `• **Sentence Structure:** ${scores.sentence_structure || 68}/100\n`;
-  out += `• **Fluency:** ${scores.fluency || 74}/100\n`;
-  out += `• **Confidence:** ${scores.confidence || 76}/100\n\n`;
+  out += `📊 **Performance Scorecard** (${answered} answer${answered === 1 ? "" : "s"} scored):\n`;
+  out += scores.filter(([, score]) => score !== undefined).map(([label, score]) => `• **${label}:** ${score}/100`).join("\n");
+  out += "\n\n";
 
-  out += `✨ **You Did Well:**\n${youDidWell}\n\n`;
-  out += `🎯 **Focus Area to Improve:**\n${improve}\n\n`;
+  if (youDidWell) out += `✨ **You Did Well:**\n${youDidWell}\n\n`;
+  if (improve) out += `🎯 **Focus Area to Improve:**\n${improve}\n\n`;
 
   if (rewrite && rewrite.original && rewrite.better) {
     out += `💡 **Golden Rewrite (Executive Level):**\n`;

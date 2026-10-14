@@ -331,12 +331,21 @@ def _summary_payload(session):
         "answered_turns": session.answered_turns,
         "total_turns": session.total_turns,
         "ended_by_user": session.ended_by_user,
-        "executive_scorecard": getattr(session, "_executive_scorecard", None) or {
-            "you_did_well": "You actively engaged in the conversation and expressed your thoughts.",
-            "key_improvement_area": "Sentence structure and grammatical precision.",
-            "golden_rewrite": None,
-            "scores_breakdown": None,
-        },
+        "executive_scorecard": getattr(session, "_executive_scorecard", None) or (
+            {
+                "you_did_well": None,
+                "key_improvement_area": "Answer at least one question so your speaking can be scored.",
+                "golden_rewrite": None,
+                "scores_breakdown": None,
+            }
+            if not session.answered_turns
+            else {
+                "you_did_well": None,
+                "key_improvement_area": None,
+                "golden_rewrite": None,
+                "scores_breakdown": _scores_breakdown(session, None),
+            }
+        ),
     }
 
 
@@ -353,15 +362,10 @@ def _finalize_session(session, ended_by_user=False):
         score_values.append(session.clarity_score)
     else:
         score_values.append(session.knowledge_score)
+    # Only scores the evaluator actually gave. A turn it could not score (an
+    # unclear transcript, a provider failure) counts for nothing -- it used to
+    # become a flat 75, so a silent session showed a good score.
     session.overall_score = _avg(*score_values)
-    if session.overall_score is None and answered:
-        session.overall_score = 75.0
-    if session.confidence_score is None and answered:
-        session.confidence_score = 75.0
-    if session.fluency_score is None and answered:
-        session.fluency_score = 75.0
-    if session.grammar_score is None and answered:
-        session.grammar_score = 75.0
     session.ended_by_user = ended_by_user
     session.status = "completed"
     session.completed_at = datetime.utcnow()
@@ -388,10 +392,31 @@ def _finalize_session(session, ended_by_user=False):
         "you_did_well": summary.get("you_did_well"),
         "key_improvement_area": summary.get("key_improvement_area"),
         "golden_rewrite": summary.get("golden_rewrite"),
-        "scores_breakdown": summary.get("scores_breakdown"),
+        "scores_breakdown": _scores_breakdown(session, summary.get("scores_breakdown")),
         "recommended_next_step": summary.get("recommended_next_step"),
     }
     return summary
+
+
+def _scores_breakdown(session, judged):
+    """The 0-100 scorecard: the session's own averages of the scored turns,
+    plus the summary's vocabulary and sentence-structure judgements. None when
+    nothing was scored, so no screen or report ever shows a made-up number."""
+    computed = {
+        "overall": session.overall_score,
+        "grammar": session.grammar_score,
+        "clarity": session.clarity_score,
+        "fluency": session.fluency_score,
+        "confidence": session.confidence_score,
+    }
+    breakdown = {key: int(round(value)) for key, value in computed.items() if value is not None}
+    if not breakdown:
+        return None
+    for key in ("vocabulary", "sentence_structure"):
+        value = (judged or {}).get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100:
+            breakdown[key] = value
+    return breakdown
 
 
 def _daily_questions_from_session(session):
