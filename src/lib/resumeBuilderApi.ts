@@ -256,6 +256,24 @@ export async function resumeChatTurn(userId: string, input: ResumeChatTurnInput)
   return invoke<ResumeChatTurnResult>("resume_chat_turn", { user_id: userId, ...input }, 60_000);
 }
 
+export interface AnswerCheck {
+  verdict: "ok" | "doubtful" | "not_an_answer";
+  /** Why the answer looks wrong, shown in "Are you sure?" (doubtful only). */
+  concern: string;
+}
+
+/** A second look at an answer the chat just accepted: likely a mistake, or a
+ * request typed at the question rather than an answer. Never throws: any
+ * failure is "ok", so the check can only ask, never block. */
+export async function checkResumeAnswer(userId: string, input: { step: string; asked: string; answer: string; draft: Record<string, unknown> }): Promise<AnswerCheck> {
+  try {
+    const result = await invoke<AnswerCheck>("check_answer", { user_id: userId, ...input }, 15_000);
+    return result.verdict === "doubtful" || result.verdict === "not_an_answer" ? result : { verdict: "ok", concern: "" };
+  } catch {
+    return { verdict: "ok", concern: "" };
+  }
+}
+
 export type WordingField = "summary" | "project" | "experience";
 
 /** A stronger wording of what the candidate just wrote, or null when their

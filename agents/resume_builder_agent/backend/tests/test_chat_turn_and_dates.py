@@ -194,3 +194,38 @@ def test_wording_suggestions_are_reachable_through_invoke(client, monkeypatch):
     response = client.post("/api/invoke", json={"action": "suggest_wording", "payload": {"user_id": "test-user", "field": "project", "text": "made power bi dashboard for sales"}})
     assert response.status_code == 200
     assert response.get_json()["suggestion"] == "Built a Power BI sales dashboard."
+
+
+def check(client, **payload):
+    body = {"answer": "Python Developer", "step": "awaiting_location", "asked": "Which city do you live in?", "draft": {}, **payload}
+    return client.post("/api/ai/check-answer", json=body, headers={"X-User-Id": "test-user"})
+
+
+@pytest.mark.parametrize("model_says,expected", [
+    ({"verdict": "doubtful", "concern": "That looks like a job title, not a city."}, {"verdict": "doubtful", "concern": "That looks like a job title, not a city."}),
+    ({"verdict": "not_an_answer", "concern": "ignored"}, {"verdict": "not_an_answer", "concern": ""}),
+    ({"verdict": "ok", "concern": "x"}, {"verdict": "ok", "concern": ""}),
+    # Doubt without saying why cannot be shown to the candidate: let it through.
+    ({"verdict": "doubtful", "concern": ""}, {"verdict": "ok", "concern": ""}),
+    ({"verdict": "reject"}, {"verdict": "ok", "concern": ""}),
+])
+def test_an_answer_check_only_returns_what_the_chat_can_act_on(client, monkeypatch, model_says, expected):
+    monkeypatch.setattr(ai, "get_ai_response_text", lambda prompt, max_tokens: json.dumps(model_says))
+    response = check(client)
+    assert response.status_code == 200
+    assert response.get_json() == expected
+
+
+def test_an_answer_check_that_fails_never_blocks_the_candidate(client, monkeypatch):
+    def broken(prompt, max_tokens):
+        raise RuntimeError("provider down")
+    monkeypatch.setattr(ai, "get_ai_response_text", broken)
+    assert check(client).get_json() == {"verdict": "ok", "concern": ""}
+
+
+def test_an_empty_answer_is_refused_and_the_check_is_reachable_through_invoke(client, monkeypatch):
+    assert check(client, answer="  ").status_code == 400
+    monkeypatch.setattr(ai, "get_ai_response_text", lambda prompt, max_tokens: json.dumps({"verdict": "ok"}))
+    response = client.post("/api/invoke", json={"action": "check_answer", "payload": {"user_id": "test-user", "answer": "Chennai, India"}})
+    assert response.status_code == 200
+    assert response.get_json()["verdict"] == "ok"

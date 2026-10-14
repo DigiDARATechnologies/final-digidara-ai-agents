@@ -76,7 +76,7 @@ import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
 import { checkCommunicationHealth, getDailyChallengeToday, previewCommunicationAudio, transcribeCommunicationAudio } from "./lib/communicationApi";
 import { checkResumeBuilderHealth } from "./lib/resumeBuilderApi";
-import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
+import { createInitialResumeBuilderState, handleResumeBuilderText, importResumeBuilderFile, isResumeChangeRequest, openResumeBuilderChat, type ResumeBuilderFlowState } from "./lib/resumeBuilderFlow";
 import { checkCertificateAgentHealth } from "./lib/certificateAgentApi";
 import { createInitialCertificateState, handleCertificateText, openCertificateChat, type CertificateFlowState } from "./lib/certificateAgentFlow";
 import { checkJobFetchHealth, clearJobConversations, deleteJobConversation } from "./lib/jobFetchApi";
@@ -1314,7 +1314,11 @@ export default function App() {
     // Suggestions invite free text: what the learner typed is their own answer
     // ("i need data science project"), not a miss to steer back to the buttons.
     const hasSuggestions = choices.some((o) => o.suggested);
-    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined
+    // "i need update project details", or a corrected answer after "Are you
+    // sure?": the Resume Builder reads these itself.
+    const resumeBuilderReadsIt = agent?.kind === "resume-builder"
+      && (isResumeChangeRequest(typed) || Boolean((resumeSnapshot as ResumeBuilderFlowState | undefined)?.pendingCheck));
+    if (agent?.backendAgentName && agent.kind !== "job-fetch" && !internal && !mockAnswer && displayText === undefined && !resumeBuilderReadsIt
         && !pendingResume && !pendingImage && choices.length >= 2 && typed && !typedAChoice && !hasSuggestions) {
       const step = String((resumeSnapshot as { step?: unknown } | undefined)?.step ?? "");
       interpretTurn(agent.backendAgentName, step, choices, typed)

@@ -13,6 +13,7 @@ import {
   suggestResumeEdit,
   resumeChatTurn,
   suggestResumeWording,
+  checkResumeAnswer,
   type WordingField,
   updateResume,
   type ResumeEditProposal,
@@ -45,6 +46,14 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
   /** Text typed at a project question that reads like a request ("i want my
    * resume"), held while the candidate says whether it really is a project. */
   pendingProjectText?: string;
+  /** An answer that looked wrong for its question ("Are you sure?"): what the
+   * chat would do with it (`result`), held until the candidate confirms it or
+   * types a corrected one; `question` is the question it answered. */
+  pendingCheck?: { answer: string; result: ResumeBuilderFlowResult; question?: ResumeBuilderMessage };
+  /** "update my project details" with no new value: the section the
+   * candidate's next message changes. `question` is where the chat was (while
+   * building the draft), shown again once the change is applied. */
+  editTopic?: { key: EditTopicKey; label: string; question?: ResumeBuilderMessage };
   /** "Build from my DigiDARA profile": the questions still to ask, in order --
    * only what the profile and the other agents could not fill in. */
   profileQueue?: ProfileQuestion[];
@@ -311,9 +320,14 @@ const draftFieldSteps: Record<string, ResumeBuilderStep> = {
   linkedin: "awaiting_linkedin", github: "awaiting_github", portfolio: "awaiting_portfolio",
 };
 function requestedDraftField(value: string) {
-  const match = clean(value).toLowerCase().match(/^(?:i\s+(?:want|need)\s+to\s+)?(?:change|edit|update)\s+(?:my\s+)?([a-z ]+)$/);
+  const match = clean(value).toLowerCase().match(/^(?:(?:please|pls|kindly|can you|could you)\s+)?(?:i\s+(?:want|need|would like|wanna)(?:\s+to)?\s+)?(?:change|edit|update|modify|correct|fix)\s+(?:my\s+|the\s+)?([a-z ]+)$/);
   if (!match) return undefined;
-  return Object.entries(draftFieldSteps).find(([field]) => match[1].includes(field))?.[1];
+  // The field named first: "project title" is a project, not the resume title.
+  const named = Object.entries(draftFieldSteps)
+    .map(([field, step]) => ({ at: match[1].indexOf(field), step }))
+    .filter(({ at }) => at >= 0)
+    .sort((a, b) => a.at - b.at);
+  return named[0]?.step;
 }
 
 export const EXPERIENCE_PROMPT_TEXT = `Add an internship, job, freelance role, volunteer role, or other relevant practical experience.
@@ -1210,7 +1224,230 @@ const DRAFT_STEPS = new Set<ResumeBuilderStep>([
 ]);
 
 /** "change my college to ...", "the start date is Jan 2022", "my PG is MCA not MBA", "remove the second project". */
-const EDIT_REQUEST = /^(?:please\s+|pls\s+|can you\s+|could you\s+|i\s+(?:want|need|would like)\s+to\s+)*(?:change|edit|update|correct|fix|replace|rename|remove|delete)\b|\b(?:is wrong|was wrong|are wrong|typo|mistake|instead of)\b|^(?:my|the)\s+[\w\s]{2,40}?\s+(?:is|was|should be|are)\b/i;
+const EDIT_REQUEST = /^(?:please\s+|pls\s+|kindly\s+|can you\s+|could you\s+|i\s+(?:want|need|would like|wanna)(?:\s+to)?\s+)*(?:change|edit|update|modify|correct|fix|replace|rename|remove|delete)\b|\b(?:is wrong|was wrong|are wrong|typo|mistake|instead of)\b|^(?:my|the)\s+[\w\s]{2,40}?\s+(?:is|was|should be|are)\b/i;
+
+/** A typed request to change the resume ("i need update project details",
+ * "remove the second project", "add Docker to my skills"). The Resume Builder
+ * reads these itself; they are never a pick among the buttons on screen. */
+export function isResumeChangeRequest(value: string): boolean {
+  const text = clean(value);
+  return EDIT_REQUEST.test(text) || /^(?:please\s+|pls\s+|can you\s+|could you\s+|i\s+(?:want|need|would like)(?:\s+to)?\s+)*(?:add|include|rewrite|improve|shorten)\b/i.test(text);
+}
+
+type EditTopicKey = "projects" | "experience" | "education" | "certifications" | "achievements" | "skills" | "summary" | "name" | "email" | "phone" | "location" | "targetRole" | "links";
+const LIST_TOPICS = new Set<EditTopicKey>(["projects", "experience", "education", "certifications", "achievements", "skills"]);
+const EDIT_TOPICS: Array<[RegExp, EditTopicKey, string]> = [
+  [/\bprojects?\b/, "projects", "projects"],
+  [/\b(?:experiences?|internships?|jobs?|work)\b/, "experience", "experience"],
+  [/\b(?:education|degrees?|college|school|qualifications?|cgpa|marks)\b/, "education", "education"],
+  [/\b(?:certifications?|certificates?)\b/, "certifications", "certifications"],
+  [/\b(?:achievements?|awards?)\b/, "achievements", "achievements"],
+  [/\bskills?\b/, "skills", "skills"],
+  [/\b(?:summary|objective|about me)\b/, "summary", "summary"],
+  [/\bname\b/, "name", "name"],
+  [/\b(?:e-?mail|mail id)\b/, "email", "email"],
+  [/\b(?:phone|mobile|contact number)\b/, "phone", "phone number"],
+  [/\b(?:location|city|address)\b/, "location", "location"],
+  [/\b(?:target role|role|position)\b/, "targetRole", "target role"],
+  [/\b(?:links?|linkedin|github|portfolio|website)\b/, "links", "links"],
+];
+const CHANGE_VERB = /^(?:(?:please|pls|kindly|can you|could you)\s+)?(?:i\s+(?:want|need|would like|wanna)(?:\s+to)?\s+)?(?:change|edit|update|modify|correct|fix)\b/i;
+
+/** "i need update project detilas", "change my education": a change request
+ * that names a section but not the new value -- the section, or undefined. */
+function vagueChangeTopic(value: string): { key: EditTopicKey; label: string } | undefined {
+  const text = clean(value).toLowerCase();
+  if (!CHANGE_VERB.test(text) || text.split(/\s+/).length > 8) return undefined;
+  // A value is given ("... to Prem", "... is 8.5", "...: MCA"): not vague.
+  if (/\s(?:to|is|as|into|with|from|=)\s|[:\d@]|https?:|www\./.test(text)) return undefined;
+  const found = EDIT_TOPICS
+    .map(([pattern, key, label]) => ({ at: text.search(pattern), key, label }))
+    .filter(({ at }) => at >= 0)
+    .sort((a, b) => a.at - b.at)[0];
+  return found && { key: found.key, label: found.label };
+}
+
+function describeTopic(draft: ResumeDraft, key: EditTopicKey): string {
+  const years = (entry: { start_date?: string; end_date?: string }) => [entry.start_date, entry.end_date].filter(Boolean).join(" - ");
+  const numbered = (lines: string[]) => lines.map((line, index) => `${index + 1}. ${line}`).join("\n");
+  switch (key) {
+    case "projects": return numbered((draft.projects || []).map((p) => p.description ? `${p.title} - ${p.description.slice(0, 120)}${p.description.length > 120 ? "…" : ""}` : p.title));
+    case "experience": return numbered((draft.experience || []).map((e) => [`${e.role} at ${e.company}`, years(e)].filter(Boolean).join(", ")));
+    case "education": return numbered((draft.education || []).map((e) => [e.degree, e.field, e.school, years(e), e.cgpa && `CGPA ${e.cgpa}`, e.percentage && `${e.percentage}%`].filter(Boolean).join(", ")));
+    case "certifications": return numbered((draft.certifications || []).map((c) => [c.name, c.issuer].filter(Boolean).join(" - ")));
+    case "achievements": return numbered((draft.achievements || []).map((a) => a.title));
+    case "skills": return (draft.skills || []).join(", ");
+    case "links": return (draft.links || []).join("\n");
+    default: return String(draft[key] || "");
+  }
+}
+
+const CHANGE_EXAMPLES: Record<EditTopicKey, string> = {
+  projects: "change the description of project 1 to: Built a Flask app that tracks student attendance",
+  experience: "my role at Infosys was Data Analyst Intern, Jan 2024 - Jun 2024",
+  education: "my UG CGPA is 8.2 and the college is KSR College of Engineering",
+  certifications: "add AWS Cloud Practitioner - Amazon - 2025",
+  achievements: "remove the second achievement",
+  skills: "add Docker and remove Excel",
+  summary: "make it focus on Python backend development",
+  name: "Prem Kumar",
+  email: "prem@example.com",
+  phone: "+91 98765 43210",
+  location: "Chennai, India",
+  targetRole: "Python Developer",
+  links: "my LinkedIn is linkedin.com/in/prem",
+};
+
+const REVIEW_STEPS = new Set<ResumeBuilderStep>(["reviewing", "completed", "awaiting_template", "awaiting_edit_instruction"]);
+
+/** "i need update project details" with no new value: show what that section
+ * holds now and ask what to change, instead of guessing or refusing. */
+async function askWhatToChange(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult | undefined> {
+  const topic = vagueChangeTopic(value);
+  if (!topic) return undefined;
+  const reviewing = Boolean(state.resumeId) && REVIEW_STEPS.has(state.step);
+  let draft = state.draft || {};
+  if (reviewing) {
+    try {
+      draft = draftFromSavedResume(await getResume(user.id, state.resumeId!), draft);
+    } catch {
+      // The chat's own copy of the details is still a fair picture.
+    }
+  } else {
+    // While the draft is being built, "change my email" goes back to that
+    // question (the step jump below); only sections that already have
+    // entries need the "which one, and how?" question.
+    if (!DRAFT_STEPS.has(state.step) || !LIST_TOPICS.has(topic.key) || !describeTopic(draft, topic.key)) return undefined;
+  }
+  const current = describeTopic(draft, topic.key);
+  const shown = current
+    ? `Sure. Here ${LIST_TOPICS.has(topic.key) || topic.key === "links" ? "are" : "is"} your current ${topic.label}:\n\n${current}\n\nTell me what to change`
+    : `You don't have any ${topic.label} on your resume yet. Tell me what to add`;
+  return {
+    state: {
+      ...state,
+      ...(reviewing ? { step: "awaiting_edit_instruction" as const } : {}),
+      editTopic: { ...topic, question: reviewing ? undefined : state.lastMessage },
+    },
+    messages: [{
+      text: `${shown}, in your own words. For example: "${CHANGE_EXAMPLES[topic.key]}".\n\n${reviewing ? "I'll show you the change before anything is saved." : "Then we'll carry on from where we were."}`,
+    }],
+  };
+}
+
+/** The candidate's answer to "what should change in your <section>?". */
+async function applyTopicEdit(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult | undefined> {
+  const topic = state.editTopic!;
+  const base: ResumeBuilderFlowState = { ...state, editTopic: undefined };
+  if (!clean(value)) return { state, messages: [{ text: `Tell me what to change in your ${topic.label}.` }] };
+  if (state.resumeId && REVIEW_STEPS.has(state.step)) {
+    return proposeResumeEdit(base, user, `Change the ${topic.label} section of my resume: ${clean(value)}`, `${clean(value)} ${topic.label}`);
+  }
+  if (!DRAFT_STEPS.has(state.step)) return undefined;
+  let turn;
+  try {
+    turn = await askAssistant(base, user, `About my ${topic.label}: ${clean(value)}`);
+  } catch (error) {
+    return { state, messages: [{ text: `I couldn't apply that change right now (${(error as Error).message}). Please try again in a moment - your details are still saved.` }] };
+  }
+  return applyAssistantUpdates(base, turn, topic.question);
+}
+
+/** The assistant's updates applied to the draft, then back to `question` (the
+ * question the candidate was on) when given. */
+function applyAssistantUpdates(state: ResumeBuilderFlowState, turn: Awaited<ReturnType<typeof askAssistant>>, question?: ResumeBuilderMessage): ResumeBuilderFlowResult {
+  const back = question ? [question] : [];
+  const updates = turn.updates as Partial<ResumeDraft>;
+  if (!Object.keys(updates).length) {
+    return { state, messages: [{ text: turn.reply || "I couldn't find a change to make in that. Could you say it another way?" }, ...back] };
+  }
+  if (updates.phone) {
+    const phone = checkPhoneNumber(updates.phone);
+    if ("error" in phone) return { state, messages: [{ text: phone.error }, ...back] };
+  }
+  const draft: ResumeDraft = { ...state.draft, ...updates };
+  const ugNowPresent = state.pendingField === "education.ug" && hasUndergraduateEducation(draft.education);
+  const next: ResumeBuilderFlowState = {
+    ...state,
+    draft,
+    error: undefined,
+    ...(ugNowPresent ? { step: "confirming" as const, pendingField: undefined } : {}),
+  };
+  const reply = turn.reply || "Done - I've updated your details.";
+  if (next.step === "confirming") return { state: next, messages: [{ text: reply }, reviewMessage(draft)] };
+  return { state: next, messages: back.length ? [{ text: reply }, ...back] : [{ text: `${reply}\n\nYou can carry on from where we were.` }] };
+}
+
+/** Steps whose free-text answers get a second look before the chat moves on.
+ * Email, phone and links are checked exactly by their own parsers. */
+const CHECKED_STEPS = new Set<ResumeBuilderStep>([
+  "awaiting_title", "awaiting_name", "awaiting_location", "awaiting_role", "awaiting_summary", "awaiting_skills",
+  "awaiting_experience", "awaiting_education", "awaiting_project", "awaiting_certifications", "awaiting_achievements",
+  "awaiting_upload_role",
+]);
+const CONFIRM_ANSWER = "confirm_answer";
+const FIX_ANSWER = "fix_answer";
+
+/** After a step accepted an answer: is it really an answer, and does it look
+ * right for the question? A likely mistake asks "Are you sure?"; a request
+ * typed at the question (not an answer) is carried out instead of being
+ * saved. Undefined: carry on with the step's own result. */
+async function checkAnswer(previous: ResumeBuilderFlowState, user: User, value: string, result: ResumeBuilderFlowResult): Promise<ResumeBuilderFlowResult | undefined> {
+  const typed = clean(value);
+  if (!CHECKED_STEPS.has(previous.step) || typed.length < 2 || isSkip(typed) || requestedDraftField(typed)) return undefined;
+  if ((previous.lastMessage?.options || []).some((option) => option.value === value)) return undefined;
+  const taken = result.state.step !== "error"
+    && (result.state.step !== previous.step || JSON.stringify(result.state.draft || {}) !== JSON.stringify(previous.draft || {}));
+  if (!taken) return undefined;
+  const check = await checkResumeAnswer(user.id, {
+    step: previous.step,
+    asked: previous.lastMessage?.text || lastAgentText(previous),
+    answer: typed,
+    draft: (previous.draft || {}) as Record<string, unknown>,
+  });
+  const question = previous.lastMessage;
+  if (check.verdict === "doubtful") {
+    return {
+      state: { ...previous, pendingCheck: { answer: typed, result, question } },
+      messages: [{
+        text: `⚠️ Are you sure this is correct?\n\nYou entered: "${typed.length > 300 ? `${typed.slice(0, 300)}…` : typed}"\n${check.concern}\n\nKeep it, or type the corrected answer.`,
+        options: [
+          { label: "Yes, it's correct", value: CONFIRM_ANSWER, description: "Save it exactly as I typed it." },
+          { label: "Let me fix it", value: FIX_ANSWER, description: "Type the corrected answer instead." },
+        ],
+      }],
+    };
+  }
+  if (check.verdict === "not_an_answer") {
+    let turn;
+    try {
+      turn = await askAssistant(previous, user, typed);
+    } catch {
+      return undefined;
+    }
+    // The assistant reads it as an answer after all: keep the step's result.
+    if (turn.intent === "answer") return undefined;
+    if (turn.intent === "edit") return applyAssistantUpdates(previous, turn, question);
+    return { state: previous, messages: [{ text: turn.reply || "Okay." }, ...(question ? [question] : [])] };
+  }
+  return undefined;
+}
+
+/** "Yes, it's correct" keeps the held answer; "Let me fix it" asks again.
+ * Undefined: the candidate typed a new answer, which is handled as one. */
+async function resolvePendingCheck(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult | undefined> {
+  const pending = state.pendingCheck!;
+  const typed = clean(value).toLowerCase();
+  const base: ResumeBuilderFlowState = { ...state, pendingCheck: undefined };
+  if (value === CONFIRM_ANSWER || /^(?:yes|yeah|yep|y|correct|it'?s correct|right|ok(?:ay)?|sure|confirm|keep it|save it)\b[.!]*$/.test(typed)) {
+    const kept = await offerWordingSuggestion(base, pending.result, user);
+    return { ...kept, messages: [{ text: "Okay, saved as you typed it." }, ...kept.messages] };
+  }
+  if (value === FIX_ANSWER || /^(?:no|nope|n|fix(?: it)?|let me fix(?: it)?|wrong|change it)\b[.!]*$/.test(typed)) {
+    return { state: { ...base, lastMessage: pending.question }, messages: [{ text: "No problem. Type the correct answer:" }, ...(pending.question ? [pending.question] : [])] };
+  }
+  return undefined;
+}
 
 function lastAgentText(state: ResumeBuilderFlowState): string {
   return [...(state.history || [])].reverse().find((turn) => turn.role === "agent")?.text || "";
@@ -1261,25 +1498,8 @@ async function applyTypedEdit(state: ResumeBuilderFlowState, user: User, value: 
   // An answer to the question being asked is saved by that step's own
   // handling, which also moves the chat on to the next question.
   if (turn.intent === "answer" && state.step !== "confirming" && state.step !== "awaiting_enrichment_choice") return undefined;
-  const updates = turn.updates as Partial<ResumeDraft>;
-  if (!Object.keys(updates).length) return turn.reply ? { state, messages: [{ text: turn.reply }] } : undefined;
-  if (updates.phone) {
-    const phone = checkPhoneNumber(updates.phone);
-    if ("error" in phone) return { state, messages: [{ text: phone.error }] };
-  }
-  const draft: ResumeDraft = { ...state.draft, ...updates };
-  const ugNowPresent = state.pendingField === "education.ug" && hasUndergraduateEducation(draft.education);
-  const next: ResumeBuilderFlowState = {
-    ...state,
-    draft,
-    error: undefined,
-    ...(ugNowPresent ? { step: "confirming" as const, pendingField: undefined } : {}),
-  };
-  const reply = turn.reply || "Done - I've updated your details.";
-  return {
-    state: next,
-    messages: next.step === "confirming" ? [{ text: reply }, reviewMessage(draft)] : [{ text: `${reply}\n\nYou can carry on from where we were.` }],
-  };
+  if (!Object.keys(turn.updates).length && !turn.reply) return undefined;
+  return applyAssistantUpdates(state, turn);
 }
 
 function withHistory(result: ResumeBuilderFlowResult, previous: ResumeChatTurnHistory, studentText: string): ResumeBuilderFlowResult {
@@ -1415,6 +1635,32 @@ function entryToRemove(value: string, resume: Record<string, unknown>): { sectio
   return undefined;
 }
 
+/** A reviewed proposal for a change to the saved resume; nothing is saved
+ * until the candidate applies it. `removalText` is what is read for "remove
+ * the second project". */
+async function proposeResumeEdit(state: ResumeBuilderFlowState, user: User, instruction: string, removalText: string): Promise<ResumeBuilderFlowResult> {
+  try {
+    const currentResume = await getResume(user.id, state.resumeId!);
+    // Removing one named or numbered entry is done exactly, not left to the
+    // AI (which removed the wrong project, or both, for such requests).
+    const removal = entryToRemove(removalText, currentResume);
+    const proposal = removal
+      ? {
+          resume: { ...currentResume, [removal.section]: (currentResume[removal.section] as unknown[]).filter((_, index) => index !== removal.index) },
+          changes: [`Removed ${removal.label} ${removal.index + 1}: "${removal.title}". Everything else is unchanged.`],
+          warnings: [],
+          requires_confirmation: true,
+        }
+      : await suggestResumeEdit(user.id, currentResume, instruction);
+    return {
+      state: { ...state, step: "awaiting_edit_confirmation", pendingEdit: proposal },
+      messages: [{ text: formatEditProposal(proposal), options: editConfirmationOptions }],
+    };
+  } catch (error) {
+    return { state: { ...state, step: "reviewing" }, messages: [{ text: `I could not prepare a safe edit proposal: ${(error as Error).message}. Your resume was not changed.`, options: reviewOptions }] };
+  }
+}
+
 const USE_SUGGESTION = "use_suggestion";
 const KEEP_MINE = "keep_mine";
 const WORDING_LABEL: Record<WordingField, string> = { summary: "summary", project: "project description", experience: "experience description" };
@@ -1491,8 +1737,21 @@ function resolveWordingSuggestion(state: ResumeBuilderFlowState, value: string):
 export async function handleResumeBuilderText(state: ResumeBuilderFlowState, user: User, value: string): Promise<ResumeBuilderFlowResult> {
   const restarting = value === "restart" || clean(value).toLowerCase() === "start over";
   if (state.pendingSuggestion && !restarting) return withHistory(resolveWordingSuggestion(state, value), state.history || [], value);
-  const edited = restarting ? undefined : await applyTypedEdit(state, user, value);
-  const result = edited ?? await offerWordingSuggestion(state, continueProfileQueue(state, value, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value))), user);
+  if (state.pendingCheck && !restarting) {
+    const resolved = await resolvePendingCheck(state, user, value);
+    if (resolved) return withHistory(resolved, state.history || [], value);
+    // A corrected answer: handled (and checked) as the answer to that question.
+    return handleResumeBuilderText({ ...state, pendingCheck: undefined, lastMessage: state.pendingCheck.question }, user, value);
+  }
+  if (state.editTopic && !restarting) {
+    const changed = await applyTopicEdit(state, user, value);
+    if (changed) return withHistory(changed, state.history || [], value);
+    state = { ...state, editTopic: undefined };
+  }
+  const edited = restarting ? undefined : (await askWhatToChange(state, user, value)) ?? await applyTypedEdit(state, user, value);
+  if (edited) return withHistory(edited, state.history || [], value);
+  const stepped = continueProfileQueue(state, value, returnAfterFieldEdit(state, value, await handleResumeBuilderStep(state, user, value)));
+  const result = (restarting ? undefined : await checkAnswer(state, user, value, stepped)) ?? await offerWordingSuggestion(state, stepped, user);
   return withHistory(result, restarting ? [] : state.history || [], value);
 }
 
@@ -1598,7 +1857,9 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
   }
 
   const draftField = requestedDraftField(value);
-  if (draftField && !["reviewing", "awaiting_edit_instruction", "awaiting_edit_confirmation"].includes(state.step)) {
+  // Once the resume is saved, a change is an edit proposal (below), never a
+  // jump back into the draft questions.
+  if (draftField && !(state.resumeId && REVIEW_STEPS.has(state.step)) && state.step !== "awaiting_edit_confirmation") {
     // Remember the question the candidate was on (unless they are already
     // editing that same field), to come back to it once this field is saved.
     const returnTo = state.returnTo ?? (state.step !== draftField ? { step: state.step, message: state.lastMessage } : undefined);
@@ -1692,6 +1953,9 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
 
   if (state.step === "awaiting_template") {
     const templateChoice = value.startsWith("template:") ? value.slice("template:".length) : "";
+    if (!templateChoice && state.resumeId && isResumeChangeRequest(value)) {
+      return proposeResumeEdit({ ...state, step: "reviewing" }, user, clean(value), value);
+    }
     if (!templateChoice || !state.resumeId) {
       return { state, messages: [{ text: "Please choose one of the available resume templates." }] };
     }
@@ -1713,26 +1977,7 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     if (!clean(value)) {
       return { state, messages: [{ text: "Describe the change you would like to make." }] };
     }
-    try {
-      const currentResume = await getResume(user.id, state.resumeId);
-      // Removing one named or numbered entry is done exactly, not left to the
-      // AI (which removed the wrong project, or both, for such requests).
-      const removal = entryToRemove(value, currentResume);
-      const proposal = removal
-        ? {
-            resume: { ...currentResume, [removal.section]: (currentResume[removal.section] as unknown[]).filter((_, index) => index !== removal.index) },
-            changes: [`Removed ${removal.label} ${removal.index + 1}: "${removal.title}". Everything else is unchanged.`],
-            warnings: [],
-            requires_confirmation: true,
-          }
-        : await suggestResumeEdit(user.id, currentResume, clean(value));
-      return {
-        state: { ...state, step: "awaiting_edit_confirmation", pendingEdit: proposal },
-        messages: [{ text: formatEditProposal(proposal), options: editConfirmationOptions }],
-      };
-    } catch (error) {
-      return { state: { ...state, step: "reviewing" }, messages: [{ text: `I could not prepare a safe edit proposal: ${(error as Error).message}. Your resume was not changed.`, options: reviewOptions }] };
-    }
+    return proposeResumeEdit(state, user, clean(value), value);
   }
   if (state.step === "choose_workflow") {
     if (value === FROM_PROFILE) return startFromProfile(state, user);
