@@ -20,7 +20,7 @@ interface TopbarProps {
   onDismissNotification: (notification: PendingNotification) => void;
 }
 
-export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, theme, onToggleTheme, notifications, onOpenNotification, onDismissNotification }: TopbarProps) {
+export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, theme, onToggleTheme, notifications, onOpenNotification, onDismissNotification }: TopbarProps) {
   return (
     <header className="topbar">
       <button className="icon-btn mobile-only" onClick={onToggleMobileMenu} aria-label="Open menu">
@@ -120,7 +120,6 @@ export default function Topbar({ title, user, notifOpen, onToggleMobileMenu, onT
             ))}
           </div>
         </div>
-        <button className="avatar avatar-btn">{user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : user.initial}</button>
       </div>
     </header>
   );
