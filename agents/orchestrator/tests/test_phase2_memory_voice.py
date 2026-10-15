@@ -314,11 +314,15 @@ def test_voice_cache_is_shared_between_workers(api, monkeypatch):
     assert response.content == b"mp3" and len(calls) == 1 and len(store) == 1
 
 
-def test_general_chat_greets_the_learner_by_first_name_and_stays_short():
+def test_general_chat_knows_the_first_name_answers_straight_away_and_stays_short():
     from app.orchestrator import prompts
 
     block = prompts.learner_context_block({"first_name": "Selvi", "skills": []})
-    assert '"first_name": "Selvi"' in block and "Call the learner by their first name, Selvi" in block
+    assert '"first_name": "Selvi"' in block and "first name, Selvi" in block
+    assert "never open a reply with a greeting" in block
     assert "first name" not in prompts.learner_context_block({"skills": []}).split("\n", 2)[-1]
     system = prompts.router_system_prompt(has_tools=True)
     assert "2 to 4 short sentences" in system and "noisy place" in system
+    # Boss answers the question; it introduces itself only when greeted or asked who it is.
+    assert "Never open with a greeting or an introduction" in system
+    assert "no introduction" in prompts.VOICE_REPLY_RULES

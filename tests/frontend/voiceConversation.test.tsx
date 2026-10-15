@@ -140,3 +140,21 @@ test('"just a minute" keeps Boss listening, and the whole question is sent toget
   expect(onSend).toHaveBeenCalledWith('Tell me about the Capstone agent and how long the project takes.');
   jest.useRealTimers();
 });
+
+test('the next question is sent with the newest onSend, not the one from when the reply began', () => {
+  // The reply's speech queue is made when its first word streams in; the
+  // question asked after it must not be sent with that render's onSend
+  // (its copy of the chat still held the reply's first word only).
+  const early = jest.fn();
+  const latest = jest.fn();
+  const asked = [msg('agent', 'Hi!'), msg('user', 'introduce yourself')];
+  const { rerender } = render(<VoiceConversation messages={asked} typing awaitingReply onSend={early} onClose={jest.fn()} />);
+  rerender(<VoiceConversation messages={[...asked, msg('agent', 'Hell', true)]} typing={false} awaitingReply onSend={early} onClose={jest.fn()} />);
+  const done = [...asked, msg('agent', 'Hello everyone! I am Boss.')];
+  rerender(<VoiceConversation messages={done} typing={false} awaitingReply onSend={latest} onClose={jest.fn()} />);
+  act(() => { mockQueues[0].onEnd?.(); });
+  const onHeard = mockStart.mock.calls.at(-1)![0] as (text: string, final: boolean) => void;
+  act(() => { onHeard('suggest me jobs', true); });
+  expect(latest).toHaveBeenCalledWith('suggest me jobs');
+  expect(early).not.toHaveBeenCalled();
+});

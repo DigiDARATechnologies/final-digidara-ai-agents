@@ -953,6 +953,16 @@ export default function App() {
       setTyping(false);
     } catch {
       if (shown) {
+        // The stream broke after part of the answer: ask once more, whole,
+        // rather than leaving half a reply.
+        try {
+          const retry = await routeMessage(text, history);
+          if (!retry.agent_name && retry.reply) {
+            showText(retry.reply, false);
+            setTyping(false);
+            return;
+          }
+        } catch { /* keep what was shown */ }
         setChats((prev) => {
           const next = prev.map((c) => (c.id !== chatId ? c : { ...c, messages: c.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }));
           saveChats(next);
