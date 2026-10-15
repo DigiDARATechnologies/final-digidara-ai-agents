@@ -225,18 +225,22 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     onClose();
   }
 
+  // Boss is thinking, or working out what was just said: the ring turns.
+  const working = phase === "thinking" || (speech.transcribing && phase === "listening");
+
   const status = speech.transcribing && phase === "listening" ? "Understanding..."
     : phase === "thinking" ? "Thinking..."
       : phase === "speaking" ? "Speaking... start talking or tap me to interrupt"
         : speech.listening ? sendIn !== null ? `Sending in ${sendIn}s - keep talking to continue` : "Listening... just talk"
           : speech.error ? "Tap the logo to try again" : "Starting microphone...";
 
-  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}`} role="dialog" aria-label="Voice conversation with Boss">
+  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}${working ? " working" : ""}`} role="dialog" aria-label="Voice conversation with Boss">
     <button type="button" className="voice-conversation-end" onClick={end}>End voice chat</button>
     <div className="voice-conversation-center">
       <div ref={orbRef} className="voice-conversation-orb">
         <span className="voice-conversation-ring" aria-hidden="true" />
         <span className="voice-conversation-ring second" aria-hidden="true" />
+        <span className="voice-conversation-spinner" aria-hidden="true" />
         <button type="button" className="voice-conversation-logo" onClick={handleOrbTap}
           aria-label={phase === "speaking" ? "Interrupt" : speech.listening ? "Send now" : "Talk"}>
           <Logo variant="icon" size={92} />

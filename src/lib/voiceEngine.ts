@@ -32,7 +32,6 @@ const BASE = (() => {
   return raw.endsWith("/") ? raw.slice(0, -1) : raw;
 })();
 
-const TAMIL = /[஀-௿]/;
 
 let session = 0;
 let activeAudio: HTMLAudioElement | null = null;
@@ -47,6 +46,7 @@ export function stopSpeaking(): void {
   session += 1;
   speaking = false;
   activeAudio = null;
+  stopContextPlayback();
   for (const audio of [...liveAudio]) release(audio);
   if (typeof window !== "undefined" && window.speechSynthesis) {
     try {
@@ -129,6 +129,44 @@ function boost(audio: HTMLAudioElement): void {
   } catch {
     // Plays at normal volume.
   }
+}
+
+// Playing through the audio context instead of an <audio> element: a phone
+// can refuse an element's play() when it is not started by a tap, but the
+// context, resumed by an earlier tap, always plays. Same voice either way.
+let contextSource: AudioBufferSourceNode | null = null;
+
+function stopContextPlayback(): void {
+  const source = contextSource;
+  contextSource = null;
+  try {
+    source?.stop();
+  } catch {
+    // Already finished.
+  }
+}
+
+async function playThroughContext(text: string, prefs: VoicePrefs, onFirstPlay: () => void): Promise<void> {
+  const context = boostContext;
+  if (!context) throw new Error("no audio context");
+  if (context.state !== "running") await context.resume();
+  const blob = await fetchChunk(text, prefs);
+  const buffer = await context.decodeAudioData(await blob.arrayBuffer());
+  await new Promise<void>((resolve) => {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.playbackRate.value = prefs.speed;
+    const gain = context.createGain();
+    gain.gain.value = VOICE_GAIN;
+    source.connect(gain).connect(context.destination);
+    source.onended = () => {
+      if (contextSource === source) contextSource = null;
+      resolve();
+    };
+    contextSource = source;
+    onFirstPlay();
+    source.start();
+  });
 }
 
 // Every downloading or playing voice element, so stopSpeaking() silences them all.
@@ -218,31 +256,6 @@ function playAudio(audio: HTMLAudioElement, prefs: VoicePrefs, onFirstPlay: () =
   });
 }
 
-function browserSpeak(chunks: string[], prefs: VoicePrefs, mySession: number, onFirstPlay: () => void): Promise<void> {
-  return new Promise((resolve) => {
-    const synthesis = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-    if (!synthesis || !chunks.length) return resolve();
-    let index = 0;
-    const next = () => {
-      if (mySession !== session || index >= chunks.length) return resolve();
-      const text = chunks[index++];
-      const lang = TAMIL.test(text) ? "ta" : "en";
-      const utterance = new SpeechSynthesisUtterance(text);
-      const voice = pickIndianVoice(lang);
-      if (voice) utterance.voice = voice;
-      utterance.lang = voice?.lang || (lang === "ta" ? "ta-IN" : "en-IN");
-      // A little slower than the device default, so every student can follow.
-      utterance.rate = Math.min(1.3, Math.max(0.7, prefs.speed * 0.9));
-      utterance.pitch = 1;
-      utterance.onstart = onFirstPlay;
-      utterance.onend = next;
-      utterance.onerror = next;
-      synthesis.speak(utterance);
-    };
-    next();
-  });
-}
-
 export interface SpeechQueue {
   /** Add text to say after what is already queued (a reply as it streams in). */
   push(text: string): void;
@@ -318,10 +331,18 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
           await playAudio(audio, prefs, markStarted);
           heard = true;
         } catch {
-          // Natural voice failed for this piece: the device voice says it.
+          // The element could not play (a phone not started by a tap).
         }
       }
-      if (!heard && mySession === session) await browserSpeak([texts[index]], prefs, mySession, markStarted);
+      // The same voice, played another way. The device's own voice is never
+      // used: it would sound like a different person on each device.
+      if (!heard && mySession === session) {
+        try {
+          await playThroughContext(texts[index], prefs, markStarted);
+        } catch {
+          // This piece is skipped; the reply is on screen.
+        }
+      }
       index += 1;
     }
     for (const pending of prepared.slice(index)) void pending?.then(release);

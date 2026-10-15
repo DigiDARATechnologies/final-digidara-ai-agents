@@ -13,7 +13,7 @@ from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
 from app.llm import client as llm_client
 from app.llm import transcribe as speech
-from app.orchestrator import boss_memory
+from app.orchestrator import assist, boss_memory
 from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
@@ -83,6 +83,28 @@ def chat_warm(request: Request, user_id: str = Depends(get_verified_user_id)) ->
 
     threading.Thread(target=work, name="chat-warm", daemon=True).start()
     return {"ok": True}
+
+
+@router.post("/chat/assist/stream")
+@limiter.limit("12/minute")
+def chat_assist_stream(req: assist.AssistRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> StreamingResponse:
+    """Boss guiding a learner on any screen, with an optional screenshot of it.
+    Sizes only are logged: the question and the screen can hold personal data."""
+    if not req.screenshot_ok():
+        raise HTTPException(status_code=422, detail="The screenshot must be a JPEG, PNG or WebP image.")
+    logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
+                user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
+
+    def events():
+        try:
+            for event in assist.stream_assist(req):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception:
+            logger.exception("assist turn failed")
+            yield 'data: {"error": "Boss could not answer just now. Please try again."}\n\n'
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 class RouteStreamRequest(RouteRequest):

@@ -1,0 +1,105 @@
+const mockAssist = jest.fn();
+jest.mock('../../src/lib/assistApi', () => ({
+  assistStream: (...args: unknown[]) => mockAssist(...args),
+}));
+const mockCapture = jest.fn();
+jest.mock('../../src/lib/screenCapture', () => ({
+  captureScreenshot: () => mockCapture(),
+  SCREENSHOT_HIDE_ATTRIBUTE: 'data-screenshot-hide',
+}));
+jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+const mockPushed: string[] = [];
+jest.mock('../../src/lib/voiceEngine', () => ({
+  stopSpeaking: jest.fn(),
+  createSpeechQueue: () => ({ started: Promise.resolve(true), push: (text: string) => mockPushed.push(text), end: jest.fn() }),
+}));
+jest.mock('../../src/lib/voiceCapture', () => ({ audioRecordingSupported: () => true }));
+jest.mock('../../src/components/Logo', () => ({ Logo: () => <span>DD</span> }));
+const mockStart = jest.fn();
+jest.mock('../../src/hooks/useSpeechRecognition', () => ({
+  __esModule: true,
+  default: () => ({ supported: true, listening: false, transcribing: false, error: '', start: mockStart, stop: jest.fn(), cancel: jest.fn() }),
+}));
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import BossAssistant from '../../src/components/BossAssistant';
+import { refersToScreen, withoutWakeWords } from '../../src/lib/assistText';
+
+function openBoss() {
+  render(<BossAssistant agentId="job-fetch" agentName="Job Agent" getContext={() => 'Agent: Upload your resume'} />);
+  fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
+}
+
+async function ask(text: string) {
+  fireEvent.change(screen.getByLabelText('Your question for Boss'), { target: { value: text } });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Send')); });
+}
+
+beforeEach(() => {
+  mockAssist.mockReset();
+  mockCapture.mockReset();
+  mockStart.mockReset();
+  mockPushed.length = 0;
+  mockAssist.mockImplementation(async (_request: unknown, onText: (text: string) => void) => {
+    onText('Press Start');
+    return 'Press Start.';
+  });
+});
+
+test('a question goes to Boss with the agent and the chat on screen, and the answer shows', async () => {
+  openBoss();
+  await ask('how do I upload my resume');
+  await waitFor(() => expect(screen.getByText('Press Start.')).toBeTruthy());
+  expect(mockAssist.mock.calls[0][0]).toMatchObject({
+    message: 'how do I upload my resume', agentId: 'job-fetch', agentName: 'Job Agent', context: 'Agent: Upload your resume', voice: false,
+  });
+  // Nothing about the screen was asked: no screenshot is taken.
+  expect(mockCapture).not.toHaveBeenCalled();
+  expect(mockAssist.mock.calls[0][0].screenshot).toBeNull();
+});
+
+test('letting Boss look attaches a screenshot of the page', async () => {
+  mockCapture.mockResolvedValue('data:image/jpeg;base64,AAAA');
+  openBoss();
+  fireEvent.click(screen.getByLabelText('Let Boss look at your screen'));
+  await ask('explain the options');
+  await waitFor(() => expect(mockAssist).toHaveBeenCalled());
+  expect(mockAssist.mock.calls[0][0].screenshot).toBe('data:image/jpeg;base64,AAAA');
+  expect(screen.getByText('with your screen')).toBeTruthy();
+});
+
+test('a question about "this" looks at the screen without being asked; a failed capture still answers', async () => {
+  mockCapture.mockResolvedValue(null);
+  openBoss();
+  await ask('what is wrong here?');
+  await waitFor(() => expect(mockAssist).toHaveBeenCalled());
+  expect(mockCapture).toHaveBeenCalledTimes(1);
+  expect(mockAssist.mock.calls[0][0].screenshot).toBeNull();
+  expect(screen.getByRole('alert').textContent).toContain('could not capture the screen');
+});
+
+test('a spoken question is answered aloud as it streams in', async () => {
+  mockStart.mockImplementation((onResult: (text: string, final: boolean) => void) => {
+    onResult('Hey Boss, how do I start the interview', true);
+    return true;
+  });
+  openBoss();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Speak to Boss')); });
+  await waitFor(() => expect(mockAssist).toHaveBeenCalled());
+  expect(mockAssist.mock.calls[0][0]).toMatchObject({ message: 'how do I start the interview', voice: true });
+  expect(mockPushed.join('')).toContain('Press Start');
+});
+
+test('an error from Boss is shown and the empty answer is removed', async () => {
+  mockAssist.mockRejectedValue(new Error('Boss could not answer just now. Please try again.'));
+  openBoss();
+  await ask('help');
+  await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('could not answer'));
+});
+
+test('wake words are not part of the question; pointing at the screen is recognised', () => {
+  expect(withoutWakeWords('Hey Boss, what is this error?')).toBe('what is this error?');
+  expect(withoutWakeWords('hi boss how are you')).toBe('how are you');
+  expect(withoutWakeWords('bossy attitude')).toBe('bossy attitude');
+  expect(refersToScreen('what does this error mean')).toBe(true);
+  expect(refersToScreen('how do I write a cover letter')).toBe(false);
+});

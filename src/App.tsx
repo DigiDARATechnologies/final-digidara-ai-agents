@@ -49,6 +49,7 @@ import Topbar from "./components/Topbar";
 import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
+import BossAssistant from "./components/BossAssistant";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
 import LowPointsModal from "./components/LowPointsModal";
@@ -2195,6 +2196,16 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {user && (
+        <BossAssistant
+          agentId={view === "chat" && !newChatPending && currentChat ? currentAgent.id : ""}
+          agentName={view === "chat" && !newChatPending && currentChat ? currentAgent.name : topbarTitle}
+          getContext={() => (view === "chat" && !newChatPending && currentChat
+            ? currentChat.messages.slice(-6).map((m) => `${m.role === "user" ? "Learner" : "Agent"}: ${m.text.slice(0, 400)}`).join("\n")
+            : "")}
+        />
+      )}
 
       <RatingPrompt
         agent={view === "chat" && !newChatPending && currentChat ? currentAgent : null}
