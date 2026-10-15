@@ -1065,6 +1065,37 @@ describe("phone numbers and returning after editing one field", () => {
     expect(saved.messages[1]).toEqual(locationQuestion);
   });
 
+  test("\"update the name and phone number\" asks for both, then returns to the question", async () => {
+    const locationQuestion = { text: "What city and country should appear on your resume? Type Skip to omit it.", options: [{ label: "Skip this section", value: "skip" }] };
+    const onLocation = { step: "awaiting_location" as const, draft, lastMessage: locationQuestion };
+
+    const asked = await handleResumeBuilderText(onLocation, user, "i need to update the name and phone number");
+    expect(asked.state.step).toBe("awaiting_name");
+    expect(asked.state.fieldQueue).toEqual(["awaiting_phone"]);
+
+    const name = await handleResumeBuilderText(asked.state, user, "premkumar");
+    expect(name.state.draft?.name).toBe("premkumar");
+    expect(name.state.step).toBe("awaiting_phone");
+    expect(name.messages[1].text).toContain("phone");
+
+    const phone = await handleResumeBuilderText(name.state, user, "98765 43210");
+    expect(phone.state.draft?.phone).toBe("98765 43210");
+    expect(phone.state.step).toBe("awaiting_location");
+    expect(phone.state.fieldQueue).toBeUndefined();
+    expect(phone.messages[1]).toEqual(locationQuestion);
+  });
+
+  test.each([
+    "i need also update mobile number",
+    "update my mobile number",
+    "also change contact number",
+  ])("%p asks for the phone number instead of claiming it was updated", async (text) => {
+    const onLocation = { step: "awaiting_location" as const, draft, lastMessage: { text: "What city and country should appear on your resume?" } };
+    const asked = await handleResumeBuilderText(onLocation, user, text);
+    expect(asked.state.step).toBe("awaiting_phone");
+    expect(asked.state.returnTo?.step).toBe("awaiting_location");
+  });
+
   test("an edit that fails validation keeps waiting, then still returns", async () => {
     const onLocation = { step: "awaiting_location" as const, draft, lastMessage: { text: "What city and country should appear on your resume?" } };
     const asked = await handleResumeBuilderText(onLocation, user, "change my phone");

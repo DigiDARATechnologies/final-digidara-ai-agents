@@ -39,6 +39,8 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
   /** Set by "change my <field>": where the chat was, to return to once that
    * one field is saved -- instead of re-asking every question after it. */
   returnTo?: { step: ResumeBuilderStep; message?: ResumeBuilderMessage };
+  /** More fields to ask after the current one ("update my name and phone number"). */
+  fieldQueue?: ResumeBuilderStep[];
   /** A stronger wording offered for what the candidate just wrote, waiting
    * for "Use this", "Keep mine" or their own typed version. `next` is what the
    * chat would have said next, shown once they decide. */
@@ -313,21 +315,31 @@ export function checkPhoneNumber(value: string): { value: string } | { error: st
 
 const draftFieldSteps: Record<string, ResumeBuilderStep> = {
   title: "awaiting_title", name: "awaiting_name", email: "awaiting_email",
-  phone: "awaiting_phone", location: "awaiting_location", city: "awaiting_location",
+  phone: "awaiting_phone", mobile: "awaiting_phone", "contact number": "awaiting_phone",
+  location: "awaiting_location", city: "awaiting_location", address: "awaiting_location",
   role: "awaiting_role", summary: "awaiting_summary", skills: "awaiting_skills",
   experience: "awaiting_experience", education: "awaiting_education", project: "awaiting_project",
   certification: "awaiting_certifications", achievement: "awaiting_achievements",
   linkedin: "awaiting_linkedin", github: "awaiting_github", portfolio: "awaiting_portfolio",
 };
+/** The questions a "change my ..." request points at, in the order named:
+ * "update my name and phone number" -> [name, phone]. */
+function requestedDraftFields(value: string): ResumeBuilderStep[] {
+  const match = clean(value).toLowerCase().match(/^(?:(?:please|pls|kindly|can you|could you)\s+)?(?:i\s+(?:also\s+)?(?:want|need|would like|wanna)(?:\s+to)?\s+)?(?:also\s+)?(?:change|edit|update|modify|correct|fix)\s+(?:also\s+)?(?:my\s+|the\s+)?([a-z ,&]+)$/);
+  if (!match) return [];
+  const steps: ResumeBuilderStep[] = [];
+  for (const part of match[1].split(/\s*(?:,|&|\band\b)\s*/)) {
+    // The field named first: "project title" is a project, not the resume title.
+    const named = Object.entries(draftFieldSteps)
+      .map(([field, step]) => ({ at: part.indexOf(field), step }))
+      .filter(({ at }) => at >= 0)
+      .sort((a, b) => a.at - b.at)[0];
+    if (named && !steps.includes(named.step)) steps.push(named.step);
+  }
+  return steps;
+}
 function requestedDraftField(value: string) {
-  const match = clean(value).toLowerCase().match(/^(?:(?:please|pls|kindly|can you|could you)\s+)?(?:i\s+(?:want|need|would like|wanna)(?:\s+to)?\s+)?(?:change|edit|update|modify|correct|fix)\s+(?:my\s+|the\s+)?([a-z ]+)$/);
-  if (!match) return undefined;
-  // The field named first: "project title" is a project, not the resume title.
-  const named = Object.entries(draftFieldSteps)
-    .map(([field, step]) => ({ at: match[1].indexOf(field), step }))
-    .filter(({ at }) => at >= 0)
-    .sort((a, b) => a.at - b.at);
-  return named[0]?.step;
+  return requestedDraftFields(value)[0];
 }
 
 export const EXPERIENCE_PROMPT_TEXT = `Add an internship, job, freelance role, volunteer role, or other relevant practical experience.
@@ -1521,13 +1533,21 @@ function returnAfterFieldEdit(previous: ResumeBuilderFlowState, value: string, r
   if (requestedDraftField(value)) return result;
   // Still on the edited field (the answer was not accepted): keep waiting.
   if (result.state.step === previous.step) return { ...result, state: { ...result.state, returnTo } };
+  // More fields were asked for ("name and phone number"): ask the next one first.
+  const [nextField, ...queued] = previous.fieldQueue || [];
+  if (nextField && DRAFT_STEPS.has(result.state.step)) {
+    return {
+      state: { ...result.state, step: nextField, fieldQueue: queued, returnTo },
+      messages: [{ text: "Saved." }, { text: draftFieldPrompt(nextField.replace("awaiting_", ""), result.state.draft) }],
+    };
+  }
   // Anything other than simply moving on to another question (an error, a
   // restart, a created resume) is left as it is, without the return.
-  if (!DRAFT_STEPS.has(result.state.step)) return { ...result, state: { ...result.state, returnTo: undefined } };
+  if (!DRAFT_STEPS.has(result.state.step)) return { ...result, state: { ...result.state, returnTo: undefined, fieldQueue: undefined } };
   const draft = result.state.draft || {};
   const back = returnTo.step === "confirming" || !returnTo.message ? reviewMessage(draft) : returnTo.message;
   return {
-    state: { ...result.state, step: returnTo.step === "confirming" || !returnTo.message ? "confirming" : returnTo.step, returnTo: undefined },
+    state: { ...result.state, step: returnTo.step === "confirming" || !returnTo.message ? "confirming" : returnTo.step, returnTo: undefined, fieldQueue: undefined },
     messages: [{ text: "Saved. Now back to where we were:" }, back],
   };
 }
@@ -1863,7 +1883,8 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     // Remember the question the candidate was on (unless they are already
     // editing that same field), to come back to it once this field is saved.
     const returnTo = state.returnTo ?? (state.step !== draftField ? { step: state.step, message: state.lastMessage } : undefined);
-    return { state: { ...state, step: draftField, returnTo }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
+    const [, ...queued] = requestedDraftFields(value);
+    return { state: { ...state, step: draftField, returnTo, fieldQueue: queued.length ? queued : undefined }, messages: [{ text: draftFieldPrompt(draftField.replace("awaiting_", ""), state.draft) }] };
   }
   if (command === "back" && state.step.startsWith("awaiting_")) {
     const previousSteps: Partial<Record<ResumeBuilderStep, ResumeBuilderStep>> = {

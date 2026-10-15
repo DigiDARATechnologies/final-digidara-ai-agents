@@ -15,6 +15,20 @@ export function cancelVoiceConversation(): void {
   continueUntil = 0;
 }
 
+/** The chat opened for a voice conversation that has not asked anything yet:
+ * the chat view takes this mark and opens the conversation with Boss's greeting. */
+let greetUntil = 0;
+
+export function startVoiceGreeting(): void {
+  greetUntil = Date.now() + WAIT_MS;
+}
+
+export function takeVoiceGreeting(): boolean {
+  const greeting = Date.now() < greetUntil;
+  greetUntil = 0;
+  return greeting;
+}
+
 let conversationOpen = false;
 
 /** The voice conversation is on screen: Boss's replies are kept short and spoken. */

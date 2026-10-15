@@ -7,6 +7,7 @@ import { completeSentences } from "../lib/voiceText";
 import { watchForSpeech } from "../lib/voiceActivity";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
+import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
 
@@ -32,7 +33,7 @@ interface Props {
 /** What Boss says when the conversation opens. */
 export function bossGreeting(name?: string): string {
   const first = (name || "").trim().split(/\s+/)[0];
-  return `Hi${first ? ` ${first}` : ""}! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.`;
+  return `Hi${first ? ` ${first}` : ""}, I'm Boss. What can I help you with?`;
 }
 
 /**
@@ -123,9 +124,12 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   useEffect(() => {
     openRef.current = true;
     setVoiceConversationOpen(true);
-    // Boss greets first, then listens.
+    // Boss greets first, then listens. The microphone is opened while Boss
+    // speaks, so listening starts the moment the greeting ends.
+    warmMicrophone();
     if (!awaitingReply) speak(bossGreeting(learnerName));
     return () => {
+      releaseWarmMicrophone();
       openRef.current = false;
       setVoiceConversationOpen(false);
       stopSpeaking();

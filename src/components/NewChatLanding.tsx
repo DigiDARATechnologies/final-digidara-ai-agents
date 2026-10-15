@@ -16,6 +16,9 @@ interface NewChatLandingProps {
   onOpenAgent: (agentId: string) => void;
   /** The learner's name, for Boss's spoken greeting. */
   userName?: string;
+  /** Opens the chat for a voice conversation right away, so the conversation
+   * never has to move from this screen to the chat after the first question. */
+  onStartVoice?: () => void;
 }
 
 /** Line icons for the agent chips, drawn in each agent's own colour. */
@@ -41,7 +44,7 @@ function AgentIcon({ kind, size = 16 }: { kind?: string; size?: number }) {
 
 const agentLabel = (name: string) => name.replace(/ Agent$/, "");
 
-export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName }: NewChatLandingProps) {
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The microphone opens a spoken conversation with the DigiDARA Assistant;
@@ -140,7 +143,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
             <span className="home-bar-spacer" />
             {voiceSupported && (
               <button type="button" className="home-round-btn" title="Talk with Boss" aria-label="Talk with Boss"
-                onClick={() => setTalking(true)}>
+                onClick={() => (onStartVoice ? onStartVoice() : setTalking(true))}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M12 15a3 3 0 003-3V6a3 3 0 00-6 0v6a3 3 0 003 3z" stroke="currentColor" strokeWidth="1.8" />
                   <path d="M19 11a7 7 0 01-14 0M12 18v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />

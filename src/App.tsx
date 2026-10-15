@@ -85,7 +85,7 @@ import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
-import { isVoiceConversationOpen } from "./lib/voiceReply";
+import { isVoiceConversationOpen, startVoiceGreeting } from "./lib/voiceReply";
 
 type OpenMenu = "user" | "notif" | null;
 
@@ -1159,6 +1159,24 @@ export default function App() {
     switchView("chat");
   }
 
+  /** The microphone on the home page: the chat opens now and Boss greets in it,
+   * so the mic, the greeting and the first question all happen in one place. */
+  function startVoiceChat() {
+    const chat: Chat = {
+      id: newChatId(),
+      agentId: DEFAULT_AGENT.id,
+      title: DEFAULT_AGENT.name,
+      titleSource: "default",
+      messages: [{ role: "agent", text: DEFAULT_AGENT.greeting, time: nowStr() }],
+      updatedAt: Date.now(),
+    };
+    startVoiceGreeting();
+    persistChats([...chats, chat]);
+    setCurrentChatId(chat.id);
+    setNewChatPending(false);
+    setTyping(false);
+  }
+
   function startNewChatWithMessage(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -2076,6 +2094,7 @@ export default function App() {
             <NewChatLanding
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
+              onStartVoice={startVoiceChat}
               userName={user?.name}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />

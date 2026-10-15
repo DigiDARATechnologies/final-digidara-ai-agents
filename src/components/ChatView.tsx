@@ -11,7 +11,7 @@ import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
-import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
+import { cancelVoiceConversation, takeVoiceConversation, takeVoiceGreeting } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
 import AgentIcon from "./AgentIcon";
 
@@ -192,7 +192,7 @@ export default function ChatView({
   // The DigiDARA Assistant's microphone opens a spoken conversation; one
   // started on the new-chat screen carries on here, waiting for its reply.
   const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
-    () => (isGeneralChat && takeVoiceConversation() ? "await" : "off"));
+    () => (!isGeneralChat ? "off" : takeVoiceConversation() ? "await" : takeVoiceGreeting() ? "listen" : "off"));
 
   function handleMicClick() {
     stopCoachAudio();

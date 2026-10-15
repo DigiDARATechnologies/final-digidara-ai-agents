@@ -55,7 +55,7 @@ test('Boss greets, then listens; a 2 second pause (or the live transcript) sends
   const { unmount } = render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} learnerName="Senthil Kumar" onSend={onSend} onClose={jest.fn()} />);
   expect(isVoiceConversationOpen()).toBe(true);
   expect(mockSpeak).toHaveBeenCalledWith(bossGreeting('Senthil Kumar'), expect.anything(), true);
-  expect(bossGreeting('Senthil Kumar')).toBe("Hi Senthil! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.");
+  expect(bossGreeting('Senthil Kumar')).toBe("Hi Senthil, I'm Boss. What can I help you with?");
   expect(mockStart).not.toHaveBeenCalled();
   act(() => { greetingDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
