@@ -15,7 +15,7 @@ jest.mock('../../src/lib/voiceEngine', () => ({
     };
   },
 }));
-jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn(), warmBoss: jest.fn() }));
 const mockWatchers: Array<() => void> = [];
 const mockUnwatch = jest.fn();
 jest.mock('../../src/lib/voiceActivity', () => ({
@@ -48,7 +48,7 @@ beforeEach(() => {
   mockStart.mockReturnValue(true);
 });
 
-test('Boss greets, then listens; a 2 second pause (or the live transcript) sends the question', () => {
+test('Boss greets, then listens; a 1.5 second pause (or the live transcript) sends the question', () => {
   let greetingDone: () => void = () => {};
   mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
   const onSend = jest.fn();
@@ -60,7 +60,7 @@ test('Boss greets, then listens; a 2 second pause (or the live transcript) sends
   act(() => { greetingDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS, finalFromPreview: true }));
-  expect(CONVERSATION_PAUSE_MS).toBe(2000);
+  expect(CONVERSATION_PAUSE_MS).toBe(1500);
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
   // No words on screen, only the logo.
   expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();

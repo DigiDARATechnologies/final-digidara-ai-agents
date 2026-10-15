@@ -68,7 +68,7 @@ def call_with_tools(
 # identical request, and whichever answers first is used. Provider latency
 # spikes (a 4-10 s first word from a model that usually starts in ~1 s) are
 # what makes Boss feel slow in a voice conversation; 0 turns this off.
-HEDGE_AFTER_SECONDS = float(os.environ.get("LLM_HEDGE_AFTER_SECONDS", "2.5"))
+HEDGE_AFTER_SECONDS = float(os.environ.get("LLM_HEDGE_AFTER_SECONDS", "1.5"))
 
 _END = object()
 
@@ -199,6 +199,16 @@ def stream_with_tools(
             logger.warning("model returned non-JSON tool arguments (%d chars)", len(tool_args))
             args = {}
         yield "tool", {"tool_name": tool_name, "tool_args": args}
+
+
+def warm_up() -> None:
+    """One-word request, so the first real question of a voice conversation
+    does not pay for opening the connection to the model (a cold first turn
+    measured 12 s against 1.5 s for the next). Never raises."""
+    try:
+        litellm.completion(model=config.LLM_MODEL, messages=[{"role": "user", "content": "Hi"}], max_tokens=1)
+    except Exception:  # noqa: BLE001 - a warm-up must never fail a request
+        logger.info("llm warm-up failed", exc_info=True)
 
 
 def call_text(system: str, user: str, temperature: float = 0.3) -> str:

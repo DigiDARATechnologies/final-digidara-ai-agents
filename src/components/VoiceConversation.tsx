@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { transcribeGeneralAudio } from "../lib/orchestratorApi";
+import { transcribeGeneralAudio, warmBoss } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
 import { setVoiceConversationOpen } from "../lib/voiceReply";
 import { completeSentences } from "../lib/voiceText";
@@ -13,7 +13,7 @@ import { Logo } from "./Logo";
 
 /** A pause this long after the learner has spoken sends what they said --
  * about a natural conversational turn. "Just a minute" keeps it listening. */
-export const CONVERSATION_PAUSE_MS = 2_000;
+export const CONVERSATION_PAUSE_MS = 1_500;
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -127,6 +127,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     // Boss greets first, then listens. The microphone is opened while Boss
     // speaks, so listening starts the moment the greeting ends.
     warmMicrophone();
+    warmBoss();
     if (!awaitingReply) speak(bossGreeting(learnerName));
     return () => {
       releaseWarmMicrophone();

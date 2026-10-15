@@ -1,6 +1,7 @@
 """Boss answers while it is still writing, and the voice plays while it is
 still being generated: the streamed general-chat route and voice tickets."""
 import json
+import threading
 from types import SimpleNamespace
 
 import httpx
@@ -166,3 +167,15 @@ def test_openai_failure_before_any_audio_is_an_error(api, monkeypatch):  # noqa:
     _fake_openai(monkeypatch, status_code=500)
     url = api.post("/voice/ticket", headers=auth(), json={"text": "This will fail."}).json()["url"]
     assert api.get(url).status_code == 502
+
+
+def test_chat_warm_returns_at_once_and_warms_in_the_background(api, monkeypatch):
+    from app.orchestrator import routes as chat_routes
+
+    warmed = threading.Event()
+    monkeypatch.setattr(llm_client, "warm_up", warmed.set)
+    api.app.include_router(chat_routes.router)
+    response = api.post("/chat/warm", headers=auth())
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert warmed.wait(5)

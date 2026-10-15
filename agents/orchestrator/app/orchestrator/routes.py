@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,11 +11,13 @@ from pydantic import BaseModel, Field
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
+from app.llm import client as llm_client
 from app.llm import transcribe as speech
 from app.orchestrator import boss_memory
 from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
+from app.registry import service as registry_service
 from app.schemas import ChatRequest, ChatResponse, RoleProfileRequest, RoleProfileResponse, RouteRequest, RouteResponse
 
 logger = logging.getLogger("orchestrator.api")
@@ -62,6 +65,24 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     if not result.get("agent_name"):
         boss_memory.remember(user_id, req.message, result.get("reply"))
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
+
+
+@router.post("/chat/warm")
+@limiter.limit("6/minute")
+def chat_warm(request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """A voice conversation has opened: do the slow first-turn work now, in the
+    background, while Boss is still greeting (the learner's context and memory,
+    the agent registry, the connection to the model). Returns at once."""
+    def work() -> None:
+        try:
+            _learner_context(user_id)
+            registry_service.list_healthy()
+        except Exception:
+            logger.info("chat warm-up: context not ready", exc_info=True)
+        llm_client.warm_up()
+
+    threading.Thread(target=work, name="chat-warm", daemon=True).start()
+    return {"ok": True}
 
 
 class RouteStreamRequest(RouteRequest):
