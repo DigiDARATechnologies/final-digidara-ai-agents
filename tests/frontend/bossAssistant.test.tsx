@@ -33,6 +33,7 @@ jest.mock('../../src/hooks/useSpeechRecognition', () => ({
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import BossAssistant from '../../src/components/BossAssistant';
 import { refersToScreen, withoutWakeWords } from '../../src/lib/assistText';
+import { setBossVoiceOpener, setVoiceConversationOpen } from '../../src/lib/voiceReply';
 
 function openBoss() {
   render(<BossAssistant agentId="job-fetch" agentName="Job Agent" getContext={() => 'Agent: Upload your resume'} />);
@@ -156,4 +157,28 @@ test('saying "Hey Boss" opens Boss and starts the conversation, keeping what was
 test('without the switch on, nothing listens for "Hey Boss"', () => {
   render(<BossAssistant agentId="" agentName="" getContext={() => ''} />);
   expect(mockWake).toBeNull();
+});
+
+test('"Hey Boss" on a Boss screen opens the Boss chat voice conversation there, not this panel', async () => {
+  localStorage.setItem('digidara.heyBoss', 'on');
+  const opened: string[] = [];
+  const release = setBossVoiceOpener((question) => opened.push(question));
+  render(<BossAssistant agentId="" agentName="Boss" getContext={() => ''} />);
+  await act(async () => { mockWake?.('are you there'); });
+  expect(opened).toEqual(['are you there']);
+  expect(mockAssist).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog')).toBeNull();
+  release();
+});
+
+test('while the Boss chat voice conversation is open, "Hey Boss" and the Boss button wait', () => {
+  localStorage.setItem('digidara.heyBoss', 'on');
+  render(<BossAssistant agentId="" agentName="Boss" getContext={() => ''} />);
+  expect(mockWake).not.toBeNull();
+  act(() => { setVoiceConversationOpen(true); });
+  expect(mockWake).toBeNull();
+  expect(screen.queryByLabelText('Ask Boss for help with this screen')).toBeNull();
+  act(() => { setVoiceConversationOpen(false); });
+  expect(mockWake).not.toBeNull();
+  expect(screen.getByLabelText('Ask Boss for help with this screen')).toBeTruthy();
 });

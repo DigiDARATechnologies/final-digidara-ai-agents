@@ -11,7 +11,7 @@ import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
-import { cancelVoiceConversation, takeVoiceConversation, takeVoiceGreeting } from "../lib/voiceReply";
+import { cancelVoiceConversation, setBossVoiceOpener, takeVoiceConversation, takeVoiceGreeting } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
 import AgentIcon from "./AgentIcon";
 
@@ -193,6 +193,17 @@ export default function ChatView({
   // started on the new-chat screen carries on here, waiting for its reply.
   const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
     () => (!isGeneralChat ? "off" : takeVoiceConversation() ? "await" : takeVoiceGreeting() ? "listen" : "off"));
+  // "Hey Boss" in the Boss chat opens this conversation (with what was said
+  // after the wake words as its first question), not the small Boss panel.
+  const [voiceFirstQuestion, setVoiceFirstQuestion] = useState("");
+  useEffect(() => {
+    if (!isGeneralChat) return;
+    return setBossVoiceOpener((question) => {
+      stopSpeaking();
+      setVoiceFirstQuestion(question);
+      setVoiceConversation((current) => (current === "off" ? "listen" : current));
+    });
+  }, [isGeneralChat]);
 
   function handleMicClick() {
     stopCoachAudio();
@@ -836,7 +847,8 @@ export default function ChatView({
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
       {isGeneralChat && voiceConversation !== "off" && (
         <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"} learnerName={user.name}
-          onSend={(text) => onSend(text)} onClose={() => setVoiceConversation("off")} />
+          firstQuestion={voiceFirstQuestion} onSend={(text) => onSend(text)}
+          onClose={() => { setVoiceConversation("off"); setVoiceFirstQuestion(""); }} />
       )}
     </section>
   );

@@ -11,6 +11,7 @@ import { audioRecordingSupported } from "../lib/voiceCapture";
 import { watchForSpeech } from "../lib/voiceActivity";
 import { listenForWakeWord, wakeWordSupported } from "../lib/wakeWord";
 import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
+import { isVoiceConversationOpen, onVoiceConversationOpen, openBossVoice } from "../lib/voiceReply";
 import { BOSS_VOICE_PACE, BOSS_VOICE_SPEED } from "./VoiceConversation";
 import { Logo } from "./Logo";
 
@@ -64,6 +65,10 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
   const [conversation, setConversation] = useState(false);
   const [error, setError] = useState("");
   const [wakeOn, setWakeOn] = useState(readWakePreference);
+  // Boss's full voice conversation (the Boss chat) is on screen: it has the
+  // microphone, so "Hey Boss" and this button wait until it closes.
+  const [bossTalking, setBossTalking] = useState(isVoiceConversationOpen);
+  useEffect(() => onVoiceConversationOpen(setBossTalking), []);
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const voiceSupported = audioRecordingSupported();
   const wakeSupported = wakeWordSupported();
@@ -82,12 +87,16 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
   }, [turns, busy]);
 
   // "Hey Boss": waits while Boss is closed; the panel's own microphone takes over once it opens.
+  // On Boss's own screens (the new-chat screen, the Boss chat) it opens Boss's
+  // voice conversation there instead of this panel.
   useEffect(() => {
-    if (!wakeOn || !wakeSupported || open) return;
-    return listenForWakeWord((rest) => startConversation(rest));
+    if (!wakeOn || !wakeSupported || open || bossTalking) return;
+    return listenForWakeWord((rest) => {
+      if (!openBossVoice(rest)) startConversation(rest);
+    });
     // startConversation only reads refs and setters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wakeOn, wakeSupported, open]);
+  }, [wakeOn, wakeSupported, open, bossTalking]);
 
   useEffect(() => {
     if (!open) return;
@@ -248,7 +257,7 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
 
   return (
     <>
-      {!open && (
+      {!open && !bossTalking && (
         <button type="button" className={`boss-fab${wakeOn && wakeSupported ? " wake" : ""}`} {...{ [SCREENSHOT_HIDE_ATTRIBUTE]: "" }}
           onClick={() => setOpen(true)}
           aria-label="Ask Boss for help with this screen"

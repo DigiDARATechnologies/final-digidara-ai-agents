@@ -8,6 +8,7 @@ import { watchForSpeech } from "../lib/voiceActivity";
 import { afterContinuation, isContinuation, isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
+import { withoutWakeWords } from "../lib/assistText";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
 
@@ -34,6 +35,8 @@ interface Props {
   awaitingReply?: boolean;
   /** The learner's first name, for Boss's greeting. */
   learnerName?: string;
+  /** Opened by "Hey Boss, ...": ask this straight away instead of greeting. */
+  firstQuestion?: string;
 }
 
 /** What Boss says when the conversation opens. */
@@ -48,7 +51,7 @@ export function bossGreeting(name?: string): string {
  * the reply is spoken, then it listens again -- until the learner ends it.
  * The chat carries on behind it, so every turn is still written down there.
  */
-export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName }: Props) {
+export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName, firstQuestion }: Props) {
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [phase, setPhase] = useState<Phase>(awaitingReply ? "thinking" : "listening");
   const [sendIn, setSendIn] = useState<number | null>(null);
@@ -123,10 +126,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
         return;
       }
       heldRef.current = "";
-      lastQuestionRef.current = question;
-      awaitingFromRef.current = messagesRef.current.length;
-      setPhase("thinking");
-      onSendRef.current(question);
+      ask(question);
     }, {
       autoStopOnSilence: true,
       silenceMs: CONVERSATION_PAUSE_MS,
@@ -135,6 +135,16 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       onSilenceCountdown: setSendIn,
       onAudioLevel: setLevel,
     });
+  }
+
+  /** Sends what was said; the reply to it is spoken. "Hey Boss" is how the
+   * learner talks to Boss, not part of the question. */
+  function ask(said: string) {
+    const question = withoutWakeWords(said) || said.trim();
+    lastQuestionRef.current = question;
+    awaitingFromRef.current = messagesRef.current.length;
+    setPhase("thinking");
+    onSendRef.current(question);
   }
 
   /** Listen again once this turn's speech ends, unless it was interrupted. */
@@ -155,7 +165,8 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     // speaks, so listening starts the moment the greeting ends.
     warmMicrophone();
     warmBoss();
-    if (!awaitingReply) speak(bossGreeting(learnerName));
+    if (firstQuestion) ask(firstQuestion);
+    else if (!awaitingReply) speak(bossGreeting(learnerName));
     return () => {
       releaseWarmMicrophone();
       openRef.current = false;

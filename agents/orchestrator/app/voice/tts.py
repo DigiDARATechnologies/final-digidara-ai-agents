@@ -24,6 +24,13 @@ logger = logging.getLogger("orchestrator.voice")
 OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
 TTS_TIMEOUT_SECONDS = 30
+# OpenAI's speech endpoint now and then stalls for half a minute or more
+# before its first byte, while a fresh request for the same text answers in
+# about a second. So a request that has sent nothing for this long is given up
+# and sent again, instead of leaving the learner in silence.
+TTS_STALL_SECONDS = 6
+TTS_ATTEMPTS = 3
+TTS_TIMEOUT = httpx.Timeout(TTS_TIMEOUT_SECONDS, read=TTS_STALL_SECONDS)
 MAX_TEXT_CHARS = 1200
 CACHE_ENTRIES = 300
 # The shared cache: the rate limiter's Redis unless VOICE_CACHE_URI says
@@ -192,19 +199,25 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     voice = VOICE
-    try:
-        response = httpx.post(
-            OPENAI_SPEECH_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": TTS_MODEL, "voice": voice, "input": text,
-                "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
-            },
-            timeout=TTS_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("tts request failed: %s", type(exc).__name__)
-        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    for attempt in range(1, TTS_ATTEMPTS + 1):
+        try:
+            response = httpx.post(
+                OPENAI_SPEECH_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": TTS_MODEL, "voice": voice, "input": text,
+                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
+                },
+                timeout=TTS_TIMEOUT,
+            )
+            break
+        except httpx.TimeoutException as exc:
+            logger.warning("tts request stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
+            if attempt == TTS_ATTEMPTS:
+                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+        except httpx.HTTPError as exc:
+            logger.warning("tts request failed: %s", type(exc).__name__)
+            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
     if response.status_code != 200 or not response.content:
         # Status only: the error body can echo the request.
         logger.warning("tts returned HTTP %s", response.status_code)
@@ -288,7 +301,7 @@ def _openai() -> httpx.Client:
     sentence does not pay for a new TLS handshake (a few hundred ms)."""
     global _openai_client
     if _openai_client is None:
-        _openai_client = httpx.Client(timeout=TTS_TIMEOUT_SECONDS, limits=httpx.Limits(max_keepalive_connections=8))
+        _openai_client = httpx.Client(timeout=TTS_TIMEOUT, limits=httpx.Limits(max_keepalive_connections=8))
     return _openai_client
 
 
@@ -299,19 +312,26 @@ def open_stream(text: str, spoken_as: str, pace: str = "normal"):
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     client = _openai()
-    try:
-        request = client.build_request(
-            "POST", OPENAI_SPEECH_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": TTS_MODEL, "voice": VOICE, "input": text,
-                "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
-            },
-        )
-        response = client.send(request, stream=True)
-    except httpx.HTTPError as exc:
-        logger.warning("tts stream request failed: %s", type(exc).__name__)
-        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    for attempt in range(1, TTS_ATTEMPTS + 1):
+        try:
+            request = client.build_request(
+                "POST", OPENAI_SPEECH_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": TTS_MODEL, "voice": VOICE, "input": text,
+                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
+                },
+            )
+            response = client.send(request, stream=True)
+            break
+        except httpx.TimeoutException as exc:
+            # A stalled request: a fresh one usually answers at once.
+            logger.warning("tts stream stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
+            if attempt == TTS_ATTEMPTS:
+                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+        except httpx.HTTPError as exc:
+            logger.warning("tts stream request failed: %s", type(exc).__name__)
+            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
     if response.status_code != 200:
         logger.warning("tts stream returned HTTP %s", response.status_code)
         response.close()

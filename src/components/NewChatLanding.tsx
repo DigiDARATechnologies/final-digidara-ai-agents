@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { audioRecordingSupported } from "../lib/voiceCapture";
-import { cancelVoiceConversation, continueVoiceConversation } from "../lib/voiceReply";
+import { cancelVoiceConversation, continueVoiceConversation, setBossVoiceOpener } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
@@ -50,11 +50,22 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
   // The microphone opens a spoken conversation with the DigiDARA Assistant;
   // its first question starts the chat, where the conversation carries on.
   const [talking, setTalking] = useState(false);
+  const [firstQuestion, setFirstQuestion] = useState("");
   const voiceSupported = audioRecordingSupported();
   // "Auto-select agent": a typed message goes to DigiDARA, which picks the
   // agent. Choosing an agent in the menu opens that agent's chat.
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // "Hey Boss" on this screen opens Boss's voice conversation; what was said
+  // after the wake words is its first question.
+  useEffect(() => setBossVoiceOpener((question) => {
+    if (question) {
+      setFirstQuestion(question);
+      setTalking(true);
+    } else if (onStartVoice) onStartVoice();
+    else setTalking(true);
+  }), [onStartVoice]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -172,7 +183,8 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
       </div>
       <p className="home-disclaimer">AI can make mistakes. Please verify important information.</p>
       {talking && (
-        <VoiceConversation messages={[]} typing={false} learnerName={userName} onClose={() => setTalking(false)}
+        <VoiceConversation messages={[]} typing={false} learnerName={userName} firstQuestion={firstQuestion}
+          onClose={() => { setTalking(false); setFirstQuestion(""); }}
           onSend={(text) => { continueVoiceConversation(); onSend(text); }} />
       )}
     </section>

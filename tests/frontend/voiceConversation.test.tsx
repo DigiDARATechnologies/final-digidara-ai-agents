@@ -158,3 +158,21 @@ test('the next question is sent with the newest onSend, not the one from when th
   expect(latest).toHaveBeenCalledWith('suggest me jobs');
   expect(early).not.toHaveBeenCalled();
 });
+
+test('opened by "Hey Boss, ..." it asks that straight away; the wake words are never part of a question', () => {
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} firstQuestion="are you there?" onSend={onSend} onClose={jest.fn()} />);
+  expect(mockSpeak).not.toHaveBeenCalled();
+  expect(onSend).toHaveBeenCalledWith('are you there?');
+  expect(screen.getByText('Thinking...')).toBeInTheDocument();
+});
+
+test('"Hey Boss, what is a resume" is sent as "what is a resume"', () => {
+  let greetingDone: () => void = () => {};
+  mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} onSend={onSend} onClose={jest.fn()} />);
+  act(() => { greetingDone(); });
+  act(() => { mockStart.mock.calls[0][0]('Hey Boss, what is a resume', true); });
+  expect(onSend).toHaveBeenCalledWith('what is a resume');
+});
