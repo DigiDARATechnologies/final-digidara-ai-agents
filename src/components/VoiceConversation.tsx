@@ -3,7 +3,7 @@ import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { transcribeGeneralAudio, warmBoss } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
 import { setVoiceConversationOpen } from "../lib/voiceReply";
-import { completeSentences } from "../lib/voiceText";
+import { readyToSpeak } from "../lib/voiceText";
 import { watchForSpeech } from "../lib/voiceActivity";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
@@ -161,7 +161,8 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       awaitingFromRef.current = null;
       return;
     }
-    const ready = completeSentences(last.text, reply.queued);
+    // Speech starts with the first few words, not the first full sentence.
+    const ready = readyToSpeak(last.text, reply.queued, reply.queued === 0);
     if (ready.text) {
       reply.queue.push(ready.text);
       reply.queued = ready.next;
