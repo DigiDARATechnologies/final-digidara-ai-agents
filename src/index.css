@@ -2269,47 +2269,74 @@ button.hp-agent{ text-align:left; font:inherit; color:inherit; cursor:pointer; w
 .landing-title{ animation:landingTitleIn .9s cubic-bezier(.22,.8,.3,1) .15s both; }
 @media (prefers-reduced-motion:reduce){ .landing-title{ animation:none; } }
 
-/* ---- Landing: "Start with an agent" cards under the message box ---- */
+/* ---- Home page: message box with an agent picker, then agent chips ---- */
 .new-chat-landing{ overflow-y:auto; }
 .landing-center{ margin:auto; position:relative; }
-.landing-agents{ width:min(980px, calc(100vw - 48px)); margin:44px 0 12px 50%; transform:translateX(-50%); }
-.landing-agents-label{ display:flex; align-items:center; gap:14px; margin-bottom:16px; color:var(--canvas-text-faint); font-size:12.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; opacity:0; animation:landingFadeUp .6s ease .75s forwards; }
-.landing-agents-label::before, .landing-agents-label::after{ content:""; flex:1; height:1px; background:linear-gradient(90deg, transparent, var(--canvas-border), transparent); }
-.landing-agents-grid{ display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px; }
-.landing-agent{
-  position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:flex-start; gap:12px; text-align:left;
-  padding:16px 16px 15px; border-radius:18px; cursor:pointer; color:var(--canvas-text); font:inherit;
-  background:linear-gradient(160deg, color-mix(in srgb, var(--agent-color) 9%, var(--canvas-bg-soft)), var(--canvas-bg-soft) 65%);
-  border:1px solid var(--canvas-border);
-  opacity:0; animation:landingFadeUp .6s cubic-bezier(.22,.8,.3,1) calc(.85s + var(--i) * .07s) forwards;
-  transition:transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+.home-landing .landing-center{ max-width:660px; }
+.home-logo{ display:flex; justify-content:center; margin-bottom:14px; }
+.home-landing .landing-center h1{ margin:0 0 10px; font-size:32px; font-weight:700; letter-spacing:-.03em; }
+.home-subtitle{ margin:0 0 28px; font-size:16px; color:var(--canvas-text-dim); }
+.home-composer{
+  display:flex; flex-direction:column; gap:10px; text-align:left;
+  background:var(--canvas-bg); border:1px solid var(--canvas-border); border-radius:20px;
+  padding:16px 14px 12px; box-shadow:0 10px 30px rgb(var(--sh) / calc(.18 * var(--shk))), 0 1px 3px rgb(var(--sh) / calc(.1 * var(--shk)));
+  transition:border-color .2s, box-shadow .2s;
 }
-.landing-agent::before{ content:""; position:absolute; left:0; right:0; top:0; height:3px; background:linear-gradient(90deg, var(--agent-color), transparent); opacity:.85; }
-.landing-agent:hover, .landing-agent:focus-visible{
-  transform:translateY(-5px); border-color:color-mix(in srgb, var(--agent-color) 65%, transparent); outline:none;
-  box-shadow:0 18px 40px color-mix(in srgb, var(--agent-color) 26%, transparent), 0 4px 10px rgb(var(--sh) / calc(.25 * var(--shk)));
+.home-composer:focus-within{ border-color:color-mix(in srgb, var(--accent1) 55%, var(--canvas-border)); box-shadow:0 0 0 4px var(--canvas-accent-soft), 0 10px 30px rgb(var(--sh) / calc(.18 * var(--shk))); }
+.home-composer textarea{
+  border:none; outline:none; background:transparent; color:var(--canvas-text); font:inherit; font-size:15px;
+  line-height:1.5; resize:none; min-height:48px; max-height:180px; overflow-y:auto; padding:0 4px;
 }
-.landing-agent-icon{
-  width:46px; height:46px; border-radius:14px; display:grid; place-items:center; font-size:23px;
-  background:linear-gradient(145deg, color-mix(in srgb, var(--agent-color) 42%, transparent), color-mix(in srgb, var(--agent-color) 16%, transparent));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 16px color-mix(in srgb, var(--agent-color) 22%, transparent);
-  transition:transform .22s ease;
+.home-composer textarea::placeholder{ color:var(--canvas-text-faint); }
+.home-composer-bar{ display:flex; align-items:center; gap:8px; }
+.home-bar-spacer{ flex:1; }
+.home-round-btn{
+  width:36px; height:36px; border-radius:50%; display:grid; place-items:center; flex:none; cursor:pointer;
+  background:transparent; border:1px solid var(--canvas-border); color:var(--canvas-text-dim);
+  transition:background .15s, color .15s, border-color .15s;
 }
-.landing-agent:hover .landing-agent-icon{ transform:scale(1.08) rotate(-4deg); }
-.landing-agent-text{ display:flex; flex-direction:column; gap:5px; min-width:0; }
-.landing-agent-text b{ font-size:14.5px; font-weight:650; letter-spacing:-.012em; }
-.landing-agent-text small{ font-size:12.5px; line-height:1.5; color:var(--canvas-text-dim); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.landing-agent-arrow{ position:absolute; top:14px; right:14px; color:var(--agent-color); opacity:0; transform:translate(-4px, 4px); transition:opacity .2s ease, transform .2s ease; }
-.landing-agent:hover .landing-agent-arrow{ opacity:1; transform:none; }
-@keyframes landingFadeUp{ from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:translateY(0); } }
-@media (max-width:1100px){ .landing-agents-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); } }
-@media (max-width:560px){ .landing-agents-grid{ grid-template-columns:1fr; } .landing-agents{ margin-top:30px; } }
-@media (prefers-reduced-motion:reduce){ .landing-agent, .landing-agents-label{ animation:none; opacity:1; } }
-:root[data-motion="reduced"] .landing-agent, :root[data-motion="reduced"] .landing-agents-label{ animation:none !important; opacity:1; }
-
-/* ---- Mobile: the home page shows only the logo, headline and message box ---- */
-@media (max-width:760px){
-  .landing-agents{ display:none; }
+.home-round-btn:hover{ background:var(--canvas-bg-soft); color:var(--canvas-text); }
+.home-send-btn{
+  width:38px; height:38px; border-radius:50%; display:grid; place-items:center; flex:none; cursor:pointer;
+  background:var(--accent1); color:#fff; border:none; transition:filter .15s, opacity .15s;
+}
+.home-send-btn:hover:not(:disabled){ filter:brightness(1.1); }
+.home-send-btn:disabled{ opacity:.55; cursor:default; }
+.home-agent-select{ position:relative; min-width:0; }
+.home-agent-trigger{
+  display:inline-flex; align-items:center; gap:8px; height:36px; padding:0 12px 0 14px; border-radius:999px; cursor:pointer;
+  background:transparent; border:1px solid var(--canvas-border); color:var(--canvas-text); font:inherit; font-size:13.5px; font-weight:500;
+}
+.home-agent-trigger > svg:first-child{ color:var(--accent1); }
+.home-agent-trigger:hover, .home-agent-trigger[aria-expanded="true"]{ background:var(--canvas-bg-soft); }
+.home-agent-menu{
+  position:absolute; left:0; top:calc(100% + 6px); z-index:20; width:260px; max-height:320px; overflow-y:auto; padding:6px;
+  background:var(--canvas-bg); border:1px solid var(--canvas-border); border-radius:14px;
+  box-shadow:0 14px 34px rgb(var(--sh) / calc(.25 * var(--shk)));
+}
+.home-agent-menu-note{ padding:6px 8px 8px; font-size:12px; color:var(--canvas-text-faint); }
+.home-agent-option{
+  display:flex; align-items:center; gap:10px; width:100%; padding:8px; border:none; border-radius:10px; cursor:pointer;
+  background:transparent; color:var(--canvas-text); font:inherit; font-size:13.5px; text-align:left;
+}
+.home-agent-option:hover, .home-agent-option:focus-visible{ background:var(--canvas-bg-soft); outline:none; }
+.home-chips{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin:24px auto 0; max-width:620px; }
+.home-chip{
+  display:inline-flex; align-items:center; gap:8px; padding:8px 16px; border-radius:999px; cursor:pointer;
+  background:var(--canvas-bg); border:1px solid var(--canvas-border); color:var(--canvas-text); font:inherit; font-size:13.5px; font-weight:500;
+  transition:border-color .15s, background .15s, transform .15s;
+}
+.home-chip:hover, .home-chip:focus-visible{
+  border-color:color-mix(in srgb, var(--agent-color) 55%, var(--canvas-border));
+  background:color-mix(in srgb, var(--agent-color) 7%, var(--canvas-bg)); transform:translateY(-1px); outline:none;
+}
+.home-chip-icon{ display:inline-flex; color:var(--agent-color); }
+.home-hint{ margin:18px 0 0; font-size:13px; color:var(--canvas-text-faint); }
+.home-disclaimer{ margin:24px 0 0; font-size:12px; color:var(--canvas-text-faint); text-align:center; }
+@media (max-width:560px){
+  .home-landing .landing-center h1{ font-size:26px; }
+  .home-subtitle{ font-size:14.5px; margin-bottom:20px; }
+  .home-chip{ padding:7px 12px; font-size:13px; }
 }
 
 /* ---- Theme-safety fixes: no hard-coded light surfaces under theme-coloured text ---- */

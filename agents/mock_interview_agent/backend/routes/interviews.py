@@ -695,6 +695,7 @@ def end_interview():
         }), 503
 
     _apply_unanswered_score_adjustment(result, rows)
+    scoring.align_scores_with_marks(result, total_marks, max_marks)
     avg_time = int(sum(r["time_taken_sec"] or 0 for r in rows) / max(len(rows), 1))
 
     if role_breakdown:

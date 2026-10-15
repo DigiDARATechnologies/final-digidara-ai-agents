@@ -217,6 +217,7 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
   const [error, setError] = useState("");
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [saving, setSaving] = useState(false);
   /** A profile with a new target role, waiting for the learner to confirm the reset. */
   const [pendingRole, setPendingRole] = useState<ProfileInput | null>(null);
@@ -285,6 +286,17 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
         .catch(() => setRoleSkillsError("I couldn't suggest skills for this role. Add the skills you have or are learning for it."))
         .finally(() => setSuggesting(false));
     }
+  }
+
+  /** Roles the learner worked towards before, other than the current one. */
+  const otherRoles = (summary.role_history ?? []).filter((item) => item.role && item.role !== currentRole);
+
+  function switchTo(role: string) {
+    setSwitching(false);
+    const { degree, skills, experience } = summary.profile;
+    // requestSave sees the role change and opens the confirm popup with the
+    // skills kept for that role.
+    requestSave({ target_role: role, degree, skills, experience });
   }
 
   function confirmRoleChange() {
@@ -373,6 +385,11 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
                 {loading ? "Checking…" : "Check again"}
               </button>
               <button className="btn btn-outline btn-sm" onClick={() => setEditing(true)}>Edit profile</button>
+              {otherRoles.length > 0 && (
+                <button className="btn btn-outline btn-sm" onClick={() => setSwitching(true)}>
+                  Switch role ({otherRoles.length + 1})
+                </button>
+              )}
             </div>
           </div>
         </section>
@@ -465,6 +482,38 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <button type="button" className="link-btn" onClick={() => setEditing(false)}>Close</button>
             </div>
             <LearnerProfileForm initial={profile} submitLabel="Save profile" busy={saving} onSubmit={requestSave} />
+          </div>
+        </div>
+      )}
+
+      {switching && (
+        <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && setSwitching(false)}>
+          <div className="modal rd-modal" role="dialog" aria-modal="true" aria-labelledby="rd-switch-title">
+            <div className="rd-modal-head">
+              <h2 id="rd-switch-title">Switch role</h2>
+              <button type="button" className="link-btn" onClick={() => setSwitching(false)}>Close</button>
+            </div>
+            <p className="rd-muted">Each role keeps its own levels, skills and points. Pick the one to work on now.</p>
+            <ul className="rd-role-list">
+              <li className="rd-role-item current">
+                <div><strong>{currentRole}</strong><small className="rd-muted">Current role</small></div>
+              </li>
+              {otherRoles.map((item) => {
+                const levels = Object.values(item.levels ?? {}).filter((level): level is LevelId => !!level && level !== "beginner");
+                return (
+                  <li key={item.role} className="rd-role-item">
+                    <div>
+                      <strong>{item.role}</strong>
+                      <small className="rd-muted">
+                        {item.skills?.length ? item.skills.slice(0, 4).join(", ") : "No skills saved"}
+                        {levels.length ? ` · ${levels.length} level${levels.length === 1 ? "" : "s"} above Beginner` : ""}
+                      </small>
+                    </div>
+                    <button type="button" className="btn btn-primary btn-sm" disabled={saving} onClick={() => switchTo(item.role)}>Switch</button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
       )}

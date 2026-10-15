@@ -24,8 +24,8 @@ beforeEach(() => {
 test('typing and submitting sends the trimmed text', () => {
   const onSend = jest.fn();
   render(<NewChatLanding onSend={onSend} onAttachClick={jest.fn()} onOpenAgent={jest.fn()} />);
-  fireEvent.change(screen.getByPlaceholderText('Ask anything'), { target: { value: '  hello there  ' } });
-  fireEvent.submit(screen.getByPlaceholderText('Ask anything').closest('form')!);
+  fireEvent.change(screen.getByLabelText('Message'), { target: { value: '  hello there  ' } });
+  fireEvent.submit(screen.getByLabelText('Message').closest('form')!);
   expect(onSend).toHaveBeenCalledWith('hello there');
 });
 
@@ -53,9 +53,18 @@ test('the mic button is hidden when the browser cannot record audio', () => {
   mockRecordingSupported = true;
 });
 
-test('the agent cards under the message box start a chat with that agent', () => {
+test('the agent chips under the message box start a chat with that agent', () => {
   const onOpenAgent = jest.fn();
   render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={onOpenAgent} />);
   fireEvent.click(screen.getByRole('button', { name: /Aptitude Trainer/ }));
   expect(onOpenAgent).toHaveBeenCalledWith('aptitude');
+});
+
+test('the agent menu in the message box opens the chosen agent', () => {
+  const onOpenAgent = jest.fn();
+  render(<NewChatLanding onSend={jest.fn()} onAttachClick={jest.fn()} onOpenAgent={onOpenAgent} />);
+  fireEvent.click(screen.getByRole('button', { name: /Auto-select agent/ }));
+  fireEvent.click(screen.getByRole('menuitem', { name: /Mock Interview/ }));
+  expect(onOpenAgent).toHaveBeenCalledWith('mock-interview');
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 });
