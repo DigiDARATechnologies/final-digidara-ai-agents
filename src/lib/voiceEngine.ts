@@ -25,6 +25,8 @@ export interface SpeakHandlers {
   /** Playback speed for this speech, instead of the learner's voice setting
    * (Boss's voice conversation talks faster). */
   speed?: number;
+  /** "brisk": the voice itself is made at a quick conversational pace (Boss). */
+  pace?: "normal" | "brisk";
 }
 
 const BASE = (() => {
@@ -59,21 +61,21 @@ export function stopSpeaking(): void {
 
 /** One retry on a failed chunk, so a brief network blip does not switch the
  * learner to a different (device) voice halfway through a reply. */
-async function fetchChunk(text: string, prefs: VoicePrefs): Promise<Blob> {
+async function fetchChunk(text: string, prefs: VoicePrefs, pace = "normal"): Promise<Blob> {
   try {
-    return await fetchChunkOnce(text, prefs);
+    return await fetchChunkOnce(text, prefs, pace);
   } catch (error) {
     if (error instanceof Error && /voice (401|402|403|503)/.test(error.message)) throw error;
-    return fetchChunkOnce(text, prefs);
+    return fetchChunkOnce(text, prefs, pace);
   }
 }
 
-async function fetchChunkOnce(text: string, prefs: VoicePrefs): Promise<Blob> {
+async function fetchChunkOnce(text: string, prefs: VoicePrefs, pace: string): Promise<Blob> {
   const token = sessionToken() || "";
   const response = await fetch(`${BASE}/voice/speak`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ text, language: prefs.language, persona: prefs.persona }),
+    body: JSON.stringify({ text, language: prefs.language, persona: prefs.persona, pace }),
   });
   if (!response.ok) throw new Error(`voice ${response.status}`);
   return response.blob();
@@ -146,11 +148,11 @@ function stopContextPlayback(): void {
   }
 }
 
-async function playThroughContext(text: string, prefs: VoicePrefs, onFirstPlay: () => void): Promise<void> {
+async function playThroughContext(text: string, prefs: VoicePrefs, pace: string, onFirstPlay: () => void): Promise<void> {
   const context = boostContext;
   if (!context) throw new Error("no audio context");
   if (context.state !== "running") await context.resume();
-  const blob = await fetchChunk(text, prefs);
+  const blob = await fetchChunk(text, prefs, pace);
   const buffer = await context.decodeAudioData(await blob.arrayBuffer());
   await new Promise<void>((resolve) => {
     const source = context.createBufferSource();
@@ -191,12 +193,12 @@ function release(audio: HTMLAudioElement | null): void {
 
 /** A one-use link the audio element streams the voice from: it starts
  * playing as soon as the first words are generated. */
-async function ticketUrl(text: string, prefs: VoicePrefs): Promise<string> {
+async function ticketUrl(text: string, prefs: VoicePrefs, pace: string): Promise<string> {
   const token = sessionToken() || "";
   const response = await fetch(`${BASE}/voice/ticket`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ text, language: prefs.language }),
+    body: JSON.stringify({ text, language: prefs.language, pace }),
   });
   if (!response.ok) throw new Error(`voice ${response.status}`);
   const body = (await response.json()) as { url: string };
@@ -220,10 +222,10 @@ function audioElement(src: string, prefs: VoicePrefs, blobUrl = false): HTMLAudi
 
 /** The natural voice for one piece of text, already downloading; null when
  * it cannot be reached (the device voice then says that piece). */
-async function prepareVoice(text: string, prefs: VoicePrefs): Promise<HTMLAudioElement | null> {
+async function prepareVoice(text: string, prefs: VoicePrefs, pace: string): Promise<HTMLAudioElement | null> {
   if (streamingAvailable) {
     try {
-      return audioElement(await ticketUrl(text, prefs), prefs);
+      return audioElement(await ticketUrl(text, prefs, pace), prefs);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (/voice (404|405)/.test(message)) streamingAvailable = false;
@@ -231,7 +233,7 @@ async function prepareVoice(text: string, prefs: VoicePrefs): Promise<HTMLAudioE
     }
   }
   try {
-    return audioElement(URL.createObjectURL(await fetchChunk(text, prefs)), prefs, true);
+    return audioElement(URL.createObjectURL(await fetchChunk(text, prefs, pace)), prefs, true);
   } catch {
     return null;
   }
@@ -276,6 +278,7 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
   stopSpeaking();
   const prefs = loadVoicePrefs();
   if (handlers.speed) prefs.speed = handlers.speed;
+  const pace = handlers.pace ?? "normal";
   const enabled = prefs.enabled || force;
   const mySession = session;
   const texts: string[] = [];
@@ -302,7 +305,7 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
     handlers.onEnd?.();
   };
   const prepare = (index: number) => {
-    if (index < texts.length && !prepared[index]) prepared[index] = prepareVoice(texts[index], prefs);
+    if (index < texts.length && !prepared[index]) prepared[index] = prepareVoice(texts[index], prefs, pace);
   };
 
   // How far ahead pieces are generated: while one plays, the next two are
@@ -338,7 +341,7 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
       // used: it would sound like a different person on each device.
       if (!heard && mySession === session) {
         try {
-          await playThroughContext(texts[index], prefs, markStarted);
+          await playThroughContext(texts[index], prefs, pace, markStarted);
         } catch {
           // This piece is skipped; the reply is on screen.
         }

@@ -54,6 +54,11 @@ test('streamed replies are spoken from the first few words, never cutting a word
   expect(readyToSpeak('Sure, I can help', 0, true)).toEqual({ text: '', next: 0 });
   // Enough opening words: speak them, leaving the word still arriving ("deve").
   expect(readyToSpeak('Sure, I can help you with your deve', 0, true)).toEqual({ text: 'Sure, I can help you with your', next: 30 });
+  // A clause end after a few words is the best place to start.
+  expect(readyToSpeak('Sure, I can help you with that, and also', 0, true)).toEqual({ text: 'Sure, I can help you with that,', next: 31 });
+  // A short natural opening is fine; a comma too early is not a place to cut.
+  expect(readyToSpeak('Yes, of course, and', 0, true)).toEqual({ text: 'Yes, of course,', next: 15 });
+  expect(readyToSpeak('Yes, I am', 0, true)).toEqual({ text: '', next: 0 });
   // A finished sentence still goes as a whole.
   expect(readyToSpeak('Hi there! I am Bo', 0, true)).toEqual({ text: 'Hi there!', next: 9 });
   // Later text: a finished clause is spoken, an unfinished one waits.

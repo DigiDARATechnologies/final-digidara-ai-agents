@@ -179,3 +179,32 @@ def test_chat_warm_returns_at_once_and_warms_in_the_background(api, monkeypatch)
     assert response.status_code == 200, response.text
     assert response.json() == {"ok": True}
     assert warmed.wait(5)
+
+
+def test_a_brisk_voice_is_the_same_person_at_a_quicker_pace_and_cached_apart(api, monkeypatch):  # noqa: F811
+    normal = tts.instructions_for("en")
+    brisk = tts.instructions_for("en", "brisk")
+    assert normal != brisk and "brisk" in brisk and "slowly" in normal and "slow teacher voice" in brisk
+    assert "Nila" in brisk and "Indian English" in brisk          # same character and accent
+    assert tts._cache_key("Hi", "en", "nova") != tts._cache_key("Hi", "en", "nova", "brisk")
+    assert tts._cache_key("Hi", "en", "nova") == tts._cache_key("Hi", "en", "nova", "normal")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    sent = []
+
+    class Client:
+        def build_request(self, method, url, headers=None, json=None):
+            sent.append(json["instructions"])
+            return None
+
+        def send(self, request, stream=False):
+            return _FakeStream()
+
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "Quick reply here.", "pace": "brisk"}).json()["url"]
+    assert api.get(url).status_code == 200
+    assert sent == [brisk]
+    # An unknown pace is the normal voice.
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "Another reply here.", "pace": "warp"}).json()["url"]
+    api.get(url)
+    assert sent[-1] == normal

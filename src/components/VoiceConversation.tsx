@@ -15,9 +15,11 @@ import { Logo } from "./Logo";
  * about a natural conversational turn. "Just a minute" keeps it listening. */
 export const CONVERSATION_PAUSE_MS = 1_500;
 
-/** Boss's voice in a conversation is faster than the learner's reading speed
- * setting (the voice engine allows up to 1.3). */
-export const BOSS_VOICE_SPEED = 1.3;
+/** Boss's voice in a conversation: made at a brisk pace by the server, and
+ * played a little faster than that. (Playing the slow teacher voice at 1.3x
+ * instead made the words blur.) */
+export const BOSS_VOICE_SPEED = 1.15;
+export const BOSS_VOICE_PACE = "brisk" as const;
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -143,7 +145,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   function speak(text: string) {
     setPhase("speaking");
     const turn = ++turnRef.current;
-    void speakNatural(text, { onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED }, true);
+    void speakNatural(text, { onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true);
   }
 
   useEffect(() => {
@@ -176,7 +178,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     if (!reply || reply.index !== index) {
       setPhase("speaking");
       const turn = ++turnRef.current;
-      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED }, true) };
+      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true) };
       replyRef.current = reply;
     }
     if (!last.streaming && !typing) {

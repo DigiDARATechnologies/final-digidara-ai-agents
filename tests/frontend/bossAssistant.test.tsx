@@ -9,9 +9,19 @@ jest.mock('../../src/lib/screenCapture', () => ({
 }));
 jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
 const mockPushed: string[] = [];
+let mockQueueHandlers: { onEnd?: () => void; onStart?: () => void; speed?: number; pace?: string } = {};
 jest.mock('../../src/lib/voiceEngine', () => ({
   stopSpeaking: jest.fn(),
-  createSpeechQueue: () => ({ started: Promise.resolve(true), push: (text: string) => mockPushed.push(text), end: jest.fn() }),
+  createSpeechQueue: (handlers: typeof mockQueueHandlers) => {
+    mockQueueHandlers = handlers;
+    return { started: Promise.resolve(true), push: (text: string) => mockPushed.push(text), end: jest.fn() };
+  },
+}));
+jest.mock('../../src/lib/voiceActivity', () => ({ watchForSpeech: () => jest.fn() }));
+let mockWake: ((rest: string) => void) | null = null;
+jest.mock('../../src/lib/wakeWord', () => ({
+  wakeWordSupported: () => true,
+  listenForWakeWord: (onWake: (rest: string) => void) => { mockWake = onWake; return () => { mockWake = null; }; },
 }));
 jest.mock('../../src/lib/voiceCapture', () => ({ audioRecordingSupported: () => true }));
 jest.mock('../../src/components/Logo', () => ({ Logo: () => <span>DD</span> }));
@@ -39,6 +49,9 @@ beforeEach(() => {
   mockCapture.mockReset();
   mockStart.mockReset();
   mockPushed.length = 0;
+  mockQueueHandlers = {};
+  mockWake = null;
+  localStorage.clear();
   mockAssist.mockImplementation(async (_request: unknown, onText: (text: string) => void) => {
     onText('Press Start');
     return 'Press Start.';
@@ -83,7 +96,7 @@ test('a spoken question is answered aloud as it streams in', async () => {
     return true;
   });
   openBoss();
-  await act(async () => { fireEvent.click(screen.getByLabelText('Speak to Boss')); });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Talk to Boss')); });
   await waitFor(() => expect(mockAssist).toHaveBeenCalled());
   expect(mockAssist.mock.calls[0][0]).toMatchObject({ message: 'how do I start the interview', voice: true });
   expect(mockPushed.join('')).toContain('Press Start');
@@ -102,4 +115,45 @@ test('wake words are not part of the question; pointing at the screen is recogni
   expect(withoutWakeWords('bossy attitude')).toBe('bossy attitude');
   expect(refersToScreen('what does this error mean')).toBe(true);
   expect(refersToScreen('how do I write a cover letter')).toBe(false);
+});
+
+test('the voice conversation carries on: after Boss finishes speaking it listens again', async () => {
+  mockStart.mockImplementation((onResult: (text: string, final: boolean) => void) => {
+    onResult('how do I start', true);
+    return true;
+  });
+  openBoss();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Talk to Boss')); });
+  await waitFor(() => expect(mockAssist).toHaveBeenCalledTimes(1));
+  // Boss is made at a brisk pace and played a little faster.
+  expect(mockQueueHandlers).toMatchObject({ pace: 'brisk', speed: 1.15 });
+  const listens = mockStart.mock.calls.length;
+  await act(async () => { mockQueueHandlers.onEnd?.(); });
+  await waitFor(() => expect(mockStart.mock.calls.length).toBeGreaterThan(listens));
+});
+
+test('"that is all" ends the voice conversation without asking Boss', async () => {
+  mockStart.mockImplementation((onResult: (text: string, final: boolean) => void) => {
+    onResult("that's all", true);
+    return true;
+  });
+  openBoss();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Talk to Boss')); });
+  await waitFor(() => expect(screen.getByLabelText('Talk to Boss')).toBeTruthy());
+  expect(mockAssist).not.toHaveBeenCalled();
+});
+
+test('saying "Hey Boss" opens Boss and starts the conversation, keeping what was said after it', async () => {
+  localStorage.setItem('digidara.heyBoss', 'on');
+  render(<BossAssistant agentId="job-fetch" agentName="Job Agent" getContext={() => ''} />);
+  expect(mockWake).not.toBeNull();
+  await act(async () => { mockWake?.('what is this error'); });
+  await waitFor(() => expect(mockAssist).toHaveBeenCalled());
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect(mockAssist.mock.calls[0][0]).toMatchObject({ message: 'what is this error', voice: true });
+});
+
+test('without the switch on, nothing listens for "Hey Boss"', () => {
+  render(<BossAssistant agentId="" agentName="" getContext={() => ''} />);
+  expect(mockWake).toBeNull();
 });

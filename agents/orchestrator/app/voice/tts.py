@@ -90,8 +90,21 @@ def detect_language(text: str) -> str:
     return "en"
 
 
-def instructions_for(language: str) -> str:
-    return f"{_BASE_STYLE} {_LANGUAGE_STYLE.get(language, _LANGUAGE_STYLE['en'])}"
+# Boss's voice conversation is a quick back-and-forth, not a lesson: the same
+# voice and accent, said at a brisk conversational pace (speeding the slow
+# teacher voice up in the player instead blurs the words).
+PACES = ("normal", "brisk")
+_BRISK_STYLE = (
+    "Voice: Nila, a friendly young Indian woman from Chennai. Always the same person, the same sweet, bright "
+    "voice and the same accent. Speak clearly and confidently at a brisk, natural conversational pace, like a "
+    "quick friendly chat: no long pauses, no slow teacher voice, every word still easy to catch. Cheerful, "
+    "warm, never rushed into mumbling, never robotic."
+)
+
+
+def instructions_for(language: str, pace: str = "normal") -> str:
+    base = _BRISK_STYLE if pace == "brisk" else _BASE_STYLE
+    return f"{base} {_LANGUAGE_STYLE.get(language, _LANGUAGE_STYLE['en'])}"
 
 
 _cache: OrderedDict[str, bytes] = OrderedDict()
@@ -112,9 +125,9 @@ def _shared():
     return _shared_client
 
 
-def _cache_key(text: str, language: str, voice: str) -> str:
+def _cache_key(text: str, language: str, voice: str, pace: str = "normal") -> str:
     # The style is part of the key: a changed voice never replays old audio.
-    style = hashlib.sha256(instructions_for(language).encode()).hexdigest()[:12]
+    style = hashlib.sha256(instructions_for(language, pace).encode()).hexdigest()[:12]
     return hashlib.sha256(f"{TTS_MODEL}|{voice}|{style}|{language}|{text}".encode()).hexdigest()
 
 
@@ -131,8 +144,8 @@ def _remember(key: str, audio: bytes, text: str) -> None:
             logger.warning("voice shared cache write failed", exc_info=True)
 
 
-def cached(text: str, language: str, persona: str) -> bytes | None:
-    key = _cache_key(text, language, VOICE)
+def cached(text: str, language: str, persona: str, pace: str = "normal") -> bytes | None:
+    key = _cache_key(text, language, VOICE, pace)
     with _cache_lock:
         audio = _cache.get(key)
         if audio is not None:
@@ -162,7 +175,7 @@ def resolve_language(text: str, requested: str) -> str:
     return detected
 
 
-def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA) -> tuple[bytes, str, bool]:
+def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA, pace: str = "normal") -> tuple[bytes, str, bool]:
     """(mp3 bytes, the language it was spoken as, whether it came from cache)."""
     text = " ".join(text.split())
     if not text:
@@ -170,8 +183,9 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     if len(text) > MAX_TEXT_CHARS:
         raise VoiceError(413, f"Send at most {MAX_TEXT_CHARS} characters at a time.")
     persona = DEFAULT_PERSONA
+    pace = pace if pace in PACES else "normal"
     spoken_as = resolve_language(text, language if language in LANGUAGES else "auto")
-    hit = cached(text, spoken_as, persona)
+    hit = cached(text, spoken_as, persona, pace)
     if hit is not None:
         return hit, spoken_as, True
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -184,7 +198,7 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": TTS_MODEL, "voice": voice, "input": text,
-                "instructions": instructions_for(spoken_as), "response_format": "mp3",
+                "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
             },
             timeout=TTS_TIMEOUT_SECONDS,
         )
@@ -196,7 +210,7 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
         logger.warning("tts returned HTTP %s", response.status_code)
         raise VoiceError(502, "The voice could not be generated. Please try again.")
     audio = response.content
-    _remember(_cache_key(text, spoken_as, voice), audio, text)
+    _remember(_cache_key(text, spoken_as, voice, pace), audio, text)
     logger.info("tts %d chars as %s with %s -> %d bytes", len(text), spoken_as, persona, len(audio))
     return audio, spoken_as, False
 
@@ -224,13 +238,13 @@ def prepare(text: str, language: str = "auto") -> tuple[str, str]:
     return text, resolve_language(text, language if language in LANGUAGES else "auto")
 
 
-def issue_ticket(text: str, spoken_as: str) -> str:
+def issue_ticket(text: str, spoken_as: str, pace: str = "normal") -> str:
     import secrets
     import json as _json
     import time as _time
 
     ticket = secrets.token_urlsafe(24)
-    data = {"text": text, "language": spoken_as}
+    data = {"text": text, "language": spoken_as, "pace": pace if pace in PACES else "normal"}
     client = _shared()
     if client is not None:
         try:
@@ -278,7 +292,7 @@ def _openai() -> httpx.Client:
     return _openai_client
 
 
-def open_stream(text: str, spoken_as: str):
+def open_stream(text: str, spoken_as: str, pace: str = "normal"):
     """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
     or VoiceError before any byte is sent."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -291,7 +305,7 @@ def open_stream(text: str, spoken_as: str):
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": TTS_MODEL, "voice": VOICE, "input": text,
-                "instructions": instructions_for(spoken_as), "response_format": "mp3",
+                "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
             },
         )
         response = client.send(request, stream=True)
@@ -317,7 +331,7 @@ def open_stream(text: str, spoken_as: str):
             response.close()
             if complete and parts:
                 audio = b"".join(parts)
-                _remember(_cache_key(text, spoken_as, VOICE), audio, text)
+                _remember(_cache_key(text, spoken_as, VOICE, pace), audio, text)
                 logger.info("tts streamed %d chars as %s -> %d bytes", len(text), spoken_as, len(audio))
 
     return chunks()

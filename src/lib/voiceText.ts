@@ -38,8 +38,9 @@ export function completeSentences(text: string, from: number): { text: string; n
 /** The opening words of a reply are spoken once there are this many characters
  * (and a finished word): speech starts while the first sentence is still being
  * written. Later, a clause is spoken once it reaches CLAUSE_MIN. */
-const OPENING_MIN = 24;
-const CLAUSE_MIN = 32;
+const OPENING_MIN = 30;
+const OPENING_WORDS = 6;
+const CLAUSE_MIN = 40;
 
 /**
  * What can be spoken of a reply that is still being written, after character
@@ -53,9 +54,12 @@ export function readyToSpeak(text: string, from: number, opening: boolean): { te
   if (sentences.text) return sentences;
   const rest = text.slice(from);
   if (opening) {
-    // Cut at the last space: the word after it may still be arriving.
+    // A clause end after a few words reads best ("Sure, I can help you with that,").
+    const comma = [...rest.matchAll(/(?<=\p{L})[,;:](?=\s)/gu)].find((match) => (match.index ?? 0) >= 14);
+    if (comma) return { text: rest.slice(0, (comma.index ?? 0) + 1), next: from + (comma.index ?? 0) + 1 };
+    // Otherwise cut at the last space: the word after it may still be arriving.
     const space = rest.lastIndexOf(" ");
-    if (space >= OPENING_MIN && rest.slice(0, space).trim().split(/\s+/).length >= 4) {
+    if (space >= OPENING_MIN && rest.slice(0, space).trim().split(/\s+/).length >= OPENING_WORDS) {
       return { text: rest.slice(0, space), next: from + space };
     }
     return { text: "", next: from };
