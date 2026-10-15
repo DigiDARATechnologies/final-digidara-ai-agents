@@ -5,7 +5,7 @@ import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from 
 import { setVoiceConversationOpen } from "../lib/voiceReply";
 import { readyToSpeak } from "../lib/voiceText";
 import { watchForSpeech } from "../lib/voiceActivity";
-import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
+import { afterContinuation, isContinuation, isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
 import type { ChatMessage } from "../types";
@@ -14,6 +14,10 @@ import { Logo } from "./Logo";
 /** A pause this long after the learner has spoken sends what they said --
  * about a natural conversational turn. "Just a minute" keeps it listening. */
 export const CONVERSATION_PAUSE_MS = 1_500;
+
+/** Boss's voice in a conversation is faster than the learner's reading speed
+ * setting (the voice engine allows up to 1.3). */
+export const BOSS_VOICE_SPEED = 1.3;
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -67,6 +71,17 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   const turnRef = useRef(0);
   // Said before "just a minute": the rest of the question joins it.
   const heldRef = useRef("");
+  // The last question sent, and whether the learner talked over the answer to
+  // it: "hold on, I am not completing" then carries that question on.
+  const lastQuestionRef = useRef("");
+  const talkedOverRef = useRef(false);
+
+  /** The learner spoke over Boss (or tapped the logo): stop and listen. */
+  function interrupt() {
+    talkedOverRef.current = Boolean(lastQuestionRef.current);
+    awaitingFromRef.current = null;
+    listen();
+  }
 
   function setLevel(level: number) {
     orbRef.current?.style.setProperty("--voice-level", level.toFixed(2));
@@ -84,6 +99,15 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       setSendIn(null);
       setLevel(0);
       const said = text.trim();
+      const talkedOver = talkedOverRef.current;
+      talkedOverRef.current = false;
+      if (said && talkedOver && !heldRef.current && isContinuation(said)) {
+        // "Hold on, I am not completing": the question Boss was answering is
+        // not finished, so it carries on with these words.
+        heldRef.current = joinAnswer(lastQuestionRef.current, afterContinuation(said));
+        window.setTimeout(listen, 100);
+        return;
+      }
       if (said && isHoldRequest(said)) {
         // "Just a minute": keep what came before and carry on listening.
         heldRef.current = joinAnswer(heldRef.current, withoutHoldPhrase(said));
@@ -97,6 +121,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
         return;
       }
       heldRef.current = "";
+      lastQuestionRef.current = question;
       awaitingFromRef.current = messagesRef.current.length;
       setPhase("thinking");
       onSendRef.current(question);
@@ -118,7 +143,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   function speak(text: string) {
     setPhase("speaking");
     const turn = ++turnRef.current;
-    void speakNatural(text, { onEnd: listenAfter(turn) }, true);
+    void speakNatural(text, { onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED }, true);
   }
 
   useEffect(() => {
@@ -151,7 +176,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     if (!reply || reply.index !== index) {
       setPhase("speaking");
       const turn = ++turnRef.current;
-      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn) }, true) };
+      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED }, true) };
       replyRef.current = reply;
     }
     if (!last.streaming && !typing) {
@@ -175,9 +200,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   useEffect(() => {
     if (phase !== "speaking") return;
     return watchForSpeech(() => {
-      if (!openRef.current) return;
-      awaitingFromRef.current = null;
-      listen();
+      if (openRef.current) interrupt();
     });
     // listen() reads refs only; the watch follows the phase.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,8 +209,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   function handleOrbTap() {
     if (phase === "speaking") {
       // Interrupt the reply and answer straight away.
-      awaitingFromRef.current = null;
-      listen();
+      interrupt();
     } else if (phase === "listening" && speech.listening) {
       // Send now instead of waiting for the pause.
       speech.stop();

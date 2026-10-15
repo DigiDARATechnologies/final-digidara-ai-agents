@@ -20,3 +20,17 @@ export function withoutHoldPhrase(text: string): string {
 export function joinAnswer(before: string, next: string): string {
   return [before.trim(), next.trim()].filter(Boolean).join(" ");
 }
+
+/** "Hold on, I am not completing" said at the start of a new turn: the learner
+ * is not done with what they were saying, so what they said before carries on. */
+const CONTINUATION = /^(?:(?:just|please|sorry|no|wait|okay|ok|sir)[\s,.!]+)*(?:hold\s+on|wait|one\s+(?:sec(?:ond)?|minute|moment)|a\s+(?:sec(?:ond)?|minute|moment)|(?:i\s*(?:am|'m|m)|i\s+have(?:n'?t| not))\s*(?:not\s+)?(?:yet\s+)?(?:done|finished|completed?|completing|finishing|complete)(?:\s+yet)?|let\s+me\s+(?:finish|complete|continue)|i\s+(?:was|am)\s+(?:saying|still\s+(?:saying|talking|speaking)))\b[\s,.!]*(?:i\s*(?:am|'m|m)\s*(?:not\s+)?(?:yet\s+)?(?:done|finished|completed?|completing|finishing|complete)\b[\s,.!]*)?/i;
+
+/** True when this turn begins by saying the previous one is not finished. */
+export function isContinuation(text: string): boolean {
+  return CONTINUATION.test(text.trim());
+}
+
+/** What follows the "hold on, I am not completing" opening ("" if nothing). */
+export function afterContinuation(text: string): string {
+  return text.trim().replace(CONTINUATION, "").replace(/^[\s,.!]+/, "").trim();
+}

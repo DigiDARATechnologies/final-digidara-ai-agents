@@ -1,3 +1,4 @@
+import { acquireMicrophone } from "./micWarm";
 /**
  * Telling a person speaking apart from a fan, AC, traffic or room hum, for
  * every microphone in the app.
@@ -110,7 +111,7 @@ export function analyserReader(analyser: AnalyserNode, detector: VoiceDetector):
  * voice; the bar is set higher than normal listening so leftover echo or
  * background noise does not interrupt. `onSpeech` fires once. Returns stop.
  */
-export function watchForSpeech(onSpeech: () => void, minMs = 400): () => void {
+export function watchForSpeech(onSpeech: () => void, minMs = 300): () => void {
   let stopped = false;
   let cleanup = () => {};
   const stop = () => {
@@ -121,9 +122,7 @@ export function watchForSpeech(onSpeech: () => void, minMs = 400): () => void {
   const AudioContextCtor = window.AudioContext
     || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextCtor) return stop;
-  void navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  }).then((stream) => {
+  void acquireMicrophone().then((stream) => {
     if (stopped) {
       stream.getTracks().forEach((track) => track.stop());
       return;

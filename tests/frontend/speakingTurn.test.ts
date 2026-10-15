@@ -60,3 +60,16 @@ test('streamed replies are spoken from the first few words, never cutting a word
   expect(readyToSpeak(' and then you can open the resume builder, which', 0, false)).toEqual({ text: ' and then you can open the resume builder,', next: 42 });
   expect(readyToSpeak(' and then you can open the resume builder which', 0, false)).toEqual({ text: '', next: 0 });
 });
+
+test('"hold on, I am not completing" is a continuation of the previous question', () => {
+  const { isContinuation, afterContinuation } = jest.requireActual('../../src/lib/holdPhrase') as typeof import('../../src/lib/holdPhrase');
+  expect(isContinuation('just hold on i am not completing')).toBe(true);
+  expect(afterContinuation('just hold on i am not completing')).toBe('');
+  expect(isContinuation("wait, I'm not done yet, also tell me about jobs")).toBe(true);
+  expect(afterContinuation("wait, I'm not done yet, also tell me about jobs")).toBe('also tell me about jobs');
+  expect(isContinuation('let me finish. and the interview agent')).toBe(true);
+  expect(afterContinuation('let me finish. and the interview agent')).toBe('and the interview agent');
+  // An ordinary new question is not a continuation.
+  expect(isContinuation('what is the resume builder')).toBe(false);
+  expect(isContinuation('how long should I wait for results')).toBe(false);
+});

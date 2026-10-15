@@ -22,6 +22,9 @@ export interface SpeakHandlers {
   onStart?: () => void;
   onEnd?: () => void;
   onError?: (error?: unknown) => void;
+  /** Playback speed for this speech, instead of the learner's voice setting
+   * (Boss's voice conversation talks faster). */
+  speed?: number;
 }
 
 const BASE = (() => {
@@ -259,6 +262,7 @@ export interface SpeechQueue {
 export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): SpeechQueue {
   stopSpeaking();
   const prefs = loadVoicePrefs();
+  if (handlers.speed) prefs.speed = handlers.speed;
   const enabled = prefs.enabled || force;
   const mySession = session;
   const texts: string[] = [];

@@ -2,23 +2,28 @@ import { acquireMicrophone, releaseWarmMicrophone, warmMicrophone } from '../../
 
 function fakeStream(readyState = 'live') {
   const track = { readyState, stop: jest.fn() };
-  return { stream: { getAudioTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream, track };
+  const clone = { getAudioTracks: () => [{ readyState: 'live', stop: jest.fn() }], getTracks: () => [] };
+  const stream = { getAudioTracks: () => [track], getTracks: () => [track], clone: jest.fn(() => clone) };
+  return { stream: stream as unknown as MediaStream, track, clone };
 }
 
-describe('warmed microphone', () => {
+describe('the microphone held for a voice conversation', () => {
   const getUserMedia = jest.fn();
   beforeEach(() => {
+    releaseWarmMicrophone();
     getUserMedia.mockReset();
     Object.defineProperty(global.navigator, 'mediaDevices', { value: { getUserMedia }, configurable: true });
   });
 
-  test('the first recording takes the stream opened ahead of time', async () => {
-    const { stream } = fakeStream();
+  test('every recording gets a clone of the one open stream, which stays open', async () => {
+    const { stream, track, clone } = fakeStream();
     getUserMedia.mockResolvedValue(stream);
     warmMicrophone();
     warmMicrophone();
-    expect(await acquireMicrophone()).toBe(stream);
+    expect(await acquireMicrophone()).toBe(clone);
+    expect(await acquireMicrophone()).toBe(clone);
     expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(track.stop).not.toHaveBeenCalled();
   });
 
   test('a stream that ended is replaced by a fresh one', async () => {
@@ -29,13 +34,13 @@ describe('warmed microphone', () => {
     expect(await acquireMicrophone()).toBe(fresh.stream);
   });
 
-  test('without a warm stream a recording opens the microphone itself', async () => {
+  test('without a held stream a recording opens the microphone itself', async () => {
     const { stream } = fakeStream();
     getUserMedia.mockResolvedValue(stream);
     expect(await acquireMicrophone()).toBe(stream);
   });
 
-  test('an unused warm stream is closed on release', async () => {
+  test('the held microphone is closed on release', async () => {
     const { stream, track } = fakeStream();
     getUserMedia.mockResolvedValue(stream);
     warmMicrophone();
