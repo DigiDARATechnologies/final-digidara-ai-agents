@@ -32,7 +32,7 @@ describe('pending notifications', () => {
       chats: [chat('c1', 'capstone-project')],
       capstone: { c1: capstone({ deadlineAt: '2026-10-01T10:00:00Z' }) },
     }), NOW);
-    expect(list).toEqual([expect.objectContaining({ chatId: 'c1', agentName: 'Capstone Project Agent', icon: '🎓', body: 'Your project is pending submission — 5 days left.' })]);
+    expect(list).toEqual([expect.objectContaining({ chatId: 'c1', agentName: 'Capstone Project Agent', icon: 'cap', body: 'Your project is pending submission — 5 days left.' })]);
   });
 
   test.each([

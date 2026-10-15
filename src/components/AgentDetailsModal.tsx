@@ -1,5 +1,6 @@
 import type { Agent } from "../types";
 import { getDisplayRating } from "../lib/ratings";
+import AgentIcon from "./AgentIcon";
 
 interface AgentDetailsModalProps {
   agent: Agent | null;
@@ -37,7 +38,7 @@ export default function AgentDetailsModal({ agent, onClose, onStartChat }: Agent
 
         <div className="agent-detail-scroll">
           <header className="agent-detail-hero">
-            <span className="agent-detail-icon" style={{ background: `linear-gradient(145deg, ${agent.color}, #365f91)` }}>{agent.icon}</span>
+            <span className="agent-detail-icon" style={{ background: `linear-gradient(145deg, ${agent.color}, #365f91)` }}><AgentIcon name={agent.icon} /></span>
             <h2 id="agent-detail-title">{agent.name}</h2>
             <p className="agent-detail-author">By {agent.author ?? "DigiDARA"}</p>
             <p className="agent-detail-description">{agent.desc}</p>

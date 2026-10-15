@@ -13,79 +13,79 @@ export const CATEGORIES = [
 
 export const AGENTS: Agent[] = [
   {
-    id: "career-guide", name: "Career Guidance Agent", icon: "🧭", color: "#22c55e", author: "DigiDARA", rating: 4.9,
+    id: "career-guide", name: "Career Guidance Agent", icon: "compass", color: "#22c55e", author: "DigiDARA", rating: 4.9,
     category: ["Top Picks", "Career"], featured: true,
     desc: "Maps your ideal career roadmap, identifies skill gaps and recommends the fastest path to your target role.",
     greeting: "Hi! I'm your Career Guidance Agent. Tell me your current role and where you'd like to be in 2 years, and I'll sketch a roadmap for you.",
   },
   {
-    id: "leetcode", name: "Coding Practice", icon: "⌨️", color: "#eab308", author: "DigiDARA", rating: 4.7,
+    id: "leetcode", name: "Coding Practice", icon: "code", color: "#eab308", author: "DigiDARA", rating: 4.7,
     category: ["Top Picks", "Programming", "Education"], featured: true, kind: "codeforge", backendAgentName: "codeforge_agent",
     desc: "Practice real coding problems by course and topic, run and submit against sandboxed tests, and get AI tutor guidance when you're stuck.",
     greeting: "Ready to practice? Connecting you now…",
   },
   {
-    id: "job-fetch", name: "Job Agent", icon: "🔎", color: "#3b82f6", author: "DigiDARA", rating: 4.6,
+    id: "job-fetch", name: "Job Agent", icon: "search", color: "#3b82f6", author: "DigiDARA", rating: 4.6,
     category: ["Career", "Productivity"], featured: false, kind: "job-fetch", backendAgentName: "job_agent",
     desc: "Continuously scans job boards for roles matching your profile and ranks them by an explainable fit score.",
     greeting: "Connecting you to the Job Agent…",
   },
   {
-    id: "research", name: "Research Agent", icon: "📚", color: "#06b6d4", author: "DigiDARA", rating: 4.8,
+    id: "research", name: "Research Agent", icon: "book", color: "#06b6d4", author: "DigiDARA", rating: 4.8,
     category: ["Research & Analysis", "Top Picks"], featured: false,
     desc: "Digs through papers, articles and data to produce well-cited summaries on any topic you throw at it.",
     greeting: "What topic should I research for you today? I can summarize papers, compare viewpoints or fact-check claims.",
   },
   {
-    id: "content-writer", name: "Content Writer Agent", icon: "✍️", color: "#ec4899", author: "DigiDARA", rating: 4.7,
+    id: "content-writer", name: "Content Writer Agent", icon: "pen", color: "#ec4899", author: "DigiDARA", rating: 4.7,
     category: ["Writing"], featured: false,
     desc: "Drafts blog posts, social copy and email campaigns in your brand voice, ready to publish.",
     greeting: "What are we writing today — a blog post, a LinkedIn post, or marketing copy? Give me the topic and tone.",
   },
   {
-    id: "data-analyst", name: "Data Analyst Agent", icon: "📊", color: "#14b8a6", author: "DigiDARA", rating: 4.6,
+    id: "data-analyst", name: "Data Analyst Agent", icon: "chart", color: "#14b8a6", author: "DigiDARA", rating: 4.6,
     category: ["Research & Analysis", "Business"], featured: false,
     desc: "Analyzes spreadsheets and datasets, surfaces trends, and builds clear charts and summaries.",
     greeting: "Share your data or describe the dataset, and tell me what question you're trying to answer.",
   },
   {
-    id: "aptitude", name: "Aptitude Trainer Agent", icon: "🧮", color: "#f97316", author: "DigiDARA", rating: 4.5,
+    id: "aptitude", name: "Aptitude Trainer Agent", icon: "calculator", color: "#f97316", author: "DigiDARA", rating: 4.5,
     category: ["Top Picks", "Education"], featured: true, kind: "aptitude", backendAgentName: "aptitude_agent",
     desc: "Drills quantitative aptitude, logical reasoning and verbal ability with timed practice sets.",
     greeting: "Let's practice! Pick a topic: quantitative aptitude, logical reasoning, or verbal ability.",
   },
   {
-    id: "mock-interview", name: "Mock Interview Agent", icon: "🎤", color: "#8b5cf6", author: "DigiDARA", rating: 4.7,
+    id: "mock-interview", name: "Mock Interview Agent", icon: "mic", color: "#8b5cf6", author: "DigiDARA", rating: 4.7,
     category: ["Top Picks", "Career", "Education"], featured: true, kind: "mock-interview", backendAgentName: "mock_interview_agent",
     desc: "Runs AI-driven technical and HR mock interviews, scores each answer and gives feedback you can review later.",
     greeting: "Ready for a mock interview? Choose a technical or HR round and I'll get started.",
   },
   {
-    id: "video-ai", name: "Video AI Agent", icon: "🎬", color: "#6366f1", author: "DigiDARA", rating: 4.4,
+    id: "video-ai", name: "Video AI Agent", icon: "video", color: "#6366f1", author: "DigiDARA", rating: 4.4,
     category: ["Productivity"], featured: false,
     desc: "Generates and edits short-form videos from a script or prompt, complete with captions and voiceover.",
     greeting: "Describe the video you want — topic, length and style — and I'll put together a first cut.",
   },
   {
-    id: "biz-strategy", name: "Business Strategy Agent", icon: "🤝", color: "#0ea5e9", author: "DigiDARA", rating: 4.6,
+    id: "biz-strategy", name: "Business Strategy Agent", icon: "briefcase", color: "#0ea5e9", author: "DigiDARA", rating: 4.6,
     category: ["Business"], featured: false,
     desc: "Helps evaluate business ideas, build go-to-market plans and model pricing strategy.",
     greeting: "What business problem are we tackling — a new product idea, GTM plan, or pricing strategy?",
   },
   {
-    id: "code-assist", name: "Coding Assistant Agent", icon: "💻", color: "#7c3aed", author: "DigiDARA", rating: 4.9,
+    id: "code-assist", name: "Coding Assistant Agent", icon: "terminal", color: "#7c3aed", author: "DigiDARA", rating: 4.9,
     category: ["Programming", "Top Picks"], featured: false,
     desc: "Writes, reviews and debugs code across languages, with clear explanations for every change.",
     greeting: "What are you building? Paste your code or describe the bug and I'll help you work through it.",
   },
   {
-    id: "capstone-project", name: "Capstone Project Agent", icon: "🎓", color: "#16a34a", author: "DigiDARA", rating: 4.9,
+    id: "capstone-project", name: "Capstone Project Agent", icon: "cap", color: "#16a34a", author: "DigiDARA", rating: 4.9,
     category: ["Top Picks", "Education"], featured: true, kind: "capstone", backendAgentName: "capstone_project_agent",
     desc: "Runs your capstone project end-to-end: eligibility check, topic pick, 7-day timer, and graded submission review.",
     greeting: "Hi! I'm the Capstone Project Agent. Let's check your eligibility first — what's your full name?",
   },
   {
-    id: "communication-coach", name: "Communication Coach Agent", icon: "🗣️", color: "#f43f5e", author: "DigiDARA", rating: 4.8,
+    id: "communication-coach", name: "Communication Coach Agent", icon: "chat", color: "#f43f5e", author: "DigiDARA", rating: 4.8,
     category: ["Top Picks", "Education"], featured: true, kind: "communication", backendAgentName: "communication_agent",
     desc: "Coaches Pronunciation, Speaking and Writing through AI-scored practice loops, daily challenges, and a progress dashboard.",
     greeting: "Ready to practice? Connecting you now…",
@@ -94,7 +94,7 @@ export const AGENTS: Agent[] = [
 
 // Strategy F Resume Builder: the React app calls it only via the registry gateway.
 AGENTS.push({
-  id: "resume-builder", name: "Resume Builder Agent", icon: "📄", color: "#0f766e", author: "DigiDARA", rating: 4.9,
+  id: "resume-builder", name: "Resume Builder Agent", icon: "file", color: "#0f766e", author: "DigiDARA", rating: 4.9,
   category: ["Top Picks", "Career", "Writing"], featured: true, kind: "resume-builder", backendAgentName: "resume_builder_agent",
   desc: "Create, import, analyze, improve, preview, and export ATS-friendly resumes through a guided workflow.",
   greeting: "Connecting you to Resume Builder...",
@@ -102,7 +102,7 @@ AGENTS.push({
 
 // Strategy F Certificate Agent: the React app calls it only via the registry gateway.
 AGENTS.push({
-  id: "certificate-agent", name: "AI Certification Agent", icon: "📜", color: "#8b5cf6", author: "DigiDARA", rating: 4.9,
+  id: "certificate-agent", name: "AI Certification Agent", icon: "award", color: "#8b5cf6", author: "DigiDARA", rating: 4.9,
   category: ["Top Picks", "Education"], featured: true, kind: "certificate", backendAgentName: "certificate_agent",
   desc: "AI-powered certification exam generator, interactive chat assessment, leaderboard, and PDF certificate issuing system.",
   greeting: "Connecting you to AI Certification Agent...",
@@ -117,7 +117,7 @@ export const LIVE_AGENTS: Agent[] = AGENTS.filter((a) => a.kind);
 export const DEFAULT_AGENT: Agent = {
   id: "digidara-assistant",
   name: "Boss",
-  icon: "⚡",
+  icon: "bolt",
   color: "#365f91",
   greeting: "Hi, I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA, or open a specialised agent for focused help.",
 };

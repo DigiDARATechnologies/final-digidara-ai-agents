@@ -64,10 +64,10 @@ export function autoChatTitle(agent: Agent | undefined, chatId: string, states: 
     }
     case "communication": {
       const state = states.communication[chatId];
-      if (state?.activeModule === "writing" && state.writingTopic) return { subject: short(`✍️ Writing · ${state.writingTopic}`) };
-      if (state?.activeModule === "speaking" && state.promptText) return { subject: short(`🗣️ Speaking · "${short(state.promptText, 34)}"`, 60) };
+      if (state?.activeModule === "writing" && state.writingTopic) return { subject: short(`Writing · ${state.writingTopic}`) };
+      if (state?.activeModule === "speaking" && state.promptText) return { subject: short(`Speaking · "${short(state.promptText, 34)}"`, 60) };
       if (state?.activeModule === "pronunciation" && state.pronunciationMode) {
-        return { subject: short(join("🔤 Pronunciation", capitalize(String(state.pronunciationMode).replace(/_/g, " ")), capitalize(state.difficulty))) };
+        return { subject: short(join("Pronunciation", capitalize(String(state.pronunciationMode).replace(/_/g, " ")), capitalize(state.difficulty))) };
       }
       return undefined;
     }

@@ -13,6 +13,7 @@ import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
+import AgentIcon from "./AgentIcon";
 
 interface ChatViewProps {
   chat: Chat;
@@ -526,7 +527,7 @@ export default function ChatView({
           </svg>
         </button>
         <span className="avatar chat-agent-avatar" style={{ background: agent.color || "var(--accent-grad)" }}>
-          {agent.icon}
+          <AgentIcon name={agent.icon} />
         </span>
         <div className="chat-agent-meta">
           <div className="chat-agent-name">{agent.name}</div>
@@ -587,7 +588,7 @@ export default function ChatView({
                 className="avatar"
                 style={{ background: m.role === "user" ? "var(--accent-grad)" : msgAgent.color || "var(--accent-grad)" }}
               >
-                {m.role === "user" ? user.initial : msgAgent.icon}
+                {m.role === "user" ? user.initial : <AgentIcon name={msgAgent.icon} />}
               </span>
               <div className={`msg-content${hasContextPanel ? agent.kind === "mock-interview" ? " mock-interview-question-section" : " aptitude-question-section" : ""}`}>
                 {isEditing ? (
@@ -665,7 +666,7 @@ export default function ChatView({
 
       <div className="chat-typing" hidden={!typing}>
         <span className="avatar chat-agent-avatar small" style={{ background: agent.color || "var(--accent-grad)" }}>
-          {agent.icon}
+          <AgentIcon name={agent.icon} />
         </span>
         <div className="typing-bubble">
           <span />

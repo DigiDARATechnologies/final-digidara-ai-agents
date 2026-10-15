@@ -2458,3 +2458,11 @@ a{ color:var(--accent3); }
 @media(max-width:600px){.voice-conversation-orb{width:170px;height:170px}.voice-conversation-logo{width:124px;height:124px}.voice-conversation-heard{font-size:15px}.voice-conversation-reply{font-size:15px}}
 @media(prefers-reduced-motion:reduce){.voice-conversation *{animation:none!important}}
 .visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Agent icons are line SVGs (components/AgentIcon.tsx), sized by the font-size
+   of whatever badge holds them. */
+.agent-icon{ width:1.15em; height:1.15em; flex:0 0 auto; display:block; }
+.card-icon, .avatar.chat-agent-avatar, .msg .avatar, .connector-pill-icon, .admin-agent-icon,
+.agent-detail-icon, .profile-agent-icon, .agent-chat-icon, .agent-detail-mini-icon{
+  color:#fff; display:inline-flex; align-items:center; justify-content:center;
+}

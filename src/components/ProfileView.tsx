@@ -6,6 +6,7 @@ import { fetchTokenBalance } from "../lib/billingApi";
 import { formatPoints, tokensToPoints } from "../lib/points";
 import EditProfileModal from "./EditProfileModal";
 import type { ProfilePrefs } from "../lib/profilePrefs";
+import AgentIcon from "./AgentIcon";
 
 interface Props {
   user: User;
@@ -282,7 +283,7 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
               <ul className="pv-top">
                 {stats.topAgents.map((a) => (
                   <li key={a.agent.id}>
-                    <span className="pv-top-icon" style={{ background: `color-mix(in srgb, ${a.agent.color} 28%, transparent)` }}>{a.agent.icon}</span>
+                    <span className="pv-top-icon" style={{ background: `color-mix(in srgb, ${a.agent.color} 28%, transparent)` }}><AgentIcon name={a.agent.icon} /></span>
                     <div className="pv-top-main">
                       <div className="pv-top-row">
                         <b>{a.agent.name}</b>

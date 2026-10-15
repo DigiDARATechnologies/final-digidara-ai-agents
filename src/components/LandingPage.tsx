@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, ty
 import logoOnDark from "../assets/logo-navbar-dark.png";
 import logoOnLight from "../assets/logo-navbar-light.png";
 import "./LandingPage.css";
+import AgentIcon from "./AgentIcon";
 
 interface LandingPageProps {
   theme: "dark" | "light";
@@ -10,23 +11,23 @@ interface LandingPageProps {
 }
 
 const INDUSTRIES = [
-  { color: "#6f8dff", tag: "Learn & grow", icon: "🎓", name: "Education & Training", text: "Coding practice, aptitude drills, capstone projects and certifications for learners and institutions." },
-  { color: "#38d0f5", tag: "Guest experience", icon: "✈️", name: "Travel & Hospitality", text: "Itinerary planning, booking support and multilingual guest assistance that never sleeps." },
-  { color: "#f2a71b", tag: "Build smarter", icon: "🏗️", name: "Construction & Real Estate", text: "Project tracking, site reporting, estimating and compliance paperwork handled by agents." },
-  { color: "#34d399", tag: "Care, simplified", icon: "🏥", name: "Healthcare", text: "Appointment flows, patient FAQs and documentation support, built with privacy first." },
-  { color: "#c084fc", tag: "Serve faster", icon: "🏦", name: "Finance & Retail", text: "Customer support, report summaries and catalog or inventory assistants for growing teams." },
-  { color: "#fb7185", tag: "Built for you", icon: "🚀", name: "Your Industry", text: "Tell us your workflow. We design, build and deploy a specialized agent around it." },
+  { color: "#6f8dff", tag: "Learn & grow", icon: "cap", name: "Education & Training", text: "Coding practice, aptitude drills, capstone projects and certifications for learners and institutions." },
+  { color: "#38d0f5", tag: "Guest experience", icon: "plane", name: "Travel & Hospitality", text: "Itinerary planning, booking support and multilingual guest assistance that never sleeps." },
+  { color: "#f2a71b", tag: "Build smarter", icon: "building", name: "Construction & Real Estate", text: "Project tracking, site reporting, estimating and compliance paperwork handled by agents." },
+  { color: "#34d399", tag: "Care, simplified", icon: "heart", name: "Healthcare", text: "Appointment flows, patient FAQs and documentation support, built with privacy first." },
+  { color: "#c084fc", tag: "Serve faster", icon: "bank", name: "Finance & Retail", text: "Customer support, report summaries and catalog or inventory assistants for growing teams." },
+  { color: "#fb7185", tag: "Built for you", icon: "rocket", name: "Your Industry", text: "Tell us your workflow. We design, build and deploy a specialized agent around it." },
 ];
 
 const AGENTS = [
-  { color: "#16a34a", icon: "🎓", name: "Capstone Project Agent", text: "Guides a project from idea to graded submission with eligibility checks and review." },
-  { color: "#eab308", icon: "⌨️", name: "Coding Practice", text: "Real coding problems, sandboxed test runs and an AI tutor when you get stuck." },
-  { color: "#f43f5e", icon: "🗣️", name: "Communication Coach", text: "Pronunciation, speaking and writing practice scored by AI, with daily challenges." },
-  { color: "#f97316", icon: "🧮", name: "Aptitude Trainer", text: "Quantitative, logical and verbal practice sets with timed tests and explanations." },
-  { color: "#8b5cf6", icon: "🎤", name: "Mock Interview Agent", text: "Technical and HR interview rounds with per-answer scoring and feedback." },
-  { color: "#14b8a6", icon: "📄", name: "Resume Builder", text: "Create, import, analyze and export ATS-friendly resumes in a guided workflow." },
-  { color: "#3b82f6", icon: "🔎", name: "Job Agent", text: "Finds roles that match your profile and ranks them with an explainable fit score." },
-  { color: "#a78bfa", icon: "📜", name: "AI Certification Agent", text: "Exam generation, chat-based assessment, leaderboard and PDF certificates." },
+  { color: "#16a34a", icon: "cap", name: "Capstone Project Agent", text: "Guides a project from idea to graded submission with eligibility checks and review." },
+  { color: "#eab308", icon: "code", name: "Coding Practice", text: "Real coding problems, sandboxed test runs and an AI tutor when you get stuck." },
+  { color: "#f43f5e", icon: "chat", name: "Communication Coach", text: "Pronunciation, speaking and writing practice scored by AI, with daily challenges." },
+  { color: "#f97316", icon: "calculator", name: "Aptitude Trainer", text: "Quantitative, logical and verbal practice sets with timed tests and explanations." },
+  { color: "#8b5cf6", icon: "mic", name: "Mock Interview Agent", text: "Technical and HR interview rounds with per-answer scoring and feedback." },
+  { color: "#14b8a6", icon: "file", name: "Resume Builder", text: "Create, import, analyze and export ATS-friendly resumes in a guided workflow." },
+  { color: "#3b82f6", icon: "search", name: "Job Agent", text: "Finds roles that match your profile and ranks them with an explainable fit score." },
+  { color: "#a78bfa", icon: "award", name: "AI Certification Agent", text: "Exam generation, chat-based assessment, leaderboard and PDF certificates." },
 ];
 
 const STEPS = [
@@ -394,7 +395,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
         <div className="lp-marquee" aria-hidden="true">
           <div className="lp-marquee-track">
             {[0, 1].map((k) => INDUSTRIES.concat(INDUSTRIES).map((it, i) => (
-              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}>{it.icon} {it.name}</span>
+              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}><AgentIcon name={it.icon} /> {it.name}</span>
             )))}
           </div>
         </div>
@@ -402,7 +403,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
         <div className="lp-marquee lp-marquee-rev" aria-hidden="true">
           <div className="lp-marquee-track">
             {[0, 1].map((k) => AGENTS.concat(AGENTS).map((it, i) => (
-              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}>{it.icon} {it.name}</span>
+              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}><AgentIcon name={it.icon} /> {it.name}</span>
             )))}
           </div>
         </div>
@@ -430,7 +431,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
                 <Reveal key={item.name} delay={i * 70} className={`zoom ${i === 0 || i === 5 ? "lp-span-2" : ""}`}>
                   <article className="lp-card lp-card-ind" style={{ "--c": item.color } as CSSProperties} onMouseMove={spotlight} onMouseLeave={unspot} {...cardClick(onLogin)}>
                     <span className="lp-card-no">{String(i + 1).padStart(2, "0")}</span>
-                    <span className="lp-card-icon">{item.icon}</span>
+                    <span className="lp-card-icon"><AgentIcon name={item.icon} size="1.3em" /></span>
                     <span className="lp-card-tag">{item.tag}</span>
                     <h3>{item.name}</h3>
                     <p>{item.text}</p>
@@ -449,7 +450,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
                 <Reveal key={item.name} delay={(i % 4) * 70}>
                   <article className="lp-card lp-card-agent" style={{ "--c": item.color } as CSSProperties} onMouseMove={spotlight} onMouseLeave={unspot} {...cardClick(onLogin)}>
                     <span className="lp-live"><i />Live</span>
-                    <span className="lp-card-icon">{item.icon}</span>
+                    <span className="lp-card-icon"><AgentIcon name={item.icon} size="1.3em" /></span>
                     <h3>{item.name}</h3>
                     <p>{item.text}</p>
                     <span className="lp-card-link">Open agent <b>→</b></span>

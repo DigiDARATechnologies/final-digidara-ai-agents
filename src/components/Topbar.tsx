@@ -1,6 +1,7 @@
 import type { User } from "../types";
 import { LIVE_AGENTS } from "../data/agents";
 import type { PendingNotification } from "../lib/notifications";
+import AgentIcon from "./AgentIcon";
 
 interface TopbarProps {
   title: string;
@@ -35,7 +36,7 @@ export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleN
           {[0, 1].map((copy) =>
             LIVE_AGENTS.map((a) => (
               <span className="agent-ticker-chip" key={`${copy}-${a.id}`} style={{ ["--chip-color" as string]: a.color }}>
-                <span className="agent-ticker-icon">{a.icon}</span>
+                <span className="agent-ticker-icon"><AgentIcon name={a.icon} /></span>
                 {a.name}
               </span>
             )),
@@ -100,7 +101,7 @@ export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleN
               <div className="notif-item" key={n.id} role="button" tabIndex={0} style={{ cursor: "pointer" }}
                 onClick={() => onOpenNotification(n)}
                 onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenNotification(n); } }}>
-                <span className="notif-ico">{n.icon}</span>
+                <span className="notif-ico"><AgentIcon name={n.icon} /></span>
                 <div>
                   <b>{n.agentName}</b>
                   <br />
