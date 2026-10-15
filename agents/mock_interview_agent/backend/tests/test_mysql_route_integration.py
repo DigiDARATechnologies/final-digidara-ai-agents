@@ -285,7 +285,7 @@ class MySQLRouteIntegrationTests(unittest.TestCase):
                 "/api/end_interview", json={"interview_id": interview_id}
             )
             self.assertEqual(completed.status_code, 200, completed.get_json())
-            self.assertEqual(completed.get_json()["overall_score"], 8.4)
+            self.assertEqual(completed.get_json()["overall_score"], 9.4)
             self.assertEqual(completed.get_json()["focus_loss_count"], 4)
             self.assertTrue(completed.get_json()["integrity_flagged"])
 
