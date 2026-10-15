@@ -16,7 +16,7 @@ export interface AssistRequest {
 
 /** What Boss asked the browser to do: open an agent or page, or close Boss.
  * The server only sends targets from its own list. */
-export type AssistAction = { type: "open"; target: string } | { type: "close" };
+export type AssistAction = { type: "open"; target: string } | { type: "chat"; chat_id: string } | { type: "close" };
 
 /** Boss guiding a learner on any screen (POST /chat/assist/stream): `onText`
  * gets the answer so far each time more of it arrives, `onAction` the action

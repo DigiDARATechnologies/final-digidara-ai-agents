@@ -147,12 +147,14 @@ def _recent(value: Any) -> list[dict]:
         if not isinstance(row, dict) or not _text(row.get("date"), 32):
             continue
         item: dict[str, Any] = {"date": _text(row.get("date"), 32)}
-        for field, size in (("title", 120), ("level", 20)):
+        for field, size in (("title", 120), ("level", 20), ("status", 60)):
             if _text(row.get(field), size):
                 item[field] = _text(row.get(field), size)
         score = _clamp_score(row.get("score"))
         if score is not None:
             item["score"] = score
+        if isinstance(row.get("submissions"), int) and not isinstance(row.get("submissions"), bool):
+            item["submissions"] = max(0, min(row["submissions"], 999))
         rows.append(item)
     return rows
 

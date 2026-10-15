@@ -221,3 +221,16 @@ test('Boss opens the agent the learner asked for, and closes after saying goodby
   await act(async () => { mockQueueHandlers.onEnd?.(); });
   expect(screen.queryByRole('dialog')).toBeNull();
 });
+
+test('Boss opens one of the learner chats when it gives a chat link', async () => {
+  const onNavigate = jest.fn();
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Opening your Capstone chat.');
+    onAction({ type: 'chat', chat_id: 'chat-123' });
+    return 'Opening your Capstone chat.';
+  });
+  render(<BossAssistant agentId="" agentName="Capstone" getContext={() => ''} onNavigate={onNavigate} />);
+  fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
+  await ask('give me the chat link');
+  expect(onNavigate).toHaveBeenCalledWith('chat:chat-123');
+});

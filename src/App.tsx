@@ -749,6 +749,15 @@ export default function App() {
   /** Boss was asked to open an agent or a page: it goes there, like the sidebar would. */
   function bossNavigate(target: string) {
     setSettingsOpen(false);
+    if (target.startsWith("chat:")) {
+      // One of the learner's own chats (the server only names their own).
+      const chat = chats.find((item) => item.id === target.slice(5));
+      if (!chat) return;
+      setView("chat");
+      setCurrentChatId(chat.id);
+      setNewChatPending(false);
+      return;
+    }
     if (target === "readiness") {
       switchView("readiness");
       return;

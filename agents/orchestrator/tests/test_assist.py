@@ -114,27 +114,50 @@ def test_boss_opens_an_agent_or_closes_itself_with_a_checked_tag_that_is_never_s
     assert ask("what is a list?")[-1]["reply"] == "In Python, [1, 2] is a list."
 
 
-def test_boss_answers_from_the_learners_own_progress(api, monkeypatch):  # noqa: F811
-    from app.models import ReadinessSnapshot
-    from app import db
+def test_boss_answers_from_the_learners_own_progress_and_chats_and_opens_only_their_own_chat(api, monkeypatch):  # noqa: F811
+    from datetime import datetime
 
+    from app import db
+    from app.models import Conversation, User
+    from app.readiness import service as readiness_service
+
+    asked = []
+
+    async def fake_readiness(user, refresh=False):
+        asked.append(user.id)
+        return {"areas": [{
+            "agent_name": "capstone_project_agent", "label": "Projects", "status": "assessed", "score": 50,
+            "level": "medium", "activity_count": 14, "metrics": {"submissions": 14},
+            "recent": [{"date": "2026-09-25T12:13:27", "title": "Simple Static Site Generator",
+                        "status": "passed (code and viva)", "score": 95.0}],
+        }]}
+
+    monkeypatch.setattr(readiness_service, "get", fake_readiness)
     session = db.get_session()
-    session.add(ReadinessSnapshot(user_id="learner", overall=10, band="not_ready", role_key="", areas={"areas": [{
-        "agent_name": "aptitude_agent", "label": "Aptitude", "status": "assessed", "score": 0, "level": "beginner",
-        "quality_score": 42.3, "level_progress": 34.0, "activity_count": 8, "last_activity_at": "2026-09-28T06:51:28",
-        "metrics": {"tests_completed": 8}, "recent": [{"date": "2026-09-28T06:51:28", "title": "Aptitude test", "score": 73.7}],
-    }], "next_steps": []}))
+    session.add(User(id="someone-else", name="Other", email="other@example.test", email_verified=True, password_hash="x"))
+    session.flush()
+    now = datetime.utcnow()
+    for user_id, chat_id, title in (("learner", "chat-mine-1", "Capstone Project Agent"), ("someone-else", "chat-theirs", "Their chat")):
+        session.add(Conversation(id=chat_id, user_id=user_id, agent_id="capstone-project", title=title,
+                                 created_at=now, updated_at=now, updated_at_ms=1_760_000_000_000))
     session.commit()
     session.close()
     seen = {}
+    replies = iter([["Here it is. [[chat:chat-mine-1]]"], ["Here it is. [[chat:chat-theirs]]"]])
 
     def fake_stream(messages, max_tokens=600):
         seen["system"] = messages[0]["content"]
-        yield "You took 8 tests."
+        yield from next(replies)
 
     monkeypatch.setattr(llm_client, "stream_plain", fake_stream)
     _mount(api)
-    api.post("/chat/assist/stream", headers=auth(), json={"message": "when did I take my aptitude tests?"})
-    assert "YOUR LEARNER'S PROGRESS" in seen["system"] and "2026-09-28T06:51:28" in seen["system"]
-    assert '"tests_completed": 8' in seen["system"] and "never discuss anyone else's data" in seen["system"]
-    assert "[[open:<id>]]" in seen["system"] and "aptitude (Aptitude Trainer)" in seen["system"]
+    events = _events(api.post("/chat/assist/stream", headers=auth(), json={"message": "which projects did I submit? give the chat link"}))
+    assert asked == ["learner"]
+    system = seen["system"]
+    assert "YOUR LEARNER'S PROGRESS" in system and "Simple Static Site Generator" in system and "passed (code and viva)" in system
+    assert "Never say you cannot access their data" in system and "never discuss or look for anyone else's data" in system
+    assert "chat-mine-1" in system and "chat-theirs" not in system and "Their chat" not in system
+    assert {"action": {"type": "chat", "chat_id": "chat-mine-1"}} in events
+    # Another learner's chat id is never opened, even if the model names it.
+    events = _events(api.post("/chat/assist/stream", headers=auth(), json={"message": "open that chat"}))
+    assert not any("action" in e for e in events) and events[-1]["reply"] == "Here it is."

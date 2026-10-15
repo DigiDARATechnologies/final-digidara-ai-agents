@@ -68,6 +68,42 @@ def _resume_projects(assignments: list[ProjectAssignment], submissions: list[Sub
     return projects[:4]
 
 
+def _project_status(submissions: list[Submission]) -> str:
+    """Where one project stands, from its submissions."""
+    if any(_code_passed(s) and s.viva_passed is True for s in submissions):
+        return "passed (code and viva)"
+    if any(_code_passed(s) for s in submissions):
+        return "code passed, viva not passed yet"
+    if any(s.status == SubmissionStatus.needs_revision for s in submissions):
+        return "needs revision"
+    if all(s.status == SubmissionStatus.error for s in submissions):
+        return "grading failed, resubmit"
+    return "submitted, being graded"
+
+
+def recent_projects(assignments: list[ProjectAssignment], submissions: list[Submission]) -> list[dict[str, Any]]:
+    """Each project the learner submitted, newest first: its title, when it was
+    last submitted, where it stands and its best score -- so they can ask Boss
+    "which projects did I submit?"."""
+    by_assignment: dict[str, list[Submission]] = {}
+    for submission in submissions:
+        by_assignment.setdefault(submission.assignment_id, []).append(submission)
+    rows = []
+    for assignment in assignments:
+        tries = by_assignment.get(assignment.id)
+        if not tries:
+            continue
+        last = max((s.submitted_at for s in tries if s.submitted_at), default=None)
+        scores = [float(s.score_json["final_score"]) for s in tries if _code_passed(s)]
+        row: dict[str, Any] = {"date": last.isoformat() if last else "", "title": _title(assignment),
+                               "status": _project_status(tries), "submissions": len(tries)}
+        if scores:
+            row["score"] = round(max(scores), 1)
+        rows.append(row)
+    rows.sort(key=lambda row: row["date"], reverse=True)
+    return rows[:10]
+
+
 def build_student_summary(assignments: list[ProjectAssignment], submissions: list[Submission]) -> dict[str, Any]:
     empty: dict[str, Any] = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
                              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
@@ -103,6 +139,7 @@ def build_student_summary(assignments: list[ProjectAssignment], submissions: lis
             "projects_passed": len({s.assignment_id for s in submissions if _code_passed(s) and s.viva_passed is True}),
         },
         "level_scores": level_scores(submissions),
+        "recent": recent_projects(assignments, submissions),
         "resume": {"projects": _resume_projects(assignments, submissions)},
     }
 

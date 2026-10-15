@@ -5,6 +5,7 @@ import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -87,7 +88,8 @@ def chat_warm(request: Request, user_id: str = Depends(get_verified_user_id)) ->
 
 @router.post("/chat/assist/stream")
 @limiter.limit("12/minute")
-def chat_assist_stream(req: assist.AssistRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> StreamingResponse:
+async def chat_assist_stream(req: assist.AssistRequest, request: Request,
+                             user_id: str = Depends(get_verified_user_id)) -> StreamingResponse:
     """Boss guiding a learner on any screen, with an optional screenshot of it.
     Sizes only are logged: the question and the screen can hold personal data."""
     if not req.screenshot_ok():
@@ -95,14 +97,15 @@ def chat_assist_stream(req: assist.AssistRequest, request: Request, user_id: str
     logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
                 user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
 
-    # The learner's own profile and progress, so Boss can answer "how am I
-    # doing in aptitude?" -- never another learner's.
-    learner = _learner_context(user_id, req.message)
-    progress = _own_progress(user_id)
+    # The signed-in learner's own profile, progress and chats -- looked up by
+    # the verified user id only, so Boss can never see another learner's.
+    learner = await run_in_threadpool(_learner_context, user_id, req.message)
+    progress = await _own_progress(user_id)
+    chats = await run_in_threadpool(_own_chats, user_id)
 
     def events():
         try:
-            for event in assist.stream_assist(req, learner, progress):
+            for event in assist.stream_assist(req, learner, progress, chats):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("assist turn failed")
@@ -167,18 +170,48 @@ def _learner_context(user_id: str, question: str = "") -> dict | None:
     return context or None
 
 
-def _own_progress(user_id: str) -> list[dict] | None:
-    """The areas of the learner's latest Job Readiness snapshot; None when
-    it cannot be read (Boss then says the data is not available)."""
+async def _own_progress(user_id: str) -> list[dict] | None:
+    """The learner's Job Readiness areas, read from every agent when the last
+    reading is older than a few minutes; None when it cannot be read."""
     from app.readiness import service as readiness_service  # local import: readiness pulls in the A2A client
 
     try:
-        snapshot = readiness_service.latest(user_id)
+        user = await run_in_threadpool(auth_service.get_by_id, user_id)
+        if user is None:
+            return None
+        result = await readiness_service.get(user)
     except Exception:
-        logger.warning("assist: readiness snapshot unavailable", exc_info=True)
+        logger.warning("assist: readiness unavailable", exc_info=True)
         return None
-    areas = ((snapshot.areas or {}).get("areas") if snapshot else None) or []
-    return [area for area in areas if isinstance(area, dict)]
+    return [area for area in result.get("areas") or [] if isinstance(area, dict)]
+
+
+def _own_chats(user_id: str) -> list[dict]:
+    """The learner's own saved chats, newest first: id, agent, title, last used."""
+    from app import db
+    from app.models import Conversation
+
+    session = db.get_session()
+    try:
+        rows = (session.query(Conversation.id, Conversation.agent_id, Conversation.title, Conversation.updated_at_ms)
+                .filter(Conversation.user_id == user_id, Conversation.deleted_at.is_(None))
+                .order_by(Conversation.updated_at_ms.desc()).limit(assist.CHAT_LIMIT).all())
+    except Exception:
+        logger.warning("assist: chat list unavailable", exc_info=True)
+        return []
+    finally:
+        session.close()
+    return [{"id": row.id, "agent": row.agent_id, "title": str(row.title or "")[:120], "last_used": _when(row.updated_at_ms)}
+            for row in rows]
+
+
+def _when(ms) -> str:
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat(timespec="minutes")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
 
 
 class TranscribeRequest(BaseModel):

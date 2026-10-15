@@ -20,7 +20,7 @@ interface Props {
   agentName: string;
   /** The newest lines of the chat on screen, for Boss to read with the screenshot. */
   getContext: () => string;
-  /** Opens an agent (its id) or a page ("readiness", "boss") when the learner asks Boss to. */
+  /** Opens an agent (its id), a page ("readiness", "boss") or one of the learner's chats ("chat:<id>") when they ask Boss to. */
   onNavigate?: (target: string) => void;
 }
 
@@ -224,6 +224,7 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     let closing = false;
     const act = (action: AssistAction) => {
       if (action.type === "close") closing = true;
+      else if (action.type === "chat") onNavigate?.(`chat:${action.chat_id}`);
       else onNavigate?.(action.target);
     };
     const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text }]);
