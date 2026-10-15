@@ -57,11 +57,11 @@ export function ScoreRing({ score, band, size = 148 }: { score: number | null; b
 /** How each agent measures progress inside a level, in the learner's words. */
 const AREA_EXPLANATION: Record<string, string> = {
   codeforge_agent: "the problems you solved at your level's difficulty (Easy for Beginner, then Medium, then Hard), out of every such problem in the technologies you practise.",
-  mock_interview_agent: "the average overall score of your last 5 completed interviews (out of 10, shown out of 100).",
-  aptitude_agent: "the average percentage of your last 10 completed aptitude tests.",
+  mock_interview_agent: "your last 5 interviews at your level's difficulty: their overall scores (out of 10, shown out of 100) added up and divided by 5, so 5 perfect interviews complete the level.",
+  aptitude_agent: "your last 5 aptitude tests at your level's difficulty: their percentages added up and divided by 5, so 5 perfect tests complete the level.",
   communication_agent: "the average of your writing, speaking and pronunciation scores from your latest sessions.",
-  resume_builder_agent: "your best ATS score across your resumes. Run an ATS check to get one.",
-  capstone_project_agent: "your best graded capstone project score.",
+  resume_builder_agent: "Resume has no levels: its area score is your best ATS score across your resumes. Run an ATS check to get one.",
+  capstone_project_agent: "projects you passed: a project counts once its code grading AND its viva are passed. The first passed project completes Beginner, the second Medium, the third Hard, the fourth Professional. Code passed but viva still to do is half a level.",
   certificate_agent: "your best exam score in each certification topic, averaged.",
 };
 
@@ -142,17 +142,19 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
 
 function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (level: LevelId) => void; busy: boolean }) {
   const scored = area.status === "assessed" && area.score !== null;
+  // An area without levels (Resume) shows its own score, out of 100.
+  const leveled = area.leveled !== false;
   // The card shows how much of the current level is done (it starts from 0
   // at every new level). The area score -- 25 points for each level -- is
   // what counts toward job readiness.
-  const perLevel = scored && typeof area.level_progress === "number";
+  const perLevel = scored && leveled && typeof area.level_progress === "number";
   const shown = perLevel ? area.level_progress as number : area.score as number;
   return (
     <div className={`rd-area status-${area.status}`}>
       <div className="rd-area-head">
         <div>
           <h3>{area.label}</h3>
-          <span className="rd-weight">{area.levels_completed?.length ?? 0} of 4 levels completed</span>
+          <span className="rd-weight">{leveled ? `${area.levels_completed?.length ?? 0} of 4 levels completed` : "No levels"}</span>
         </div>
         <div className="rd-area-score">
           {scored ? <><b>{Math.round(shown)}</b><span>{perLevel ? `% ${LEVEL_LABELS[area.level]}` : "/100"}</span></> : <span className="rd-muted">
@@ -160,15 +162,17 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         </div>
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? Math.min(100, shown) : 0}%` }} /></div>
-      {scored && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each completed level</p>}
+      {scored && leveled && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each completed level</p>}
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
-      {area.promoted_from && (
+      {leveled && area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
       )}
-      <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} unlockAt={area.unlock_at}
-        scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
-      <LevelProgress area={area} />
-      {area.suggested_level && area.suggested_level !== area.level && (
+      {leveled && <>
+        <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} unlockAt={area.unlock_at}
+          scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
+        <LevelProgress area={area} />
+      </>}
+      {leveled && area.suggested_level && area.suggested_level !== area.level && (
         <button type="button" className="rd-suggest" disabled={busy} onClick={() => onLevel(area.suggested_level as LevelId)}>
           <b>{LEVEL_LABELS[area.suggested_level]}</b> is unlocked — switch
         </button>
@@ -183,7 +187,9 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
       {AREA_EXPLANATION[area.agent_name] && (
         <details className="rd-how">
           <summary>How this score works</summary>
-          <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "complete every problem of your level to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
+          {leveled
+            ? <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "finish your level (100%) to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
+            : <p>{AREA_EXPLANATION[area.agent_name]}</p>}
         </details>
       )}
     </div>

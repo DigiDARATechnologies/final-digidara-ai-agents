@@ -95,9 +95,14 @@ def chat_assist_stream(req: assist.AssistRequest, request: Request, user_id: str
     logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
                 user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
 
+    # The learner's own profile and progress, so Boss can answer "how am I
+    # doing in aptitude?" -- never another learner's.
+    learner = _learner_context(user_id, req.message)
+    progress = _own_progress(user_id)
+
     def events():
         try:
-            for event in assist.stream_assist(req):
+            for event in assist.stream_assist(req, learner, progress):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("assist turn failed")
@@ -160,6 +165,20 @@ def _learner_context(user_id: str, question: str = "") -> dict | None:
     if remembered:
         context = {**(context or {}), "conversation_memory": remembered}
     return context or None
+
+
+def _own_progress(user_id: str) -> list[dict] | None:
+    """The areas of the learner's latest Job Readiness snapshot; None when
+    it cannot be read (Boss then says the data is not available)."""
+    from app.readiness import service as readiness_service  # local import: readiness pulls in the A2A client
+
+    try:
+        snapshot = readiness_service.latest(user_id)
+    except Exception:
+        logger.warning("assist: readiness snapshot unavailable", exc_info=True)
+        return None
+    areas = ((snapshot.areas or {}).get("areas") if snapshot else None) or []
+    return [area for area in areas if isinstance(area, dict)]
 
 
 class TranscribeRequest(BaseModel):

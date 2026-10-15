@@ -14,10 +14,15 @@ export interface AssistRequest {
   voice?: boolean;
 }
 
+/** What Boss asked the browser to do: open an agent or page, or close Boss.
+ * The server only sends targets from its own list. */
+export type AssistAction = { type: "open"; target: string } | { type: "close" };
+
 /** Boss guiding a learner on any screen (POST /chat/assist/stream): `onText`
- * gets the answer so far each time more of it arrives. Resolves with the full
- * answer. */
-export async function assistStream(request: AssistRequest, onText: (text: string) => void, signal?: AbortSignal): Promise<string> {
+ * gets the answer so far each time more of it arrives, `onAction` the action
+ * Boss chose (if any). Resolves with the full answer. */
+export async function assistStream(request: AssistRequest, onText: (text: string) => void, signal?: AbortSignal,
+  onAction?: (action: AssistAction) => void): Promise<string> {
   const token = sessionToken();
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/assist/stream`, {
     method: "POST",
@@ -51,8 +56,11 @@ export async function assistStream(request: AssistRequest, onText: (text: string
       buffer = buffer.slice(boundary + 2);
       boundary = buffer.indexOf("\n\n");
       if (!line.startsWith("data:")) continue;
-      const event = JSON.parse(line.slice(5)) as { delta?: string; replace?: string; done?: boolean; reply?: string; error?: string };
+      const event = JSON.parse(line.slice(5)) as {
+        delta?: string; replace?: string; done?: boolean; reply?: string; error?: string; action?: AssistAction;
+      };
       if (event.error) throw new Error(event.error);
+      if (event.action) onAction?.(event.action);
       if (event.delta) { text += event.delta; onText(text); }
       if (event.replace !== undefined) { text = event.replace; onText(text); }
       if (event.done) return event.reply ?? text;

@@ -3,6 +3,12 @@
 Score: the best graded project score (0-100) across the learner's
 submissions. A project that is chosen but not yet graded has no score; the
 summary says what is left to do instead.
+
+Levels: projects do not have a difficulty, so a level is a passed project --
+one that passed BOTH the code grading and the viva. The first passed project
+completes Beginner, the second Medium, the third Hard, the fourth
+Professional. A project whose code passed but whose viva is not passed yet
+is half of the next level.
 """
 from __future__ import annotations
 
@@ -16,6 +22,22 @@ from app.db.models import AssignmentStatus, ProjectAssignment, Student, Submissi
 from app.api.role_periods import clean_periods, in_periods
 
 GRADED = {SubmissionStatus.graded, SubmissionStatus.pending_viva}
+LEVEL_KEYS = ("easy", "medium", "hard", "professional")
+
+
+def _code_passed(submission: Submission) -> bool:
+    score = submission.score_json or {}
+    return (submission.status in GRADED and isinstance(score.get("final_score"), (int, float))
+            and score.get("passed") is not False)
+
+
+def level_scores(submissions: list[Submission]) -> dict[str, float]:
+    """Progress (0-100) at each level, counted in passed projects."""
+    passed = {s.assignment_id for s in submissions if _code_passed(s) and s.viva_passed is True}
+    waiting = {s.assignment_id for s in submissions if _code_passed(s)} - passed
+    done = len(passed)
+    return {key: 100.0 if done > index else 50.0 if done == index and waiting else 0.0
+            for index, key in enumerate(LEVEL_KEYS)}
 
 
 def _title(assignment: ProjectAssignment) -> str:
@@ -78,7 +100,9 @@ def build_student_summary(assignments: list[ProjectAssignment], submissions: lis
             "submissions": len(submissions),
             "graded": len(graded),
             "viva_passed": bool(best and best.viva_passed),
+            "projects_passed": len({s.assignment_id for s in submissions if _code_passed(s) and s.viva_passed is True}),
         },
+        "level_scores": level_scores(submissions),
         "resume": {"projects": _resume_projects(assignments, submissions)},
     }
 

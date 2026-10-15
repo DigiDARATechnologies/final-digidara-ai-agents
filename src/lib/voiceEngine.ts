@@ -15,6 +15,7 @@ import { speakableText, splitForSpeech } from "./voiceText";
 import { loadVoicePrefs, voiceLanguagePreference, type VoicePrefs } from "./voicePrefs";
 import { sessionToken } from "./session";
 import { pickIndianVoice } from "./indianVoice";
+import { VOICE_API_BASE } from "./voiceApiBase";
 
 export { pickIndianVoice };
 
@@ -29,10 +30,7 @@ export interface SpeakHandlers {
   pace?: "normal" | "brisk";
 }
 
-const BASE = (() => {
-  const raw = import.meta.env.VITE_GATEWAY_API_URL !== undefined ? String(import.meta.env.VITE_GATEWAY_API_URL) : "http://127.0.0.1:8100";
-  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-})();
+const BASE = VOICE_API_BASE;
 
 
 let session = 0;
@@ -157,7 +155,9 @@ async function playThroughContext(text: string, prefs: VoicePrefs, pace: string,
   await new Promise<void>((resolve) => {
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.value = prefs.speed;
+    // Played at its own speed: a buffer source's playbackRate also raises the
+    // pitch, which made this piece sound like a different person.
+    source.playbackRate.value = 1;
     const gain = context.createGain();
     gain.gain.value = VOICE_GAIN;
     source.connect(gain).connect(context.destination);
@@ -258,6 +258,11 @@ function playAudio(audio: HTMLAudioElement, prefs: VoicePrefs, onFirstPlay: () =
   });
 }
 
+/** Pieces made after the opening are joined up to this length, and wait this
+ * long for more of the reply before they are made. */
+const MERGED_PIECE_MAX = 260;
+const JOIN_WAIT_MS = 350;
+
 export interface SpeechQueue {
   /** Add text to say after what is already queued (a reply as it streams in). */
   push(text: string): void;
@@ -282,7 +287,7 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
   const enabled = prefs.enabled || force;
   const mySession = session;
   const texts: string[] = [];
-  const prepared: Promise<HTMLAudioElement | null>[] = [];
+  const prepared: Array<Promise<HTMLAudioElement | null> | undefined> = [];
   let closed = false;
   let running = false;
   let started = false;
@@ -304,14 +309,27 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
     resolveStarted(started);
     handlers.onEnd?.();
   };
-  const prepare = (index: number) => {
-    if (index < texts.length && !prepared[index]) prepared[index] = prepareVoice(texts[index], prefs, pace);
+  // Every piece is generated on its own, and each generation can come out
+  // with a slightly different accent: so after the opening words, the pieces
+  // that have arrived are joined into as few as possible before they are made.
+  const prepare = (at: number) => {
+    if (at >= texts.length || prepared[at]) return;
+    while (at > 0 && at + 1 < texts.length && !prepared[at + 1] && texts[at].length + texts[at + 1].length < MERGED_PIECE_MAX) {
+      texts.splice(at, 2, `${texts[at]} ${texts[at + 1]}`);
+      prepared.splice(at + 1, 1);
+    }
+    prepared[at] = prepareVoice(texts[at], prefs, pace);
   };
 
-  // How far ahead pieces are generated: while one plays, the next two are
-  // already being made, so there is no gap between sentences or clauses.
-  const AHEAD = 2;
+  // The next piece is made while this one plays -- not as soon as its first
+  // clause arrives, so the text written meanwhile becomes one piece.
   let index = 0;
+  let playing = -1;
+  let nextTimer: ReturnType<typeof setTimeout> | undefined;
+  const prepareNext = () => {
+    clearTimeout(nextTimer);
+    nextTimer = setTimeout(() => { if (mySession === session && playing === index) prepare(index + 1); }, JOIN_WAIT_MS);
+  };
   const run = async () => {
     running = true;
     speaking = true;
@@ -322,16 +340,21 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
         waker.wake = null;
         continue;
       }
-      for (let ahead = index; ahead <= index + AHEAD; ahead += 1) prepare(ahead);
-      const audio = await prepared[index];
+      prepare(index);
+      const audio = (await prepared[index]) ?? null;
       if (mySession !== session) {
         release(audio);
         break;
       }
       let heard = false;
+      const onPlay = () => {
+        markStarted();
+        playing = index;
+        prepareNext();
+      };
       if (audio) {
         try {
-          await playAudio(audio, prefs, markStarted);
+          await playAudio(audio, prefs, onPlay);
           heard = true;
         } catch {
           // The element could not play (a phone not started by a tap).
@@ -341,13 +364,14 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
       // used: it would sound like a different person on each device.
       if (!heard && mySession === session) {
         try {
-          await playThroughContext(texts[index], prefs, pace, markStarted);
+          await playThroughContext(texts[index], prefs, pace, onPlay);
         } catch {
           // This piece is skipped; the reply is on screen.
         }
       }
       index += 1;
     }
+    clearTimeout(nextTimer);
     for (const pending of prepared.slice(index)) void pending?.then(release);
     finish();
   };
@@ -360,8 +384,9 @@ export function createSpeechQueue(handlers: SpeakHandlers = {}, force = false): 
       const pieces = splitForSpeech(speakableText(text), texts.length === 0);
       if (!pieces.length) return;
       texts.push(...pieces);
-      // Text arriving while earlier pieces play starts being generated now.
-      if (running) for (let ahead = index; ahead <= index + AHEAD; ahead += 1) prepare(ahead);
+      // Text arriving while a piece plays is made next, joined with whatever
+      // else arrives in the meantime.
+      if (running && playing === index && !prepared[index + 1]) prepareNext();
       if (!running) void run();
       waker.wake?.();
     },

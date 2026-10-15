@@ -100,6 +100,8 @@ export interface MemberArea {
   level_scores: Partial<Record<LevelId, number>>;
   levels_completed: LevelId[];
   quality_score: number | null;
+  /** false: no levels (Resume); `score` is its own result. */
+  leveled?: boolean;
 }
 
 export interface MemberDetail {

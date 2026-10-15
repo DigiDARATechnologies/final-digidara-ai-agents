@@ -31,7 +31,7 @@ jest.mock('../../src/hooks/useSpeechRecognition', () => ({
   default: () => ({ supported: true, listening: false, transcribing: false, error: '', start: mockStart, stop: jest.fn(), cancel: jest.fn() }),
 }));
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import BossAssistant from '../../src/components/BossAssistant';
+import BossAssistant, { CLOSE_PHRASE } from '../../src/components/BossAssistant';
 import { refersToScreen, withoutWakeWords } from '../../src/lib/assistText';
 import { setBossVoiceOpener, setVoiceConversationOpen } from '../../src/lib/voiceReply';
 
@@ -181,4 +181,43 @@ test('while the Boss chat voice conversation is open, "Hey Boss" and the Boss bu
   act(() => { setVoiceConversationOpen(false); });
   expect(mockWake).not.toBeNull();
   expect(screen.getByLabelText('Ask Boss for help with this screen')).toBeTruthy();
+});
+
+test('"close the tab" closes Boss straight away, without asking the server', async () => {
+  for (const said of ['close the tab', 'Please close Boss', 'you can close this', 'close this panel.', 'close']) {
+    expect(CLOSE_PHRASE.test(said)).toBe(true);
+  }
+  expect(CLOSE_PHRASE.test('how do I close my account')).toBe(false);
+  mockStart.mockImplementation((onResult: (text: string, final: boolean) => void) => { onResult('Hey Boss, close the tab', true); return true; });
+  openBoss();
+  await act(async () => { fireEvent.click(screen.getByLabelText('Talk to Boss')); });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(mockAssist).not.toHaveBeenCalled();
+});
+
+test('Boss opens the agent the learner asked for, and closes after saying goodbye when asked', async () => {
+  const onNavigate = jest.fn();
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Opening the Aptitude Trainer.');
+    onAction({ type: 'open', target: 'aptitude' });
+    return 'Opening the Aptitude Trainer.';
+  });
+  render(<BossAssistant agentId="" agentName="Job readiness" getContext={() => ''} onNavigate={onNavigate} />);
+  fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
+  await ask('switch to the aptitude agent');
+  expect(onNavigate).toHaveBeenCalledWith('aptitude');
+  expect(screen.getByRole('dialog')).toBeTruthy();
+
+  mockStart.mockImplementation((onResult: (text: string, final: boolean) => void) => { onResult('I am done for today, thank you so much', true); return true; });
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Bye for now!');
+    onAction({ type: 'close' });
+    return 'Bye for now!';
+  });
+  await act(async () => { fireEvent.click(screen.getByLabelText('Talk to Boss')); });
+  await waitFor(() => expect(mockAssist).toHaveBeenCalledTimes(2));
+  // Still open while the goodbye is spoken; closed once it ends.
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  await act(async () => { mockQueueHandlers.onEnd?.(); });
+  expect(screen.queryByRole('dialog')).toBeNull();
 });

@@ -1,6 +1,7 @@
 """Job readiness: one score per learner, combined from every agent over A2A.
 
-Scores count completed levels only. Each of the four levels is worth
+Scores count completed levels only (the Resume Builder has no levels: its
+area score is its best ATS score). Each of the four levels is worth
 LEVEL_POINTS (25), so an area with Beginner completed scores 25, Medium 50,
 Hard 75 and Professional 100; progress inside a level is shown on its own
 (level_progress) and adds nothing until the level is complete. The overall
@@ -117,7 +118,7 @@ def summarize_reply(data: Any) -> dict:
     """Validate one agent's student summary; anything unexpected is dropped."""
     if not isinstance(data, dict):
         return {"score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {},
-                "resume": {}, "level_scores": {}}
+                "resume": {}, "level_scores": {}, "recent": []}
     activity = data.get("activity_count")
     metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
     return {
@@ -129,7 +130,31 @@ def summarize_reply(data: Any) -> dict:
         "metrics": {str(k)[:60]: v for k, v in list(metrics.items())[:20] if isinstance(v, (str, int, float, bool)) or v is None},
         "resume": _resume_block(data.get("resume")),
         "level_scores": _level_scores(data.get("level_scores")),
+        "recent": _recent(data.get("recent")),
     }
+
+
+RECENT_LIMIT = 10
+
+
+def _recent(value: Any) -> list[dict]:
+    """An agent's latest dated activities (newest first), e.g. each aptitude
+    test with its date and score, so the learner can ask Boss about them."""
+    if not isinstance(value, list):
+        return []
+    rows = []
+    for row in value[:RECENT_LIMIT]:
+        if not isinstance(row, dict) or not _text(row.get("date"), 32):
+            continue
+        item: dict[str, Any] = {"date": _text(row.get("date"), 32)}
+        for field, size in (("title", 120), ("level", 20)):
+            if _text(row.get(field), size):
+                item[field] = _text(row.get(field), size)
+        score = _clamp_score(row.get("score"))
+        if score is not None:
+            item["score"] = score
+        rows.append(item)
+    return rows
 
 
 def _level_scores(value: Any) -> dict[str, float]:
@@ -158,13 +183,18 @@ async def _area(agent_name: str, label: str, weight: int, user, levels: dict, pe
     if agent_name in LEVEL_PROGRESS_AGENTS:
         request["difficulty"] = level_rules.agent_difficulty(agent_name, level)
     result = await a2a_client.send(agent_name, "get_student_summary", request, user, CALLER)
-    base = {"agent_name": agent_name, "label": label, "weight": weight, "level": level}
+    leveled = agent_name not in level_rules.UNLEVELED_AGENTS
+    base = {"agent_name": agent_name, "label": label, "weight": weight, "level": level if leveled else None,
+            "leveled": leveled}
     if result.state != "completed":
         return {**base, "status": "unavailable", "reason": result.error or "No summary from this agent yet.",
                 "score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [],
                 "metrics": {}, "suggested_level": None, **_level_fields(level, None, "score", agent_name)}
     summary = summarize_reply(result.data)
     status = "assessed" if summary["score"] is not None else "not_started"
+    if not leveled:
+        return {**base, "status": status, **summary, "level_progress": None, "level_progress_basis": "score",
+                "next_level": None, "can_level_up": False, "unlock_at": None, "suggested_level": None}
     measured = summary["level_scores"].get(level)
     progress, basis = (measured, "level") if measured is not None else (summary["score"], "score")
     fields = _level_fields(level, progress, basis, agent_name)
@@ -224,7 +254,7 @@ def completed_levels(area: dict) -> list[str]:
     """The levels this area has completed (100% of the level done). A level
     below the current one counts as completed when the agent does not
     measure each level -- the learner moved past it."""
-    if area.get("status") != "assessed":
+    if area.get("status") != "assessed" or area.get("leveled") is False:
         return []
     current = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
     measured = area.get("level_progress_basis") == "level"
@@ -241,9 +271,12 @@ def completed_levels(area: dict) -> list[str]:
 
 
 def level_score(area: dict) -> float | None:
-    """The area's 0-100 score: LEVEL_POINTS for each completed level."""
+    """The area's 0-100 score: LEVEL_POINTS for each completed level; an
+    area without levels scores its own result."""
     if area.get("status") != "assessed":
         return None
+    if area.get("leveled") is False:
+        return area.get("quality_score")
     return round(LEVEL_POINTS * len(completed_levels(area)), 1)
 
 
@@ -345,6 +378,7 @@ def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
             "score": a.get("score"), "status": a.get("status"), "level": a.get("level"),
             "level_progress": a.get("level_progress"), "level_scores": a.get("level_scores") or {},
             "levels_completed": a.get("levels_completed") or [], "quality_score": a.get("quality_score"),
+            "leveled": a.get("leveled", True),
         }
         for a in stored if isinstance(a, dict) and a.get("agent_name")
     }
@@ -421,7 +455,8 @@ async def get(user, refresh: bool = False) -> dict:
         if not isinstance(area, dict) or not area.get("agent_name"):
             continue
         level = levels.get(area["agent_name"], {}).get("level", area.get("level"))
-        if level != area.get("level") or "levels_completed" not in area:
+        leveled = area["agent_name"] not in level_rules.UNLEVELED_AGENTS
+        if (leveled and level != area.get("level")) or "levels_completed" not in area or area.get("leveled") is not leveled:
             # A level changed, or the snapshot predates level-based scores:
             # the area scores and the overall have to be worked out again.
             return await compute(user)

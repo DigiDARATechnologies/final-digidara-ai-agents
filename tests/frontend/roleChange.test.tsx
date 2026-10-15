@@ -135,3 +135,26 @@ test('no switch button with only one role', async () => {
   await screen.findByRole('button', { name: 'Edit profile' });
   expect(screen.queryByRole('button', { name: /Switch role/ })).toBeNull();
 });
+
+test('the Resume card has no levels and shows its own ATS score', async () => {
+  const area = (extra: object) => ({
+    status: 'assessed', weight: 10, activity_count: 3, last_activity_at: null, strengths: [], gaps: [], metrics: {},
+    suggested_level: null, levels_completed: [], ...extra,
+  });
+  mocked.fetchReadiness.mockResolvedValue({
+    ...readiness, overall: 20, band: 'not_ready', coverage: { assessed: 2, total: 7 },
+    areas: [
+      area({ agent_name: 'resume_builder_agent', label: 'Resume', level: null, leveled: false, score: 86, quality_score: 86, level_progress: null }),
+      area({ agent_name: 'capstone_project_agent', label: 'Projects', level: 'beginner', score: 25, levels_completed: ['beginner'],
+        level_progress: 50, level_progress_basis: 'level', level_scores: { beginner: 100, medium: 50 } }),
+    ],
+  } as unknown as Readiness);
+  render(<ReadinessView summary={summary('ai engineer')} onSummaryChange={jest.fn()} onBack={jest.fn()} onToast={jest.fn()} />);
+  const resume = (await screen.findByRole('heading', { name: 'Resume' })).closest('.rd-area') as HTMLElement;
+  expect(resume).toHaveTextContent('No levels');
+  expect(resume).toHaveTextContent('86/100');
+  expect(resume).not.toHaveTextContent('Beginner');
+  const projects = screen.getByRole('heading', { name: 'Projects' }).closest('.rd-area') as HTMLElement;
+  expect(projects).toHaveTextContent('1 of 4 levels completed');
+  expect(projects).toHaveTextContent('Area score 25/100');
+});

@@ -746,6 +746,19 @@ export default function App() {
     showToast(saveProfilePrefs(user.id, next) ? "Profile updated." : "Profile updated for this session, but it could not be saved on this device.");
   }
 
+  /** Boss was asked to open an agent or a page: it goes there, like the sidebar would. */
+  function bossNavigate(target: string) {
+    setSettingsOpen(false);
+    if (target === "readiness") {
+      switchView("readiness");
+      return;
+    }
+    const agent = findAgent(target === "boss" ? DEFAULT_AGENT.id : target);
+    if (!agent) return;
+    setView("chat");
+    openAgentChat(agent.id);
+  }
+
   function switchView(next: View) {
     setView(next);
     if (next === "store") {
@@ -2199,6 +2212,7 @@ export default function App() {
 
       {user && (
         <BossAssistant
+          onNavigate={bossNavigate}
           agentId={view === "chat" && !newChatPending && currentChat ? currentAgent.id : ""}
           agentName={view === "chat" && !newChatPending && currentChat ? currentAgent.name : topbarTitle}
           getContext={() => (view === "chat" && !newChatPending && currentChat

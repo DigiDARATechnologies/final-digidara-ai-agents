@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { assistStream } from "../lib/assistApi";
+import { assistStream, type AssistAction } from "../lib/assistApi";
 import { refersToScreen, withoutWakeWords } from "../lib/assistText";
 import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { captureScreenshot, SCREENSHOT_HIDE_ATTRIBUTE } from "../lib/screenCapture";
@@ -20,6 +20,8 @@ interface Props {
   agentName: string;
   /** The newest lines of the chat on screen, for Boss to read with the screenshot. */
   getContext: () => string;
+  /** Opens an agent (its id) or a page ("readiness", "boss") when the learner asks Boss to. */
+  onNavigate?: (target: string) => void;
 }
 
 interface Turn {
@@ -35,6 +37,8 @@ const WAKE_KEY = "digidara.heyBoss";
 const PAUSE_MS = 1_500;
 /** "Thanks Boss", "that's all", "bye": the learner is done, so the conversation ends. */
 const END_PHRASE = /^(?:ok(?:ay)?[\s,]+)?(?:thanks?(?:\s+you)?(?:\s+boss)?|thank\s+you\s+boss|that'?s\s+all|that\s+is\s+all|bye(?:\s+boss)?|good\s?bye|stop|stop\s+listening|close|exit|end)[\s.!]*$/i;
+/** "Close the tab", "please close Boss", "you can close this": Boss closes. */
+export const CLOSE_PHRASE = /^(?:(?:ok(?:ay)?|please|now)[\s,]+)*(?:you\s+can\s+|can\s+you\s+)?(?:close|exit|hide|shut)(?:\s+(?:(?:the|this|that|your)\s+)?(?:tab|panel|window|boss|chat|assistant|it|this|yourself)(?:\s+(?:tab|panel|window))?)?(?:[\s,]+(?:please|boss))*[\s.!]*$/i;
 
 function readWakePreference(): boolean {
   try {
@@ -55,7 +59,7 @@ function readWakePreference(): boolean {
  * learner, and in a test it gives hints, not answers (the limits are enforced
  * by the server, app/orchestrator/assist.py).
  */
-export default function BossAssistant({ agentId, agentName, getContext }: Props) {
+export default function BossAssistant({ agentId, agentName, getContext, onNavigate }: Props) {
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -168,6 +172,10 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
         window.setTimeout(() => listenRef.current(), 800);
         return;
       }
+      if (CLOSE_PHRASE.test(withoutWakeWords(said))) {
+        close();
+        return;
+      }
       if (END_PHRASE.test(withoutWakeWords(said))) {
         endConversation();
         return;
@@ -206,11 +214,18 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
         onStart: () => setSpeaking(true),
         onEnd: () => {
           setSpeaking(false);
-          if (conversationRef.current && openRef.current) window.setTimeout(() => listenRef.current(), 150);
+          if (closing) close();
+          else if (conversationRef.current && openRef.current) window.setTimeout(() => listenRef.current(), 150);
         },
       }, true)
       : null;
     let queued = 0;
+    // "Close the tab": Boss says goodbye, then closes. "Open aptitude": it goes there and keeps helping.
+    let closing = false;
+    const act = (action: AssistAction) => {
+      if (action.type === "close") closing = true;
+      else onNavigate?.(action.target);
+    };
     const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text }]);
     try {
       const reply = await assistStream({
@@ -220,9 +235,10 @@ export default function BossAssistant({ agentId, agentName, getContext }: Props)
         if (!queue) return;
         const ready = readyToSpeak(text, queued, queued === 0);
         if (ready.text) { queue.push(ready.text); queued = ready.next; }
-      }, controller.signal);
+      }, controller.signal, act);
       show(reply);
       if (queue) { queue.push(reply.slice(queued)); queue.end(); }
+      else if (closing) window.setTimeout(close, 1_200);
     } catch (failure) {
       queue?.end();
       if ((failure as Error).name !== "AbortError") {
