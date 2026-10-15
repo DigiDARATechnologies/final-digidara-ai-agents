@@ -30,6 +30,44 @@ def test_stream_with_tools_yields_text_then_a_tool_choice(monkeypatch):
     assert out == [("text", "Hi "), ("text", "there!"), ("tool", {"tool_name": "open_mock", "tool_args": {"q": 1}})]
 
 
+def test_a_slow_first_word_sends_a_second_request_and_the_faster_one_wins(monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(llm_client, "HEDGE_AFTER_SECONDS", 0.05)
+    calls = []
+
+    def completion(**kw):
+        calls.append(1)
+        if len(calls) == 1:  # the first request stalls
+            _time.sleep(0.5)
+            return iter([_chunk("slow")])
+        return iter([_chunk("fast "), _chunk("answer")])
+
+    monkeypatch.setattr(llm_client.litellm, "completion", completion)
+    out = list(llm_client.stream_with_tools("sys", "hi", []))
+    assert out == [("text", "fast "), ("text", "answer")] and len(calls) == 2
+
+
+def test_a_quick_first_word_sends_only_one_request(monkeypatch):
+    monkeypatch.setattr(llm_client, "HEDGE_AFTER_SECONDS", 2)
+    calls = []
+    monkeypatch.setattr(llm_client.litellm, "completion", lambda **kw: calls.append(1) or iter([_chunk("Hi")]))
+    assert list(llm_client.stream_with_tools("sys", "hi", [])) == [("text", "Hi")] and len(calls) == 1
+
+
+def test_a_failed_request_with_no_second_one_still_raises(monkeypatch):
+    import pytest
+
+    monkeypatch.setattr(llm_client, "HEDGE_AFTER_SECONDS", 2)
+
+    def completion(**kw):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(llm_client.litellm, "completion", completion)
+    with pytest.raises(RuntimeError, match="provider down"):
+        list(llm_client.stream_with_tools("sys", "hi", []))
+
+
 def test_streamed_route_sends_the_answer_in_pieces(monkeypatch):
     monkeypatch.setattr(graph, "load_registry_node", lambda state: {"tools": [], "agents": []})
     seen = {}

@@ -263,3 +263,11 @@ button.og-band { cursor: pointer; }
 .og-consent { margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--canvas-accent-soft); color: var(--tx-1); font-size: 13px; line-height: 1.5; }
 .rd-derived-level { color: var(--tx-2); font-size: 14px; }
 .rd-derived-level b { color: var(--tx-1); }
+
+/* Switch role: every role the learner has worked towards. */
+.rd-role-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rd-role-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 10px; }
+.rd-role-item > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rd-role-item strong { text-transform: capitalize; }
+.rd-role-item small { overflow-wrap: anywhere; }
+.rd-role-item.current { border-style: dashed; }

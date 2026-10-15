@@ -110,3 +110,28 @@ test('any other role gets suggested skills, and saving needs at least one', asyn
   expect(screen.getByRole('alert')).toHaveTextContent('Add at least one skill for blockchain developer');
   expect(mocked.saveLearnerProfile).not.toHaveBeenCalled();
 });
+
+test('a learner with two roles can switch between them from the readiness page', async () => {
+  const history = [
+    { role: 'ai engineer', skills: ['python'], levels: {} },
+    { role: 'data analyst', skills: ['sql', 'excel'], levels: { mock_interview: 'medium' as const } },
+  ];
+  mocked.saveLearnerProfile.mockResolvedValue(summary('data analyst', history));
+  render(<ReadinessView summary={summary('ai engineer', history)} onSummaryChange={jest.fn()} onBack={jest.fn()} onToast={jest.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Switch role (2)' }));
+  const picker = screen.getByRole('dialog', { name: 'Switch role' });
+  expect(picker).toHaveTextContent('Current role');
+  expect(picker).toHaveTextContent('sql, excel · 1 level above Beginner');
+  fireEvent.click(screen.getByRole('button', { name: 'Switch' }));
+  const dialog = await screen.findByRole('alertdialog');
+  expect(dialog).toHaveTextContent('its levels and points come back');
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, change role' }));
+  await waitFor(() => expect(mocked.saveLearnerProfile).toHaveBeenCalledWith(
+    { target_role: 'data analyst', degree: 'm.sc', skills: ['sql', 'excel'], experience: 'fresher' }));
+});
+
+test('no switch button with only one role', async () => {
+  render(<ReadinessView summary={summary('ai engineer', [{ role: 'ai engineer', levels: {} }])} onSummaryChange={jest.fn()} onBack={jest.fn()} onToast={jest.fn()} />);
+  await screen.findByRole('button', { name: 'Edit profile' });
+  expect(screen.queryByRole('button', { name: /Switch role/ })).toBeNull();
+});

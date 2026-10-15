@@ -49,6 +49,12 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   const openRef = useRef(true);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // The loop below runs from callbacks made on earlier renders (a reply's
+  // speech ends -> listen -> send). They must send with today's onSend: an
+  // old one carries an old copy of the chat, and saving it cut the reply
+  // that was still streaming back to its first word ("Hell").
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
   // How many messages there were when the last question was sent: the next
   // agent message after that is its reply.
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
@@ -92,7 +98,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       heldRef.current = "";
       awaitingFromRef.current = messagesRef.current.length;
       setPhase("thinking");
-      onSend(question);
+      onSendRef.current(question);
     }, {
       autoStopOnSilence: true,
       silenceMs: CONVERSATION_PAUSE_MS,

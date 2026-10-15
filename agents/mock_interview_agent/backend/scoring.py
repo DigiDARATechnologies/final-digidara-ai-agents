@@ -1,5 +1,9 @@
 """Deterministic per-question scoring for completed interviews."""
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 VERDICT_MARKS = {
     "correct": 1,
     "partial": 0.5,
@@ -84,3 +88,36 @@ def build_scorecard(rows):
     )
     max_marks = len(scorecard)
     return scorecard, total_marks, max_marks
+
+
+# How far the evaluator's 0-10 overall score may stray from the per-question
+# marks. The marks are the ground truth the learner sees on the scorecard.
+MARKS_TOLERANCE = 1.5
+
+
+def align_scores_with_marks(result, total_marks, max_marks):
+    """Keep the overall and accuracy scores consistent with the scorecard.
+
+    The final evaluator writes its 0-10 scores without seeing the verdicts'
+    arithmetic, so it can say 8/10 for an interview with one of five answers
+    correct. Clamp both into a band around the marks' share out of 10.
+    Communication and confidence describe delivery, not correctness, and
+    are left alone.
+    """
+    if not max_marks:
+        return result
+    anchor = float(total_marks) / max_marks * 10
+    low = max(0.0, anchor - MARKS_TOLERANCE)
+    high = min(10.0, anchor + MARKS_TOLERANCE)
+    for field in ("overall_score", "technical_accuracy"):
+        value = result.get(field)
+        if value is None:
+            continue
+        clamped = round(min(high, max(low, float(value))), 1)
+        if clamped != float(value):
+            logger.info(
+                "Aligned %s with scorecard marks: %s -> %s (marks %s/%s)",
+                field, value, clamped, total_marks, max_marks,
+            )
+        result[field] = clamped
+    return result
