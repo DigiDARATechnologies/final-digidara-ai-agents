@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import logoOnDark from "../assets/logo-navbar-dark.png";
-import logoOnLight from "../assets/logo-navbar-light.png";
+import logoOnDark from "../assets/logo-navbar-dark.webp";
+import logoOnLight from "../assets/logo-navbar-light.webp";
 import "./LandingPage.css";
 import AgentIcon from "./AgentIcon";
 

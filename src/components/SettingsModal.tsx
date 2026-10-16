@@ -25,6 +25,14 @@ export default function SettingsModal({ themePref = "dark", onThemeChange = () =
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  // Escape closes Settings, like the app's other dialogs -- but not while a
+  // delete or clear confirmation is open on top of it.
+  useEffect(() => {
+    if (!open || deleteConfirmOpen || clearConfirmOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose, deleteConfirmOpen, clearConfirmOpen]);
   useEffect(() => { if (!open) return; fetchAllUsageSummaries().then(setUsage); }, [open]);
   const [monthly, setMonthly] = useState<MonthlyUsage | null>(null);
   useEffect(() => { if (!open) return; fetchMonthlyUsage().then(setMonthly).catch(() => setMonthly(null)); }, [open]);

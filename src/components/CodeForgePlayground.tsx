@@ -31,6 +31,14 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
   const [result, setResult] = useState<PlaygroundResult | null>(null);
   const [running, setRunning] = useState(false);
 
+  // Escape closes it, like the app's other dialogs.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   useEffect(() => {
     if (!open || languages) return;
     listLanguages()

@@ -1,7 +1,7 @@
 import React from "react";
-import logoIcon from "../assets/logo-icon.png";
-import logoFull from "../assets/logo-full.png";
-import logoDark from "../assets/logo-dark.png";
+import logoIcon from "../assets/logo-icon.webp";
+import logoFull from "../assets/logo-full.webp";
+import logoDark from "../assets/logo-dark.webp";
 
 export interface LogoProps {
   variant?: "full" | "icon" | "wordmark";

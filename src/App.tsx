@@ -1,5 +1,5 @@
 import { autoChatTitle, nextChatTitle, type AgentStates } from "./lib/chatTitles";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
@@ -35,13 +35,10 @@ import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import OnboardingScreen from "./components/OnboardingScreen";
-import ReadinessView from "./components/ReadinessView";
-import OrganizationView from "./components/OrganizationView";
 import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
 import { setLearnerContext } from "./lib/learnerContext";
 import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
-import HelpPage from "./components/HelpPage";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
@@ -50,6 +47,18 @@ import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import BossAssistant from "./components/BossAssistant";
+// Screens most visits never open load on first use, so the first page load is smaller.
+const ReadinessView = lazy(() => import("./components/ReadinessView"));
+const OrganizationView = lazy(() => import("./components/OrganizationView"));
+const HelpPage = lazy(() => import("./components/HelpPage"));
+const ProfileView = lazy(() => import("./components/ProfileView"));
+const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
+const CodeForgeDashboard = lazy(() => import("./components/CodeForgeDashboard"));
+const AptitudeDashboard = lazy(() => import("./components/AptitudeDashboard"));
+const CommunicationDashboard = lazy(() => import("./components/CommunicationDashboard"));
+const ResumeBuilderDashboard = lazy(() => import("./components/ResumeBuilderDashboard"));
+const JobFetchDashboard = lazy(() => import("./components/JobFetchDashboard"));
+const AdminShell = lazy(() => import("./components/AdminShell"));
 import SharedLinkView from "./components/SharedLinkView";
 import { linkFromPath, rememberPendingLink, takePendingLink, type SharedLink } from "./lib/linkPaths";
 import ChatView from "./components/ChatView";
@@ -58,21 +67,13 @@ import LowPointsModal from "./components/LowPointsModal";
 import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
-import ProfileView from "./components/ProfileView";
 import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
 import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
 import Toast from "./components/Toast";
 import SaveIndicator from "./components/SaveIndicator";
-import AgentDashboard from "./components/AgentDashboard";
-import CodeForgeDashboard from "./components/CodeForgeDashboard";
-import AptitudeDashboard from "./components/AptitudeDashboard";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
 import CapstoneVivaPanel from "./components/CapstoneVivaPanel";
-import CommunicationDashboard from "./components/CommunicationDashboard";
-import ResumeBuilderDashboard from "./components/ResumeBuilderDashboard";
-import JobFetchDashboard from "./components/JobFetchDashboard";
-import AdminShell from "./components/AdminShell";
 import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
@@ -117,6 +118,11 @@ function toUser(authUser: AuthUser): User {
 
 
 type Theme = "dark" | "light";
+
+/** Shown for the moment a screen's code is still arriving (see the lazy imports above). */
+function ScreenLoading() {
+  return <div className="pv-page" role="status" aria-live="polite"><div className="pv-inner"><p className="rd-muted">Loading…</p></div></div>;
+}
 
 export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => {
@@ -659,6 +665,11 @@ export default function App() {
       setSessionToken(result.access_token);
       localStorage.setItem("digidara_user", JSON.stringify(newUser));
       setUser(newUser);
+      // Signed in: the address is the app's own again, not /login (which a
+      // bookmark or a refresh would otherwise keep), and signing out later
+      // returns to the home page.
+      if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
+      setShowLogin(false);
       setView("chat");
       setNewChatPending(true);
       setCurrentChatId(null);
@@ -2101,7 +2112,7 @@ export default function App() {
           )}
 
           {view === "profile" && (
-            <ProfileView
+            <Suspense fallback={<ScreenLoading />}><ProfileView
               user={displayUser ?? user}
               prefs={profilePrefs}
               onSaveProfile={handleSaveProfile}
@@ -2109,28 +2120,28 @@ export default function App() {
               planName={planName}
               onBack={startNewChatLanding}
               onUpgrade={() => { setSettingsTab("billing"); setSettingsOpen(true); }}
-            />
+            /></Suspense>
           )}
 
           {(view === "help-center" || view === "release-notes" || view === "contact" || view === "bug-report") && (
-            <HelpPage
+            <Suspense fallback={<ScreenLoading />}><HelpPage
               page={view}
               user={user}
               theme={theme}
               onBack={startNewChatLanding}
               onNavigate={(page) => switchView(page)}
               onToast={showToast}
-            />
+            /></Suspense>
           )}
 
-          {view === "admin" && user.isAdmin && <AdminShell user={user} onBack={() => switchView("store")} />}
+          {view === "admin" && user.isAdmin && <Suspense fallback={<ScreenLoading />}><AdminShell user={user} onBack={() => switchView("store")} /></Suspense>}
 
           {view === "readiness" && learnerSummary && (
-            <ReadinessView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+            <Suspense fallback={<ScreenLoading />}><ReadinessView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} /></Suspense>
           )}
 
           {view === "organization" && learnerSummary && (
-            <OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} />
+            <Suspense fallback={<ScreenLoading />}><OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} /></Suspense>
           )}
 
           {(view === "readiness" || view === "organization") && !learnerSummary && (
@@ -2222,22 +2233,22 @@ export default function App() {
                   : undefined}
               />
               {isCapstoneChat && dashboardOpen && capstoneState && (
-                <AgentDashboard user={user} state={capstoneState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><AgentDashboard user={user} state={capstoneState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
               {isCodeForgeChat && dashboardOpen && codeforgeState && (
-                <CodeForgeDashboard user={user} state={codeforgeState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><CodeForgeDashboard user={user} state={codeforgeState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
               {isAptitudeChat && dashboardOpen && aptitudeState && (
-                <AptitudeDashboard user={user} state={aptitudeState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><AptitudeDashboard user={user} state={aptitudeState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
               {isCommunicationChat && dashboardOpen && communicationState && (
-                <CommunicationDashboard user={user} state={communicationState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><CommunicationDashboard user={user} state={communicationState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
               {isResumeBuilderChat && dashboardOpen && resumeBuilderState && (
-                <ResumeBuilderDashboard user={user} state={resumeBuilderState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><ResumeBuilderDashboard user={user} state={resumeBuilderState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
               {isJobFetchChat && dashboardOpen && jobFetchState && (
-                <JobFetchDashboard user={user} state={jobFetchState} onClose={() => setDashboardOpen(false)} />
+                <Suspense fallback={<ScreenLoading />}><JobFetchDashboard user={user} state={jobFetchState} onClose={() => setDashboardOpen(false)} /></Suspense>
               )}
             </div>
           )}

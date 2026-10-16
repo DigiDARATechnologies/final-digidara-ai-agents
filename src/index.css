@@ -142,7 +142,7 @@
 html,body,#root{height:100%;}
 body{
   margin:0;
-  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-family:'Inter Variable','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   background:var(--page-bg);
   color:var(--text);
   -webkit-font-smoothing:antialiased;
@@ -957,6 +957,8 @@ body.glow-off .send-btn:hover{
 }
 .msg-action-btn:hover:not(:disabled){ background:var(--canvas-bg-soft); color:var(--canvas-text); }
 .msg-action-btn:disabled{ opacity:.4; cursor:default; }
+/* Touch screens: Copy / Listen / Edit are big enough to tap (they were about 18px tall). */
+@media (pointer: coarse){ .msg-action-btn{ min-height:32px; padding:6px 11px; font-size:12px; } }
 
 .bubble-edit{ display:flex; flex-direction:column; gap:8px; min-width:min(420px,70vw); }
 .bubble-edit-textarea{
@@ -1420,7 +1422,7 @@ body.glow-off .send-btn:hover{
    numerals wherever figures line up (stats, timers, tables, billing).
    Kept last so it refines earlier component rules without changing layout. */
 body{
-  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  font-family:'Inter Variable','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
   font-feature-settings:'cv11','ss01','calt','kern';
   font-optical-sizing:auto;
   letter-spacing:-.006em;
@@ -2504,6 +2506,8 @@ a{ color:var(--accent3); }
 :root[data-theme="dark"] .boss-panel-bar input,:root[data-theme="dark"] .boss-bar-btn{background:#1e2127;border-color:#34383f;color:#e3e8ea}
 :root[data-theme="dark"] .boss-bar-btn.on{background:#0e7490;border-color:#0e7490}
 @media(max-width:600px){.boss-panel{right:8px;left:8px;width:auto;bottom:calc(8px + env(safe-area-inset-bottom));max-height:calc(100dvh - 24px)}.boss-fab{right:12px;bottom:calc(84px + env(safe-area-inset-bottom))}}
+/* A dialog (Settings, payments, a shared link) is on top: the Boss button would sit over its controls. */
+body:has(.modal-overlay.open) .boss-fab{display:none}
 
 .boss-fab.wake::after{content:"";position:absolute;right:3px;top:3px;width:10px;height:10px;border-radius:50%;background:#16a34a;border:2px solid #fff}
 .boss-logo{position:relative;display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center}

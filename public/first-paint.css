@@ -1,0 +1,4 @@
+/* First paint: match the landing page background so a hard refresh never flashes white, and keep the crawler copy below out of sight. */
+html{background:#050816}
+html[data-theme="light"]{background:#f6f8fd}
+#seo-fallback{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
