@@ -122,8 +122,11 @@ def test_public_health_does_not_forward_forged_identity_or_charge(client, upstre
     with database() as session:
         assert session.get(User, "learner").token_balance == 1000
 
-def test_identity_bridge_overwrites_client_identity(client, upstream, database):
-    assert invoke(client, "ensure_session", payload={"user_id": "victim", "email": "fake"}).status_code == 200
+@pytest.mark.parametrize("action", ["ensure_session", "ensure_profile", "bridge_identity"])
+def test_identity_bridge_overwrites_client_identity(client, upstream, database, action):
+    # Every agent's identity bridge: a learner is never handed another
+    # learner's agent session for sending their user id or email.
+    assert invoke(client, action, payload={"user_id": "victim", "name": "Victim", "email": "victim@example.test"}).status_code == 200
     forwarded = upstream.calls[0][1]
     assert forwarded["headers"]["x-digidara-user-id"] == "learner"
     assert "authorization" not in forwarded["headers"]
