@@ -221,9 +221,11 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:5173:80"
-    depends_on:
-      orchestrator:
-        condition: service_healthy
+    # No depends_on the orchestrator: this nginx looks the orchestrator up on
+    # every request (see nginx.conf), so it can serve the site while the
+    # orchestrator restarts. With service_healthy here, every deploy that
+    # rebuilt the orchestrator also took the whole website down (502) until the
+    # new orchestrator passed its health check.
 
 volumes:
   mysql_data:
