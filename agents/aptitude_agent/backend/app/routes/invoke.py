@@ -178,6 +178,12 @@ def _student_summary(payload: dict):
         "metrics": {"tests_completed": len(completed), "recent_tests_averaged": len(recent),
                     "best_percentage": round(max(float(t.percentage or 0) for t in completed), 1)},
         "level_scores": level_scores([(levels.get(t.id), float(t.percentage or 0)) for t in completed]),
+        # Each recent test with its date, so the learner can ask Boss "when did I take my tests?".
+        "recent": [
+            {"date": t.completed_at.isoformat() if t.completed_at else "", "title": "Aptitude test",
+             "level": levels.get(t.id) or "", "score": round(float(t.percentage or 0), 1)}
+            for t in recent if t.completed_at
+        ],
     })
 
 

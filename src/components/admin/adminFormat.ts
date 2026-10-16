@@ -13,7 +13,7 @@ export function formatDate(iso: string | null | undefined): string {
 /** The chat's agent id ("capstone-project") as the name students know. */
 export function agentLabel(agentId: string): string {
   const agent = AGENTS.find((candidate) => candidate.id === agentId);
-  return agent ? `${agent.icon} ${agent.name}` : agentId;
+  return agent ? agent.name : agentId;
 }
 
 export function timeAgo(seconds: number | null): string {

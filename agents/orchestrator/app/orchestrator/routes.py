@@ -1,20 +1,24 @@
 import json
 import logging
 import os
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
+from app.llm import client as llm_client
 from app.llm import transcribe as speech
-from app.orchestrator import boss_memory
+from app.orchestrator import assist, boss_memory
 from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
+from app.registry import service as registry_service
 from app.schemas import ChatRequest, ChatResponse, RoleProfileRequest, RoleProfileResponse, RouteRequest, RouteResponse
 
 logger = logging.getLogger("orchestrator.api")
@@ -62,6 +66,53 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     if not result.get("agent_name"):
         boss_memory.remember(user_id, req.message, result.get("reply"))
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
+
+
+@router.post("/chat/warm")
+@limiter.limit("6/minute")
+def chat_warm(request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """A voice conversation has opened: do the slow first-turn work now, in the
+    background, while Boss is still greeting (the learner's context and memory,
+    the agent registry, the connection to the model). Returns at once."""
+    def work() -> None:
+        try:
+            _learner_context(user_id)
+            registry_service.list_healthy()
+        except Exception:
+            logger.info("chat warm-up: context not ready", exc_info=True)
+        llm_client.warm_up()
+
+    threading.Thread(target=work, name="chat-warm", daemon=True).start()
+    return {"ok": True}
+
+
+@router.post("/chat/assist/stream")
+@limiter.limit("12/minute")
+async def chat_assist_stream(req: assist.AssistRequest, request: Request,
+                             user_id: str = Depends(get_verified_user_id)) -> StreamingResponse:
+    """Boss guiding a learner on any screen, with an optional screenshot of it.
+    Sizes only are logged: the question and the screen can hold personal data."""
+    if not req.screenshot_ok():
+        raise HTTPException(status_code=422, detail="The screenshot must be a JPEG, PNG or WebP image.")
+    logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
+                user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
+
+    # The signed-in learner's own profile, progress and chats -- looked up by
+    # the verified user id only, so Boss can never see another learner's.
+    learner = await run_in_threadpool(_learner_context, user_id, req.message)
+    progress = await _own_progress(user_id)
+    chats = await run_in_threadpool(_own_chats, user_id)
+
+    def events():
+        try:
+            for event in assist.stream_assist(req, learner, progress, chats):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception:
+            logger.exception("assist turn failed")
+            yield 'data: {"error": "Boss could not answer just now. Please try again."}\n\n'
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 class RouteStreamRequest(RouteRequest):
@@ -117,6 +168,50 @@ def _learner_context(user_id: str, question: str = "") -> dict | None:
     if remembered:
         context = {**(context or {}), "conversation_memory": remembered}
     return context or None
+
+
+async def _own_progress(user_id: str) -> list[dict] | None:
+    """The learner's Job Readiness areas, read from every agent when the last
+    reading is older than a few minutes; None when it cannot be read."""
+    from app.readiness import service as readiness_service  # local import: readiness pulls in the A2A client
+
+    try:
+        user = await run_in_threadpool(auth_service.get_by_id, user_id)
+        if user is None:
+            return None
+        result = await readiness_service.get(user)
+    except Exception:
+        logger.warning("assist: readiness unavailable", exc_info=True)
+        return None
+    return [area for area in result.get("areas") or [] if isinstance(area, dict)]
+
+
+def _own_chats(user_id: str) -> list[dict]:
+    """The learner's own saved chats, newest first: id, agent, title, last used."""
+    from app import db
+    from app.models import Conversation
+
+    session = db.get_session()
+    try:
+        rows = (session.query(Conversation.id, Conversation.agent_id, Conversation.title, Conversation.updated_at_ms)
+                .filter(Conversation.user_id == user_id, Conversation.deleted_at.is_(None))
+                .order_by(Conversation.updated_at_ms.desc()).limit(assist.CHAT_LIMIT).all())
+    except Exception:
+        logger.warning("assist: chat list unavailable", exc_info=True)
+        return []
+    finally:
+        session.close()
+    return [{"id": row.id, "agent": row.agent_id, "title": str(row.title or "")[:120], "last_used": _when(row.updated_at_ms)}
+            for row in rows]
+
+
+def _when(ms) -> str:
+    from datetime import datetime, timezone
+
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc).isoformat(timespec="minutes")
+    except (TypeError, ValueError, OverflowError, OSError):
+        return ""
 
 
 class TranscribeRequest(BaseModel):

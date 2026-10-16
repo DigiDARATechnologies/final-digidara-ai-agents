@@ -35,6 +35,42 @@ export function completeSentences(text: string, from: number): { text: string; n
   return end < 0 ? { text: "", next: from } : { text: rest.slice(0, end), next: from + end };
 }
 
+/** The opening words of a reply are spoken once there are this many characters
+ * (and a finished word): speech starts while the first sentence is still being
+ * written. Later, a clause is spoken once it reaches CLAUSE_MIN. */
+const OPENING_MIN = 30;
+const OPENING_WORDS = 6;
+const CLAUSE_MIN = 40;
+
+/**
+ * What can be spoken of a reply that is still being written, after character
+ * `from`: finished sentences first; otherwise, so nobody waits for a whole
+ * sentence, the opening words (`opening`: nothing has been spoken yet) or a
+ * finished clause (after a comma, semicolon or colon). Never cuts a word: the
+ * last, possibly unfinished, word waits for more text.
+ */
+export function readyToSpeak(text: string, from: number, opening: boolean): { text: string; next: number } {
+  const sentences = completeSentences(text, from);
+  if (sentences.text) return sentences;
+  const rest = text.slice(from);
+  if (opening) {
+    // A clause end after a few words reads best ("Sure, I can help you with that,").
+    const comma = [...rest.matchAll(/(?<=\p{L})[,;:](?=\s)/gu)].find((match) => (match.index ?? 0) >= 14);
+    if (comma) return { text: rest.slice(0, (comma.index ?? 0) + 1), next: from + (comma.index ?? 0) + 1 };
+    // Otherwise cut at the last space: the word after it may still be arriving.
+    const space = rest.lastIndexOf(" ");
+    if (space >= OPENING_MIN && rest.slice(0, space).trim().split(/\s+/).length >= OPENING_WORDS) {
+      return { text: rest.slice(0, space), next: from + space };
+    }
+    return { text: "", next: from };
+  }
+  let end = -1;
+  for (const match of rest.matchAll(/(?<=\p{L})[,;:](?=\s)/gu)) {
+    if ((match.index ?? 0) >= CLAUSE_MIN) end = (match.index ?? 0) + 1;
+  }
+  return end < 0 ? { text: "", next: from } : { text: rest.slice(0, end), next: from + end };
+}
+
 /** Sentence-sized chunks, joining short sentences up to MAX_CHUNK.
  * `shortFirst`: make the first chunk short so speech starts sooner -- only
  * for the start of a reply; later text is never cut mid-sentence. */

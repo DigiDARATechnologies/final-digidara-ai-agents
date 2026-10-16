@@ -1,18 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { transcribeGeneralAudio } from "../lib/orchestratorApi";
+import { transcribeGeneralAudio, warmBoss } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
 import { setVoiceConversationOpen } from "../lib/voiceReply";
-import { completeSentences } from "../lib/voiceText";
+import { readyToSpeak } from "../lib/voiceText";
 import { watchForSpeech } from "../lib/voiceActivity";
-import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
+import { afterContinuation, isContinuation, isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { recognitionLocale } from "../lib/voicePrefs";
+import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
+import { withoutWakeWords } from "../lib/assistText";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
 
 /** A pause this long after the learner has spoken sends what they said --
  * about a natural conversational turn. "Just a minute" keeps it listening. */
-export const CONVERSATION_PAUSE_MS = 2_000;
+export const CONVERSATION_PAUSE_MS = 1_500;
+
+/** Boss's voice in a conversation: made at a brisk pace by the server, and
+ * played a little faster than that. (Playing the slow teacher voice at 1.3x
+ * instead made the words blur.) */
+export const BOSS_VOICE_SPEED = 1.15;
+export const BOSS_VOICE_PACE = "brisk" as const;
 
 type Phase = "listening" | "thinking" | "speaking";
 
@@ -27,12 +35,14 @@ interface Props {
   awaitingReply?: boolean;
   /** The learner's first name, for Boss's greeting. */
   learnerName?: string;
+  /** Opened by "Hey Boss, ...": ask this straight away instead of greeting. */
+  firstQuestion?: string;
 }
 
 /** What Boss says when the conversation opens. */
 export function bossGreeting(name?: string): string {
   const first = (name || "").trim().split(/\s+/)[0];
-  return `Hi${first ? ` ${first}` : ""}! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.`;
+  return `Hi${first ? ` ${first}` : ""}, I'm Boss. What can I help you with?`;
 }
 
 /**
@@ -41,7 +51,7 @@ export function bossGreeting(name?: string): string {
  * the reply is spoken, then it listens again -- until the learner ends it.
  * The chat carries on behind it, so every turn is still written down there.
  */
-export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName }: Props) {
+export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName, firstQuestion }: Props) {
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [phase, setPhase] = useState<Phase>(awaitingReply ? "thinking" : "listening");
   const [sendIn, setSendIn] = useState<number | null>(null);
@@ -66,6 +76,17 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   const turnRef = useRef(0);
   // Said before "just a minute": the rest of the question joins it.
   const heldRef = useRef("");
+  // The last question sent, and whether the learner talked over the answer to
+  // it: "hold on, I am not completing" then carries that question on.
+  const lastQuestionRef = useRef("");
+  const talkedOverRef = useRef(false);
+
+  /** The learner spoke over Boss (or tapped the logo): stop and listen. */
+  function interrupt() {
+    talkedOverRef.current = Boolean(lastQuestionRef.current);
+    awaitingFromRef.current = null;
+    listen();
+  }
 
   function setLevel(level: number) {
     orbRef.current?.style.setProperty("--voice-level", level.toFixed(2));
@@ -83,6 +104,15 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       setSendIn(null);
       setLevel(0);
       const said = text.trim();
+      const talkedOver = talkedOverRef.current;
+      talkedOverRef.current = false;
+      if (said && talkedOver && !heldRef.current && isContinuation(said)) {
+        // "Hold on, I am not completing": the question Boss was answering is
+        // not finished, so it carries on with these words.
+        heldRef.current = joinAnswer(lastQuestionRef.current, afterContinuation(said));
+        window.setTimeout(listen, 100);
+        return;
+      }
       if (said && isHoldRequest(said)) {
         // "Just a minute": keep what came before and carry on listening.
         heldRef.current = joinAnswer(heldRef.current, withoutHoldPhrase(said));
@@ -96,9 +126,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
         return;
       }
       heldRef.current = "";
-      awaitingFromRef.current = messagesRef.current.length;
-      setPhase("thinking");
-      onSendRef.current(question);
+      ask(question);
     }, {
       autoStopOnSilence: true,
       silenceMs: CONVERSATION_PAUSE_MS,
@@ -109,6 +137,16 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     });
   }
 
+  /** Sends what was said; the reply to it is spoken. "Hey Boss" is how the
+   * learner talks to Boss, not part of the question. */
+  function ask(said: string) {
+    const question = withoutWakeWords(said) || said.trim();
+    lastQuestionRef.current = question;
+    awaitingFromRef.current = messagesRef.current.length;
+    setPhase("thinking");
+    onSendRef.current(question);
+  }
+
   /** Listen again once this turn's speech ends, unless it was interrupted. */
   function listenAfter(turn: number) {
     return () => { if (openRef.current && turn === turnRef.current) listen(); };
@@ -117,15 +155,20 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   function speak(text: string) {
     setPhase("speaking");
     const turn = ++turnRef.current;
-    void speakNatural(text, { onEnd: listenAfter(turn) }, true);
+    void speakNatural(text, { onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true);
   }
 
   useEffect(() => {
     openRef.current = true;
     setVoiceConversationOpen(true);
-    // Boss greets first, then listens.
-    if (!awaitingReply) speak(bossGreeting(learnerName));
+    // Boss greets first, then listens. The microphone is opened while Boss
+    // speaks, so listening starts the moment the greeting ends.
+    warmMicrophone();
+    warmBoss();
+    if (firstQuestion) ask(firstQuestion);
+    else if (!awaitingReply) speak(bossGreeting(learnerName));
     return () => {
+      releaseWarmMicrophone();
       openRef.current = false;
       setVoiceConversationOpen(false);
       stopSpeaking();
@@ -146,7 +189,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     if (!reply || reply.index !== index) {
       setPhase("speaking");
       const turn = ++turnRef.current;
-      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn) }, true) };
+      reply = { index, queued: 0, queue: createSpeechQueue({ onEnd: listenAfter(turn), speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true) };
       replyRef.current = reply;
     }
     if (!last.streaming && !typing) {
@@ -156,7 +199,8 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
       awaitingFromRef.current = null;
       return;
     }
-    const ready = completeSentences(last.text, reply.queued);
+    // Speech starts with the first few words, not the first full sentence.
+    const ready = readyToSpeak(last.text, reply.queued, reply.queued === 0);
     if (ready.text) {
       reply.queue.push(ready.text);
       reply.queued = ready.next;
@@ -169,9 +213,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   useEffect(() => {
     if (phase !== "speaking") return;
     return watchForSpeech(() => {
-      if (!openRef.current) return;
-      awaitingFromRef.current = null;
-      listen();
+      if (openRef.current) interrupt();
     });
     // listen() reads refs only; the watch follows the phase.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,8 +222,7 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   function handleOrbTap() {
     if (phase === "speaking") {
       // Interrupt the reply and answer straight away.
-      awaitingFromRef.current = null;
-      listen();
+      interrupt();
     } else if (phase === "listening" && speech.listening) {
       // Send now instead of waiting for the pause.
       speech.stop();
@@ -197,18 +238,22 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     onClose();
   }
 
+  // Boss is thinking, or working out what was just said: the ring turns.
+  const working = phase === "thinking" || (speech.transcribing && phase === "listening");
+
   const status = speech.transcribing && phase === "listening" ? "Understanding..."
     : phase === "thinking" ? "Thinking..."
       : phase === "speaking" ? "Speaking... start talking or tap me to interrupt"
         : speech.listening ? sendIn !== null ? `Sending in ${sendIn}s - keep talking to continue` : "Listening... just talk"
           : speech.error ? "Tap the logo to try again" : "Starting microphone...";
 
-  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}`} role="dialog" aria-label="Voice conversation with Boss">
+  return <div className={`voice-conversation phase-${phase}${speech.listening ? " hearing" : ""}${working ? " working" : ""}`} role="dialog" aria-label="Voice conversation with Boss">
     <button type="button" className="voice-conversation-end" onClick={end}>End voice chat</button>
     <div className="voice-conversation-center">
       <div ref={orbRef} className="voice-conversation-orb">
         <span className="voice-conversation-ring" aria-hidden="true" />
         <span className="voice-conversation-ring second" aria-hidden="true" />
+        <span className="voice-conversation-spinner" aria-hidden="true" />
         <button type="button" className="voice-conversation-logo" onClick={handleOrbTap}
           aria-label={phase === "speaking" ? "Interrupt" : speech.listening ? "Send now" : "Talk"}>
           <Logo variant="icon" size={92} />

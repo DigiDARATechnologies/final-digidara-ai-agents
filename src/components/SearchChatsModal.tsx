@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Chat } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
+import AgentIcon from "./AgentIcon";
 
 interface Props {
   chats: Chat[];
@@ -128,7 +129,7 @@ export default function SearchChatsModal({ chats, onOpenChat, onClose }: Props) 
                       onMouseEnter={() => setActive(i)}
                       onClick={() => open(hit)}
                     >
-                      <span className="sc-icon" style={{ background: `color-mix(in srgb, ${agent.color} 28%, transparent)` }}>{agent.icon}</span>
+                      <span className="sc-icon" style={{ background: `color-mix(in srgb, ${agent.color} 28%, transparent)` }}><AgentIcon name={agent.icon} /></span>
                       <span className="sc-main">
                         <b>{highlight(hit.chat.title || "Untitled chat", query)}{hit.chat.pinned && <em> 📌</em>}</b>
                         <small>{hit.snippet ? highlight(hit.snippet, query) : agent.name}</small>

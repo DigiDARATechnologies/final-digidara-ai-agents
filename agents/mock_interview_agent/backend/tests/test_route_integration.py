@@ -346,7 +346,7 @@ class RouteIntegrationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload["overall_score"], 8.5)
+        self.assertEqual(payload["overall_score"], 9.4)
         self.assertEqual(payload["total_marks"], 1)
         self.assertTrue(any(
             "UPDATE interviews SET" in call.args[0]

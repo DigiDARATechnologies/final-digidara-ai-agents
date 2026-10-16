@@ -28,10 +28,10 @@ describe('automatic names per agent', () => {
   test('Communication Coach: speaking prompt, writing topic, pronunciation mode', () => {
     const states = { ...empty, communication: { c1: { step: 'speaking_turn', difficulty: 'easy', activeModule: 'speaking', promptText: 'Good evening, Prem! What did you do today that made you happy?' } } } as AgentStates;
     const speaking = autoChatTitle(agent('communication'), 'c1', states)?.subject ?? '';
-    expect(speaking.startsWith('🗣️ Speaking · "Good evening, Prem!')).toBe(true);
+    expect(speaking.startsWith('Speaking · "Good evening, Prem!')).toBe(true);
     expect(speaking.endsWith('…"')).toBe(true);
     states.communication.c1 = { step: 'writing_turn', difficulty: 'easy', activeModule: 'writing', writingTopic: 'My favourite festival' } as never;
-    expect(autoChatTitle(agent('communication'), 'c1', states)?.subject).toBe('✍️ Writing · My favourite festival');
+    expect(autoChatTitle(agent('communication'), 'c1', states)?.subject).toBe('Writing · My favourite festival');
   });
 
   test('Mock Interview: role and level, then the overall score', () => {

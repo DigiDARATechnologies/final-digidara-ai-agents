@@ -143,8 +143,10 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
                     const area = readiness?.areas[level.agent_name];
                     return (
                       <div key={level.agent_name} className="org-agent-card">
-                        <div><b>{level.agent_label}</b><span className="org-chip">{LEVEL_LABELS[level.level]}</span></div>
-                        {area ? (
+                        <div><b>{level.agent_label}</b>{area?.leveled !== false && <span className="org-chip">{LEVEL_LABELS[level.level]}</span>}</div>
+                        {area?.leveled === false ? (
+                          <small>No levels · {area.score != null ? `score ${Math.round(area.score)}/100` : "not started"}</small>
+                        ) : area ? (
                           <>
                             <div className="org-level-steps">
                               {LEVEL_IDS.map((id) => (

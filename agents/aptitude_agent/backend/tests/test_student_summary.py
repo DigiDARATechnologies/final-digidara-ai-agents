@@ -44,6 +44,9 @@ def test_summary_averages_completed_tests_and_names_topics(client, auth_headers,
     assert body["activity_count"] == 3
     assert body["strengths"] == ["Percentages (90%)"]
     assert body["gaps"] == ["Puzzles (25%)"]
+    # Each recent test, newest first, with its date: Boss can list them for the learner.
+    assert [row["score"] for row in body["recent"]] == [80.0, 60.0, 40.0]
+    assert body["recent"][0]["level"] == "easy" and body["recent"][0]["date"].startswith(str(now.date()))
 
 
 def test_summary_for_an_unknown_learner_is_empty(client):

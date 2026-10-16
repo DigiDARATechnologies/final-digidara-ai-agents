@@ -49,6 +49,7 @@ import Topbar from "./components/Topbar";
 import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
+import BossAssistant from "./components/BossAssistant";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
 import LowPointsModal from "./components/LowPointsModal";
@@ -85,7 +86,7 @@ import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
 import { routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
-import { isVoiceConversationOpen } from "./lib/voiceReply";
+import { isVoiceConversationOpen, startVoiceGreeting } from "./lib/voiceReply";
 
 type OpenMenu = "user" | "notif" | null;
 
@@ -745,6 +746,28 @@ export default function App() {
     showToast(saveProfilePrefs(user.id, next) ? "Profile updated." : "Profile updated for this session, but it could not be saved on this device.");
   }
 
+  /** Boss was asked to open an agent or a page: it goes there, like the sidebar would. */
+  function bossNavigate(target: string) {
+    setSettingsOpen(false);
+    if (target.startsWith("chat:")) {
+      // One of the learner's own chats (the server only names their own).
+      const chat = chats.find((item) => item.id === target.slice(5));
+      if (!chat) return;
+      setView("chat");
+      setCurrentChatId(chat.id);
+      setNewChatPending(false);
+      return;
+    }
+    if (target === "readiness") {
+      switchView("readiness");
+      return;
+    }
+    const agent = findAgent(target === "boss" ? DEFAULT_AGENT.id : target);
+    if (!agent) return;
+    setView("chat");
+    openAgentChat(agent.id);
+  }
+
   function switchView(next: View) {
     setView(next);
     if (next === "store") {
@@ -1157,6 +1180,24 @@ export default function App() {
     setTyping(false);
     setDashboardOpen(false);
     switchView("chat");
+  }
+
+  /** The microphone on the home page: the chat opens now and Boss greets in it,
+   * so the mic, the greeting and the first question all happen in one place. */
+  function startVoiceChat() {
+    const chat: Chat = {
+      id: newChatId(),
+      agentId: DEFAULT_AGENT.id,
+      title: DEFAULT_AGENT.name,
+      titleSource: "default",
+      messages: [{ role: "agent", text: DEFAULT_AGENT.greeting, time: nowStr() }],
+      updatedAt: Date.now(),
+    };
+    startVoiceGreeting();
+    persistChats([...chats, chat]);
+    setCurrentChatId(chat.id);
+    setNewChatPending(false);
+    setTyping(false);
   }
 
   function startNewChatWithMessage(text: string) {
@@ -2076,6 +2117,7 @@ export default function App() {
             <NewChatLanding
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
+              onStartVoice={startVoiceChat}
               userName={user?.name}
               onAttachClick={() => showToast("Start a chat first, then attach a file — attachments are only available once you're chatting with an agent that supports them, like the Capstone Project Agent.")}
             />
@@ -2176,6 +2218,17 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {user && (
+        <BossAssistant
+          onNavigate={bossNavigate}
+          agentId={view === "chat" && !newChatPending && currentChat ? currentAgent.id : ""}
+          agentName={view === "chat" && !newChatPending && currentChat ? currentAgent.name : topbarTitle}
+          getContext={() => (view === "chat" && !newChatPending && currentChat
+            ? currentChat.messages.slice(-6).map((m) => `${m.role === "user" ? "Learner" : "Agent"}: ${m.text.slice(0, 400)}`).join("\n")
+            : "")}
+        />
+      )}
 
       <RatingPrompt
         agent={view === "chat" && !newChatPending && currentChat ? currentAgent : null}

@@ -11,8 +11,9 @@ import { isSpeaking, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
-import { cancelVoiceConversation, takeVoiceConversation } from "../lib/voiceReply";
+import { cancelVoiceConversation, setBossVoiceOpener, takeVoiceConversation, takeVoiceGreeting } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
+import AgentIcon from "./AgentIcon";
 
 interface ChatViewProps {
   chat: Chat;
@@ -191,7 +192,18 @@ export default function ChatView({
   // The DigiDARA Assistant's microphone opens a spoken conversation; one
   // started on the new-chat screen carries on here, waiting for its reply.
   const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
-    () => (isGeneralChat && takeVoiceConversation() ? "await" : "off"));
+    () => (!isGeneralChat ? "off" : takeVoiceConversation() ? "await" : takeVoiceGreeting() ? "listen" : "off"));
+  // "Hey Boss" in the Boss chat opens this conversation (with what was said
+  // after the wake words as its first question), not the small Boss panel.
+  const [voiceFirstQuestion, setVoiceFirstQuestion] = useState("");
+  useEffect(() => {
+    if (!isGeneralChat) return;
+    return setBossVoiceOpener((question) => {
+      stopSpeaking();
+      setVoiceFirstQuestion(question);
+      setVoiceConversation((current) => (current === "off" ? "listen" : current));
+    });
+  }, [isGeneralChat]);
 
   function handleMicClick() {
     stopCoachAudio();
@@ -526,7 +538,7 @@ export default function ChatView({
           </svg>
         </button>
         <span className="avatar chat-agent-avatar" style={{ background: agent.color || "var(--accent-grad)" }}>
-          {agent.icon}
+          <AgentIcon name={agent.icon} />
         </span>
         <div className="chat-agent-meta">
           <div className="chat-agent-name">{agent.name}</div>
@@ -587,7 +599,7 @@ export default function ChatView({
                 className="avatar"
                 style={{ background: m.role === "user" ? "var(--accent-grad)" : msgAgent.color || "var(--accent-grad)" }}
               >
-                {m.role === "user" ? user.initial : msgAgent.icon}
+                {m.role === "user" ? user.initial : <AgentIcon name={msgAgent.icon} />}
               </span>
               <div className={`msg-content${hasContextPanel ? agent.kind === "mock-interview" ? " mock-interview-question-section" : " aptitude-question-section" : ""}`}>
                 {isEditing ? (
@@ -665,7 +677,7 @@ export default function ChatView({
 
       <div className="chat-typing" hidden={!typing}>
         <span className="avatar chat-agent-avatar small" style={{ background: agent.color || "var(--accent-grad)" }}>
-          {agent.icon}
+          <AgentIcon name={agent.icon} />
         </span>
         <div className="typing-bubble">
           <span />
@@ -835,7 +847,8 @@ export default function ChatView({
       {!codeMode && !multilineMode && speech.error && <div className="mic-error">{speech.error}</div>}
       {isGeneralChat && voiceConversation !== "off" && (
         <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"} learnerName={user.name}
-          onSend={(text) => onSend(text)} onClose={() => setVoiceConversation("off")} />
+          firstQuestion={voiceFirstQuestion} onSend={(text) => onSend(text)}
+          onClose={() => { setVoiceConversation("off"); setVoiceFirstQuestion(""); }} />
       )}
     </section>
   );

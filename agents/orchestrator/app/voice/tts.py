@@ -24,6 +24,13 @@ logger = logging.getLogger("orchestrator.voice")
 OPENAI_SPEECH_URL = "https://api.openai.com/v1/audio/speech"
 TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")
 TTS_TIMEOUT_SECONDS = 30
+# OpenAI's speech endpoint now and then stalls for half a minute or more
+# before its first byte, while a fresh request for the same text answers in
+# about a second. So a request that has sent nothing for this long is given up
+# and sent again, instead of leaving the learner in silence.
+TTS_STALL_SECONDS = 6
+TTS_ATTEMPTS = 3
+TTS_TIMEOUT = httpx.Timeout(TTS_TIMEOUT_SECONDS, read=TTS_STALL_SECONDS)
 MAX_TEXT_CHARS = 1200
 CACHE_ENTRIES = 300
 # The shared cache: the rate limiter's Redis unless VOICE_CACHE_URI says
@@ -90,8 +97,21 @@ def detect_language(text: str) -> str:
     return "en"
 
 
-def instructions_for(language: str) -> str:
-    return f"{_BASE_STYLE} {_LANGUAGE_STYLE.get(language, _LANGUAGE_STYLE['en'])}"
+# Boss's voice conversation is a quick back-and-forth, not a lesson: the same
+# voice and accent, said at a brisk conversational pace (speeding the slow
+# teacher voice up in the player instead blurs the words).
+PACES = ("normal", "brisk")
+_BRISK_STYLE = (
+    "Voice: Nila, a friendly young Indian woman from Chennai. Always the same person, the same sweet, bright "
+    "voice and the same accent. Speak clearly and confidently at a brisk, natural conversational pace, like a "
+    "quick friendly chat: no long pauses, no slow teacher voice, every word still easy to catch. Cheerful, "
+    "warm, never rushed into mumbling, never robotic."
+)
+
+
+def instructions_for(language: str, pace: str = "normal") -> str:
+    base = _BRISK_STYLE if pace == "brisk" else _BASE_STYLE
+    return f"{base} {_LANGUAGE_STYLE.get(language, _LANGUAGE_STYLE['en'])}"
 
 
 _cache: OrderedDict[str, bytes] = OrderedDict()
@@ -112,9 +132,9 @@ def _shared():
     return _shared_client
 
 
-def _cache_key(text: str, language: str, voice: str) -> str:
+def _cache_key(text: str, language: str, voice: str, pace: str = "normal") -> str:
     # The style is part of the key: a changed voice never replays old audio.
-    style = hashlib.sha256(instructions_for(language).encode()).hexdigest()[:12]
+    style = hashlib.sha256(instructions_for(language, pace).encode()).hexdigest()[:12]
     return hashlib.sha256(f"{TTS_MODEL}|{voice}|{style}|{language}|{text}".encode()).hexdigest()
 
 
@@ -131,8 +151,8 @@ def _remember(key: str, audio: bytes, text: str) -> None:
             logger.warning("voice shared cache write failed", exc_info=True)
 
 
-def cached(text: str, language: str, persona: str) -> bytes | None:
-    key = _cache_key(text, language, VOICE)
+def cached(text: str, language: str, persona: str, pace: str = "normal") -> bytes | None:
+    key = _cache_key(text, language, VOICE, pace)
     with _cache_lock:
         audio = _cache.get(key)
         if audio is not None:
@@ -162,7 +182,7 @@ def resolve_language(text: str, requested: str) -> str:
     return detected
 
 
-def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA) -> tuple[bytes, str, bool]:
+def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA, pace: str = "normal") -> tuple[bytes, str, bool]:
     """(mp3 bytes, the language it was spoken as, whether it came from cache)."""
     text = " ".join(text.split())
     if not text:
@@ -170,33 +190,40 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     if len(text) > MAX_TEXT_CHARS:
         raise VoiceError(413, f"Send at most {MAX_TEXT_CHARS} characters at a time.")
     persona = DEFAULT_PERSONA
+    pace = pace if pace in PACES else "normal"
     spoken_as = resolve_language(text, language if language in LANGUAGES else "auto")
-    hit = cached(text, spoken_as, persona)
+    hit = cached(text, spoken_as, persona, pace)
     if hit is not None:
         return hit, spoken_as, True
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     voice = VOICE
-    try:
-        response = httpx.post(
-            OPENAI_SPEECH_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": TTS_MODEL, "voice": voice, "input": text,
-                "instructions": instructions_for(spoken_as), "response_format": "mp3",
-            },
-            timeout=TTS_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("tts request failed: %s", type(exc).__name__)
-        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    for attempt in range(1, TTS_ATTEMPTS + 1):
+        try:
+            response = httpx.post(
+                OPENAI_SPEECH_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": TTS_MODEL, "voice": voice, "input": text,
+                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
+                },
+                timeout=TTS_TIMEOUT,
+            )
+            break
+        except httpx.TimeoutException as exc:
+            logger.warning("tts request stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
+            if attempt == TTS_ATTEMPTS:
+                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+        except httpx.HTTPError as exc:
+            logger.warning("tts request failed: %s", type(exc).__name__)
+            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
     if response.status_code != 200 or not response.content:
         # Status only: the error body can echo the request.
         logger.warning("tts returned HTTP %s", response.status_code)
         raise VoiceError(502, "The voice could not be generated. Please try again.")
     audio = response.content
-    _remember(_cache_key(text, spoken_as, voice), audio, text)
+    _remember(_cache_key(text, spoken_as, voice, pace), audio, text)
     logger.info("tts %d chars as %s with %s -> %d bytes", len(text), spoken_as, persona, len(audio))
     return audio, spoken_as, False
 
@@ -224,13 +251,13 @@ def prepare(text: str, language: str = "auto") -> tuple[str, str]:
     return text, resolve_language(text, language if language in LANGUAGES else "auto")
 
 
-def issue_ticket(text: str, spoken_as: str) -> str:
+def issue_ticket(text: str, spoken_as: str, pace: str = "normal") -> str:
     import secrets
     import json as _json
     import time as _time
 
     ticket = secrets.token_urlsafe(24)
-    data = {"text": text, "language": spoken_as}
+    data = {"text": text, "language": spoken_as, "pace": pace if pace in PACES else "normal"}
     client = _shared()
     if client is not None:
         try:
@@ -274,30 +301,37 @@ def _openai() -> httpx.Client:
     sentence does not pay for a new TLS handshake (a few hundred ms)."""
     global _openai_client
     if _openai_client is None:
-        _openai_client = httpx.Client(timeout=TTS_TIMEOUT_SECONDS, limits=httpx.Limits(max_keepalive_connections=8))
+        _openai_client = httpx.Client(timeout=TTS_TIMEOUT, limits=httpx.Limits(max_keepalive_connections=8))
     return _openai_client
 
 
-def open_stream(text: str, spoken_as: str):
+def open_stream(text: str, spoken_as: str, pace: str = "normal"):
     """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
     or VoiceError before any byte is sent."""
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     client = _openai()
-    try:
-        request = client.build_request(
-            "POST", OPENAI_SPEECH_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": TTS_MODEL, "voice": VOICE, "input": text,
-                "instructions": instructions_for(spoken_as), "response_format": "mp3",
-            },
-        )
-        response = client.send(request, stream=True)
-    except httpx.HTTPError as exc:
-        logger.warning("tts stream request failed: %s", type(exc).__name__)
-        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    for attempt in range(1, TTS_ATTEMPTS + 1):
+        try:
+            request = client.build_request(
+                "POST", OPENAI_SPEECH_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": TTS_MODEL, "voice": VOICE, "input": text,
+                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
+                },
+            )
+            response = client.send(request, stream=True)
+            break
+        except httpx.TimeoutException as exc:
+            # A stalled request: a fresh one usually answers at once.
+            logger.warning("tts stream stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
+            if attempt == TTS_ATTEMPTS:
+                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+        except httpx.HTTPError as exc:
+            logger.warning("tts stream request failed: %s", type(exc).__name__)
+            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
     if response.status_code != 200:
         logger.warning("tts stream returned HTTP %s", response.status_code)
         response.close()
@@ -317,7 +351,7 @@ def open_stream(text: str, spoken_as: str):
             response.close()
             if complete and parts:
                 audio = b"".join(parts)
-                _remember(_cache_key(text, spoken_as, VOICE), audio, text)
+                _remember(_cache_key(text, spoken_as, VOICE, pace), audio, text)
                 logger.info("tts streamed %d chars as %s -> %d bytes", len(text), spoken_as, len(audio))
 
     return chunks()

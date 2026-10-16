@@ -70,6 +70,8 @@ export interface ReadinessArea {
   label: string;
   weight: number;
   level: LevelId;
+  /** false: the area has no levels (Resume) and its score is its own result. */
+  leveled?: boolean;
   status: AreaStatus;
   reason?: string;
   /** 0-100: 25 points for each completed level. */

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatOption } from "../types";
+import AgentIcon from "./AgentIcon";
 
 export type ProjectDifficultyLevel = "easy" | "medium" | "hard";
 
@@ -64,7 +65,7 @@ export default function ConnectorPill({
           setOpen((v) => !v);
         }}
       >
-        <span className="connector-pill-icon" style={{ background: agentColor }}>{agentIcon}</span>
+        <span className="connector-pill-icon" style={{ background: agentColor }}><AgentIcon name={agentIcon} /></span>
         <span>{difficultyPicker ? `Level: ${DIFFICULTY_LABELS[difficultyPicker.value]}` : status}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
           <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

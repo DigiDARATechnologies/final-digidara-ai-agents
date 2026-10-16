@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Agent } from "../types";
 import { getMyRating, markAsked, shouldAskForRating, submitRating } from "../lib/ratings";
+import AgentIcon from "./AgentIcon";
 
 interface Props {
   /** The agent being used right now, or null when no live agent chat is open. */
@@ -61,7 +62,7 @@ export default function RatingPrompt({ agent, chatId, userId, onToast }: Props) 
     <div className="rp-card" role="dialog" aria-label={`Rate ${target.agent.name}`}>
       <button type="button" className="rp-close" aria-label="Dismiss" onClick={close}>×</button>
       <div className="rp-head">
-        <span className="rp-icon" style={{ background: `color-mix(in srgb, ${target.agent.color} 28%, transparent)` }}>{target.agent.icon}</span>
+        <span className="rp-icon" style={{ background: `color-mix(in srgb, ${target.agent.color} 28%, transparent)` }}><AgentIcon name={target.agent.icon} /></span>
         <div>
           <b>How is {target.agent.name} working for you?</b>
           <p>Your rating helps other learners choose the right agent.</p>

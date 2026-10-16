@@ -1,6 +1,7 @@
 """Boss answers while it is still writing, and the voice plays while it is
 still being generated: the streamed general-chat route and voice tickets."""
 import json
+import threading
 from types import SimpleNamespace
 
 import httpx
@@ -166,3 +167,83 @@ def test_openai_failure_before_any_audio_is_an_error(api, monkeypatch):  # noqa:
     _fake_openai(monkeypatch, status_code=500)
     url = api.post("/voice/ticket", headers=auth(), json={"text": "This will fail."}).json()["url"]
     assert api.get(url).status_code == 502
+
+
+def test_chat_warm_returns_at_once_and_warms_in_the_background(api, monkeypatch):
+    from app.orchestrator import routes as chat_routes
+
+    warmed = threading.Event()
+    monkeypatch.setattr(llm_client, "warm_up", warmed.set)
+    api.app.include_router(chat_routes.router)
+    response = api.post("/chat/warm", headers=auth())
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert warmed.wait(5)
+
+
+def test_a_brisk_voice_is_the_same_person_at_a_quicker_pace_and_cached_apart(api, monkeypatch):  # noqa: F811
+    normal = tts.instructions_for("en")
+    brisk = tts.instructions_for("en", "brisk")
+    assert normal != brisk and "brisk" in brisk and "slowly" in normal and "slow teacher voice" in brisk
+    assert "Nila" in brisk and "Indian English" in brisk          # same character and accent
+    assert tts._cache_key("Hi", "en", "nova") != tts._cache_key("Hi", "en", "nova", "brisk")
+    assert tts._cache_key("Hi", "en", "nova") == tts._cache_key("Hi", "en", "nova", "normal")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    sent = []
+
+    class Client:
+        def build_request(self, method, url, headers=None, json=None):
+            sent.append(json["instructions"])
+            return None
+
+        def send(self, request, stream=False):
+            return _FakeStream()
+
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "Quick reply here.", "pace": "brisk"}).json()["url"]
+    assert api.get(url).status_code == 200
+    assert sent == [brisk]
+    # An unknown pace is the normal voice.
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "Another reply here.", "pace": "warp"}).json()["url"]
+    api.get(url)
+    assert sent[-1] == normal
+
+
+def test_a_stalled_voice_request_is_sent_again_instead_of_waiting(api, monkeypatch):  # noqa: F811
+    # OpenAI sometimes sends nothing for half a minute; a fresh request answers at once.
+    assert tts.TTS_TIMEOUT.read == tts.TTS_STALL_SECONDS < 10
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    sends = []
+
+    class Client:
+        def build_request(self, *args, **kwargs):
+            return None
+
+        def send(self, request, stream=False):
+            sends.append(1)
+            if len(sends) == 1:
+                raise httpx.ReadTimeout("stalled")
+            return _FakeStream()
+
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "A stalled sentence."}).json()["url"]
+    played = api.get(url)
+    assert played.status_code == 200 and played.content == b"ID3-part-1-part-2"
+    assert len(sends) == 2
+
+    posts = []
+
+    def stalled_post(url, **kwargs):
+        posts.append(kwargs["timeout"])
+        raise httpx.ReadTimeout("stalled")
+
+    monkeypatch.setattr(tts.httpx, "post", stalled_post)
+    response = api.post("/voice/speak", headers=auth(), json={"text": "Never answered."})
+    assert response.status_code == 502
+    assert len(posts) == tts.TTS_ATTEMPTS and posts[0] is tts.TTS_TIMEOUT
+
+
+def test_a_spoken_greeting_or_small_talk_gets_a_conversational_answer():
+    rules = prompts.VOICE_REPLY_RULES
+    assert "small talk" in rules and "not a description of DigiDARA" in rules

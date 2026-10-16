@@ -27,6 +27,7 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=tts.MAX_TEXT_CHARS)
     language: str = "auto"
     persona: str = tts.DEFAULT_PERSONA
+    pace: str = "normal"
 
 
 @router.get("/personas")
@@ -47,7 +48,7 @@ async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_
     if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
         raise HTTPException(402, "Not enough points. Please top up to continue.")
     try:
-        audio, spoken_as, from_cache = await run_in_threadpool(tts.synthesize, req.text, req.language, req.persona)
+        audio, spoken_as, from_cache = await run_in_threadpool(tts.synthesize, req.text, req.language, req.persona, req.pace)
     except tts.VoiceError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
     if VOICE_TOKENS_PER_CHAR and not from_cache:
@@ -61,6 +62,7 @@ async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_
 class TicketRequest(BaseModel):
     text: str = Field(min_length=1, max_length=tts.MAX_TEXT_CHARS)
     language: str = "auto"
+    pace: str = "normal"
 
 
 @router.post("/ticket")
@@ -73,7 +75,8 @@ def ticket(req: TicketRequest, request: Request, user_id: str = Depends(get_veri
         text, spoken_as = tts.prepare(req.text, req.language)
     except tts.VoiceError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
-    if tts.cached(text, spoken_as, tts.DEFAULT_PERSONA) is None:
+    pace = req.pace if req.pace in tts.PACES else "normal"
+    if tts.cached(text, spoken_as, tts.DEFAULT_PERSONA, pace) is None:
         user = auth_service.get_by_id(user_id)
         if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
             raise HTTPException(402, "Not enough points. Please top up to continue.")
@@ -81,7 +84,7 @@ def ticket(req: TicketRequest, request: Request, user_id: str = Depends(get_veri
             raise HTTPException(503, "Natural voice is not available right now.")
         if VOICE_TOKENS_PER_CHAR:
             auth_service.settle_tokens(user_id, len(text) * VOICE_TOKENS_PER_CHAR, "voice", "speak")
-    return {"url": f"/voice/stream/{tts.issue_ticket(text, spoken_as)}", "language": spoken_as}
+    return {"url": f"/voice/stream/{tts.issue_ticket(text, spoken_as, pace)}", "language": spoken_as}
 
 
 @router.get("/stream/{ticket_id}")
@@ -91,12 +94,13 @@ def stream(ticket_id: str, request: Request) -> Response:
     data = tts.take_ticket(ticket_id) if len(ticket_id) <= 64 else None
     if data is None:
         raise HTTPException(404, "This voice link has expired.")
-    hit = tts.cached(data["text"], data["language"], tts.DEFAULT_PERSONA)
+    pace = data.get("pace", "normal")
+    hit = tts.cached(data["text"], data["language"], tts.DEFAULT_PERSONA, pace)
     headers = {"Cache-Control": "no-store", "X-Voice-Language": data["language"]}
     if hit is not None:
         return Response(content=hit, media_type="audio/mpeg", headers=headers)
     try:
-        chunks = tts.open_stream(data["text"], data["language"])
+        chunks = tts.open_stream(data["text"], data["language"], pace)
     except tts.VoiceError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
     return StreamingResponse(chunks, media_type="audio/mpeg", headers={**headers, "X-Accel-Buffering": "no"})

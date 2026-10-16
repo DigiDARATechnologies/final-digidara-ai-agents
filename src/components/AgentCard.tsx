@@ -1,5 +1,6 @@
 import type { Agent } from "../types";
 import { useAgentRating } from "../lib/ratings";
+import AgentIcon from "./AgentIcon";
 
 interface AgentCardProps {
   agent: Agent;
@@ -15,7 +16,7 @@ export default function AgentCard({ agent, onClick }: AgentCardProps) {
       onClick={() => onClick(agent.id)}
     >
       <span className="card-icon" style={{ background: agent.color }}>
-        {agent.icon}
+        <AgentIcon name={agent.icon} />
       </span>
       <div className="card-body">
         <h3>{agent.name}</h3>

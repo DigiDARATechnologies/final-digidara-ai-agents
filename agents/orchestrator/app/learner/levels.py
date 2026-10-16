@@ -31,6 +31,10 @@ LEVELED_AGENTS: dict[str, str] = {
     "job_agent": "Job Agent",
 }
 
+# Agents without levels: the Resume Builder's result is the resume itself (its
+# best ATS score), not practice at a difficulty. They keep their label above.
+UNLEVELED_AGENTS = frozenset({"resume_builder_agent"})
+
 # The Job Agent has no level of its own: it follows the learner's
 # level everywhere else -- the average of the other agents' levels, rounded down.
 DERIVED_AGENT = "job_agent"
@@ -38,7 +42,8 @@ DERIVED_AGENT = "job_agent"
 
 def derived_level(levels: dict[str, str]) -> str:
     """The Job Agent level from the other agents' levels (agent -> level)."""
-    others = [normalize(level) for name, level in levels.items() if name != DERIVED_AGENT and name in LEVELED_AGENTS]
+    others = [normalize(level) for name, level in levels.items()
+              if name != DERIVED_AGENT and name in LEVELED_AGENTS and name not in UNLEVELED_AGENTS]
     if not others:
         return DEFAULT_LEVEL
     return LEVELS[sum(LEVELS.index(level) for level in others) // len(others)]
@@ -79,7 +84,7 @@ DIFFICULTY_ACTIONS: dict[str, frozenset[str]] = {
 UNLOCK_PROGRESS = 50
 # Coding unlocks the next level only once every problem of the current level
 # is solved -- which is also when the learner moves up automatically.
-UNLOCK_PROGRESS_BY_AGENT = {"codeforge_agent": 100}
+UNLOCK_PROGRESS_BY_AGENT = {"codeforge_agent": 100, "capstone_project_agent": 100}
 
 
 def unlock_progress(agent_name: str) -> int:

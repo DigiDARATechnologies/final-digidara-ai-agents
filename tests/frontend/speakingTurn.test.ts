@@ -47,3 +47,34 @@ test('only finished sentences of a reply that is still being written are spoken'
   expect(completeSentences('Version 2.5 is', 0)).toEqual({ text: '', next: 0 });
   expect(completeSentences('Steps:\n1. Open it', 0)).toEqual({ text: 'Steps:\n', next: 7 });
 });
+
+test('streamed replies are spoken from the first few words, never cutting a word', () => {
+  const { readyToSpeak } = jest.requireActual('../../src/lib/voiceText') as typeof import('../../src/lib/voiceText');
+  // Too little yet: wait.
+  expect(readyToSpeak('Sure, I can help', 0, true)).toEqual({ text: '', next: 0 });
+  // Enough opening words: speak them, leaving the word still arriving ("deve").
+  expect(readyToSpeak('Sure, I can help you with your deve', 0, true)).toEqual({ text: 'Sure, I can help you with your', next: 30 });
+  // A clause end after a few words is the best place to start.
+  expect(readyToSpeak('Sure, I can help you with that, and also', 0, true)).toEqual({ text: 'Sure, I can help you with that,', next: 31 });
+  // A short natural opening is fine; a comma too early is not a place to cut.
+  expect(readyToSpeak('Yes, of course, and', 0, true)).toEqual({ text: 'Yes, of course,', next: 15 });
+  expect(readyToSpeak('Yes, I am', 0, true)).toEqual({ text: '', next: 0 });
+  // A finished sentence still goes as a whole.
+  expect(readyToSpeak('Hi there! I am Bo', 0, true)).toEqual({ text: 'Hi there!', next: 9 });
+  // Later text: a finished clause is spoken, an unfinished one waits.
+  expect(readyToSpeak(' and then you can open the resume builder, which', 0, false)).toEqual({ text: ' and then you can open the resume builder,', next: 42 });
+  expect(readyToSpeak(' and then you can open the resume builder which', 0, false)).toEqual({ text: '', next: 0 });
+});
+
+test('"hold on, I am not completing" is a continuation of the previous question', () => {
+  const { isContinuation, afterContinuation } = jest.requireActual('../../src/lib/holdPhrase') as typeof import('../../src/lib/holdPhrase');
+  expect(isContinuation('just hold on i am not completing')).toBe(true);
+  expect(afterContinuation('just hold on i am not completing')).toBe('');
+  expect(isContinuation("wait, I'm not done yet, also tell me about jobs")).toBe(true);
+  expect(afterContinuation("wait, I'm not done yet, also tell me about jobs")).toBe('also tell me about jobs');
+  expect(isContinuation('let me finish. and the interview agent')).toBe(true);
+  expect(afterContinuation('let me finish. and the interview agent')).toBe('and the interview agent');
+  // An ordinary new question is not a continuation.
+  expect(isContinuation('what is the resume builder')).toBe(false);
+  expect(isContinuation('how long should I wait for results')).toBe(false);
+});

@@ -69,9 +69,9 @@ export interface CommunicationFlowMessage {
 }
 
 export const MENU_OPTIONS: ChatOption[] = [
-  { label: "🗣️ Speaking Practice", value: "speaking" },
-  { label: "✍️ Writing Practice", value: "writing" },
-  { label: "🔤 Pronunciation Practice", value: "pronunciation" },
+  { label: "Speaking Practice", value: "speaking" },
+  { label: "Writing Practice", value: "writing" },
+  { label: "Pronunciation Practice", value: "pronunciation" },
 ];
 
 function greetingFor(name?: string): string {
@@ -177,7 +177,7 @@ function speakingCoachReply(answer: string, feedback: SpeakingTurnResult["feedba
 
 
 const WRITING_MODE_OPTIONS: ChatOption[] = [
-  { label: "✍️ Write about the topic with AI", value: "writing_mode_write", description: "Answer a writing prompt in a paragraph" },
+  { label: "Write about the topic with AI", value: "writing_mode_write", description: "Answer a writing prompt in a paragraph" },
   { label: "💬 Chat with AI", value: "writing_mode_chat", description: "Have a guided conversation about your topic" },
 ];
 

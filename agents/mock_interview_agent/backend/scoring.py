@@ -90,34 +90,46 @@ def build_scorecard(rows):
     return scorecard, total_marks, max_marks
 
 
-# How far the evaluator's 0-10 overall score may stray from the per-question
-# marks. The marks are the ground truth the learner sees on the scorecard.
-MARKS_TOLERANCE = 1.5
+# Delivery scores (communication, confidence) are judged from a text
+# transcript, so they may only stray this far from the marks' share out of 10.
+DELIVERY_TOLERANCE = 3.0
+
+
+def _clamp(value, low, high):
+    return min(high, max(low, value))
 
 
 def align_scores_with_marks(result, total_marks, max_marks):
-    """Keep the overall and accuracy scores consistent with the scorecard.
+    """Make the report's scores follow the scorecard the learner can see.
 
-    The final evaluator writes its 0-10 scores without seeing the verdicts'
-    arithmetic, so it can say 8/10 for an interview with one of five answers
-    correct. Clamp both into a band around the marks' share out of 10.
-    Communication and confidence describe delivery, not correctness, and
-    are left alone.
+    - Knowledge score is the marks' share out of 10 (4/5 correct -> 8/10),
+      so the same answers always give the same number.
+    - Communication and confidence stay the evaluator's judgement, but within
+      DELIVERY_TOLERANCE of that share: one correct answer out of five cannot
+      come with a 9/10 for delivery.
+    - Overall is 70% knowledge and 30% the average of the two delivery scores.
     """
     if not max_marks:
         return result
-    anchor = float(total_marks) / max_marks * 10
-    low = max(0.0, anchor - MARKS_TOLERANCE)
-    high = min(10.0, anchor + MARKS_TOLERANCE)
-    for field in ("overall_score", "technical_accuracy"):
+    knowledge = round(float(total_marks) / max_marks * 10, 1)
+    low = max(0.0, knowledge - DELIVERY_TOLERANCE)
+    high = min(10.0, knowledge + DELIVERY_TOLERANCE)
+    delivery = []
+    for field in ("communication_clarity", "confidence"):
         value = result.get(field)
         if value is None:
             continue
-        clamped = round(min(high, max(low, float(value))), 1)
-        if clamped != float(value):
-            logger.info(
-                "Aligned %s with scorecard marks: %s -> %s (marks %s/%s)",
-                field, value, clamped, total_marks, max_marks,
-            )
+        clamped = round(_clamp(float(value), low, high), 1)
         result[field] = clamped
+        delivery.append(clamped)
+    result["technical_accuracy"] = knowledge
+    if delivery:
+        overall = 0.7 * knowledge + 0.3 * (sum(delivery) / len(delivery))
+    else:
+        overall = knowledge
+    result["overall_score"] = round(_clamp(overall, 0.0, 10.0), 1)
+    logger.info(
+        "Scores from scorecard marks %s/%s: knowledge=%s overall=%s delivery=%s",
+        total_marks, max_marks, knowledge, result["overall_score"], delivery,
+    )
     return result

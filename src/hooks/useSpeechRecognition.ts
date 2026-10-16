@@ -12,6 +12,7 @@ import {
   preferredRecordingType,
 } from "../lib/voiceCapture";
 import { analyserReader, VoiceDetector } from "../lib/voiceActivity";
+import { acquireMicrophone } from "../lib/micWarm";
 
 /** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
@@ -215,9 +216,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
       setError("");
       setListening(true);
 
-      void navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      }).then((stream) => {
+      void acquireMicrophone().then((stream) => {
         if (session !== recordSessionRef.current) {
           stream.getTracks().forEach((track) => track.stop());
           return;

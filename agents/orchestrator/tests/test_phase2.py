@@ -551,12 +551,16 @@ def test_overall_is_25_only_when_every_agent_completed_beginner(app_client, agen
         monkeypatch.setitem(SUMMARY_EXTRA, name, {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 60, "medium": 0, "hard": 0}})
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # Six of seven agents finished Beginner: 150 / 7.
-    assert body["overall"] == 21.4
+    # Five of the six leveled agents finished Beginner (25 each); the Resume
+    # Builder has no levels and scores its own result, 90: (125 + 90) / 7.
+    assert body["overall"] == 30.7
+    resume = next(a for a in body["areas"] if a["agent_name"] == "resume_builder_agent")
+    assert resume["leveled"] is False and resume["score"] == 90 and resume["level"] is None
+    assert resume["levels_completed"] == [] and resume["can_level_up"] is False
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     # Below zero: MySQL rounds the stored time to the second, so "just now" can look a moment ahead.
     monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
-    assert app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["overall"] == 25
+    assert app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["overall"] == 34.3
 
 
 def test_job_fetching_follows_the_average_of_the_other_levels(app_client, users):
@@ -567,9 +571,10 @@ def test_job_fetching_follows_the_average_of_the_other_levels(app_client, users)
     assert levels()["job_agent"]["level"] == "beginner"
     for agent in ("codeforge_agent", "communication_agent", "mock_interview_agent"):
         learner_service.set_level("learner", agent, "medium", "self")
-    # (3 + 1 + 1 + 1) / 7 rounds down to Beginner; one more Medium makes it Medium.
-    assert levels()["job_agent"]["level"] == "beginner"
-    learner_service.set_level("learner", "resume_builder_agent", "medium", "self")
+    # (3 + 1 + 1 + 1) / 6 is Medium: the Resume Builder has no levels and is not averaged.
+    assert levels()["job_agent"]["level"] == "medium"
+    learner_service.set_level("learner", "resume_builder_agent", "professional", "self")
+    assert levels()["job_agent"]["level"] == "medium"
     learner_service.set_level("learner", "capstone_project_agent", "medium", "self")
     assert levels()["job_agent"]["level"] == "medium"
     assert learner_service.learner_context("learner", "job_agent")["level"] == "medium"
@@ -762,3 +767,12 @@ def test_coding_professional_progress_comes_from_passed_assessments(app_client, 
     # Professional is not Hard's 100% again: one of three assessments is passed.
     assert coding["level"] == "professional" and coding["level_progress"] == 33.3
     assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 75
+
+
+def test_an_agents_dated_recent_activity_is_kept_cleaned_and_capped():
+    rows = [{"date": "2026-09-28T06:51:28", "title": "Aptitude test", "level": "easy", "score": 173, "x": "dropped"},
+            {"title": "no date"}, "not a row"] + [{"date": f"2026-09-{day:02d}"} for day in range(1, 20)]
+    recent = readiness_service.summarize_reply({"score": 50, "recent": rows})["recent"]
+    assert recent[0] == {"date": "2026-09-28T06:51:28", "title": "Aptitude test", "level": "easy", "score": 100.0}
+    assert len(recent) <= readiness_service.RECENT_LIMIT
+    assert readiness_service.summarize_reply({"score": 50})["recent"] == []

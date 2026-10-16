@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import type { User } from "../types";
 import { AGENT_WORKFLOWS, FAQ, RELEASES, SUPPORT_EMAIL } from "../data/helpContent";
 import { LIVE_AGENTS } from "../data/agents";
+import AgentIcon from "./AgentIcon";
 
 export type HelpPageKind = "help-center" | "release-notes" | "contact" | "bug-report";
 
@@ -96,7 +97,7 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
           All Agents
         </button>
         <div className="hp-wf-head">
-          <span className="hp-agent-icon">{selected.icon}</span>
+          <span className="hp-agent-icon"><AgentIcon name={selected.icon} /></span>
           <div>
             <h3>{selected.name}</h3>
             <p>{workflow?.summary ?? selected.desc}</p>
@@ -156,7 +157,7 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
           <div className="hp-agents">
             {agents.map((a) => (
               <button type="button" key={a.id} className="hp-agent" onClick={() => setAgentId(a.id)} style={{ ["--agent-color" as string]: a.color }}>
-                <span className="hp-agent-icon">{a.icon}</span>
+                <span className="hp-agent-icon"><AgentIcon name={a.icon} /></span>
                 <div className="hp-agent-main">
                   <b>{a.name}</b>
                   <p>{a.desc}</p>

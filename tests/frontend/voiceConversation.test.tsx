@@ -15,7 +15,7 @@ jest.mock('../../src/lib/voiceEngine', () => ({
     };
   },
 }));
-jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn() }));
+jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn(), warmBoss: jest.fn() }));
 const mockWatchers: Array<() => void> = [];
 const mockUnwatch = jest.fn();
 jest.mock('../../src/lib/voiceActivity', () => ({
@@ -48,19 +48,19 @@ beforeEach(() => {
   mockStart.mockReturnValue(true);
 });
 
-test('Boss greets, then listens; a 2 second pause (or the live transcript) sends the question', () => {
+test('Boss greets, then listens; a 1.5 second pause (or the live transcript) sends the question', () => {
   let greetingDone: () => void = () => {};
   mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
   const onSend = jest.fn();
   const { unmount } = render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} learnerName="Senthil Kumar" onSend={onSend} onClose={jest.fn()} />);
   expect(isVoiceConversationOpen()).toBe(true);
   expect(mockSpeak).toHaveBeenCalledWith(bossGreeting('Senthil Kumar'), expect.anything(), true);
-  expect(bossGreeting('Senthil Kumar')).toBe("Hi Senthil! I'm Boss, your DigiDARA AI assistant. Ask me anything about DigiDARA and its agents.");
+  expect(bossGreeting('Senthil Kumar')).toBe("Hi Senthil, I'm Boss. What can I help you with?");
   expect(mockStart).not.toHaveBeenCalled();
   act(() => { greetingDone(); });
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS, finalFromPreview: true }));
-  expect(CONVERSATION_PAUSE_MS).toBe(2000);
+  expect(CONVERSATION_PAUSE_MS).toBe(1500);
   act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
   // No words on screen, only the logo.
   expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();
@@ -157,4 +157,22 @@ test('the next question is sent with the newest onSend, not the one from when th
   act(() => { onHeard('suggest me jobs', true); });
   expect(latest).toHaveBeenCalledWith('suggest me jobs');
   expect(early).not.toHaveBeenCalled();
+});
+
+test('opened by "Hey Boss, ..." it asks that straight away; the wake words are never part of a question', () => {
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} firstQuestion="are you there?" onSend={onSend} onClose={jest.fn()} />);
+  expect(mockSpeak).not.toHaveBeenCalled();
+  expect(onSend).toHaveBeenCalledWith('are you there?');
+  expect(screen.getByText('Thinking...')).toBeInTheDocument();
+});
+
+test('"Hey Boss, what is a resume" is sent as "what is a resume"', () => {
+  let greetingDone: () => void = () => {};
+  mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { greetingDone = handlers.onEnd; return Promise.resolve(true); });
+  const onSend = jest.fn();
+  render(<VoiceConversation messages={[msg('agent', 'Hi!')]} typing={false} onSend={onSend} onClose={jest.fn()} />);
+  act(() => { greetingDone(); });
+  act(() => { mockStart.mock.calls[0][0]('Hey Boss, what is a resume', true); });
+  expect(onSend).toHaveBeenCalledWith('what is a resume');
 });

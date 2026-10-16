@@ -69,21 +69,21 @@ const TARGETS: AgentUsageTarget[] = [
   {
     id: "capstone_project_agent",
     label: "Capstone Project Agent",
-    icon: "🎓",
+    icon: "cap",
     color: "#16a34a",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CAPSTONE_AGENT_NAME, "capstone_project_agent"),
   },
   {
     id: "codeforge_agent",
     label: "Coding Practice",
-    icon: "⌨️",
+    icon: "code",
     color: "#eab308",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CODEFORGE_AGENT_NAME, "codeforge_agent"),
   },
   {
     id: "aptitude_agent",
     label: "Aptitude Trainer Agent",
-    icon: "🧮",
+    icon: "calculator",
     color: "#f97316",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_APTITUDE_AGENT_NAME, "aptitude_agent"),
     // Read at fetch time, so a different user signing in never reuses the last one's token.
@@ -92,21 +92,21 @@ const TARGETS: AgentUsageTarget[] = [
   {
     id: "communication_agent",
     label: "Communication Coach Agent",
-    icon: "🗣️",
+    icon: "chat",
     color: "#f43f5e",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_COMMUNICATION_AGENT_NAME, "communication_agent"),
   },
   {
     id: "certificate_agent",
     label: "AI Certification Agent",
-    icon: "📜",
+    icon: "award",
     color: "#8b5cf6",
     invokeUrl: gatewayInvokeUrl(import.meta.env.VITE_CERTIFICATE_AGENT_AGENT_NAME, "certificate_agent"),
   },
   {
     id: "mock_interview_agent",
     label: "Mock Interview Agent",
-    icon: "🎤",
+    icon: "mic",
     color: "#8b5cf6",
     invokeUrl: MOCK_INTERVIEW_URL,
     payload: mockInterviewUsagePayload,
@@ -114,7 +114,7 @@ const TARGETS: AgentUsageTarget[] = [
   {
     id: "job_agent",
     label: "Job Agent",
-    icon: "🔎",
+    icon: "search",
     color: "#3b82f6",
     invokeUrl: "",
     untracked: true,
@@ -122,7 +122,7 @@ const TARGETS: AgentUsageTarget[] = [
   {
     id: "resume_builder_agent",
     label: "Resume Builder Agent",
-    icon: "📄",
+    icon: "file",
     color: "#0f766e",
     invokeUrl: "",
     untracked: true,

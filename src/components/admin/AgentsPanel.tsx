@@ -2,6 +2,7 @@ import { AGENTS } from "../../data/agents";
 import { fetchAgents } from "../../lib/adminApi";
 import { agentLabel, formatDate, formatNumber, timeAgo } from "./adminFormat";
 import { useLoad } from "./useLoad";
+import AgentIcon from "../AgentIcon";
 
 export default function AgentsPanel() {
   const { data, error, loading, reload } = useLoad(fetchAgents, []);
@@ -29,7 +30,7 @@ export default function AgentsPanel() {
           return (
             <article className="admin-agent-card" key={`${agent.agent_name}@${agent.version}`}>
               <header>
-                <span className="admin-agent-icon" style={{ background: chatAgent?.color }}>{chatAgent?.icon ?? "🤖"}</span>
+                <span className="admin-agent-icon" style={{ background: chatAgent?.color }}><AgentIcon name={chatAgent?.icon ?? "sparkle"} /></span>
                 <div>
                   <strong>{chatAgent?.name ?? agent.agent_name}</strong>
                   <small>{agent.agent_name} · {agent.version}</small>

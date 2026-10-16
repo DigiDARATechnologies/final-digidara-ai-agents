@@ -41,6 +41,17 @@ export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
   return String(body.transcript ?? "");
 }
 
+/** Voice conversation opened: the orchestrator does its slow first-turn work
+ * (context, memory, agent list, model connection) now, while Boss greets.
+ * Fire and forget: a failure only means the first turn is not pre-warmed. */
+export function warmBoss(): void {
+  const token = sessionToken();
+  void fetch(`${ORCHESTRATOR_BASE}/chat/warm`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).catch(() => undefined);
+}
+
 /**
  * routeMessage, streamed: `onText` gets the reply so far each time more of it
  * arrives, so it can be shown (and spoken) while it is still being written.
