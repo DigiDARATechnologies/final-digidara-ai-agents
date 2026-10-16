@@ -1,4 +1,5 @@
-import JSZip from "jszip";
+// jszip loads only when a LinkedIn export is opened (it is not needed anywhere else).
+import type JSZip from "jszip";
 import type { ResumeCreateInput } from "./resumeBuilderApi";
 
 /** LinkedIn's own "Get a copy of your data" export (Settings & Privacy > Data
@@ -73,7 +74,8 @@ export interface LinkedInImportResult {
  * fields -- LinkedIn's date formatting has varied across export versions, and a
  * failed date parse must never break the whole import over one field. */
 export async function parseLinkedInExport(file: File): Promise<LinkedInImportResult> {
-  const zip = await JSZip.loadAsync(file);
+  const { default: JSZipLib } = await import("jszip");
+  const zip = await JSZipLib.loadAsync(file);
 
   const profileRows = await readCsv(zip, "Profile.csv");
   const profile = profileRows[0] ?? {};
