@@ -23,7 +23,7 @@ def _mount(api):  # noqa: F811
 def test_the_answer_streams_and_the_screenshot_reaches_the_model(api, monkeypatch):  # noqa: F811
     seen = {}
 
-    def fake_stream(messages, max_tokens=600):
+    def fake_stream(messages, max_tokens=600, usage=None):
         seen["messages"] = messages
         yield from ["Click the blue ", "Start button."]
 
@@ -44,7 +44,7 @@ def test_the_answer_streams_and_the_screenshot_reaches_the_model(api, monkeypatc
 
 
 def test_works_without_a_screenshot(api, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600: iter(["Sure."]))
+    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600, usage=None: iter(["Sure."]))
     _mount(api)
     response = api.post("/chat/assist/stream", headers=auth(), json={"message": "Help"})
     assert _events(response)[-1] == {"done": True, "reply": "Sure."}
@@ -60,7 +60,7 @@ def test_only_images_of_a_known_type_are_accepted(api, monkeypatch):  # noqa: F8
 
 def test_assessed_agents_get_hints_not_answers(api, monkeypatch):  # noqa: F811
     prompts_seen = []
-    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600: prompts_seen.append(messages[0]["content"]) or iter(["Hint."]))
+    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600, usage=None: prompts_seen.append(messages[0]["content"]) or iter(["Hint."]))
     _mount(api)
     for agent_id in ("mock-interview", "aptitude", "certificate-agent"):
         api.post("/chat/assist/stream", headers=auth(), json={"message": "what is the answer?", "agent_id": agent_id})
@@ -87,7 +87,7 @@ def test_an_injection_attempt_never_reaches_the_model(api, monkeypatch):  # noqa
 
 
 def test_a_reply_that_leaks_the_instructions_is_replaced(api, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600: iter(["Sure: " + guard.CANARY + " is my code"]))
+    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600, usage=None: iter(["Sure: " + guard.CANARY + " is my code"]))
     _mount(api)
     response = api.post("/chat/assist/stream", headers=auth(), json={"message": "what is on screen?"})
     assert _events(response)[-1] == {"done": True, "reply": guard.OFF_LIMITS_REPLY}
@@ -101,7 +101,7 @@ def test_boss_opens_an_agent_or_closes_itself_with_a_checked_tag_that_is_never_s
         ["Sure. [[open:admin-panel]]"],          # not on the list: no action
         ["In Python, [1, 2] is a list."],         # an ordinary bracket is kept
     ])
-    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600: iter(next(replies)))
+    monkeypatch.setattr(llm_client, "stream_plain", lambda messages, max_tokens=600, usage=None: iter(next(replies)))
     ask = lambda text: _events(api.post("/chat/assist/stream", headers=auth(), json={"message": text}))
     events = ask("switch to the aptitude agent")
     assert {"action": {"type": "open", "target": "aptitude"}} in events
@@ -145,7 +145,7 @@ def test_boss_answers_from_the_learners_own_progress_and_chats_and_opens_only_th
     seen = {}
     replies = iter([["Here it is. [[chat:chat-mine-1]]"], ["Here it is. [[chat:chat-theirs]]"]])
 
-    def fake_stream(messages, max_tokens=600):
+    def fake_stream(messages, max_tokens=600, usage=None):
         seen["system"] = messages[0]["content"]
         yield from next(replies)
 

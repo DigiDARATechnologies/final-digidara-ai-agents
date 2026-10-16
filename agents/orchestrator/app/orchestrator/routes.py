@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
+from app.links import service as links_service
 from app.llm import client as llm_client
 from app.llm import transcribe as speech
 from app.orchestrator import assist, boss_memory
@@ -27,6 +28,28 @@ router = APIRouter(tags=["chat"])
 
 CHAT_RATE_LIMIT_PER_MIN = os.environ.get("CHAT_RATE_LIMIT_PER_MIN", "20")
 _CHAT_RATE_LIMIT = f"{CHAT_RATE_LIMIT_PER_MIN}/minute"
+
+# Boss's own model calls are charged like an agent's: the tokens they really
+# used come off the learner's balance, shown to them as points.
+BOSS_USAGE_NAME = "boss"
+OUT_OF_POINTS = "Not enough points. Please top up to continue."
+
+
+def _require_points(user_id: str) -> None:
+    """Like the gateway: a turn cannot start once the balance has run out."""
+    user = auth_service.get_by_id(user_id)
+    if user is not None and user.token_balance <= 0:
+        raise HTTPException(402, OUT_OF_POINTS)
+
+
+def _charge(user_id: str, usage: dict[str, int], action: str) -> None:
+    tokens = int(usage.get("tokens") or 0)
+    if tokens <= 0:
+        return
+    try:
+        auth_service.settle_tokens(user_id, tokens, BOSS_USAGE_NAME, action)
+    except Exception:
+        logger.exception("could not charge %d Boss tokens to user=%s", tokens, user_id)
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -55,14 +78,19 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     uses this to hand a matched message off to that agent's own dedicated
     multi-turn flow instead of a single stateless tool invocation."""
     logger.info("=== POST /chat/route user=%s message_chars=%d history_turns=%d", user_id, len(req.message), len(req.history))
+    _require_points(user_id)
+    usage: dict[str, int] = {}
     try:
-        result = route_message(req.message, [turn.model_dump() for turn in req.history], _learner_context(user_id, req.message))
+        result = route_message(req.message, [turn.model_dump() for turn in req.history], _learner_context(user_id, req.message),
+                               usage=usage)
     except Exception:
         logger.exception("router-only graph failed")
         raise HTTPException(
             502,
             "The router could not complete this turn (check LLM_MODEL / API key configuration). Please retry.",
         )
+    finally:
+        _charge(user_id, usage, "chat")
     if not result.get("agent_name"):
         boss_memory.remember(user_id, req.message, result.get("reply"))
     return RouteResponse(agent_name=result.get("agent_name"), reply=result.get("reply"))
@@ -96,20 +124,29 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
         raise HTTPException(status_code=422, detail="The screenshot must be a JPEG, PNG or WebP image.")
     logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
                 user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
+    _require_points(user_id)
 
     # The signed-in learner's own profile, progress and chats -- looked up by
     # the verified user id only, so Boss can never see another learner's.
     learner = await run_in_threadpool(_learner_context, user_id, req.message)
     progress = await _own_progress(user_id)
     chats = await run_in_threadpool(_own_chats, user_id)
+    certificates = await run_in_threadpool(_own_certificates, user_id, req)
 
     def events():
+        usage: dict[str, int] = {}
         try:
-            for event in assist.stream_assist(req, learner, progress, chats):
+            for event in assist.stream_assist(req, learner, progress, chats, certificates, usage):
+                if "action" in event:
+                    event = {"action": _link_action(user_id, event["action"], certificates)}
+                    if event["action"] is None:
+                        continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("assist turn failed")
             yield 'data: {"error": "Boss could not answer just now. Please try again."}\n\n'
+        finally:
+            _charge(user_id, usage, "assist")
 
     return StreamingResponse(events(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -129,18 +166,22 @@ def chat_route_stream(req: RouteStreamRequest, request: Request, user_id: str = 
     written instead of after it is finished."""
     logger.info("=== POST /chat/route/stream user=%s message_chars=%d history_turns=%d voice=%s",
                 user_id, len(req.message), len(req.history), req.voice)
+    _require_points(user_id)
     context = _learner_context(user_id, req.message)
     history = [turn.model_dump() for turn in req.history]
 
     def events():
+        usage: dict[str, int] = {}
         try:
-            for event in route_message_stream(req.message, history, context, voice=req.voice):
+            for event in route_message_stream(req.message, history, context, voice=req.voice, usage=usage):
                 if event.get("done") and not event.get("agent_name"):
                     boss_memory.remember(user_id, req.message, event.get("reply"))
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("streamed router turn failed")
             yield 'data: {"error": "The router could not complete this turn. Please retry."}\n\n'
+        finally:
+            _charge(user_id, usage, "chat")
 
     # No proxy buffering, so each piece reaches the browser as it is written.
     return StreamingResponse(events(), media_type="text/event-stream",
@@ -184,6 +225,38 @@ async def _own_progress(user_id: str) -> list[dict] | None:
         logger.warning("assist: readiness unavailable", exc_info=True)
         return None
     return [area for area in result.get("areas") or [] if isinstance(area, dict)]
+
+
+def _own_certificates(user_id: str, req: assist.AssistRequest) -> list[dict] | None:
+    """The learner's own certificates, looked up only when the question (or
+    the turn before it) is about certificates; None when not looked up."""
+    recent = " ".join([req.message] + [turn.content for turn in req.history[-2:]])
+    if not assist.CERTIFICATE_WORDS.search(recent):
+        return None
+    user = auth_service.get_by_id(user_id)
+    if user is None:
+        return None
+    try:
+        return links_service.own_certificates(user)
+    except links_service.LinkError:
+        logger.info("assist: certificates unavailable", exc_info=True)
+        return None
+
+
+def _link_action(user_id: str, action: dict, certificates: list[dict] | None) -> dict | None:
+    """Boss's action for the browser. Sharing a chat or a certificate becomes
+    the link itself, made here for the signed-in learner only."""
+    try:
+        if action.get("type") == "share":
+            return {"type": "link", **links_service.create_chat_link(user_id, action["chat_id"], action["mode"])}
+        if action.get("type") == "certificate":
+            cert = next((c for c in certificates or [] if c.get("id") == action["cert_id"]), {})
+            title = str(cert.get("topic") or "")
+            return {"type": "link", **links_service.create_certificate_link(user_id, action["cert_id"], title)}
+    except links_service.LinkError:
+        logger.info("assist: link not made", exc_info=True)
+        return None
+    return action
 
 
 def _own_chats(user_id: str) -> list[dict]:

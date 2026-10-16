@@ -50,6 +50,8 @@ import { buildPendingNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import BossAssistant from "./components/BossAssistant";
+import SharedLinkView from "./components/SharedLinkView";
+import { linkFromPath, rememberPendingLink, takePendingLink, type SharedLink } from "./lib/linkPaths";
 import ChatView from "./components/ChatView";
 import SettingsModal from "./components/SettingsModal";
 import LowPointsModal from "./components/LowPointsModal";
@@ -85,7 +87,7 @@ import { createInitialMockInterviewState, handleMockInterviewText, openMockInter
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
 import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
-import { routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
+import { OutOfPointsError, routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
 import { isVoiceConversationOpen, startVoiceGreeting } from "./lib/voiceReply";
 
 type OpenMenu = "user" | "notif" | null;
@@ -165,7 +167,18 @@ export default function App() {
   useEffect(() => { setLearnerContext(learnerSummary); }, [learnerSummary]);
   // Signed-out visitors land on the public home page; "Login" swaps to the
   // existing login screen and mirrors it in the URL (/login) so it is linkable.
-  const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login");
+  // A link Boss made (a shared chat, a certificate download): kept until the
+  // visitor is signed in, then opened; signed out, they are asked to sign in.
+  const [initialLink] = useState(() => {
+    const link = linkFromPath(window.location.pathname);
+    if (link) {
+      rememberPendingLink(link);
+      window.history.replaceState({}, "", "/");
+    }
+    return link;
+  });
+  const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
+  const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login" || initialLink !== null);
   useEffect(() => {
     const onPop = () => setShowLogin(window.location.pathname === "/login");
     window.addEventListener("popstate", onPop);
@@ -963,7 +976,7 @@ export default function App() {
       try {
         result = await routeMessageStream(text, history, { voice: isVoiceConversationOpen(), onText: (reply) => showText(reply, true) });
       } catch (error) {
-        if (shown) throw error;
+        if (shown || error instanceof OutOfPointsError) throw error;
         // No streaming (an older server, or it failed before any text): ask once more, whole.
         result = await routeMessage(text, history);
       }
@@ -974,7 +987,12 @@ export default function App() {
       }
       showText(result.reply || "I'm not sure how to help with that yet — could you rephrase it?", false);
       setTyping(false);
-    } catch {
+    } catch (error) {
+      if (error instanceof OutOfPointsError) {
+        appendAgentMessages(chatId, [{ text: "You have run out of points, so I cannot answer right now. Top up in **Settings > Billing** to keep talking to Boss." }]);
+        setTyping(false);
+        return;
+      }
       if (shown) {
         // The stream broke after part of the answer: ask once more, whole,
         // rather than leaving half a reply.
@@ -1239,6 +1257,12 @@ export default function App() {
       setNewChatPending(false);
     }
   }, [user, chats, activeChatKey]);
+
+  useEffect(() => {
+    if (!user || user.needsEmailVerification) return;
+    const link = takePendingLink();
+    if (link) setSharedLink(link);
+  }, [user]);
 
   function openChatById(chatId: string) {
     const chat = chats.find((c) => c.id === chatId);
@@ -2131,6 +2155,7 @@ export default function App() {
                 user={user}
                 typing={typing}
                 typingLabel={typingLabel}
+                onBossNavigate={bossNavigate}
                 composerDisabled={((isCertificateChat || isAptitudeChat || isMockInterviewChat || isResumeBuilderChat) && typing) || (isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write" && typing)}
                 hideComposer={(isMockInterviewChat && mockInterviewState?.step === "in_interview" && !!mockInterviewState.question) || capstoneVivaLive}
                 onBack={handleChatBack}
@@ -2280,6 +2305,11 @@ export default function App() {
         onClose={() => setSelectedAgent(null)}
         onStartChat={startChatFromDetails}
       />
+
+      {sharedLink && (
+        <SharedLinkView link={sharedLink} onClose={() => setSharedLink(null)}
+          onOpenOwnChat={(chatId) => { setSharedLink(null); openChatById(chatId); }} />
+      )}
 
       <Toast message={toastMsg} show={toastShow} />
       <SaveIndicator status={agentState.status} />

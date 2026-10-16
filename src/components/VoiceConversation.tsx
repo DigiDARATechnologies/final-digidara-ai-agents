@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { transcribeGeneralAudio, warmBoss } from "../lib/orchestratorApi";
 import { createSpeechQueue, speakNatural, stopSpeaking, type SpeechQueue } from "../lib/voiceEngine";
-import { setVoiceConversationOpen } from "../lib/voiceReply";
+import { continueInBossPanel, setVoiceConversationOpen } from "../lib/voiceReply";
+import { openingLine, parseBossCommand } from "../lib/bossCommands";
 import { readyToSpeak } from "../lib/voiceText";
 import { watchForSpeech } from "../lib/voiceActivity";
 import { afterContinuation, isContinuation, isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
@@ -37,6 +38,8 @@ interface Props {
   learnerName?: string;
   /** Opened by "Hey Boss, ...": ask this straight away instead of greeting. */
   firstQuestion?: string;
+  /** "Open aptitude": opens that agent (or page); the Boss panel carries the conversation on there. */
+  onNavigate?: (target: string) => void;
 }
 
 /** What Boss says when the conversation opens. */
@@ -51,7 +54,7 @@ export function bossGreeting(name?: string): string {
  * the reply is spoken, then it listens again -- until the learner ends it.
  * The chat carries on behind it, so every turn is still written down there.
  */
-export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName, firstQuestion }: Props) {
+export default function VoiceConversation({ messages, typing, onSend, onClose, awaitingReply = false, learnerName, firstQuestion, onNavigate }: Props) {
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [phase, setPhase] = useState<Phase>(awaitingReply ? "thinking" : "listening");
   const [sendIn, setSendIn] = useState<number | null>(null);
@@ -65,6 +68,8 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   // that was still streaming back to its first word ("Hell").
   const onSendRef = useRef(onSend);
   onSendRef.current = onSend;
+  const onNavigateRef = useRef(onNavigate);
+  onNavigateRef.current = onNavigate;
   // How many messages there were when the last question was sent: the next
   // agent message after that is its reply.
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
@@ -141,6 +146,17 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
    * learner talks to Boss, not part of the question. */
   function ask(said: string) {
     const question = withoutWakeWords(said) || said.trim();
+    // "Close the tab" ends the conversation (and "Hey Boss" opens it again);
+    // "open aptitude" goes there -- every time, not only the first.
+    const command = parseBossCommand(question);
+    if (command?.type === "close") {
+      end();
+      return;
+    }
+    if (command?.type === "open" && onNavigateRef.current) {
+      goTo(command.target, command.label);
+      return;
+    }
     lastQuestionRef.current = question;
     awaitingFromRef.current = messagesRef.current.length;
     setPhase("thinking");
@@ -150,6 +166,26 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   /** Listen again once this turn's speech ends, unless it was interrupted. */
   function listenAfter(turn: number) {
     return () => { if (openRef.current && turn === turnRef.current) listen(); };
+  }
+
+  /** Says where it is going, then goes; the Boss panel listens on there. */
+  function goTo(target: string, label: string) {
+    if (target === "boss") {
+      speak("You are already in Boss chat. What would you like to do?");
+      return;
+    }
+    setPhase("speaking");
+    const turn = ++turnRef.current;
+    void speakNatural(openingLine(label), {
+      onEnd: () => {
+        if (!openRef.current || turn !== turnRef.current) return;
+        openRef.current = false;
+        onNavigateRef.current?.(target);
+        window.setTimeout(continueInBossPanel, 300);
+      },
+      speed: BOSS_VOICE_SPEED,
+      pace: BOSS_VOICE_PACE,
+    }, true);
   }
 
   function speak(text: string) {

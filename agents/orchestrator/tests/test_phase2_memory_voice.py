@@ -279,7 +279,7 @@ def test_general_chat_sees_the_learners_goal_and_memory_as_data(monkeypatch):
 
     seen = {}
 
-    def fake_call(system, user, tools, history=None):
+    def fake_call(system, user, tools, history=None, usage=None):
         seen["system"] = system
         return {"text": "Sure!"}
 
