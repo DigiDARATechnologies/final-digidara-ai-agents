@@ -55,6 +55,10 @@ docker compose exec -T mysql sh -c \
   < docker/mysql-init/01-create-databases.sql
 echo "Service databases are ready."
 
+# Replace the orchestrator first, side by side, so API calls keep working
+# while it restarts (scripts/rolling-orchestrator.sh; never fails the deploy).
+bash scripts/rolling-orchestrator.sh || true
+
 DEPLOY_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 HEALTH_OK=true
 if ! docker compose up -d --build --wait --wait-timeout 180; then
