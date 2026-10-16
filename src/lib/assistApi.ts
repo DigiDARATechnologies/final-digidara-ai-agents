@@ -1,3 +1,4 @@
+import { reportPointsActivity } from "./points";
 import { sessionToken } from "./session";
 
 const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
@@ -14,9 +15,23 @@ export interface AssistRequest {
   voice?: boolean;
 }
 
-/** What Boss asked the browser to do: open an agent or page, or close Boss.
- * The server only sends targets from its own list. */
-export type AssistAction = { type: "open"; target: string } | { type: "chat"; chat_id: string } | { type: "close" };
+/** A link Boss made for the learner: one of their chats ("private": only their
+ * account opens it, "public": any signed-in account), or one of their
+ * certificates (downloads for 5 minutes, only with their account). `path` is
+ * on this site. */
+export interface BossLink {
+  kind: "chat" | "certificate";
+  path: string;
+  title?: string;
+  mode?: "private" | "public";
+  /** Certificate links: when the link stops working (ms since 1970). */
+  expires_at?: number;
+}
+
+/** What Boss asked the browser to do: open an agent, page or chat, show a
+ * link, or close Boss. The server only sends targets from its own list. */
+export type AssistAction = { type: "open"; target: string } | { type: "chat"; chat_id: string } | { type: "close" }
+  | ({ type: "link" } & BossLink);
 
 /** Boss guiding a learner on any screen (POST /chat/assist/stream): `onText`
  * gets the answer so far each time more of it arrives, `onAction` the action
@@ -38,6 +53,7 @@ export async function assistStream(request: AssistRequest, onText: (text: string
     }),
     signal,
   });
+  reportPointsActivity(response.status);
   if (!response.ok || !response.body) {
     const body = await response.json().catch(() => ({}));
     throw new Error(typeof body.detail === "string" ? body.detail : `Boss could not answer (${response.status}).`);

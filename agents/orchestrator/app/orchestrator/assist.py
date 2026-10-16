@@ -80,8 +80,17 @@ LIMITS
 ACTIONS (the browser carries them out; put the tag at the very end of your reply, at most one, never explain it)
 - The learner asks to go to, open or switch to an agent or page: say you are opening it, then [[open:<id>]] with one
   of these ids: {targets}.
-- The learner asks for a chat link, or to open or go back to one of their chats: name it, then [[chat:<chat id>]]
-  with an id from YOUR LEARNER'S CHATS (never make one up).
+- The learner asks to open or go back to one of their chats: name it, then [[chat:<chat id>]] with an id from
+  YOUR LEARNER'S CHATS (never make one up).
+- The learner asks for a LINK to one of their chats (to share or keep): if they have not yet said who the link is for,
+  do not make it -- ask one short question: "Should the link open only for you (you sign in with this same account),
+  or be a public link that anyone with a DigiDARA account can open?" Once they choose, name the chat and put
+  [[share:<chat id>:private]] (only for them) or [[share:<chat id>:public]] (any signed-in account). The link appears
+  under your reply; never write a link or URL yourself.
+- The learner asks for their certificate, a certificate link or to download a certificate: name the certificate,
+  then [[certificate:<certificate id>]] with an id from YOUR LEARNER'S CERTIFICATES, and say the download link works
+  for 5 minutes and only for their own account. If they have several and did not say which, ask. If they have none,
+  say so and offer to open AI Certification.
 - The learner asks to close you, this panel or this tab, or says they are done: say a short goodbye, then [[close]].
 """
 
@@ -108,22 +117,34 @@ OPEN_TARGETS = {
     "boss": "Boss chat",
     "readiness": "Job Readiness page",
 }
-_ACTION_TAG = re.compile(r"\[\[\s*(open|close|chat)\s*(?::\s*([A-Za-z0-9_.-]{1,128}))?\s*\]\]", re.IGNORECASE)
+_ACTION_TAG = re.compile(
+    r"\[\[\s*(open|close|chat|share|certificate)\s*(?::\s*([A-Za-z0-9_.-]{1,128}))?\s*(?::\s*(private|public))?\s*\]\]",
+    re.IGNORECASE,
+)
 CHAT_LIMIT = 20
+CERTIFICATE_LIMIT = 20
+# Words that make a question about certificates: only then are they looked up.
+CERTIFICATE_WORDS = re.compile(r"certif|சான்றித", re.IGNORECASE)
 
 
-def _actions(text: str, chat_ids: set[str] | frozenset[str] = frozenset()) -> tuple[str, dict | None]:
+def _actions(text: str, chat_ids: set[str] | frozenset[str] = frozenset(),
+             certificate_ids: set[str] | frozenset[str] = frozenset()) -> tuple[str, dict | None]:
     """The reply without action tags, and the last valid action in it. A chat
-    is opened only when it is one of this learner's own chats."""
+    is opened or shared, and a certificate linked, only when it is one of
+    this learner's own."""
     action = None
     for match in _ACTION_TAG.finditer(text):
-        kind, target = match.group(1).lower(), match.group(2) or ""
+        kind, target, mode = match.group(1).lower(), match.group(2) or "", (match.group(3) or "").lower()
         if kind == "close":
             action = {"type": "close"}
         elif kind == "open" and target.lower() in OPEN_TARGETS:
             action = {"type": "open", "target": target.lower()}
         elif kind == "chat" and target in chat_ids:
             action = {"type": "chat", "chat_id": target}
+        elif kind == "share" and target in chat_ids and mode in {"private", "public"}:
+            action = {"type": "share", "chat_id": target, "mode": mode}
+        elif kind == "certificate" and target in certificate_ids:
+            action = {"type": "certificate", "cert_id": target}
     # A half-written or unknown tag is dropped too.
     clean = re.sub(r"\[\[[^\]]*\]\]", "", _ACTION_TAG.sub("", text))
     return re.sub(r"[ 	]{2,}", " ", clean), action
@@ -171,8 +192,18 @@ def chats_block(chats: list[dict] | None) -> str:
             + json.dumps(chats[:CHAT_LIMIT], ensure_ascii=False, default=str))
 
 
+def certificates_block(certificates: list[dict] | None) -> str:
+    """The learner's own certificates (newest first), so Boss can link one."""
+    if certificates is None:
+        return "YOUR LEARNER'S CERTIFICATES: not looked up for this question."
+    if not certificates:
+        return "YOUR LEARNER'S CERTIFICATES: none yet."
+    return ("YOUR LEARNER'S CERTIFICATES (their own, newest first, as data):\n"
+            + json.dumps(certificates[:CERTIFICATE_LIMIT], ensure_ascii=False, default=str))
+
+
 def system_prompt(req: AssistRequest, learner: dict | None = None, progress: list[dict] | None = None,
-                  chats: list[dict] | None = None) -> str:
+                  chats: list[dict] | None = None, certificates: list[dict] | None = None) -> str:
     kind = ASSESSED_AGENTS.get(req.agent_id)
     where = req.agent_name.strip() or "DigiDARA app"
     targets = ", ".join(f"{key} ({label})" for key, label in OPEN_TARGETS.items())
@@ -187,6 +218,7 @@ def system_prompt(req: AssistRequest, learner: dict | None = None, progress: lis
     if progress is not None:
         parts.append(progress_block(progress))
     parts.append(chats_block(chats))
+    parts.append(certificates_block(certificates))
     if req.voice:
         parts.append(prompts.VOICE_REPLY_RULES)
     else:
@@ -207,32 +239,35 @@ def _user_content(req: AssistRequest) -> list[dict] | str:
 
 
 def stream_assist(req: AssistRequest, learner: dict | None = None, progress: list[dict] | None = None,
-                  chats: list[dict] | None = None) -> Iterator[dict]:
+                  chats: list[dict] | None = None, certificates: list[dict] | None = None,
+                  usage: dict[str, int] | None = None) -> Iterator[dict]:
     """SSE-ready events: {"delta"} pieces, then an optional {"action"} (open an
-    agent or page, or close Boss), then {"done", "reply"}; a leaked instruction
-    replaces the whole reply."""
+    agent, page or chat, share a chat, link a certificate, or close Boss), then
+    {"done", "reply"}; a leaked instruction replaces the whole reply.
+    `usage["tokens"]` gets what the model call cost."""
     if guard.looks_like_injection(req.message):
         yield {"done": True, "reply": guard.OFF_LIMITS_REPLY}
         return
-    messages = [{"role": "system", "content": system_prompt(req, learner, progress, chats)}]
+    messages = [{"role": "system", "content": system_prompt(req, learner, progress, chats, certificates)}]
     chat_ids = {str(chat.get("id")) for chat in chats or [] if chat.get("id")}
+    certificate_ids = {str(cert.get("id")) for cert in certificates or [] if cert.get("id") is not None}
     messages.extend(guard.safe_history([turn.model_dump() for turn in req.history]))
     messages.append({"role": "user", "content": _user_content(req)})
     hold = len(guard.CANARY)
     text = ""
     sent = 0
-    for piece in llm_client.stream_plain(messages, max_tokens=260 if req.voice else 600):
+    for piece in llm_client.stream_plain(messages, max_tokens=260 if req.voice else 600, usage=usage):
         text += piece
         if guard.leaks_instructions(text):
             yield {"replace": guard.OFF_LIMITS_REPLY}
             yield {"done": True, "reply": guard.OFF_LIMITS_REPLY}
             return
-        clean, _ = _actions(text, chat_ids)
+        clean, _ = _actions(text, chat_ids, certificate_ids)
         ready = min(_sendable(clean), len(clean) - hold)
         if ready > sent:
             yield {"delta": clean[sent:ready]}
             sent = ready
-    clean, action = _actions(text, chat_ids)
+    clean, action = _actions(text, chat_ids, certificate_ids)
     # An action tag cut off by the token limit is not shown.
     clean = re.sub(r"\[\[[^\]]*$", "", clean)
     if sent < len(clean):

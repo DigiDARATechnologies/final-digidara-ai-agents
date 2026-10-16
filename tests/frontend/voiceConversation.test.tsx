@@ -176,3 +176,38 @@ test('"Hey Boss, what is a resume" is sent as "what is a resume"', () => {
   act(() => { mockStart.mock.calls[0][0]('Hey Boss, what is a resume', true); });
   expect(onSend).toHaveBeenCalledWith('what is a resume');
 });
+
+test('in the Boss chat voice conversation, "close the tab" ends it and "open aptitude" goes there and hands over to the Boss panel', async () => {
+  const { continueInBossPanel, setBossPanelOpener } = await import('../../src/lib/voiceReply');
+  expect(typeof continueInBossPanel).toBe('function');
+  const panel = jest.fn();
+  const unregister = setBossPanelOpener(panel);
+  jest.useFakeTimers();
+  try {
+    const onSend = jest.fn();
+    const onClose = jest.fn();
+    const onNavigate = jest.fn();
+    let spoken: { onEnd: () => void } = { onEnd: () => {} };
+    mockSpeak.mockImplementation((_text: string, handlers: { onEnd: () => void }) => { spoken = handlers; return Promise.resolve(true); });
+    const first = render(<VoiceConversation messages={[]} typing={false} onSend={onSend} onClose={onClose} onNavigate={onNavigate} />);
+    act(() => { spoken.onEnd(); });
+    act(() => { mockStart.mock.calls[0][0]('open the aptitude agent', true); });
+    expect(onSend).not.toHaveBeenCalled();
+    expect(mockSpeak).toHaveBeenLastCalledWith('Opening Aptitude Trainer.', expect.anything(), true);
+    act(() => { spoken.onEnd(); });
+    expect(onNavigate).toHaveBeenCalledWith('aptitude');
+    act(() => { jest.advanceTimersByTime(300); });
+    expect(panel).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    mockStart.mockClear();
+    render(<VoiceConversation messages={[]} typing={false} onSend={onSend} onClose={onClose} onNavigate={onNavigate} />);
+    act(() => { spoken.onEnd(); });
+    act(() => { mockStart.mock.calls[0][0]('Hey Boss close the tab', true); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+    unregister();
+  }
+});

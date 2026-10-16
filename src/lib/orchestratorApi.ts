@@ -1,4 +1,5 @@
 import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
+import { reportPointsActivity } from "./points";
 import { sessionToken } from "./session";
 const ORCHESTRATOR_BASE = ((import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100")).replace(/\/$/, "");
 
@@ -10,6 +11,20 @@ export interface RouteResult {
 export interface RouteTurn {
   role: "user" | "assistant";
   content: string;
+}
+
+/** Boss's answers use the learner's points too: the server refused this turn
+ * because the balance has run out (402). */
+export class OutOfPointsError extends Error {
+  constructor() {
+    super("Not enough points. Please top up to continue.");
+    this.name = "OutOfPointsError";
+  }
+}
+
+function checkPoints(response: Response): void {
+  reportPointsActivity(response.status);
+  if (response.status === 402) throw new OutOfPointsError();
 }
 
 /** Asks the orchestrator's LLM router (POST /chat/route) which registered
@@ -69,6 +84,7 @@ export async function routeMessageStream(
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: JSON.stringify({ message, history, voice: Boolean(options.voice) }),
   });
+  checkPoints(response);
   if (!response.ok || !response.body) throw new Error(`route stream ${response.status}`);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -105,6 +121,7 @@ export async function routeMessage(message: string, history: RouteTurn[] = []): 
     },
     body: JSON.stringify({ message, history }),
   });
+  checkPoints(response);
   if (!response.ok) {
     let detail = response.statusText;
     try {

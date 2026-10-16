@@ -72,3 +72,18 @@ export function takeVoiceConversation(): boolean {
   continueUntil = 0;
   return continuing;
 }
+
+/** The Boss chat's voice conversation was asked to open an agent: the chat
+ * (and that conversation) closes as the agent opens, so the Boss panel picks
+ * the conversation up there and keeps listening -- the learner can switch
+ * again, or ask about the new screen, without saying "Hey Boss" again. */
+let bossPanelOpener: (() => void) | null = null;
+
+export function setBossPanelOpener(opener: (() => void) | null): () => void {
+  bossPanelOpener = opener;
+  return () => { if (bossPanelOpener === opener) bossPanelOpener = null; };
+}
+
+export function continueInBossPanel(): void {
+  bossPanelOpener?.();
+}

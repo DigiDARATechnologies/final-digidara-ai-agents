@@ -36,7 +36,7 @@ def _stream_once(monkeypatch, reply="I'm Boss!"):
     monkeypatch.setattr(graph, "load_registry_node", lambda state: {"tools": [], "agents": []})
     seen = {}
 
-    def fake_stream(system, user, tools, history, max_tokens):
+    def fake_stream(system, user, tools, history, max_tokens, usage=None):
         seen["system"] = system
         yield "text", reply
 

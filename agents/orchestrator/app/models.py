@@ -450,3 +450,17 @@ class CareerPlan(Base):
     language: Mapped[str] = mapped_column(String(8), default="en")
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class ChatShareLink(Base):
+    """A link to one of a learner's chats that Boss made on request. "private"
+    opens only for the account that made it; "public" opens for any signed-in
+    account. The token is the link; it is never derived from the chat id."""
+
+    __tablename__ = "chat_share_links"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(128))
+    mode: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)

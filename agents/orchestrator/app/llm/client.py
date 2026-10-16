@@ -21,7 +21,8 @@ logger = logging.getLogger("orchestrator.llm")
 
 
 def call_with_tools(
-    system: str, user: str, tools: list[dict[str, Any]], history: list[dict[str, str]] | None = None
+    system: str, user: str, tools: list[dict[str, Any]], history: list[dict[str, str]] | None = None,
+    usage: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """One LLM turn with optional tools bound. Returns either
     {"tool_name": str, "tool_args": dict} if the model chose to call one of
@@ -43,6 +44,8 @@ def call_with_tools(
     started = time.perf_counter()
     response = litellm.completion(**kwargs)
     elapsed = time.perf_counter() - started
+    if usage is not None:
+        record_usage(usage, getattr(response, "usage", None), messages, response.choices[0].message.content or "")
 
     message = response.choices[0].message
     tool_calls = getattr(message, "tool_calls", None)
@@ -71,6 +74,43 @@ def call_with_tools(
 HEDGE_AFTER_SECONDS = float(os.environ.get("LLM_HEDGE_AFTER_SECONDS", "1.5"))
 
 _END = object()
+
+# Without a usage report from the provider, a screenshot is counted at about
+# what a 1280px image costs.
+_IMAGE_TOKENS = 1_100
+
+
+def estimate_tokens(messages: list[dict[str, Any]], output: str) -> int:
+    """Roughly what a call cost when the provider did not say: about four
+    characters a token, plus a fixed amount per image."""
+    chars = len(output)
+    images = 0
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            chars += len(content)
+        elif isinstance(content, list):
+            for part in content:
+                if part.get("type") == "image_url":
+                    images += 1
+                else:
+                    chars += len(str(part.get("text") or ""))
+    return max(1, chars // 4) + images * _IMAGE_TOKENS
+
+
+def record_usage(usage: dict[str, int], reported: Any, messages: list[dict[str, Any]], output: str) -> None:
+    """Adds one call's tokens to `usage["tokens"]`: the provider's own count
+    when it sent one, else an estimate, so a call is never free by accident."""
+    total = getattr(reported, "total_tokens", None) if reported is not None else None
+    if not isinstance(total, int) or total <= 0:
+        total = estimate_tokens(messages, output)
+    usage["tokens"] = usage.get("tokens", 0) + total
+
+
+def _chunk_usage(chunk: Any) -> Any:
+    """The usage report a stream sends with its last chunk (None before)."""
+    reported = getattr(chunk, "usage", None)
+    return reported if getattr(reported, "total_tokens", None) else None
 
 
 def _has_output(chunk: Any) -> bool:
@@ -153,7 +193,7 @@ def _hedged_chunks(kwargs: dict[str, Any]) -> Iterator[Any]:
 
 def stream_with_tools(
     system: str, user: str, tools: list[dict[str, Any]], history: list[dict[str, str]] | None = None,
-    max_tokens: int = 700,
+    max_tokens: int = 700, usage: dict[str, int] | None = None,
 ) -> Iterator[tuple[str, Any]]:
     """call_with_tools, streamed: yields ("text", delta) as the answer is
     written, then ("tool", {"tool_name", "tool_args"}) if the model chose a
@@ -163,6 +203,7 @@ def stream_with_tools(
     messages.append({"role": "user", "content": user})
     kwargs: dict[str, Any] = {
         "model": config.LLM_MODEL, "messages": messages, "temperature": 0.2, "max_tokens": max_tokens, "stream": True,
+        "stream_options": {"include_usage": True},
     }
     if tools:
         kwargs["tools"] = tools
@@ -172,7 +213,10 @@ def stream_with_tools(
     first_token: float | None = None
     tool_name = ""
     tool_args = ""
+    reported = None
+    written = ""
     for chunk in _hedged_chunks(kwargs):
+        reported = _chunk_usage(chunk) or reported
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
@@ -187,11 +231,14 @@ def stream_with_tools(
         if content:
             if first_token is None:
                 first_token = time.perf_counter() - started
+            written += content
             yield "text", content
     logger.info(
         "streamed route turn in %.2fs (first text %.2fs), tools_offered=%d, tool_called=%s",
         time.perf_counter() - started, first_token or 0.0, len(tools), bool(tool_name),
     )
+    if usage is not None:
+        record_usage(usage, reported, messages, written + tool_name + tool_args)
     if tool_name:
         try:
             args = json.loads(tool_args or "{}")
@@ -201,19 +248,27 @@ def stream_with_tools(
         yield "tool", {"tool_name": tool_name, "tool_args": args}
 
 
-def stream_plain(messages: list[dict[str, Any]], max_tokens: int = 600) -> Iterator[str]:
+def stream_plain(messages: list[dict[str, Any]], max_tokens: int = 600,
+                 usage: dict[str, int] | None = None) -> Iterator[str]:
     """A plain streamed answer (no tools): yields text as it is written.
     `messages` may carry an image; a single request, not hedged, so a
-    screenshot is not sent twice."""
+    screenshot is not sent twice. `usage["tokens"]` gets what it cost."""
+    reported = None
+    written = ""
     for chunk in litellm.completion(
         model=config.LLM_MODEL, messages=messages, temperature=0.2, max_tokens=max_tokens, stream=True,
+        stream_options={"include_usage": True},
     ):
+        reported = _chunk_usage(chunk) or reported
         choices = getattr(chunk, "choices", None) or []
         if not choices:
             continue
         content = getattr(choices[0].delta, "content", None)
         if content:
+            written += content
             yield content
+    if usage is not None:
+        record_usage(usage, reported, messages, written)
 
 
 def warm_up() -> None:

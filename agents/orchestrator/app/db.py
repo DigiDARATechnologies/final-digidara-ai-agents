@@ -1,3 +1,5 @@
+import time
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -22,14 +24,16 @@ def init_db() -> None:
 
     # Every gunicorn worker runs this at startup. When a release adds a table,
     # two workers can both find it missing and race to create it; the loser
-    # gets "already exists" (MySQL 1050) and simply checks again.
-    for attempt in range(3):
+    # gets "already exists" (MySQL 1050), or, while the other is still creating
+    # it, "being modified by concurrent DDL" (1684), and simply checks again.
+    for attempt in range(5):
         try:
             Base.metadata.create_all(bind=engine)
             break
         except Exception as exc:
-            if "1050" not in str(exc) or attempt == 2:
+            if not any(code in str(exc) for code in ("1050", "1684")) or attempt == 4:
                 raise
+            time.sleep(0.5 * (attempt + 1))
     # create_all does not alter existing tables. Keep this small
     # compatibility migration (added for Google sign-in) until the project
     # adopts Alembic.

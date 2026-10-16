@@ -73,7 +73,7 @@ def test_streamed_route_sends_the_answer_in_pieces(monkeypatch):
     monkeypatch.setattr(graph, "load_registry_node", lambda state: {"tools": [], "agents": []})
     seen = {}
 
-    def fake_stream(system, user, tools, history, max_tokens):
+    def fake_stream(system, user, tools, history, max_tokens, usage=None):
         seen.update(system=system, max_tokens=max_tokens)
         yield from [("text", "Hello everyone! I am Boss, "), ("text", "your DigiDARA AI assistant.")]
 

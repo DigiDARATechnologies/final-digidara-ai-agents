@@ -50,6 +50,8 @@ class OrchestratorState(TypedDict, total=False):
     reply: str
     # Phase 2: the learner's goal, skills and shared memory, for a personal answer.
     learner_context: dict[str, Any] | None
+    # Filled with the tokens Boss's own model calls used, charged as points.
+    usage: dict[str, int]
 
 
 # --- Node 1: load whatever agents are live right now (deterministic) -------
@@ -76,6 +78,7 @@ def route_node(state: OrchestratorState) -> dict:
         user=state["message"],
         tools=tools,
         history=guard.safe_history(state.get("history")),
+        usage=state.get("usage"),
     )
     if "tool_name" in result:
         # Only an agent that is registered and live right now; a made-up or
@@ -134,13 +137,16 @@ def summarize_node(state: OrchestratorState) -> dict:
     return {"reply": reply}
 
 
-def route_message(message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None) -> dict:
+def route_message(message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None,
+                  usage: dict[str, int] | None = None) -> dict:
     """load_registry + route only — no agent invocation, no summarize. Used
     by POST /chat/route for handoff-style UIs that run the matched agent's
     own dedicated multi-turn flow client-side instead of a single stateless
     tool call. Reuses load_registry_node/route_node unmodified; a second
     compiled StateGraph would be pure overhead for two sequential calls."""
     state: OrchestratorState = {"message": message, "history": history or [], "learner_context": learner_context}
+    if usage is not None:
+        state["usage"] = usage
     state.update(load_registry_node(state))
     state.update(route_node(state))
     return {"agent_name": state.get("tool_name"), "reply": state.get("reply")}
@@ -148,6 +154,7 @@ def route_message(message: str, history: list[dict[str, str]] | None = None, lea
 
 def route_message_stream(
     message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None, voice: bool = False,
+    usage: dict[str, int] | None = None,
 ):
     """route_message, streamed for the general chat: yields {"delta": text}
     while the answer is written, then one {"done": True, "agent_name", "reply"}.
@@ -171,7 +178,8 @@ def route_message_stream(
     text = ""
     sent = 0
     chosen: dict | None = None
-    for kind, value in stream_with_tools(system, message, tools, guard.safe_history(history), max_tokens=260 if voice else 700):
+    for kind, value in stream_with_tools(system, message, tools, guard.safe_history(history), max_tokens=260 if voice else 700,
+                                         usage=usage):
         if kind == "tool":
             chosen = value
             continue

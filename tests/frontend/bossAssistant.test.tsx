@@ -204,7 +204,7 @@ test('Boss opens the agent the learner asked for, and closes after saying goodby
   });
   render(<BossAssistant agentId="" agentName="Job readiness" getContext={() => ''} onNavigate={onNavigate} />);
   fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
-  await ask('switch to the aptitude agent');
+  await ask('take me where I practise numbers');
   expect(onNavigate).toHaveBeenCalledWith('aptitude');
   expect(screen.getByRole('dialog')).toBeTruthy();
 
@@ -233,4 +233,45 @@ test('Boss opens one of the learner chats when it gives a chat link', async () =
   fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
   await ask('give me the chat link');
   expect(onNavigate).toHaveBeenCalledWith('chat:chat-123');
+});
+
+test('every switch works, not only the first: "open X" goes there straight away and the tag stays in the history', async () => {
+  const onNavigate = jest.fn();
+  render(<BossAssistant agentId="" agentName="Job readiness" getContext={() => ''} onNavigate={onNavigate} />);
+  fireEvent.click(screen.getByLabelText('Ask Boss for help with this screen'));
+  await ask('switch to the aptitude agent');
+  await ask('now open mock interview please');
+  await ask('Hey Boss, go back to boss chat');
+  expect(onNavigate.mock.calls).toEqual([['aptitude'], ['mock-interview'], ['boss']]);
+  expect(mockAssist).not.toHaveBeenCalled();
+  expect(screen.getByText('Opening Mock Interview.')).toBeTruthy();
+  await ask('what can I practise here?');
+  const history = mockAssist.mock.calls[0][0].history as Array<{ role: string; content: string }>;
+  expect(history).toContainEqual({ role: 'assistant', content: 'Opening Aptitude Trainer. [[open:aptitude]]' });
+});
+
+test('"close the tab" closes Boss, and "Hey Boss" opens it again', async () => {
+  localStorage.setItem('digidara.heyBoss', 'on');
+  render(<BossAssistant agentId="" agentName="Aptitude" getContext={() => ''} />);
+  act(() => { mockWake?.(''); });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  await ask('close the tab');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(mockWake).not.toBeNull();
+  act(() => { mockWake?.(''); });
+  expect(screen.getByRole('dialog')).toBeTruthy();
+});
+
+test('a link Boss makes shows with who can open it and a copy button', async () => {
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Here is your private link.');
+    onAction({ type: 'link', kind: 'chat', mode: 'private', path: '/shared/chat/abcDEF1234567890', title: 'Aptitude practice' });
+    return 'Here is your private link.';
+  });
+  openBoss();
+  await ask('give me the link, only for me');
+  const link = await screen.findByRole('link', { name: 'Aptitude practice' });
+  expect(link.getAttribute('href')).toBe(`${window.location.origin}/shared/chat/abcDEF1234567890`);
+  expect(screen.getByText('Private link: opens only for your account')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Copy link' })).toBeTruthy();
 });

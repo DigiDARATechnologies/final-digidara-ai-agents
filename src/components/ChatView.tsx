@@ -101,6 +101,8 @@ interface ChatViewProps {
   contextPanel?: ReactNode;
   /** Suppress the text copy when a live panel renders that content itself. */
   hideLatestContextMessage?: boolean;
+  /** Boss chat: "open aptitude" said in the voice conversation opens it. */
+  onBossNavigate?: (target: string) => void;
 }
 
 /** Phone recording (Communication Coach): a pause this long after speaking
@@ -116,6 +118,7 @@ export default function ChatView({
   user,
   typing,
   typingLabel,
+  onBossNavigate,
   composerDisabled = false,
   hideComposer = false,
   onBack,
@@ -848,6 +851,7 @@ export default function ChatView({
       {isGeneralChat && voiceConversation !== "off" && (
         <VoiceConversation messages={chat.messages} typing={typing} awaitingReply={voiceConversation === "await"} learnerName={user.name}
           firstQuestion={voiceFirstQuestion} onSend={(text) => onSend(text)}
+          onNavigate={onBossNavigate && ((target) => { setVoiceConversation("off"); setVoiceFirstQuestion(""); onBossNavigate(target); })}
           onClose={() => { setVoiceConversation("off"); setVoiceFirstQuestion(""); }} />
       )}
     </section>

@@ -105,6 +105,7 @@ def _purge_phase2(user_id: str) -> None:
     from app.readiness import service as readiness_service
 
     from app.coach import service as coach_service
+    from app.links import service as links_service
     from app.memory import service as memory_service
     from app.orchestrator import boss_memory
 
@@ -114,6 +115,7 @@ def _purge_phase2(user_id: str) -> None:
     memory_service.clear(user_id)
     boss_memory.forget(user_id)
     coach_service.purge(user_id)
+    links_service.purge(user_id)
     session = get_session()
     try:
         session.query(A2ATask).filter_by(user_id=user_id).delete()

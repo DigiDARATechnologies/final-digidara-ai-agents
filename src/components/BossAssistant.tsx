@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
-import { assistStream, type AssistAction } from "../lib/assistApi";
+import { assistStream, type AssistAction, type BossLink } from "../lib/assistApi";
 import { refersToScreen, withoutWakeWords } from "../lib/assistText";
+import { CLOSE_PHRASE, openingLine, parseBossCommand } from "../lib/bossCommands";
 import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { captureScreenshot, SCREENSHOT_HIDE_ATTRIBUTE } from "../lib/screenCapture";
 import { createSpeechQueue, stopSpeaking } from "../lib/voiceEngine";
@@ -11,7 +12,7 @@ import { audioRecordingSupported } from "../lib/voiceCapture";
 import { watchForSpeech } from "../lib/voiceActivity";
 import { listenForWakeWord, wakeWordSupported } from "../lib/wakeWord";
 import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
-import { isVoiceConversationOpen, onVoiceConversationOpen, openBossVoice } from "../lib/voiceReply";
+import { isVoiceConversationOpen, onVoiceConversationOpen, openBossVoice, setBossPanelOpener } from "../lib/voiceReply";
 import { BOSS_VOICE_PACE, BOSS_VOICE_SPEED } from "./VoiceConversation";
 import { Logo } from "./Logo";
 
@@ -29,6 +30,11 @@ interface Turn {
   text: string;
   /** The screen was attached to this question. */
   screen?: boolean;
+  /** The action Boss took with this answer, as its tag ("[[open:aptitude]]"):
+   * kept in the history so the model keeps writing its tags turn after turn. */
+  action?: string;
+  /** A link Boss made (a chat or a certificate). */
+  link?: BossLink;
 }
 
 const HISTORY_TURNS = 6;
@@ -37,8 +43,42 @@ const WAKE_KEY = "digidara.heyBoss";
 const PAUSE_MS = 1_500;
 /** "Thanks Boss", "that's all", "bye": the learner is done, so the conversation ends. */
 const END_PHRASE = /^(?:ok(?:ay)?[\s,]+)?(?:thanks?(?:\s+you)?(?:\s+boss)?|thank\s+you\s+boss|that'?s\s+all|that\s+is\s+all|bye(?:\s+boss)?|good\s?bye|stop|stop\s+listening|close|exit|end)[\s.!]*$/i;
-/** "Close the tab", "please close Boss", "you can close this": Boss closes. */
-export const CLOSE_PHRASE = /^(?:(?:ok(?:ay)?|please|now)[\s,]+)*(?:you\s+can\s+|can\s+you\s+)?(?:close|exit|hide|shut)(?:\s+(?:(?:the|this|that|your)\s+)?(?:tab|panel|window|boss|chat|assistant|it|this|yourself)(?:\s+(?:tab|panel|window))?)?(?:[\s,]+(?:please|boss))*[\s.!]*$/i;
+export { CLOSE_PHRASE };
+
+function actionTag(action: AssistAction): string {
+  if (action.type === "close") return "[[close]]";
+  if (action.type === "chat") return `[[chat:${action.chat_id}]]`;
+  if (action.type === "open") return `[[open:${action.target}]]`;
+  return "";
+}
+
+const LINK_COPY_MS = 1_800;
+
+/** A link Boss made, with what it is for and a copy button. */
+function LinkCard({ link }: { link: BossLink }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}${link.path}`;
+  const note = link.kind === "certificate"
+    ? `Download link${link.expires_at ? `, works until ${new Date(link.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""} (5 minutes), only for your account`
+    : link.mode === "public" ? "Public link: anyone signed in to DigiDARA can open it" : "Private link: opens only for your account";
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), LINK_COPY_MS);
+    } catch {
+      // No clipboard permission: the link is still there to select.
+    }
+  }
+  return (
+    <span className="boss-link">
+      <a href={url} target="_blank" rel="noopener noreferrer">{link.title || (link.kind === "certificate" ? "Your certificate" : "Your chat")}</a>
+      <small>{note}</small>
+      <span className="boss-link-url">{url}</span>
+      <button type="button" className="boss-link-copy" onClick={copy}>{copied ? "Copied" : "Copy link"}</button>
+    </span>
+  );
+}
 
 function readWakePreference(): boolean {
   try {
@@ -73,6 +113,10 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
   // microphone, so "Hey Boss" and this button wait until it closes.
   const [bossTalking, setBossTalking] = useState(isVoiceConversationOpen);
   useEffect(() => onVoiceConversationOpen(setBossTalking), []);
+  // The Boss chat's voice conversation opened an agent: carry it on here.
+  // startConversation only reads refs and setters.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setBossPanelOpener(() => startConversation()), []);
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const voiceSupported = audioRecordingSupported();
   const wakeSupported = wakeWordSupported();
@@ -192,9 +236,18 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     setInput("");
     stopSpeaking();
     const wantsScreen = lookAtScreen || refersToScreen(message);
+    const command = parseBossCommand(message);
+    if (command?.type === "close") {
+      close();
+      return;
+    }
+    if (command?.type === "open") {
+      goTo(message, command.target, command.label, spoken);
+      return;
+    }
     const history = turnsRef.current.slice(-HISTORY_TURNS).map((turn) => ({
       role: turn.role === "user" ? ("user" as const) : ("assistant" as const),
-      content: turn.text,
+      content: turn.action ? `${turn.text} ${turn.action}` : turn.text,
     }));
     let screenshot: string | null = null;
     if (wantsScreen) {
@@ -222,12 +275,17 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     let queued = 0;
     // "Close the tab": Boss says goodbye, then closes. "Open aptitude": it goes there and keeps helping.
     let closing = false;
+    let tag = "";
+    let link: BossLink | undefined;
     const act = (action: AssistAction) => {
+      tag = actionTag(action);
       if (action.type === "close") closing = true;
       else if (action.type === "chat") onNavigate?.(`chat:${action.chat_id}`);
-      else onNavigate?.(action.target);
+      else if (action.type === "link") {
+        link = { kind: action.kind, path: action.path, title: action.title, mode: action.mode, expires_at: action.expires_at };
+      } else onNavigate?.(action.target);
     };
-    const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text }]);
+    const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text, action: tag || undefined, link }]);
     try {
       const reply = await assistStream({
         message, history, agentId, agentName, context: getContext(), screenshot, voice: spoken,
@@ -253,6 +311,28 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     }
   }
   askRef.current = ask;
+
+  /** "Open aptitude", "switch to mock interview": Boss goes there straight
+   * away (no model call), says so, and carries on listening there. */
+  function goTo(message: string, target: string, label: string, spoken: boolean) {
+    setError("");
+    setInput("");
+    const line = openingLine(label);
+    setTurns((previous) => [...previous, { role: "user", text: message }, { role: "boss", text: line, action: `[[open:${target}]]` }]);
+    onNavigate?.(target);
+    if (!spoken) return;
+    const queue = createSpeechQueue({
+      speed: BOSS_VOICE_SPEED,
+      pace: BOSS_VOICE_PACE,
+      onStart: () => setSpeaking(true),
+      onEnd: () => {
+        setSpeaking(false);
+        if (conversationRef.current && openRef.current) window.setTimeout(() => listenRef.current(), 150);
+      },
+    }, true);
+    queue.push(line);
+    queue.end();
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -313,6 +393,7 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
             {turns.map((turn, index) => (
               <div key={index} className={`boss-turn ${turn.role}`}>
                 {turn.text || <span className="boss-dots" aria-label="Boss is answering"><i /><i /><i /></span>}
+                {turn.link && <LinkCard link={turn.link} />}
                 {turn.screen && <em>with your screen</em>}
               </div>
             ))}

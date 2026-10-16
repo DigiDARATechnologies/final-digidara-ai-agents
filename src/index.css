@@ -2514,3 +2514,26 @@ a{ color:var(--accent3); }
 .boss-panel.talking{box-shadow:0 18px 60px rgba(14,116,144,.38)}
 :root[data-theme="dark"] .boss-wake{background:#1e2127;border-color:#34383f;color:#e3e8ea}
 :root[data-theme="dark"] .boss-wake.on{background:#16a34a;border-color:#16a34a}
+
+/* Links Boss makes (a chat, a certificate) and the page that opens them. */
+.boss-link{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding:8px 10px;border:1px solid #cfe3e8;border-radius:10px;background:#fff;white-space:normal}
+.boss-link a{font-weight:600;color:#0e7490;text-decoration:underline}
+.boss-link small{font-size:11.5px;color:#475569}
+.boss-link-url{font-size:11px;color:#64748b;overflow-wrap:anywhere;user-select:all}
+.boss-link-copy{align-self:flex-start;border:1px solid #cfe3e8;border-radius:999px;background:#f0f9fb;color:#0e7490;font-size:12px;font-weight:600;padding:4px 10px;cursor:pointer}
+:root[data-theme="dark"] .boss-link{background:#1a1d22;border-color:#34383f}
+:root[data-theme="dark"] .boss-link small,:root[data-theme="dark"] .boss-link-url{color:#a5b0bc}
+:root[data-theme="dark"] .boss-link-copy{background:#22262c;border-color:#34383f;color:#67c6d9}
+.shared-link-card{width:min(680px,calc(100vw - 32px));max-height:calc(100dvh - 48px);display:flex;flex-direction:column}
+.shared-link-card .modal-body{display:flex;flex-direction:column;gap:12px;overflow:auto}
+.shared-link-note{margin:0;font-size:13.5px;color:var(--text-secondary,#475569)}
+.shared-link-error{margin:0;font-size:14px;color:var(--err,#b91c1c)}
+.shared-chat{display:flex;flex-direction:column;gap:8px}
+.shared-chat-msg{max-width:88%;display:flex;flex-direction:column;gap:2px}
+.shared-chat-msg.user{align-self:flex-end;align-items:flex-end}
+.shared-chat-msg.agent{align-self:flex-start}
+.shared-chat-msg .bubble{padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.5;overflow-wrap:anywhere;background:#eef6f8}
+.shared-chat-msg.user .bubble{background:#1d4ed8;color:#fff}
+.shared-chat-msg small{font-size:11px;color:#64748b}
+:root[data-theme="dark"] .shared-chat-msg.agent .bubble{background:#22262c}
+.shared-link-card .btn{align-self:flex-start}
