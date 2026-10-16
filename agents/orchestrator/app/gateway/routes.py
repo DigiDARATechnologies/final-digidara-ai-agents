@@ -65,6 +65,9 @@ TOKEN_COST_PER_CALL = int(os.environ.get("TOKEN_COST_PER_CALL", "100"))
 FREE_ACTIONS = {
     "ensure_session", "usage_summary", "list_courses", "list_languages",
     "ensure_profile", "get_thread_status", "getThreadStatus",
+    # Communication Coach's identity bridge, like the others: opening the
+    # agent costs nothing and works with no points left.
+    "bridge_identity",
     # Job Agent actions are database/scraper operations and do not invoke an
     # LLM. Keeping them free avoids applying the legacy per-call fallback to
     # deterministic reads, uploads, moderation and ingestion controls.
@@ -108,7 +111,11 @@ FREE_ACTIONS = {
 
 # Actions whose payload identity (user_id, name, email, mobile) the gateway
 # overwrites with the verified account's before forwarding.
-IDENTITY_ACTIONS = frozenset({"ensure_session", "get_student_summary"})
+# Every agent's identity bridge must be here: an agent that trusts the
+# payload would otherwise give any signed-in user another learner's session
+# just for their email (AI Certification's and Resume Builder's
+# `ensure_profile`, Communication Coach's `bridge_identity`).
+IDENTITY_ACTIONS = frozenset({"ensure_session", "ensure_profile", "bridge_identity", "get_student_summary"})
 
 
 def _resolve_agent(agent_name: str):
