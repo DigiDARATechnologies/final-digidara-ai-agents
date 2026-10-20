@@ -1655,6 +1655,20 @@ export default function App() {
     return false;
   }
 
+  /** The Aptitude panel's buttons are explicit commands, not typed text: they
+   * skip the Conductor (which otherwise answered "hint" itself, behind the
+   * live question) and show a readable label instead of the raw command. */
+  function chooseAptitude(value: string) {
+    const nav = value.match(/^__aptitude_nav:(\d+)$/);
+    const label = nav ? `Question ${nav[1]}`
+      : value === "hint" ? "Get a hint"
+      : value === "skip question" ? "Skip question"
+      : value === "exit test" ? "Exit test"
+      : value === "continue test" ? "Continue test"
+      : value;
+    sendMessage(value, undefined, false, label);
+  }
+
   function handleChooseOption(value: string, label?: string) {
     if (value === "open_resume_dashboard") {
       setDashboardOpen(true);
@@ -2226,7 +2240,7 @@ export default function App() {
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
-                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={chooseAptitude} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && ["hint", "get a hint"].includes(currentChat.messages.at(-1)?.text.trim().toLowerCase() ?? "")} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : capstoneVivaLive && capstoneState
                     ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />

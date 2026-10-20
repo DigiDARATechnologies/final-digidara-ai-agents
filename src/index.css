@@ -100,6 +100,10 @@
 .aptitude-hint-text{display:flex;gap:8px;margin-top:10px;border-radius:10px;background:rgba(108,195,232,.14);padding:9px 11px;color:var(--tx-2);font-size:12px;line-height:1.45}
 .aptitude-hint-text b{flex:0 0 auto;margin:0;color:var(--cy);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
 .aptitude-hint-error{background:rgba(229,72,77,.12)}.aptitude-hint-error b{color:var(--red)}
+.aptitude-answered-note{background:rgba(242,167,27,.14)}.aptitude-answered-note b{color:#c27c00}
+.aptitude-answered-note.nudge{animation:aptitude-nudge .35s ease}
+@keyframes aptitude-nudge{20%,60%{transform:translateX(-4px)}40%,80%{transform:translateX(4px)}}
+.aptitude-answer-options.locked button{opacity:.55;cursor:not-allowed}
 @media(max-width:720px){.aptitude-question-section{width:calc(100vw - 92px)}.aptitude-live-actions{width:100%;flex-wrap:wrap}.aptitude-countdown,.aptitude-hint-button{flex:1;min-width:135px}}
 
 /* Keep the active test controls across the full card without changing the paused view. */
