@@ -374,6 +374,44 @@ class RouteIntegrationTests(unittest.TestCase):
         self.assertEqual(response.get_json()["completed_question_count"], 2)
         update.assert_called_once()
 
+    def test_exit_interview_scores_only_the_answered_questions(self):
+        details = [
+            {"id": 1, "question_order": 1, "question": "What is a list?", "answer": "An ordered collection.",
+             "time_taken_sec": 20, "is_followup": 0, "answer_audio_path": None, "verdict": None,
+             "verdict_reason": None, "ideal_answer": None, "subject_tag": None, "timed_out": 0, "processing_status": None},
+            {"id": 2, "question_order": 2, "question": "What is a dict?", "answer": None,
+             "time_taken_sec": 0, "is_followup": 0, "answer_audio_path": None, "verdict": None,
+             "verdict_reason": None, "ideal_answer": None, "subject_tag": None, "timed_out": 0, "processing_status": None},
+        ]
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            if "SELECT id, status FROM interviews" in sql:
+                return {"id": 53, "status": "in_progress"}, 0
+            if "SELECT COUNT(*) AS completed_count" in sql:
+                return {"completed_count": 1}, 0
+            if "SELECT * FROM interviews" in sql:
+                return {"id": 53, "student_id": 1, "round_type": "technical", "subject": "Python", "difficulty": "beginner"}, 0
+            if "FROM interview_details" in sql and fetch:
+                return details, 0
+            return None, 0
+
+        graded = [{"question_id": 1, "verdict": "correct", "reason": "Accurate.", "ideal_answer": "A list..."}]
+        with (
+            patch("routes.interviews.db.query", side_effect=query_result) as query,
+            patch("routes.interviews.db.execute_update", return_value=1),
+            patch("routes.interviews._batch_evaluations_or_error", return_value=(graded, None)) as evaluate,
+        ):
+            response = self.client.post("/api/exit_interview", json={"interview_id": 53})
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(payload["status"], "exited")
+        self.assertEqual((payload["total_marks"], payload["max_marks"]), (1, 1))
+        self.assertEqual([item["verdict"] for item in payload["scorecard"]], ["correct"])
+        # Only the answered question is sent for grading.
+        self.assertEqual([row["id"] for row in evaluate.call_args.args[2]], [1])
+        self.assertTrue(any("SET verdict=%s" in call.args[0] for call in query.call_args_list))
+
     def test_history_is_paginated_at_the_http_boundary(self):
         history_rows = [{
             "id": 3,

@@ -253,7 +253,7 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
         if agent_name == "aptitude_agent" and action_name == "create_test"
         else config.MOCK_INTERVIEW_GENERATION_TIMEOUT_SECONDS
-        if agent_name == "mock_interview_agent" and action_name in {"start_interview", "end_interview"}
+        if agent_name == "mock_interview_agent" and action_name in {"start_interview", "end_interview", "exit_interview"}
         # The submission upload is multipart (no decoded action), and a new viva attempt writes ten questions.
         else config.CAPSTONE_LONG_ACTION_TIMEOUT_SECONDS
         if agent_name == "capstone_project_agent" and (is_multipart or action_name == "start_viva_attempt")

@@ -105,6 +105,29 @@ test('exiting calls the agent and ends the flow', async () => {
   expect(result.state.step).toBe('completed');
 });
 
+test('exiting shows the score for the questions already answered', async () => {
+  mocked.exitMockInterview.mockResolvedValue({
+    status: 'exited', completed_question_count: 2, total_marks: 1.5, max_marks: 2,
+    scorecard: [
+      { question: 'What is a list?', verdict: 'correct', verdict_reason: 'Clear and accurate.' },
+      { question: 'What is a dictionary used for?', verdict: 'partial' },
+    ],
+  });
+  const result = await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 3, totalQuestions: 5 }), user, 'exit_interview');
+  const text = result.messages[0].text;
+  expect(text).toContain("You've exited the interview.");
+  expect(text).toContain('Your score: 1.5 / 2');
+  expect(text).toContain('2 of 5 questions answered');
+  expect(text).toContain('Correct - Clear and accurate.');
+  expect(text).toContain('Partly correct');
+});
+
+test('exiting before answering anything says there is no score', async () => {
+  mocked.exitMockInterview.mockResolvedValue({ status: 'exited', completed_question_count: 0 });
+  const result = await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 1 }), user, 'exit_interview');
+  expect(result.messages[0].text).toContain('No questions were answered');
+});
+
 test('an interview ended for silence exits the same way and says why', async () => {
   mocked.exitMockInterview.mockResolvedValue({});
   const result = await handleMockInterviewText(withSession({ step: 'in_interview', interviewId: 9, questionOrder: 3 }), user, 'exit_interview_inactive');
