@@ -259,7 +259,9 @@ def timer_init_node(state: ProjectAgentState) -> dict:
     session = get_session()
     try:
         assignment = session.get(ProjectAssignment, state["assignment_id"])
-        assignment.topic_json = state["chosen_topic"]
+        # The difficulty is saved with the topic: readiness counts a passed
+        # project toward the level it was set at, and the viva is pitched to it.
+        assignment.topic_json = {**state["chosen_topic"], "difficulty": state.get("difficulty") or "easy"}
         assignment.chosen_at = now
         assignment.deadline_at = deadline
         assignment.status = AssignmentStatus.in_progress

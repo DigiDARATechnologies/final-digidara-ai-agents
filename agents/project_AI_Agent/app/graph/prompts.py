@@ -124,7 +124,7 @@ Classify the student's NEW message (in the user turn) into exactly one intent:
 - "update": it gives or CHANGES a memory field. That includes a plain answer to the
   last question AND an edit of an earlier answer, e.g. "i need to update language python
   to java" -> focus = "Java"; "make it web development instead" -> project_type =
-  "web development"; "make it harder" -> difficulty = "hard". An edit REPLACES the old
+  "web development"; "make it harder" -> difficulty = "hard"; "industry level" -> difficulty = "professional". An edit REPLACES the old
   value — never append it or mix it into another field. Keep every other field as it
   is, unless it only made sense for the old value (e.g. "Django web app" after
   switching Python to Java becomes "Web application").
@@ -160,7 +160,7 @@ the answer for "question"/"chitchat", and null for "regenerate"/"choose".
 OUTPUT FORMAT (strict JSON, no prose outside the JSON):
 {{
   "intent": "update|regenerate|choose|question|chitchat",
-  "memory": {{"focus": <string|null>, "project_type": <string|null>, "details": <string|null>, "difficulty": <"easy"|"medium"|"hard"|null>}},
+  "memory": {{"focus": <string|null>, "project_type": <string|null>, "details": <string|null>, "difficulty": <"easy"|"medium"|"hard"|"professional"|null>}},
   "choice": <"A"|"B"|null>,
   "ready": <true|false>,
   "next_question": <string|null>,
@@ -274,7 +274,13 @@ basic weather app, generic library management) unless the student explicitly ask
         "a less common/more advanced technique for the course's medium. Still "
         "solvable solo in 7 days, but a genuine stretch for someone at "
         "course-completion skill level.",
-    }[difficulty]
+        "professional": "An industry-grade build like a junior engineer would ship at "
+        "work: several integrated components plus production concerns -- input "
+        "validation and error handling, persistence, configuration, tests, and a "
+        "clear README with setup steps. Never a toy or a single-page exercise (no "
+        "static site generators, to-do lists or calculators). Still solvable solo "
+        "in 7 days by a strong learner.",
+    }.get(difficulty, "")
     free_topic = bool(state.get("free_topic_request"))
 
     if free_topic:
@@ -770,7 +776,14 @@ def code_quality_scorer_prompt(state: dict[str, Any]) -> str:
         "genuine command of the more advanced technique. A submission that plays it "
         "safe with only trivial functionality despite the hard scope should lose "
         "marks on COMPLETENESS_VS_BRIEF.",
-    }[difficulty]
+        "professional": "This was requested at PROFESSIONAL difficulty - an industry-grade "
+        "build. Review it as a senior engineer reviewing a junior's pull request: expect "
+        "clean architecture and separation of concerns, validation and error handling on "
+        "every input path, no hard-coded secrets, sensible configuration, automated tests "
+        "for the core logic, and a README a teammate could follow. Missing tests, missing "
+        "error handling or toy-level scope must lose marks on COMPLETENESS_VS_BRIEF and "
+        "STRUCTURE; working code alone is not enough at this level.",
+    }.get(difficulty, "")
 
     files_block = _code_files_block(code_files, config.CODE_REVIEW_CHAR_BUDGET)
     return f"""You are the Code Quality Reviewer for a DigiDARA capstone project.
@@ -897,7 +910,7 @@ This is a RE-ATTEMPT. The student was already asked the questions below in earli
 PROJECT TITLE: {chosen_topic.get('title', 'Untitled')}
 PROJECT DESCRIPTION: {chosen_topic.get('description', '')}
 TECHNOLOGY / MEDIUM: {course_medium}
-
+{_viva_level_line(chosen_topic.get('difficulty'))}
 The student's actual submitted source code:
 
 {files_text}
@@ -913,7 +926,26 @@ For each question, also list the 2-4 key concepts a correct answer must demonstr
 Respond as JSON: {{"questions": [{{"question": "...", "expected_concepts": ["...", "..."]}}, ...]}} with exactly 10 items."""
 
 
-def viva_answer_verifier_prompt(question: str, expected_concepts: list, answer: str) -> str:
+_VIVA_LEVEL = {
+    "easy": "PROJECT LEVEL: EASY (beginner). Ask about what the code does and the basic concepts it uses; no deep design or production questions.",
+    "medium": "PROJECT LEVEL: MEDIUM. Mix what the code does with why it is built that way and how its features work together.",
+    "hard": "PROJECT LEVEL: HARD. Ask about design decisions, trade-offs, edge cases and how the components interact.",
+    "professional": "PROJECT LEVEL: PROFESSIONAL (industry). Ask as a senior engineer would: architecture and trade-offs, failure handling, testing strategy, security, performance and how it would be deployed and maintained.",
+}
+_VIVA_STRICTNESS = {
+    "easy": "This is a beginner project: accept a simple, correct explanation in the student's own words.",
+    "medium": "Expect the core idea plus a reason or example.",
+    "hard": "Expect the core idea with a clear reason or trade-off; a vague or generic answer is incorrect.",
+    "professional": "This is a professional-level project: expect a precise, specific answer that names the actual mechanism or trade-off; a generic or textbook-only answer is incorrect.",
+}
+
+
+def _viva_level_line(difficulty: Any) -> str:
+    """One line tuning the viva to the project's level (older projects have none)."""
+    return _VIVA_LEVEL.get(str(difficulty or ""), "")
+
+
+def viva_answer_verifier_prompt(question: str, expected_concepts: list, answer: str, difficulty: Any = None) -> str:
     concepts_text = "\n".join(f"- {c}" for c in expected_concepts)
     return f"""You are grading one answer in a student's capstone project viva (oral defense).
 
@@ -925,6 +957,7 @@ KEY CONCEPTS A CORRECT ANSWER SHOULD DEMONSTRATE (the core idea is enough, not e
 STUDENT'S ANSWER: {answer}
 
 Judge whether the answer demonstrates genuine understanding of the core concept(s) above. Be lenient on phrasing -- this is a typed spoken-style answer, not a formal essay -- but it must show real understanding, not just repeat the question back or give an unrelated/evasive response. A blank or "I don't know" answer is always incorrect.
+{_VIVA_STRICTNESS.get(str(difficulty or ""), "")}
 
 Respond as JSON: {{"correct": true or false, "note": "one short sentence explaining why"}}"""
 

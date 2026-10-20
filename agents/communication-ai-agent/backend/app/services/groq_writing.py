@@ -2,6 +2,7 @@ import logging
 import re
 
 from .cache_service import get_cached, set_cached
+from .level_rules import generation_rule, scoring_rule
 from .groq_common import _chat, _clamp_score, _extract_json, _score_average
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,8 @@ def generate_writing_prompt(mode, difficulty, topic_title, turn_number, history,
         ),
     }
     style_rule = difficulty_rules.get(difficulty, difficulty_rules["easy"])
+    if generation_rule(difficulty):
+        style_rule = f"{style_rule} {generation_rule(difficulty)}"
 
     history_text = "\n".join(
         f"Q{i+1}: {h['question']}\nA{i+1}: {h['answer']}" for i, h in enumerate(history)
@@ -360,6 +363,7 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         f"Difficulty: {difficulty}. Mode: {mode}. Topic: {topic_title or 'N/A'}.\n"
         f"Prompt given: {question}\n"
         f"Student's written answer: {answer}\n\n"
+        f"{scoring_rule(difficulty)}\n"
         f"Classify status as Correct, Mostly Correct, Partially Correct, Needs Improvement, Off Topic, or No Answer. "
         f"Score grammar, vocabulary, clarity, spelling, and overall from 0.0 to 10.0. {knowledge_instruction} "
         f"Give a corrected answer and up to six distinct grammar corrections. Do not score above 10. "

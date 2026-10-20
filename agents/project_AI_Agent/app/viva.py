@@ -92,9 +92,9 @@ def generate_viva_questions(chosen_topic: dict, course_medium: str, code_files: 
     return [{"id": i, **item} for i, item in enumerate(chosen[:VIVA_QUESTION_COUNT])]
 
 
-def verify_viva_answer(question: str, expected_concepts: list, answer: str) -> dict:
+def verify_viva_answer(question: str, expected_concepts: list, answer: str, difficulty: str | None = None) -> dict:
     result = call_json(
-        system=prompts.viva_answer_verifier_prompt(question, expected_concepts, answer),
+        system=prompts.viva_answer_verifier_prompt(question, expected_concepts, answer, difficulty),
         user="Grade this answer now.",
         temperature=0.2,
     )

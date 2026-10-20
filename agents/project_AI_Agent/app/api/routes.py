@@ -253,7 +253,7 @@ def topic_intake(req: TopicIntakeRequest) -> TopicIntakeResponse:
         "focus": _clean_slot(raw_memory.get("focus", memory["focus"])),
         "project_type": _clean_slot(raw_memory.get("project_type", memory["project_type"])),
         "details": _clean_slot(raw_memory.get("details", memory["details"])),
-        "difficulty": raw_memory.get("difficulty") if raw_memory.get("difficulty") in {"easy", "medium", "hard"} else memory["difficulty"],
+        "difficulty": raw_memory.get("difficulty") if raw_memory.get("difficulty") in {"easy", "medium", "hard", "professional"} else memory["difficulty"],
     }
     # Only an update is allowed to change what the student told us.
     if intent != "update":
@@ -656,7 +656,8 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
         if question is None:
             raise HTTPException(404, "Unknown viva question.")
 
-        verdict = verify_viva_answer(question["question"], question.get("expected_concepts", []), req.answer)
+        verdict = verify_viva_answer(question["question"], question.get("expected_concepts", []), req.answer,
+                                     (submission.assignment.topic_json or {}).get("difficulty"))
         answers = answers + [{
             "question_id": req.question_id,
             "answer": req.answer,

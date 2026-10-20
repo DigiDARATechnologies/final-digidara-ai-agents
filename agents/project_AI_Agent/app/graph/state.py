@@ -13,7 +13,7 @@ class ProjectAgentState(TypedDict, total=False):
     phone: str
     course_name: str
     course_medium: str  # "local" | "api"
-    difficulty: str  # "easy" | "medium" | "hard" — free-topic requests only; defaults to "easy"
+    difficulty: str  # "easy" | "medium" | "hard" | "professional" — free-topic requests only; defaults to "easy"
 
     # There is no certificate/enrollment gate -- every request is a free-topic
     # request. `course_name` here is actually the student's free-text

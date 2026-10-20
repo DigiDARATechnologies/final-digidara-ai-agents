@@ -16,7 +16,8 @@ test('aptitude UI describes fixed difficulty and shows complete-test generation 
   const app = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8');
 
   expect(`${panel}\n${dashboard}`).not.toMatch(/adaptive difficulty|adaptive test/i);
-  expect(panel).toContain('Easy + Medium + Hard');
+  // Every question is set at the learner's level, not a fixed Easy/Medium/Hard mix.
+  expect(panel).toContain('(your level)');
   expect(app).toContain('Generating your complete aptitude test');
   expect(app).toMatch(/composerDisabled=\{[^}]*\bisAptitudeChat\b[^}]*typing/);
   expect(panel).toContain('hintPending');

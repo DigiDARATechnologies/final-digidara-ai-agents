@@ -23,6 +23,12 @@ CATEGORIES={
 DISTRIBUTION = [5,4,3,3,3,3]
 DIFFICULTIES = ["Easy"]*6 + ["Medium"]*10 + ["Hard"]*4
 CATEGORY_LEVELS={"Beginner":"Easy","Intermediate":"Medium","Advanced":"Hard"}
+# The learner's platform level (beginner/medium/hard/professional) -> the
+# question difficulty a whole test is set at. Professional questions are
+# stored as Hard (the schema's top difficulty) with a "professional" rigor
+# that the prompt pitches above Hard.
+LEARNER_LEVEL_DIFFICULTY={"beginner":"Easy","medium":"Medium","hard":"Hard","professional":"Hard"}
+PROFESSIONAL_RIGOR="professional"
 CATEGORY_PRACTICE_QUESTION_COUNT=10
 TECHNICAL_LANGUAGES=("C","Java","Python","SQL")
 DEFAULT_TECHNICAL_LANGUAGE="Python"
@@ -224,14 +230,15 @@ def _topic_rng(seed=None):
     return random.SystemRandom() if seed is None else random.Random(str(seed))
 
 
-def _slot(category,topic,difficulty,technical_language=None):
+def _slot(category,topic,difficulty,technical_language=None,rigor=None):
     row={"category":category,"topic":topic,"difficulty":difficulty}
+    if rigor:row["rigor"]=rigor
     if category=="Technical Aptitude":
         row["technical_language"]=technical_language or DEFAULT_TECHNICAL_LANGUAGE
     return row
 
 
-def build_slots(category=None,seed=None,category_counts=None,technical_language=None,topics_by_category=None):
+def build_slots(category=None,seed=None,category_counts=None,technical_language=None,topics_by_category=None,difficulty=None,rigor=None):
     rng=_topic_rng(seed)
     if category:
         difficulties=["Easy","Easy","Medium","Medium","Hard"]
@@ -258,13 +265,15 @@ def build_slots(category=None,seed=None,category_counts=None,technical_language=
                 raise ValueError(f"Mixed Test topic schedule is invalid for {category}")
         else:
             selected=select_rotating_topic_names(topic_definitions_for(category),[],count,rng)
-        for topic in selected:slots.append(_slot(category,topic,None,technical_language))
+        for topic in selected:slots.append(_slot(category,topic,None,technical_language,rigor))
     slots.sort(key=lambda row:len(row["topic"])%7)
-    for i,slot in enumerate(slots):slot["difficulty"]=DIFFICULTIES[i%len(DIFFICULTIES)]
+    # At the learner's level every question is set at that difficulty; the
+    # older fixed Easy/Medium/Hard mix only applies when no level is given.
+    for i,slot in enumerate(slots):slot["difficulty"]=difficulty or DIFFICULTIES[i%len(DIFFICULTIES)]
     return slots
 
 
-def build_category_slots(category,level,topics=None,seed=None,technical_language=None):
+def build_category_slots(category,level,topics=None,seed=None,technical_language=None,rigor=None):
     if category not in CATEGORIES:raise ValueError("Choose a valid aptitude category")
     if level not in CATEGORY_LEVELS:raise ValueError("Choose Beginner, Intermediate or Advanced")
     # Explicit topics are already a history-aware attempt schedule selected by
@@ -275,7 +284,7 @@ def build_category_slots(category,level,topics=None,seed=None,technical_language
     ))
     if not topics:raise ValueError("Choose at least one Category Practice topic")
     difficulty=CATEGORY_LEVELS[level]
-    return [_slot(category,topics[index%len(topics)],difficulty,technical_language) for index in range(CATEGORY_PRACTICE_QUESTION_COUNT)]
+    return [_slot(category,topics[index%len(topics)],difficulty,technical_language,rigor) for index in range(CATEGORY_PRACTICE_QUESTION_COUNT)]
 
 
 def _minimal_safe_item(item,slot,internal_values=()):
@@ -321,6 +330,12 @@ def _batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id):
 The questions array MUST contain exactly {count} objects in slot order. Do not stop early, skip a slot, add a slot, or return partial output.
 Copy each slot's category, topic, and difficulty exactly. Omit all seed fields. Keep question text under 280 characters, every option under 140 characters, and every explanation under 300 characters. Use concise options and compact JSON.
 For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Use reason only for non-quantitative items; use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
+
+Difficulty (each question must genuinely match its slot's difficulty, and its rigor when present):
+- Easy: one step on a single familiar concept, with numbers that work out mentally; a fresher solves it in under a minute.
+- Medium: two or three steps, or two concepts combined; typical campus placement test level.
+- Hard: multi-step reasoning, a less obvious approach or several conditions to track; top-tier placement test level.
+- rigor "professional": above Hard -- competitive-exam and senior-assessment grade (CAT, GMAT, GRE): combine several concepts in a realistic business, data or engineering scenario, and build distractors from the mistakes a strong candidate would make. Never a one-step question.
 
 Quality:
 - Solve privately. Do not think out loud. Exactly one option is correct.

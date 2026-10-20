@@ -17,7 +17,7 @@ from ..services.mixed_test_config_service import mixed_counts_by_name
 from ..services.pdf_service import generate_test_results_pdf
 from ..services.recommendation_service import generate_recommendation
 from ..services.rate_limit_service import mysql_rate_limit
-from ..services.test_generation import CATEGORY_LEVELS, CATEGORY_PRACTICE_QUESTION_COUNT, CATEGORIES, DEFAULT_TECHNICAL_LANGUAGE, TECHNICAL_LANGUAGES, build_category_slots, build_slots
+from ..services.test_generation import CATEGORY_LEVELS, CATEGORY_PRACTICE_QUESTION_COUNT, LEARNER_LEVEL_DIFFICULTY, PROFESSIONAL_RIGOR, CATEGORIES, DEFAULT_TECHNICAL_LANGUAGE, TECHNICAL_LANGUAGES, build_category_slots, build_slots
 from ..services.test_question_service import generate_and_store_question_batch
 from ..utils.timezone import valid_timezone
 from ..services.topic_selection_service import (
@@ -125,6 +125,12 @@ def create_test():
     if mode not in {"mixed","category_practice"}:raise APIError("mode must be mixed or category_practice",400,"invalid_test_mode")
     category=str(body.get("category") or "").strip() or None
     level=str(body.get("level") or "").strip() or None
+    # The learner's platform level (beginner/medium/hard/professional). Every
+    # question of a Mixed Test is set at it; Professional is pitched above Hard.
+    learner_level=str(body.get("learner_level") or "").strip().lower() or None
+    if learner_level is not None and learner_level not in LEARNER_LEVEL_DIFFICULTY:
+        raise APIError("learner_level must be beginner, medium, hard or professional",400,"invalid_learner_level")
+    rigor=PROFESSIONAL_RIGOR if learner_level=="professional" else None
     requested_language=str(body.get("technical_language") or DEFAULT_TECHNICAL_LANGUAGE).strip()
     language_by_key={language.casefold():language for language in TECHNICAL_LANGUAGES}
     if requested_language.casefold() not in language_by_key:
@@ -142,7 +148,7 @@ def create_test():
             g.student.id,category,level,CATEGORY_PRACTICE_QUESTION_COUNT,
         )
         technical_language=requested_language if category=="Technical Aptitude" else None
-        slots=build_category_slots(category,level,selected_topics,technical_language=technical_language)
+        slots=build_category_slots(category,level,selected_topics,technical_language=technical_language,rigor=rigor)
     else:
         if category and category not in CATEGORIES:raise APIError("Choose a valid aptitude category",400,"invalid_category")
         if category or level:raise APIError("Category and level are only accepted for category practice",400,"invalid_mixed_configuration")
@@ -152,6 +158,7 @@ def create_test():
         slots=build_slots(
             seed=test_id,category_counts=mixed_counts,
             technical_language=technical_language,topics_by_category=mixed_topics,
+            difficulty=LEARNER_LEVEL_DIFFICULTY.get(learner_level or ""),rigor=rigor,
         )
         if not slots:raise APIError("Select at least one question",400,"empty_mixed_test")
     abandon_stale_tests(g.student.id)

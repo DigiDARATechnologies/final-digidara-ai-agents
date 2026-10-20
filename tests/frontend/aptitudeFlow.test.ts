@@ -173,7 +173,7 @@ describe('starting a test is resilient to a one-off generation failure', () => {
     jest.mocked(api.getAptitudeQuestion).mockResolvedValue(readyQuestion);
 
     const retried = await handleAptitudeText(firstFailure.state, 'retry_start_test');
-    expect(api.createAptitudeTest).toHaveBeenCalledWith('session', { mode: 'mixed', technical_language: 'Python' });
+    expect(api.createAptitudeTest).toHaveBeenCalledWith('session', { mode: 'mixed', technical_language: 'Python', learner_level: 'beginner' });
     expect(retried.state.step).toBe('awaiting_question');
   });
 

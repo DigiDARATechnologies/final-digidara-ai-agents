@@ -1,5 +1,5 @@
 import type { ChatOption, User } from "../types";
-import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
+import { beginnerToAdvanced, displayRole, learnerGoal, learnerLevel } from "./learnerContext";
 import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getMixedTestConfig, saveMixedTestConfig, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, skipAptitudeQuestion, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
 
 export type AptitudeStep = "awaiting_mode" | "awaiting_category" | "awaiting_level" | "awaiting_language" | "awaiting_question" | "awaiting_next_question" | "completed";
@@ -128,7 +128,8 @@ async function startTest(state: AptitudeFlowState, user?: User) {
     state = { ...state, sessionToken };
     localStorage.setItem(`digidara_aptitude_token_${user.email.toLowerCase()}`, sessionToken);
   }
-  const payload: Record<string, unknown> = { mode: state.mode, technical_language: state.technicalLanguage || "Python" };
+  // learner_level: every question is set at the learner's level (Professional above Hard).
+  const payload: Record<string, unknown> = { mode: state.mode, technical_language: state.technicalLanguage || "Python", learner_level: learnerLevel("aptitude_agent") };
   if (state.mode === "category_practice") Object.assign(payload, { category: state.category, level: state.level });
   const created = await createAptitudeTest(state.sessionToken!, payload);
   const question = await getAptitudeQuestion(state.sessionToken!, created.test_id);

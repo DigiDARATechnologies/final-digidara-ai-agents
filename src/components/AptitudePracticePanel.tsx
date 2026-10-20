@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { aptitudeLanguages, type AptitudeFlowState } from "../lib/aptitudeFlow";
 import { getMixedTestConfig, saveMixedTestConfig, type MixedTestCategory, type MixedTestConfig } from "../lib/aptitudeApi";
 import { renderMessageText } from "../lib/messageText";
+import { learnerLevel } from "../lib/learnerContext";
+
+const LEVEL_DIFFICULTY = { beginner: "Easy", medium: "Medium", hard: "Hard", professional: "Professional" } as const;
 
 const CATEGORY_DETAILS: Record<string, string> = {
   "Quantitative Aptitude": "Numerical and mathematical problem-solving.",
@@ -152,7 +155,7 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
     return <section className="aptitude-practice-panel" aria-label="Choose an aptitude assessment">
       <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">APTITUDE PRACTICE</span><h2>Choose how you want to practice</h2></div>
       <div className="aptitude-mode-grid">
-        <button type="button" onClick={() => onChoose("mixed")}><strong>Mixed Test</strong><span>Balanced assessment across all six aptitude categories.</span><small>Easy, Medium &amp; Hard · Timed questions</small></button>
+        <button type="button" onClick={() => onChoose("mixed")}><strong>Mixed Test</strong><span>Balanced assessment across all six aptitude categories.</span><small>At your level ({LEVEL_DIFFICULTY[learnerLevel("aptitude_agent")]}) · Timed questions</small></button>
         <button type="button" onClick={() => onChoose("category_practice")}><strong>Category Practice</strong><span>Focused, fixed-level practice for one selected category.</span><small>Priority topics marked with ★</small></button>
       </div>
     </section>;
@@ -160,8 +163,8 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
 
   if (state.mode === "mixed" && state.step === "awaiting_language") {
     return <section className="aptitude-practice-panel" aria-label="Mixed Test overview and setup">
-      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">MIXED TEST</span><h2>Test Overview</h2><p>Build a balanced mix of aptitude topics and fixed difficulty levels, then choose the Technical Aptitude language below.</p></div>
-      <div className="aptitude-overview-grid"><OverviewStat label="Categories" value="6 areas" /><OverviewStat label="Questions" value={loading ? "…" : `${total || 0} total`} /><OverviewStat label="Timer" value="60–120 sec" /><OverviewStat label="Difficulty" value="Easy + Medium + Hard" /></div>
+      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">MIXED TEST</span><h2>Test Overview</h2><p>Build a balanced mix of aptitude topics, all set at your level, then choose the Technical Aptitude language below.</p></div>
+      <div className="aptitude-overview-grid"><OverviewStat label="Categories" value="6 areas" /><OverviewStat label="Questions" value={loading ? "…" : `${total || 0} total`} /><OverviewStat label="Timer" value="60–120 sec" /><OverviewStat label="Difficulty" value={`${LEVEL_DIFFICULTY[learnerLevel("aptitude_agent")]} (your level)`} /></div>
       <div className="aptitude-config-heading"><div><h3>Categories Covered</h3><p>Set each category independently from 0 to 10 questions. Select at least one question overall.</p></div><b>{total} total</b></div>
       <div className="aptitude-config-grid">
         {draft.map((category) => <div className="aptitude-config-card" key={category.category_id}><span>{CATEGORY_ICONS[category.category_name] || "✦"}</span><div><strong>{category.category_name}</strong><small>{CATEGORY_DETAILS[category.category_name]}</small></div><div className="aptitude-stepper"><button type="button" aria-label={`Remove question from ${category.category_name}`} onClick={() => updateCount(category.category_id, -1)} disabled={saving || !limits || category.question_count <= limits.min_per_category}>−</button><b>{category.question_count}</b><button type="button" aria-label={`Add question to ${category.category_name}`} onClick={() => updateCount(category.category_id, 1)} disabled={saving || !limits || category.question_count >= limits.max_per_category}>+</button></div></div>)}
