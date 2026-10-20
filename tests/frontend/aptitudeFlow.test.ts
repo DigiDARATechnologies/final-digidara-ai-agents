@@ -48,7 +48,7 @@ test('failed next-question loading cannot resubmit the saved answer', async () =
 test('hint failure preserves the active question and shows a retryable message', async () => {
   jest.mocked(api.requestAptitudeHint).mockRejectedValueOnce(new Error('provider unavailable'));
   const result = await handleAptitudeText(active, 'hint');
-  expect(result.state).toBe(active);
+  expect(result.state).toEqual({ ...active, hintError: 'Hint unavailable: provider unavailable' });
   expect(result.state.question).toBe(question);
   expect(result.messages[0].text).toContain('could not generate a safe hint');
   expect(result.messages[0].options).toBeDefined();

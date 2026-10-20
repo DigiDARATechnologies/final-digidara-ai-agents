@@ -237,6 +237,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
   const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  // The plan picked in the low-points popup, highlighted when Billing opens.
+  const [billingPlanId, setBillingPlanId] = useState<string | null>(null);
   // "Buy points" popup when the balance runs low or out (signed-in users only).
   const lowPoints = useLowPointsPrompt(!!user);
   const [planName, setPlanName] = useState("Free");
@@ -1484,7 +1486,8 @@ export default function App() {
     }
 
     if (agent?.kind === "aptitude") {
-      const flowState = aptitudeStates[chatId] ?? createInitialAptitudeState();
+      // An edit replays from the state captured before that message.
+      const flowState = (isEdit ? resumeSnapshot as AptitudeFlowState | undefined : undefined) ?? aptitudeStates[chatId] ?? createInitialAptitudeState();
       handleAptitudeText(flowState, text, user)
         .then(({ state: nextState, messages }) => {
           if (flowState.testId && aptitudeFinalizedAttempts.current.has(flowState.testId)) return;
@@ -1634,6 +1637,22 @@ export default function App() {
 
   function editMessage(index: number, newText: string) {
     sendMessage(newText, index);
+  }
+
+  /** Aptitude answers are graded and saved the moment they are sent, so a
+   * message sent during a test cannot be edited, and nothing can be while a
+   * test is running (replaying an earlier step would collide with it). */
+  function canEditMessage(index: number) {
+    const chat = chats.find((c) => c.id === currentChatId);
+    if (!chat || findAgent(chat.agentId)?.kind !== "aptitude") return true;
+    const sentDuringTest = !!(chat.messages[index]?.stateSnapshot as AptitudeFlowState | undefined)?.testId;
+    const live = aptitudeStates[chat.id];
+    const testRunning = !!live?.testId && live.step !== "completed";
+    if (!sentDuringTest && !testRunning) return true;
+    showToast(sentDuringTest
+      ? "You can't edit an already answered question. Answers are saved as soon as you submit them."
+      : "You can't edit earlier messages while a test is running.");
+    return false;
   }
 
   function handleChooseOption(value: string, label?: string) {
@@ -2173,6 +2192,7 @@ export default function App() {
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
                 onEditMessage={isMockInterviewChat ? undefined : editMessage}
+                canEditMessage={canEditMessage}
                 attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
                 attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
@@ -2278,7 +2298,7 @@ export default function App() {
           points={lowPoints.points}
           outOfPoints={lowPoints.outOfPoints}
           onClose={lowPoints.dismiss}
-          onBuy={() => { lowPoints.dismiss(); setSettingsTab("billing"); setSettingsOpen(true); }}
+          onBuy={(planId) => { lowPoints.dismiss(); setBillingPlanId(planId); setSettingsTab("billing"); setSettingsOpen(true); }}
         />
       )}
 
@@ -2289,6 +2309,7 @@ export default function App() {
         onAppearanceChange={setAppearance}
         onLogout={handleLogout}
         initialTab={settingsTab}
+        focusPlanId={billingPlanId}
         open={settingsOpen}
         user={displayUser ?? user}
         chats={chats}
@@ -2297,7 +2318,7 @@ export default function App() {
           openChatById(chatId);
         }}
         glowOn={glowOn}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => { setSettingsOpen(false); setBillingPlanId(null); }}
         onGlowToggle={setGlowOn}
         onClearHistory={handleClearHistory}
         onToast={showToast}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "../types";
 import {
   createBillingOrder, downloadInvoice, fetchBillingPlans, fetchBillingSummary, fetchTokenBalance,
@@ -6,7 +6,7 @@ import {
 } from "../lib/billingApi";
 import { formatPoints } from "../lib/points";
 
-interface Props { open: boolean; user: User; onToast: (message: string) => void; }
+interface Props { open: boolean; user: User; onToast: (message: string) => void; /** A plan chosen elsewhere (the low-points popup) to highlight and scroll to. */ focusPlanId?: string | null; }
 type CheckoutResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
 type RazorpayConstructor = new (options: Record<string, unknown>) => { open: () => void; on: (event: string, callback: (response: { error?: { description?: string } }) => void) => void };
 
@@ -18,7 +18,7 @@ function money(amountMinor: number, currency = "INR", whole = false) {
 // Same rule as the server (billing/routes.py GSTIN_PATTERN).
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
-export default function BillingPanel({ open, user, onToast }: Props) {
+export default function BillingPanel({ open, user, onToast, focusPlanId = null }: Props) {
   const [billing, setBilling] = useState<BillingSummary | null>(null);
   const [catalog, setCatalog] = useState<BillingPlans | null>(null);
   const [pointsBalance, setPointsBalance] = useState<number | null>(null);
@@ -43,6 +43,14 @@ export default function BillingPanel({ open, user, onToast }: Props) {
     void refresh();
     fetchBillingPlans().then(setCatalog).catch(() => setCatalog(null));
   }, [open, refresh]);
+
+  const focusedPlanRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open || !catalog || !focusPlanId) return;
+    const button = focusedPlanRef.current;
+    button?.closest("article")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    button?.focus({ preventScroll: true });
+  }, [open, catalog, focusPlanId]);
 
   // A payment-page purchase finishes in another tab; pick up the new balance
   // and history when the learner comes back.
@@ -126,7 +134,7 @@ export default function BillingPanel({ open, user, onToast }: Props) {
       {!catalog ? <p>Loading plans...</p> : (
         <div className="plan-grid">
           {catalog.plans.map((plan) => (
-            <article key={plan.id} className={plan.popular ? "recommended" : undefined} data-plan={plan.id}>
+            <article key={plan.id} className={[plan.popular ? "recommended" : "", plan.id === focusPlanId ? "chosen" : ""].filter(Boolean).join(" ") || undefined} data-plan={plan.id}>
               {plan.popular && <span>Most Popular</span>}
               <h3>{plan.name}</h3>
               <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
@@ -134,7 +142,7 @@ export default function BillingPanel({ open, user, onToast }: Props) {
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
               {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the points reach this account.</p>}
-              <button disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
+              <button ref={plan.id === focusPlanId ? focusedPlanRef : undefined} disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
             </article>
           ))}
         </div>

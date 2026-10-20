@@ -8,8 +8,10 @@
 .lv-professional { --lv: #16a34a; }
 
 /* ---- profile form (onboarding card and the edit dialog) ---- */
-.lp-card { max-width: 520px; margin: auto; }
-.lp-card .login-sub b { color: inherit; }
+/* Not .lp-card: the landing page owns that name (fixed height, overflow hidden),
+   which clipped this form so it could not scroll on short windows. */
+.lp-onboard-card { max-width: 520px; margin: auto; }
+.lp-onboard-card .login-sub b { color: inherit; }
 .lp-org-note { margin: -4px 0 14px; font-size: 13px; color: var(--text-dim); }
 .lp-form .field select,
 .og-start .field select {

@@ -5,7 +5,8 @@ import { formatPoints } from "../lib/points";
 interface Props {
   points: number | null;
   outOfPoints: boolean;
-  onBuy: () => void;
+  /** Called with the plan the learner picked (null when none is listed). */
+  onBuy: (planId: string | null) => void;
   onClose: () => void;
 }
 
@@ -17,10 +18,15 @@ function rupees(amountMinor: number, currency: string) {
  * way straight to checkout. Escape or a click outside closes it. */
 export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: Props) {
   const [plans, setPlans] = useState<PlanOffer[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetchBillingPlans().then((catalog) => { if (active) setPlans(catalog.plans); }).catch(() => { if (active) setPlans([]); });
+    fetchBillingPlans().then((catalog) => {
+      if (!active) return;
+      setPlans(catalog.plans);
+      setSelected((catalog.plans.find((plan) => plan.popular) ?? catalog.plans[0])?.id ?? null);
+    }).catch(() => { if (active) setPlans([]); });
     return () => { active = false; };
   }, []);
 
@@ -49,18 +55,22 @@ export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: 
               : "Top up now so your next test, interview or resume isn't interrupted. Points never expire."}
           </p>
           {plans === null ? <p className="low-points-message">Loading plans…</p> : plans.length > 0 && (
-            <ul className="low-points-plans">
+            <div className="low-points-plans" role="radiogroup" aria-label="Choose a plan">
               {plans.map((plan) => (
-                <li key={plan.id} className={plan.popular ? "popular" : undefined}>
+                <button
+                  type="button" role="radio" key={plan.id} aria-checked={selected === plan.id}
+                  className={selected === plan.id ? "selected" : undefined}
+                  onClick={() => setSelected(plan.id)}
+                >
                   <span><b>{plan.name}</b>{plan.popular && <em>Most popular</em>}</span>
                   <span><strong>{formatPoints(plan.points)} points</strong><small>{rupees(plan.amount, plan.currency)}</small></span>
-                </li>
+                </button>
               ))}
-            </ul>
+            </div>
           )}
           <div className="low-points-actions">
             <button type="button" className="btn btn-outline" onClick={onClose}>Later</button>
-            <button type="button" className="btn low-points-buy" autoFocus onClick={onBuy}>Buy points</button>
+            <button type="button" className="btn low-points-buy" autoFocus onClick={() => onBuy(selected)}>Buy points</button>
           </div>
         </div>
       </div>

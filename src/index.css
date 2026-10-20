@@ -99,6 +99,7 @@
 .aptitude-answer-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}.aptitude-answer-options button{display:flex;align-items:flex-start;gap:8px;width:100%;border:1px solid var(--line-1);border-radius:10px;background:var(--surf-2);color:var(--tx-1);padding:10px 11px;text-align:left;cursor:pointer;font-size:12px;line-height:1.4}.aptitude-answer-options button:hover{border-color:var(--cy);background:rgba(108,195,232,.1)}.aptitude-answer-options b{color:var(--cy);flex:0 0 auto}.aptitude-answer-options span{min-width:0;overflow-wrap:anywhere}
 .aptitude-hint-text{display:flex;gap:8px;margin-top:10px;border-radius:10px;background:rgba(108,195,232,.14);padding:9px 11px;color:var(--tx-2);font-size:12px;line-height:1.45}
 .aptitude-hint-text b{flex:0 0 auto;margin:0;color:var(--cy);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.aptitude-hint-error{background:rgba(229,72,77,.12)}.aptitude-hint-error b{color:var(--red)}
 @media(max-width:720px){.aptitude-question-section{width:calc(100vw - 92px)}.aptitude-live-actions{width:100%;flex-wrap:wrap}.aptitude-countdown,.aptitude-hint-button{flex:1;min-width:135px}}
 
 /* Keep the active test controls across the full card without changing the paused view. */
@@ -1362,6 +1363,7 @@ body.glow-off .send-btn:hover{
 
 /* Billing: plan cards, custom amount, invoice download */
 .plan-grid article{display:flex;flex-direction:column}
+.plan-grid article.chosen{outline:2px solid var(--accent1);outline-offset:2px}
 .plan-grid .plan-features{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:6px;flex:1}
 .plan-grid .plan-features li{position:relative;padding-left:16px;color:var(--text-dim);font-size:11.5px;line-height:1.45}
 .plan-grid .plan-features li::before{content:"";position:absolute;left:2px;top:.5em;width:6px;height:6px;border-radius:50%;background:var(--accent1)}
@@ -2417,10 +2419,12 @@ a{ color:var(--accent3); }
 .low-points-balance.out strong{ color:var(--err); }
 .low-points-message{ margin:12px 0 0; color:var(--tx-2); font-size:13px; line-height:1.5; }
 .low-points-plans{ list-style:none; margin:14px 0 0; padding:0; display:grid; gap:8px; }
-.low-points-plans li{ display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--line-1); border-radius:10px; padding:10px 12px; }
-.low-points-plans li.popular{ border-color:var(--accent1); background:var(--accent-soft, rgba(40,81,216,.12)); }
-.low-points-plans li span{ display:flex; flex-direction:column; gap:2px; }
-.low-points-plans li span:last-child{ align-items:flex-end; }
+.low-points-plans button{ display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; text-align:left; font:inherit; color:inherit; background:transparent; border:1px solid var(--line-1); border-radius:10px; padding:10px 12px; cursor:pointer; transition:border-color .15s, background .15s; }
+.low-points-plans button:hover{ border-color:var(--accent1); }
+.low-points-plans button:focus-visible{ outline:2px solid var(--accent1); outline-offset:2px; }
+.low-points-plans button.selected{ border-color:var(--accent1); background:var(--accent-soft, rgba(40,81,216,.12)); box-shadow:0 0 0 1px var(--accent1) inset; }
+.low-points-plans button span{ display:flex; flex-direction:column; gap:2px; }
+.low-points-plans button span:last-child{ align-items:flex-end; }
 .low-points-plans b, .low-points-plans strong{ color:var(--tx-1); font-size:13px; }
 .low-points-plans em{ color:var(--accent3); font-size:10px; font-style:normal; font-weight:750; }
 .low-points-plans small{ color:var(--tx-3); font-size:12px; }
