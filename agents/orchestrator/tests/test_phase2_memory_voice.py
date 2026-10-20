@@ -206,15 +206,33 @@ def test_language_detection(text, language):
     assert tts.detect_language(text) == language
 
 
+
+def _fake_openai(monkeypatch, calls, content=b"x"):
+    """OpenAI's speech endpoint: records each request body, answers with `content`."""
+    class Stream:
+        status_code = 200
+
+        def iter_bytes(self, size):
+            yield content
+
+        def close(self):
+            pass
+
+    class Client:
+        def build_request(self, method, url, headers=None, json=None):
+            calls.append(json)
+            return None
+
+        def send(self, request, stream=False):
+            return Stream()
+
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
+
+
 def test_speak_returns_mp3_with_a_friendly_tamil_style_and_caches(api, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     calls = []
-
-    def fake_post(url, **kwargs):
-        calls.append(kwargs["json"])
-        return httpx.Response(200, content=b"ID3fake-mp3")
-
-    monkeypatch.setattr(tts.httpx, "post", fake_post)
+    _fake_openai(monkeypatch, calls, b"ID3fake-mp3")
     text = "வணக்கம்! இன்று நாம் பயிற்சி செய்வோம்."
     response = api.post("/voice/speak", headers=auth(), json={"text": text, "persona": "arjun"})
     assert response.status_code == 200 and response.content == b"ID3fake-mp3"
@@ -232,7 +250,7 @@ def test_speak_returns_mp3_with_a_friendly_tamil_style_and_caches(api, monkeypat
 def test_english_is_spoken_in_one_clear_indian_voice(api, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     calls = []
-    monkeypatch.setattr(tts.httpx, "post", lambda url, **kw: calls.append(kw["json"]) or httpx.Response(200, content=b"x"))
+    _fake_openai(monkeypatch, calls)
     for persona in ("nila", "meera", "kavin"):
         api.post("/voice/speak", headers=auth(), json={"text": f"Hello from {persona}.", "persona": persona})
     assert {c["voice"] for c in calls} == {tts.VOICE}
@@ -241,7 +259,7 @@ def test_english_is_spoken_in_one_clear_indian_voice(api, monkeypatch):
 
 def test_english_text_is_never_read_as_tamil(api, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(tts.httpx, "post", lambda url, **kw: httpx.Response(200, content=b"x"))
+    _fake_openai(monkeypatch, [])
     response = api.post("/voice/speak", headers=auth(), json={"text": "Great job on that answer!", "language": "ta"})
     assert response.headers["x-voice-language"] == "en"
 
@@ -307,7 +325,7 @@ def test_voice_cache_is_shared_between_workers(api, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(tts, "_shared", lambda: FakeRedis())
     calls = []
-    monkeypatch.setattr(tts.httpx, "post", lambda url, **kw: calls.append(1) or httpx.Response(200, content=b"mp3"))
+    _fake_openai(monkeypatch, calls, b"mp3")
     api.post("/voice/speak", headers=auth(), json={"text": "Shared hello"})
     tts._cache.clear()  # another worker: empty local cache
     response = api.post("/voice/speak", headers=auth(), json={"text": "Shared hello"})

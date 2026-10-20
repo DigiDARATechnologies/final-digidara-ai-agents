@@ -195,34 +195,15 @@ def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA
     hit = cached(text, spoken_as, persona, pace)
     if hit is not None:
         return hit, spoken_as, True
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        raise VoiceError(503, "Natural voice is not available right now.")
     voice = VOICE
-    for attempt in range(1, TTS_ATTEMPTS + 1):
-        try:
-            response = httpx.post(
-                OPENAI_SPEECH_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": TTS_MODEL, "voice": voice, "input": text,
-                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
-                },
-                timeout=TTS_TIMEOUT,
-            )
-            break
-        except httpx.TimeoutException as exc:
-            logger.warning("tts request stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
-            if attempt == TTS_ATTEMPTS:
-                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("tts request failed: %s", type(exc).__name__)
-            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
-    if response.status_code != 200 or not response.content:
-        # Status only: the error body can echo the request.
-        logger.warning("tts returned HTTP %s", response.status_code)
-        raise VoiceError(502, "The voice could not be generated. Please try again.")
-    audio = response.content
+    response, first, rest = _hedged_open(text, spoken_as, pace)
+    try:
+        audio = first + b"".join(rest)
+    except httpx.HTTPError as exc:
+        logger.warning("tts response broke off: %s", type(exc).__name__)
+        raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
+    finally:
+        response.close()
     _remember(_cache_key(text, spoken_as, voice, pace), audio, text)
     logger.info("tts %d chars as %s with %s -> %d bytes", len(text), spoken_as, persona, len(audio))
     return audio, spoken_as, False
@@ -305,43 +286,97 @@ def _openai() -> httpx.Client:
     return _openai_client
 
 
-def open_stream(text: str, spoken_as: str, pace: str = "normal"):
-    """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
-    or VoiceError before any byte is sent."""
+# OpenAI answers most voice requests in 0.9-1.7 s, but about one in three
+# (measured on staging, 2026-10-20) sends nothing for 8 s or more. Waiting
+# out the stall left learners in silence for 7-8 s before an interview
+# question or a Boss reply. So when the first audio has not arrived after
+# HEDGE_AFTER_SECONDS a second identical request is sent alongside, then a
+# third, and whichever starts first is played; the others are closed.
+HEDGE_AFTER_SECONDS = 2.0
+HEDGE_DEADLINE_SECONDS = 20.0
+
+
+def _hedged_open(text: str, spoken_as: str, pace: str):
+    """(open response, its first mp3 chunk, the rest as an iterator) from the
+    first of up to TTS_ATTEMPTS parallel requests to send audio, or VoiceError."""
+    import queue as _queue
+    import time as _time
+
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     client = _openai()
-    for attempt in range(1, TTS_ATTEMPTS + 1):
+    payload = {
+        "model": TTS_MODEL, "voice": VOICE, "input": text,
+        "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
+    }
+    results: _queue.Queue = _queue.Queue()
+    lock = threading.Lock()
+    state = {"won": False}
+
+    def attempt(number: int) -> None:
+        response = None
         try:
             request = client.build_request(
-                "POST", OPENAI_SPEECH_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": TTS_MODEL, "voice": VOICE, "input": text,
-                    "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
-                },
+                "POST", OPENAI_SPEECH_URL, headers={"Authorization": f"Bearer {api_key}"}, json=payload,
             )
             response = client.send(request, stream=True)
-            break
-        except httpx.TimeoutException as exc:
-            # A stalled request: a fresh one usually answers at once.
-            logger.warning("tts stream stalled (%s), attempt %d of %d", type(exc).__name__, attempt, TTS_ATTEMPTS)
-            if attempt == TTS_ATTEMPTS:
-                raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("tts stream request failed: %s", type(exc).__name__)
-            raise VoiceError(502, "The voice could not be generated. Please try again.") from exc
-    if response.status_code != 200:
-        logger.warning("tts stream returned HTTP %s", response.status_code)
-        response.close()
-        raise VoiceError(502, "The voice could not be generated. Please try again.")
+            if response.status_code != 200:
+                # Status only: the error body can echo the request.
+                logger.warning("tts returned HTTP %s (request %d)", response.status_code, number)
+                response.close()
+                results.put(("error", number))
+                return
+            rest = response.iter_bytes(4096)
+            first = next(rest, b"")
+            with lock:
+                won = not state["won"] and bool(first)
+                if won:
+                    state["won"] = True
+            if won:
+                results.put(("ok", (response, first, rest, number)))
+            else:
+                response.close()
+                results.put(("error", number))
+        except (httpx.HTTPError, OSError) as exc:
+            logger.warning("tts request %d stalled or failed: %s", number, type(exc).__name__)
+            if response is not None:
+                response.close()
+            results.put(("error", number))
+
+    started = _time.monotonic()
+    launched = failed = 0
+    while True:
+        if launched < TTS_ATTEMPTS and (launched == 0 or failed == launched or _time.monotonic() - started >= launched * HEDGE_AFTER_SECONDS):
+            launched += 1
+            threading.Thread(target=attempt, args=(launched,), daemon=True).start()
+        remaining = HEDGE_DEADLINE_SECONDS - (_time.monotonic() - started)
+        if remaining <= 0 or (failed == launched == TTS_ATTEMPTS):
+            raise VoiceError(502, "The voice could not be generated. Please try again.")
+        wait = remaining if launched >= TTS_ATTEMPTS else max(0.05, min(remaining, launched * HEDGE_AFTER_SECONDS - (_time.monotonic() - started)))
+        try:
+            kind, value = results.get(timeout=wait)
+        except _queue.Empty:
+            continue
+        if kind == "ok":
+            response, first, rest, number = value
+            if number > 1:
+                logger.info("tts hedged: request %d of %d answered first after %.2fs", number, launched, _time.monotonic() - started)
+            return response, first, rest
+        failed += 1
+
+
+def open_stream(text: str, spoken_as: str, pace: str = "normal"):
+    """An iterator of mp3 bytes as OpenAI produces them (cached once complete),
+    or VoiceError before any byte is sent."""
+    response, first, rest = _hedged_open(text, spoken_as, pace)
 
     def chunks():
-        parts: list[bytes] = []
+        parts: list[bytes] = [first]
         complete = False
         try:
-            for chunk in response.iter_bytes(4096):
+            yield first
+            for chunk in rest:
                 parts.append(chunk)
                 yield chunk
             complete = True

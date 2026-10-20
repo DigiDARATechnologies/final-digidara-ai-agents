@@ -232,16 +232,63 @@ def test_a_stalled_voice_request_is_sent_again_instead_of_waiting(api, monkeypat
     assert played.status_code == 200 and played.content == b"ID3-part-1-part-2"
     assert len(sends) == 2
 
-    posts = []
+    stalls = []
 
-    def stalled_post(url, **kwargs):
-        posts.append(kwargs["timeout"])
-        raise httpx.ReadTimeout("stalled")
+    class Stalled:
+        def build_request(self, *args, **kwargs):
+            return None
 
-    monkeypatch.setattr(tts.httpx, "post", stalled_post)
+        def send(self, request, stream=False):
+            stalls.append(1)
+            raise httpx.ReadTimeout("stalled")
+
+    monkeypatch.setattr(tts, "_openai", lambda: Stalled())
     response = api.post("/voice/speak", headers=auth(), json={"text": "Never answered."})
     assert response.status_code == 502
-    assert len(posts) == tts.TTS_ATTEMPTS and posts[0] is tts.TTS_TIMEOUT
+    assert len(stalls) == tts.TTS_ATTEMPTS
+
+
+def test_a_slow_voice_request_is_raced_by_a_second_one_instead_of_waited_out(api, monkeypatch):  # noqa: F811
+    # About one OpenAI voice request in three sends nothing for 8 s or more.
+    # After HEDGE_AFTER_SECONDS a second request is sent alongside, and the
+    # first to start is played: the learner waits ~2 s, not the whole stall.
+    import time
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(tts, "HEDGE_AFTER_SECONDS", 0.2)
+    release = threading.Event()
+    closed = []
+
+    class SlowStream(_FakeStream):
+        def iter_bytes(self, size):
+            release.wait(5)
+            yield b"late"
+
+        def close(self):
+            closed.append(1)
+
+    sends = []
+
+    class Client:
+        def build_request(self, *args, **kwargs):
+            return None
+
+        def send(self, request, stream=False):
+            sends.append(1)
+            return SlowStream() if len(sends) == 1 else _FakeStream()
+
+    monkeypatch.setattr(tts, "_openai", lambda: Client())
+    started = time.monotonic()
+    url = api.post("/voice/ticket", headers=auth(), json={"text": "A slow sentence."}).json()["url"]
+    played = api.get(url)
+    assert played.content == b"ID3-part-1-part-2"
+    assert time.monotonic() - started < 2 and len(sends) == 2
+    release.set()
+    for _ in range(50):
+        if closed:
+            break
+        time.sleep(0.02)
+    assert closed  # the slow loser is closed, not left open
 
 
 def test_a_spoken_greeting_or_small_talk_gets_a_conversational_answer():
