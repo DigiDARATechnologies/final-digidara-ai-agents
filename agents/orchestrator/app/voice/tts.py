@@ -29,7 +29,6 @@ TTS_TIMEOUT_SECONDS = 30
 # about a second. So a request that has sent nothing for this long is given up
 # and sent again, instead of leaving the learner in silence.
 TTS_STALL_SECONDS = 6
-TTS_ATTEMPTS = 3
 TTS_TIMEOUT = httpx.Timeout(TTS_TIMEOUT_SECONDS, read=TTS_STALL_SECONDS)
 MAX_TEXT_CHARS = 1200
 CACHE_ENTRIES = 300
@@ -286,19 +285,20 @@ def _openai() -> httpx.Client:
     return _openai_client
 
 
-# OpenAI answers most voice requests in 0.9-1.7 s, but about one in three
-# (measured on staging, 2026-10-20) sends nothing for 8 s or more. Waiting
-# out the stall left learners in silence for 7-8 s before an interview
-# question or a Boss reply. So when the first audio has not arrived after
-# HEDGE_AFTER_SECONDS a second identical request is sent alongside, then a
-# third, and whichever starts first is played; the others are closed.
-HEDGE_AFTER_SECONDS = 2.0
+# OpenAI's gpt-4o-mini-tts answers most voice requests in about 1 s, but 30-60%
+# of them (measured on staging, 2026-10-20) send nothing for 6 s or more, at
+# random. Waiting out a stall left the learner in silence while Boss's reply
+# or an interview question was already on screen. So every sentence is asked
+# for twice at once, again at 1.5 s, and finally from tts-1 (slower to start
+# and without the accent steering, but it has not been seen to stall); the
+# first to send audio is played and the rest are closed.
+HEDGE_SCHEDULE: tuple[tuple[float, str], ...] = ((0.0, TTS_MODEL), (0.0, TTS_MODEL), (1.5, TTS_MODEL), (3.0, "tts-1"))
 HEDGE_DEADLINE_SECONDS = 20.0
 
 
 def _hedged_open(text: str, spoken_as: str, pace: str):
     """(open response, its first mp3 chunk, the rest as an iterator) from the
-    first of up to TTS_ATTEMPTS parallel requests to send audio, or VoiceError."""
+    first of the HEDGE_SCHEDULE requests to send audio, or VoiceError."""
     import queue as _queue
     import time as _time
 
@@ -306,15 +306,14 @@ def _hedged_open(text: str, spoken_as: str, pace: str):
     if not api_key:
         raise VoiceError(503, "Natural voice is not available right now.")
     client = _openai()
-    payload = {
-        "model": TTS_MODEL, "voice": VOICE, "input": text,
-        "instructions": instructions_for(spoken_as, pace), "response_format": "mp3",
-    }
     results: _queue.Queue = _queue.Queue()
     lock = threading.Lock()
     state = {"won": False}
 
-    def attempt(number: int) -> None:
+    def attempt(number: int, model: str) -> None:
+        payload = {"model": model, "voice": VOICE, "input": text, "response_format": "mp3"}
+        if model != "tts-1":  # tts-1 takes no style instructions
+            payload["instructions"] = instructions_for(spoken_as, pace)
         response = None
         try:
             request = client.build_request(
@@ -339,29 +338,34 @@ def _hedged_open(text: str, spoken_as: str, pace: str):
                 response.close()
                 results.put(("error", number))
         except (httpx.HTTPError, OSError) as exc:
-            logger.warning("tts request %d stalled or failed: %s", number, type(exc).__name__)
+            if not state["won"]:
+                logger.warning("tts request %d (%s) stalled or failed: %s", number, model, type(exc).__name__)
             if response is not None:
                 response.close()
             results.put(("error", number))
 
     started = _time.monotonic()
     launched = failed = 0
+    total = len(HEDGE_SCHEDULE)
     while True:
-        if launched < TTS_ATTEMPTS and (launched == 0 or failed == launched or _time.monotonic() - started >= launched * HEDGE_AFTER_SECONDS):
+        elapsed = _time.monotonic() - started
+        # Launch every request whose time has come, or the next one at once
+        # when everything sent so far has already failed.
+        while launched < total and (HEDGE_SCHEDULE[launched][0] <= elapsed or failed == launched):
             launched += 1
-            threading.Thread(target=attempt, args=(launched,), daemon=True).start()
-        remaining = HEDGE_DEADLINE_SECONDS - (_time.monotonic() - started)
-        if remaining <= 0 or (failed == launched == TTS_ATTEMPTS):
+            threading.Thread(target=attempt, args=(launched, HEDGE_SCHEDULE[launched - 1][1]), daemon=True).start()
+        remaining = HEDGE_DEADLINE_SECONDS - elapsed
+        if remaining <= 0 or failed == total:
             raise VoiceError(502, "The voice could not be generated. Please try again.")
-        wait = remaining if launched >= TTS_ATTEMPTS else max(0.05, min(remaining, launched * HEDGE_AFTER_SECONDS - (_time.monotonic() - started)))
+        until_next = HEDGE_SCHEDULE[launched][0] - elapsed if launched < total else remaining
         try:
-            kind, value = results.get(timeout=wait)
+            kind, value = results.get(timeout=max(0.05, min(remaining, until_next)))
         except _queue.Empty:
             continue
         if kind == "ok":
             response, first, rest, number = value
-            if number > 1:
-                logger.info("tts hedged: request %d of %d answered first after %.2fs", number, launched, _time.monotonic() - started)
+            if number > 2:
+                logger.info("tts hedged: request %d (%s) answered first after %.2fs", number, HEDGE_SCHEDULE[number - 1][1], _time.monotonic() - started)
             return response, first, rest
         failed += 1
 

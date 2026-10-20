@@ -242,8 +242,9 @@ def test_speak_returns_mp3_with_a_friendly_tamil_style_and_caches(api, monkeypat
     assert "friendly" in calls[0]["instructions"]
     charged = 100000 - auth_service.get_by_id("learner").token_balance
     assert charged == len(text) * voice_routes.VOICE_TOKENS_PER_CHAR
+    sent = len(calls)  # OpenAI is asked more than once at a time (stalls)
     api.post("/voice/speak", headers=auth(), json={"text": text, "persona": "arjun"})
-    assert len(calls) == 1
+    assert len(calls) == sent  # the repeat came from the cache
     assert 100000 - auth_service.get_by_id("learner").token_balance == charged
 
 
@@ -327,9 +328,10 @@ def test_voice_cache_is_shared_between_workers(api, monkeypatch):
     calls = []
     _fake_openai(monkeypatch, calls, b"mp3")
     api.post("/voice/speak", headers=auth(), json={"text": "Shared hello"})
+    sent = len(calls)
     tts._cache.clear()  # another worker: empty local cache
     response = api.post("/voice/speak", headers=auth(), json={"text": "Shared hello"})
-    assert response.content == b"mp3" and len(calls) == 1 and len(store) == 1
+    assert response.content == b"mp3" and len(calls) == sent and len(store) == 1
 
 
 def test_general_chat_knows_the_first_name_answers_straight_away_and_stays_short():
