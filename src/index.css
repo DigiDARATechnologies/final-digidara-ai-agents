@@ -2101,16 +2101,7 @@ button,input,select,textarea{ letter-spacing:inherit; }
 }
 
 /* ---- Login: theme toggle + light theme ---- */
-.login-theme-toggle{
-  position:absolute; top:18px; right:18px; z-index:5; width:42px; height:42px; border-radius:50%;
-  display:inline-flex; align-items:center; justify-content:center; cursor:pointer;
-  color:#e8ecf6; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18);
-  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); transition:background .15s ease, transform .15s ease;
-}
-.login-theme-toggle:hover{ background:rgba(255,255,255,.16); transform:scale(1.06); }
-:root[data-theme="light"] .login-theme-toggle{ color:#1f2a44; background:rgba(255,255,255,.85); border-color:rgba(15,23,42,.14); }
-:root[data-theme="light"] .login-theme-toggle:hover{ background:#fff; }
-
+:root[data-theme="light"] :root[data-theme="light"] 
 :root[data-theme="light"] .login-overlay{
   background:
     radial-gradient(900px 600px at 12% 8%, rgba(40,81,216,.16), transparent 60%),
@@ -2153,7 +2144,6 @@ button,input,select,textarea{ letter-spacing:inherit; }
 /* ---- Login / sign-up: scroll when the form is taller than the window ---- */
 .login-overlay{ overflow-y:auto; overflow-x:hidden; align-items:flex-start; -webkit-overflow-scrolling:touch; }
 .login-shell{ margin:auto; flex-shrink:0; }
-.login-theme-toggle{ position:fixed; }
 
 /* ---- Light-theme text fixes ---- */
 :root[data-theme="light"] .sidebar .nav-item:hover .nav-icon{ color:var(--sidebar-text); }

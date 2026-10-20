@@ -8,15 +8,15 @@ import ConfirmDialog from "./ConfirmDialog";
 import BillingPanel from "./BillingPanel";
 import { getDisplayRating } from "../lib/ratings";
 import { AppearanceSettings, SecuritySettings } from "./SettingsExtras";
-import type { AppearancePrefs, ThemePref } from "../lib/appearance";
+import type { AppearancePrefs } from "../lib/appearance";
 import { bridgeIdentity, getDashboard, getHistory, type DashboardData } from "../lib/communicationApi";
 import VoiceSettings from "./VoiceSettings";
 import AgentIcon from "./AgentIcon";
 
-interface Props { themePref?: ThemePref; onThemeChange?: (pref: ThemePref) => void; appearance?: AppearancePrefs; onAppearanceChange?: (next: AppearancePrefs) => void; onLogout?: () => void; initialTab?: Tab; focusPlanId?: string | null; open: boolean; user: User; chats: Chat[]; glowOn: boolean; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
+interface Props { appearance?: AppearancePrefs; onAppearanceChange?: (next: AppearancePrefs) => void; onLogout?: () => void; initialTab?: Tab; focusPlanId?: string | null; open: boolean; user: User; chats: Chat[]; glowOn: boolean; onClose: () => void; onOpenChat: (chatId: string) => void; onGlowToggle: (on: boolean) => void; onClearHistory: () => void; onToast: (message: string) => void; onExportData: () => Promise<void>; onDeleteAccount: (password?: string) => Promise<string | null>; }
 type Tab = "general" | "appearance" | "security" | "billing" | "usage" | "agent-chats";
 
-export default function SettingsModal({ themePref = "dark", onThemeChange = () => {}, appearance = { accent: "blue", reduceMotion: false }, onAppearanceChange = () => {}, onLogout, initialTab = "general", focusPlanId = null, open, user, chats, glowOn, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
+export default function SettingsModal({ appearance = { accent: "blue", reduceMotion: false }, onAppearanceChange = () => {}, onLogout, initialTab = "general", focusPlanId = null, open, user, chats, glowOn, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
   const [tab, setTab] = useState<Tab>("general"); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); 
   useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
   const [exporting, setExporting] = useState(false);
@@ -98,7 +98,7 @@ export default function SettingsModal({ themePref = "dark", onThemeChange = () =
             <div className="setting-row"><div><b>Delete My Account</b><p>Permanently erase your account and personal data. This also withdraws your consent to processing and cannot be undone.</p></div><button className="btn btn-outline btn-danger" onClick={() => { setDeleteConfirmOpen(true); setDeleteError(""); setDeletePassword(""); }}>Delete Account</button></div>
             <div className="setting-row"><div><b>Grievance Officer</b><p>Questions or complaints about how your data is handled: <a href="mailto:support@digidaratechnologies.com">support@digidaratechnologies.com</a>.</p></div></div>
           </div></>}
-        {tab === "appearance" && <AppearanceSettings themePref={themePref} onThemeChange={onThemeChange} appearance={appearance} onAppearanceChange={onAppearanceChange} glowOn={glowOn} onGlowToggle={onGlowToggle} />}
+        {tab === "appearance" && <AppearanceSettings appearance={appearance} onAppearanceChange={onAppearanceChange} glowOn={glowOn} onGlowToggle={onGlowToggle} />}
         {tab === "security" && <SecuritySettings user={user} onToast={onToast} onLogout={onLogout} />}
         {tab === "billing" && <BillingPanel open={open} user={user} onToast={onToast} focusPlanId={focusPlanId} />}
         {tab === "usage" && <><h2>Usage</h2><p className="settings-subtitle">Track usage across your DigiDARA agents.</p><div className="settings-usage-summary"><div className="settings-platform-total"><span>Your Usage · {monthLabel}</span><strong>{formatPoints(monthPoints)} points</strong><small>· {monthRequests} requests</small></div><div className="profile-usage-limit"><div><b>Monthly Usage</b><span>{monthly ? `${100 - usagePercent}% remaining` : "Not available"}</span></div><div className="usage-progress"><span style={{ width: `${usagePercent}%` }} /></div><small>{monthly ? `${formatPoints(monthPoints)} of ${formatPoints(monthlyLimit)} points used this month` : "Monthly usage could not be loaded."}</small></div></div><h3 className="settings-title">Agent Usage · {monthLabel}</h3><div className="usage-settings-list">{usage?.map((item) => { const month = monthOfAgent(item.id); return <div key={item.id}><span className="profile-agent-icon" style={{ background: item.color }}><AgentIcon name={item.icon} /></span><span><b>{item.label}</b><small>{monthly ? `${formatPoints(month?.points ?? 0)} points · ${month?.requests ?? 0} requests` : "Not available"}</small></span><i className={!item.tracked ? "idle" : item.online ? "" : "offline"} /></div>; }) ?? <p>Loading usage…</p>}</div></>}

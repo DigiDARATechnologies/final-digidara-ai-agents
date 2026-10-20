@@ -67,7 +67,7 @@ import LowPointsModal from "./components/LowPointsModal";
 import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
-import { applyAppearance, loadAppearance, saveAppearance, type ThemePref } from "./lib/appearance";
+import { applyAppearance, loadAppearance, saveAppearance } from "./lib/appearance";
 import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
 import Toast from "./components/Toast";
 import SaveIndicator from "./components/SaveIndicator";
@@ -125,25 +125,12 @@ function ScreenLoading() {
 }
 
 export default function App() {
-  const [themePref, setThemePref] = useState<ThemePref>(() => {
-    try {
-      // Light (white) by default; see public/theme-init.js for the key.
-      const saved = localStorage.getItem("digidara_theme_v2");
-      return saved === "light" || saved === "dark" || saved === "system" ? saved : "light";
-    } catch { return "light"; }
-  });
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  const theme: Theme = themePref === "system" ? (systemDark ? "dark" : "light") : themePref;
+  // DigiDARA has one theme: light (white). There is no dark mode to switch to.
+  const theme: Theme = "light";
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem("digidara_theme_v2", themePref); } catch { /* storage unavailable: theme just won't persist */ }
-  }, [theme, themePref]);
+    try { localStorage.removeItem("digidara_theme_v2"); } catch { /* storage unavailable */ }
+  }, [theme]);
   const [appearance, setAppearance] = useState(loadAppearance);
   useEffect(() => {
     applyAppearance(appearance);
@@ -1882,9 +1869,8 @@ export default function App() {
         </div>
       );
     }
-    const toggleTheme = () => setThemePref(theme === "dark" ? "light" : "dark");
-    if (!showLogin) return <LandingPage theme={theme} onToggleTheme={toggleTheme} onLogin={openLogin} />;
-    return <LoginOverlay theme={theme} onToggleTheme={toggleTheme} onAuthenticate={handleAuthenticate} onBack={closeLogin} />;
+    if (!showLogin) return <LandingPage onLogin={openLogin} />;
+    return <LoginOverlay onAuthenticate={handleAuthenticate} onBack={closeLogin} />;
   }
 
   // Password accounts verify their email before anything else; the server
@@ -2119,8 +2105,6 @@ export default function App() {
             dashboardOpen={dashboardOpen}
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
-            theme={theme}
-            onToggleTheme={() => setThemePref(theme === "dark" ? "light" : "dark")}
             onDismissNotification={(notification) => dismissNotification(notification.key)}
             notifications={buildPendingNotifications({
               chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
@@ -2317,8 +2301,6 @@ export default function App() {
       )}
 
       <SettingsModal
-        themePref={themePref}
-        onThemeChange={setThemePref}
         appearance={appearance}
         onAppearanceChange={setAppearance}
         onLogout={handleLogout}

@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import logoOnDark from "../assets/logo-navbar-dark.webp";
 import logoOnLight from "../assets/logo-navbar-light.webp";
 import "./LandingPage.css";
 import AgentIcon from "./AgentIcon";
 
 interface LandingPageProps {
-  theme: "dark" | "light";
-  onToggleTheme: () => void;
   onLogin: () => void;
 }
 
@@ -114,14 +111,14 @@ function CountUp({ to, suffix = "" }: { to: number; suffix?: string }) {
 }
 
 /** Drifting dots that link up with each other and with the cursor. */
-function ParticleBg({ theme }: { theme: "dark" | "light" }) {
+function ParticleBg() {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext("2d");
     const parent = canvas?.parentElement;
     if (!canvas || !ctx || !parent || REDUCED_MOTION()) return;
-    const rgb = theme === "dark" ? "140,175,255" : "40,81,216";
+    const rgb = "40,81,216";
     const mouse = { x: -9999, y: -9999 };
     let w = 0;
     let h = 0;
@@ -187,7 +184,7 @@ function ParticleBg({ theme }: { theme: "dark" | "light" }) {
       parent.removeEventListener("mousemove", onMove);
       parent.removeEventListener("mouseleave", onLeave);
     };
-  }, [theme]);
+  }, []);
   return <canvas ref={ref} className="lp-particles" aria-hidden="true" />;
 }
 
@@ -235,7 +232,7 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPageProps) {
+export default function LandingPage({ onLogin }: LandingPageProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
@@ -274,7 +271,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
     scrollToId(id);
   }
 
-  const logo = theme === "dark" ? logoOnDark : logoOnLight;
+  const logo = logoOnLight;
 
   return (
     <div className="lp" ref={rootRef}>
@@ -291,9 +288,6 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
             <button type="button" onClick={() => go("faq")}>FAQ</button>
           </nav>
           <div className="lp-nav-actions">
-            <button type="button" className="lp-icon-btn" onClick={onToggleTheme} aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}>
-              {theme === "dark" ? "☀️" : "🌙"}
-            </button>
             <button type="button" className="lp-btn lp-btn-ghost" onClick={onLogin}>Login</button>
             <button type="button" className="lp-btn lp-btn-primary lp-hide-sm" onClick={onLogin}>Get started free</button>
             <button type="button" className="lp-icon-btn lp-burger" aria-label="Toggle menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
@@ -308,7 +302,7 @@ export default function LandingPage({ theme, onToggleTheme, onLogin }: LandingPa
           <div className="lp-orb lp-orb-a" aria-hidden="true" />
           <div className="lp-orb lp-orb-b" aria-hidden="true" />
           <div className="lp-orb lp-orb-c" aria-hidden="true" />
-          <ParticleBg theme={theme} />
+          <ParticleBg />
           <div className="lp-wrap lp-hero-inner">
             <div className="lp-hero-copy">
               <span className="lp-pill"><i /> AI agents for every industry, worldwide</span>

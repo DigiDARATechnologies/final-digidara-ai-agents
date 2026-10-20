@@ -1,4 +1,3 @@
-export type ThemePref = "system" | "dark" | "light";
 export type Accent = "blue" | "gold" | "green" | "purple" | "pink" | "orange";
 
 export interface AppearancePrefs {
