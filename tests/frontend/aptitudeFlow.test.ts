@@ -91,6 +91,18 @@ test.each([
   expect(result.messages[0].options).toHaveLength(2);
 });
 
+test('exiting shows the score for the questions already answered', async () => {
+  jest.mocked(api.abandonAptitudeTest).mockResolvedValueOnce({ test_id: 'test', status: 'abandoned', abandoned: true, answered_count: 3, correct_count: 2, total_questions: 10 });
+  const result = await handleAptitudeText(active, 'exit test');
+  expect(result.messages[0].text).toContain('Your score: **2 / 3** (3 of 10 questions answered; unanswered questions are not scored)');
+});
+
+test('exiting before answering anything says there is no score', async () => {
+  jest.mocked(api.abandonAptitudeTest).mockResolvedValueOnce({ test_id: 'test', status: 'abandoned', abandoned: true, answered_count: 0, correct_count: 0, total_questions: 10 });
+  const result = await handleAptitudeText(active, 'exit test');
+  expect(result.messages[0].text).toContain('No questions were answered');
+});
+
 test('exit also works when an active question is interrupted for tokens', async () => {
   jest.mocked(api.abandonAptitudeTest).mockResolvedValueOnce({ test_id: 'test', status: 'abandoned', abandoned: true });
   const result = await handleAptitudeText({ ...active, tokenInterrupted: true }, 'exit test');

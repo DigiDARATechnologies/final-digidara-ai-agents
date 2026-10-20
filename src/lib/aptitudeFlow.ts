@@ -3,6 +3,16 @@ import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getMixedTestConfig, saveMixedTestConfig, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, skipAptitudeQuestion, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
 
 export type AptitudeStep = "awaiting_mode" | "awaiting_category" | "awaiting_level" | "awaiting_language" | "awaiting_question" | "awaiting_next_question" | "completed";
+/** "Test exited" plus the score for the questions answered before exiting. */
+export function exitScoreText(result: { answered_count?: number; correct_count?: number; total_questions?: number }): string {
+  const answered = Number(result.answered_count ?? 0);
+  const total = Number(result.total_questions ?? 0);
+  const score = answered
+    ? `Your score: **${Number(result.correct_count ?? 0)} / ${answered}** (${answered}${total ? ` of ${total}` : ""} questions answered; unanswered questions are not scored).`
+    : "No questions were answered, so there is no score.";
+  return `Test exited. ${score}\n\nYou can start a new Category or Mixed Test.`;
+}
+
 export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: TechnicalLanguage; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; hintError?: string; tokenInterrupted?: boolean; }
 export interface AptitudeFlowMessage { text: string; options?: ChatOption[]; }
 const categories = ["Quantitative Aptitude", "Logical Reasoning", "Verbal Ability", "Analytical Reasoning", "Computer Fundamentals", "Technical Aptitude"];
@@ -174,7 +184,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       if (result.status !== "abandoned") throw new Error("The test could not be exited. Please try again.");
       return {
         state: { step: "awaiting_mode" as const, sessionToken: state.sessionToken },
-        messages: [{ text: "Test exited. You can start a new Category or Mixed Test.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
+        messages: [{ text: exitScoreText(result), options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
       };
     }
     if (state.step === "completed" && /download|report|pdf/i.test(value)) {

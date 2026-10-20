@@ -276,7 +276,12 @@ def abandon(test_id):
     changed=abandon_attempt(test,"student_exit")
     if changed:
         db.session.commit()
-    return {"test_id":test.id,"status":test.status,"abandoned":changed}
+    # Answers are graded when submitted, so an exit can report the score for
+    # the questions attempted; unanswered ones are not scored.
+    answered=AptitudeAnswer.query.filter_by(test_id=test.id).count()
+    return {"test_id":test.id,"status":test.status,"abandoned":changed,
+            "answered_count":answered,"correct_count":int(test.correct_count or 0),
+            "total_questions":int(test.total_questions or 0)}
 
 @bp.post("/tests/<test_id>/hint")
 @require_student

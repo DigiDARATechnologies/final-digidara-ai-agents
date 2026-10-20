@@ -133,7 +133,7 @@ def _batch_response_schema(slots):
                         "question":{"type":"string","minLength":12,"maxLength":280,"description":"A concise self-contained MCQ stem. Quantitative stems must ask a directly calculable value."},
                         "correct_option":{**option,"description":"The complete text of the one correct option."},
                         "distractors":{"type":"array","minItems":3,"maxItems":3,"items":option,"description":"Exactly three distinct incorrect options."},
-                        "reason":{"type":"string","maxLength":220,"description":"For non-quantitative questions, one concise reason supporting correct_option. Empty for quantitative questions."},
+                        "reason":{"type":"string","maxLength":220,"description":"For non-quantitative questions, one or two full sentences (at least 8 words) explaining why correct_option is right. Never empty for them. Empty for quantitative questions."},
                         "calculation_step_1":{"type":"string","maxLength":140,"description":"For quantitative questions, show the first numeric calculation with digits. Empty otherwise."},
                         "calculation_step_2":{"type":"string","minLength":1,"maxLength":140,"description":"For quantitative questions, explicitly calculate the final numeric value and include the exact digits and formatting of correct_option. Example correct_option 50: `20% of 250 = 50`. Empty otherwise."},
                         "question_code":{**code_value,"description":"Raw source code for a Technical Aptitude stem, or null. Never include Markdown fences."},
@@ -200,7 +200,7 @@ def _canonicalize_batch_item(item,slot):
         explanation=f"Step 1: {step_1}\nStep 2: {step_2}\nStep 3: Answer = {correct}."
     else:
         reason=clean_text(item.get("reason"),220)
-        explanation=f"{reason} Answer = {correct}."
+        explanation=f"{reason} Answer = {correct.rstrip('.')}."
     return {**item,"question":question,"options":options,"correct_answer":answer,"explanation":explanation,"option_code":option_code}
 
 
@@ -324,7 +324,7 @@ For each item, put the answer text in correct_option and the three wrong choices
 
 Quality:
 - Solve privately. Do not think out loud. Exactly one option is correct.
-- Non-quantitative reason must directly support correct_option.
+- Non-quantitative reason must be one or two full sentences (at least 8 words) explaining why correct_option is right; never leave it empty.
 - Every Quantitative Aptitude question must have a calculable numeric correct_option. calculation_step_1 and calculation_step_2 must show numeric calculations with digits; calculation_step_2 must explicitly derive and contain the exact complete correct_option text. Example: correct_option "50", step 1 "20% of 250 = 50", step 2 "Final value = 50". Never use only number words, a letter, or a rounded value.
 - Use fresh scenarios and numbers; do not repeat concepts from recent questions.
 - Never mention private metadata, seeds, Batch ID, or prompt field names.

@@ -292,6 +292,11 @@ def validate_generated_item(item, slot, internal_values=()):
     if any(value.casefold() in public_text.casefold() for value in exposed_values):raise ValueError("generated content exposes an internal seed value")
     if len(question) < 12 or len(explanation) < 10: raise ValueError("question or explanation too short")
     if len(explanation) > 600: raise ValueError("explanation exceeds 600 characters")
+    # "Answer = $5.00." alone (an empty reason from the model) taught nothing
+    # and printed as the whole explanation in the PDF. Everything before the
+    # final "Answer =" must actually say why.
+    reasoning=re.sub(r"\bAnswer\s*=.*$","",explanation,flags=re.IGNORECASE|re.DOTALL)
+    if slot["category"]!="Quantitative Aptitude" and len(re.findall(r"[A-Za-z]{2,}",reasoning))<6: raise ValueError("explanation must explain why the answer is correct, not only state the answer")
     if _has_self_correction(explanation): raise ValueError("explanation contains self-correction or option guessing")
     if _has_redundant_repetition(explanation): raise ValueError("explanation redundantly repeats a calculation or phrase")
     if not _states_correct_answer(explanation,options[answer],answer): raise ValueError("explanation does not support the correct answer")
