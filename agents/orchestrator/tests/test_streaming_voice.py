@@ -203,7 +203,7 @@ def test_a_brisk_voice_is_the_same_person_at_a_quicker_pace_and_cached_apart(api
     monkeypatch.setattr(tts, "_openai", lambda: Client())
     url = api.post("/voice/ticket", headers=auth(), json={"text": "Quick reply here.", "pace": "brisk"}).json()["url"]
     assert api.get(url).status_code == 200
-    assert sent == [brisk]
+    assert sent and set(sent) == {brisk}
     # An unknown pace is the normal voice.
     url = api.post("/voice/ticket", headers=auth(), json={"text": "Another reply here.", "pace": "warp"}).json()["url"]
     api.get(url)
@@ -245,7 +245,7 @@ def test_a_stalled_voice_request_is_sent_again_instead_of_waiting(api, monkeypat
     monkeypatch.setattr(tts, "_openai", lambda: Stalled())
     response = api.post("/voice/speak", headers=auth(), json={"text": "Never answered."})
     assert response.status_code == 502
-    assert len(stalls) == tts.TTS_ATTEMPTS
+    assert len(stalls) == len(tts.HEDGE_SCHEDULE)
 
 
 def test_a_slow_voice_request_is_raced_by_a_second_one_instead_of_waited_out(api, monkeypatch):  # noqa: F811
@@ -255,7 +255,7 @@ def test_a_slow_voice_request_is_raced_by_a_second_one_instead_of_waited_out(api
     import time
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(tts, "HEDGE_AFTER_SECONDS", 0.2)
+    monkeypatch.setattr(tts, "HEDGE_SCHEDULE", ((0.0, "gpt-4o-mini-tts"), (0.2, "gpt-4o-mini-tts")))
     release = threading.Event()
     closed = []
 

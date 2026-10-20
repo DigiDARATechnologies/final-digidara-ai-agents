@@ -13,15 +13,13 @@ interface TopbarProps {
   dashboardOpen: boolean;
   onToggleDashboard: () => void;
   systemOnline: boolean;
-  theme: "dark" | "light";
-  onToggleTheme: () => void;
   /** What is pending in each agent (see lib/notifications.ts). */
   notifications: PendingNotification[];
   onOpenNotification: (notification: PendingNotification) => void;
   onDismissNotification: (notification: PendingNotification) => void;
 }
 
-export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, theme, onToggleTheme, notifications, onOpenNotification, onDismissNotification }: TopbarProps) {
+export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleNotif, dashboardAvailable, dashboardOpen, onToggleDashboard, systemOnline, notifications, onOpenNotification, onDismissNotification }: TopbarProps) {
   return (
     <header className="topbar">
       <button className="icon-btn mobile-only" onClick={onToggleMobileMenu} aria-label="Open menu">
@@ -55,23 +53,6 @@ export default function Topbar({ title, notifOpen, onToggleMobileMenu, onToggleN
             <span className="status-dot" /> Project Agent Offline
           </span>
         )}
-        <button
-          className="icon-btn theme-toggle"
-          onClick={onToggleTheme}
-          aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          title={theme === "dark" ? "Light theme" : "Dark theme"}
-        >
-          {theme === "dark" ? (
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          ) : (
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          )}
-        </button>
         <div className="dropdown-wrap">
           <button className="icon-btn" onClick={onToggleNotif} aria-label="Notifications">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none">

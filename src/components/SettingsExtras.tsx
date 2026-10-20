@@ -1,46 +1,23 @@
 import { useState, type FormEvent } from "react";
 import type { User } from "../types";
 import { changePassword } from "../lib/authApi";
-import { ACCENTS, type Accent, type AppearancePrefs, type ThemePref } from "../lib/appearance";
+import { ACCENTS, type Accent, type AppearancePrefs } from "../lib/appearance";
 import { sessionToken } from "../lib/session";
 
 interface AppearanceProps {
-  themePref: ThemePref;
-  onThemeChange: (pref: ThemePref) => void;
   appearance: AppearancePrefs;
   onAppearanceChange: (next: AppearancePrefs) => void;
   glowOn: boolean;
   onGlowToggle: (on: boolean) => void;
 }
 
-const THEME_OPTIONS: { id: ThemePref; label: string; hint: string }[] = [
-  { id: "system", label: "System", hint: "Match your device" },
-  { id: "dark", label: "Dark", hint: "Pure black" },
-  { id: "light", label: "Light", hint: "Bright and clean" },
-];
-
-export function AppearanceSettings({ themePref, onThemeChange, appearance, onAppearanceChange, glowOn, onGlowToggle }: AppearanceProps) {
+export function AppearanceSettings({ appearance, onAppearanceChange, glowOn, onGlowToggle }: AppearanceProps) {
   return (
     <>
       <h2>Appearance</h2>
       <p className="settings-subtitle">Make DigiDARA Agents look and feel the way you like. Changes apply instantly and are remembered on this device.</p>
 
       <div className="settings-section">
-        <div className="setting-row set-stack">
-          <div>
-            <b>Theme</b>
-            <p>Choose dark, light, or follow your device automatically.</p>
-          </div>
-          <div className="set-seg" role="radiogroup" aria-label="Theme">
-            {THEME_OPTIONS.map((o) => (
-              <button key={o.id} type="button" role="radio" aria-checked={themePref === o.id} className={themePref === o.id ? "active" : ""} onClick={() => onThemeChange(o.id)}>
-                <span>{o.label}</span>
-                <small>{o.hint}</small>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="setting-row set-stack">
           <div>
             <b>Accent Colour</b>

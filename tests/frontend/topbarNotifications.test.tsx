@@ -10,7 +10,7 @@ const note = (over: Partial<PendingNotification> = {}): PendingNotification => (
 function renderBar(notifications: PendingNotification[], handlers: { open?: jest.Mock; dismiss?: jest.Mock } = {}) {
   return render(
     <Topbar title="t" user={user} notifOpen dashboardAvailable={false} dashboardOpen={false} onToggleDashboard={jest.fn()} systemOnline
-      theme="light" onToggleTheme={jest.fn()} onToggleMobileMenu={jest.fn()} onToggleNotif={jest.fn()}
+      onToggleMobileMenu={jest.fn()} onToggleNotif={jest.fn()}
       notifications={notifications} onOpenNotification={handlers.open ?? jest.fn()} onDismissNotification={handlers.dismiss ?? jest.fn()} />,
   );
 }
