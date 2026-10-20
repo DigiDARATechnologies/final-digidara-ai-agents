@@ -1,7 +1,7 @@
 import type { ChatOption, User } from "../types";
 import {
   endMockInterview, ensureMockInterviewSession, exitMockInterview, getActiveMockInterview, startMockInterview, submitMockInterviewAnswer,
-  type MockInterviewQuestion, type MockInterviewSummary,
+  type MockInterviewExit, type MockInterviewQuestion, type MockInterviewSummary,
 } from "./mockInterviewApi";
 import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 
@@ -126,6 +126,23 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
   }
 }
 
+const VERDICT_LABEL: Record<string, string> = { correct: "Correct", partial: "Partly correct", wrong: "Incorrect" };
+
+/** The score for the questions answered before an exit, one line each. */
+export function exitScoreText(exited: MockInterviewExit, totalQuestions?: number): string {
+  if (exited.score_unavailable) return "Your answers were saved, but they could not be scored right now.";
+  const answered = exited.scorecard ?? [];
+  if (!answered.length) return "No questions were answered, so there is no score.";
+  const marks = Number(exited.total_marks ?? 0);
+  const out = Number(exited.max_marks ?? answered.length);
+  const lines = answered.map((item, index) => {
+    const verdict = VERDICT_LABEL[item.verdict ?? ""] ?? "Not scored";
+    return `**Q${index + 1}.** ${item.question ?? ""}\n${verdict}${item.verdict_reason ? ` - ${item.verdict_reason}` : ""}`;
+  });
+  const of = totalQuestions ? ` of ${totalQuestions}` : "";
+  return [`**Your score: ${Number.isInteger(marks) ? marks : marks.toFixed(1)} / ${out}** (${answered.length}${of} questions answered; unanswered questions are not scored)`, ...lines].join("\n\n");
+}
+
 async function finish(state: MockInterviewFlowState): Promise<MockInterviewFlowResult> {
   try {
     const summary = await endMockInterview(state.sessionToken!, state.interviewId!);
@@ -243,10 +260,11 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
     if (value === "retry_report") return finish(state);
     if (value === "exit_interview" || value === "exit_interview_inactive") {
       try {
-        await exitMockInterview(state.sessionToken, state.interviewId, state.questionOrder);
-        const text = value === "exit_interview_inactive"
+        const exited = await exitMockInterview(state.sessionToken, state.interviewId, state.questionOrder);
+        const reason = value === "exit_interview_inactive"
           ? "The interview has ended because no answer was heard: nothing was said for 30 seconds after the question, or for 15 seconds after I asked \"Hey, are you there?\". Unanswered questions are not scored. Start a new interview whenever you're ready."
           : "You've exited the interview.";
+        const text = [reason, exitScoreText(exited, state.totalQuestions)].filter(Boolean).join("\n\n");
         return { state: { ...state, step: "completed", question: undefined }, messages: [{ text, options: restartOption }] };
       } catch (error) {
         return { state, messages: [{ text: `I couldn't exit the interview: ${errorText(error)}`, options: exitOption }] };

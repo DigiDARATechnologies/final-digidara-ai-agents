@@ -130,8 +130,19 @@ export function endMockInterview(sessionToken: string, interviewId: number) {
   return invoke<MockInterviewSummary>("end_interview", { sessionToken, interview_id: interviewId });
 }
 
+/** An exit grades the questions already answered: their scorecard and marks
+ * (out of the answered count), or score_unavailable when grading failed. */
+export interface MockInterviewExit {
+  status?: string;
+  completed_question_count?: number;
+  scorecard?: MockInterviewSummary["scorecard"];
+  total_marks?: number;
+  max_marks?: number;
+  score_unavailable?: boolean;
+}
+
 export function exitMockInterview(sessionToken: string, interviewId: number, questionOrder?: number) {
-  return invoke<Record<string, unknown>>("exit_interview", { sessionToken, interview_id: interviewId, ...(questionOrder ? { question_order: questionOrder } : {}) });
+  return invoke<MockInterviewExit>("exit_interview", { sessionToken, interview_id: interviewId, ...(questionOrder ? { question_order: questionOrder } : {}) });
 }
 
 export async function downloadMockInterviewReport(sessionToken: string, interviewId: number): Promise<void> {

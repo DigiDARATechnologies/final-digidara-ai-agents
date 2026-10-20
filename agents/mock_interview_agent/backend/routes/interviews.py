@@ -891,7 +891,48 @@ def exit_interview():
         "interview_id": interview_id,
         "status": "exited",
         "completed_question_count": rows["completed_count"],
+        **(_score_answered_on_exit(interview_id) if rows["completed_count"] else {}),
     })
+
+
+def _score_answered_on_exit(interview_id):
+    """Grade the questions answered before an exit with the same batch
+    evaluator as a finished interview, so leaving early still shows a score
+    for what was answered. Unanswered questions are not scored. A grading
+    failure never blocks the exit; the learner just gets no score."""
+    interview_row, _ = db.query("SELECT * FROM interviews WHERE id = %s", (interview_id,), fetchone=True)
+    rows, _ = db.query(
+        """SELECT question_order, id, question, answer, time_taken_sec, is_followup,
+                  answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag,
+                  timed_out, processing_status
+           FROM interview_details
+           WHERE interview_id = %s
+           ORDER BY question_order, id""",
+        (interview_id,), fetch=True,
+    )
+    if not interview_row or not isinstance(rows, list):
+        return {}
+    answered = [
+        dict(row) for row in rows
+        if not row.get("is_followup") and row.get("answer") is not None and not row.get("timed_out")
+    ]
+    if not answered:
+        return {}
+    pending = [row for row in answered if row.get("verdict") is None]
+    if pending:
+        evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending)
+        if evaluation_error:
+            return {"score_unavailable": True}
+        by_id = {int(item["question_id"]): item for item in evaluations}
+        for row in pending:
+            item = by_id[int(row["id"])]
+            db.query(
+                "UPDATE interview_details SET verdict=%s, verdict_reason=%s, ideal_answer=%s, processing_status='evaluated' WHERE id=%s",
+                (item["verdict"], item.get("reason"), item.get("ideal_answer"), row["id"]),
+            )
+            row.update(verdict=item["verdict"], verdict_reason=item.get("reason"), ideal_answer=item.get("ideal_answer"))
+    scorecard, total_marks, max_marks = scoring.build_scorecard(answered)
+    return {"scorecard": scorecard, "total_marks": total_marks, "max_marks": max_marks}
 
 
 @interviews_bp.route("/active_interview/<int:student_id>", methods=["GET"])

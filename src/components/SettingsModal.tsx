@@ -18,7 +18,8 @@ type Tab = "general" | "appearance" | "security" | "billing" | "usage" | "agent-
 
 export default function SettingsModal({ appearance = { accent: "blue", reduceMotion: false }, onAppearanceChange = () => {}, onLogout, initialTab = "general", focusPlanId = null, open, user, chats, glowOn, onClose, onOpenChat, onGlowToggle, onClearHistory, onToast, onExportData, onDeleteAccount }: Props) {
   const [tab, setTab] = useState<Tab>("general"); const [usage, setUsage] = useState<AgentUsageResult[] | null>(null); const [detailAgentId, setDetailAgentId] = useState<string | null>(null); const [agentSearch, setAgentSearch] = useState(""); 
-  useEffect(() => { if (open) setTab(initialTab); }, [open, initialTab]);
+  // Agent Details sits over the tab content, so any tab change (or reopening) closes it.
+  useEffect(() => { if (open) { setTab(initialTab); setDetailAgentId(null); } }, [open, initialTab]);
   const [exporting, setExporting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
@@ -86,7 +87,7 @@ export default function SettingsModal({ appearance = { accent: "blue", reduceMot
 
   return <div className={`modal-overlay${open ? " open" : ""}`} onClick={(event) => event.target === event.currentTarget && onClose()}>
     <div className="modal-card settings-shell">
-      <aside className="settings-nav"><button className="settings-close" onClick={onClose}>×</button><h3>Settings</h3>{(["general", "appearance", "security", "billing", "usage", "agent-chats"] as Tab[]).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => setTab(item)}><span>{item === "general" ? "⚙" : item === "appearance" ? "◐" : item === "security" ? "⚿" : item === "billing" ? "▣" : item === "usage" ? "▤" : "◫"}</span>{item === "agent-chats" ? "Agent Chats" : item[0].toUpperCase() + item.slice(1)}</button>)}</aside>
+      <aside className="settings-nav"><button className="settings-close" onClick={onClose}>×</button><h3>Settings</h3>{(["general", "appearance", "security", "billing", "usage", "agent-chats"] as Tab[]).map((item) => <button key={item} className={tab === item ? "active" : ""} onClick={() => { setTab(item); setDetailAgentId(null); }}><span>{item === "general" ? "⚙" : item === "appearance" ? "◐" : item === "security" ? "⚿" : item === "billing" ? "▣" : item === "usage" ? "▤" : "◫"}</span>{item === "agent-chats" ? "Agent Chats" : item[0].toUpperCase() + item.slice(1)}</button>)}</aside>
       <main className="settings-content">
         {tab === "general" && <><h2>General</h2><div className="settings-section"><div className="setting-row"><div><b>Profile</b><p>{user.name}<br />{user.email} · {user.mobile}</p></div></div><div className="setting-row"><div><b>Accent Glow Effects</b><p>Toggle animated glow on cards and buttons.</p></div><label className="switch"><input type="checkbox" checked={glowOn} onChange={(event) => onGlowToggle(event.target.checked)} /><span className="slider" /></label></div><div className="setting-row"><div><b>Clear Chat History</b><p>Remove all saved conversations for this account.</p></div><button className="btn btn-outline btn-danger" onClick={() => setClearConfirmOpen(true)}>Clear</button></div></div>
           <h3 className="settings-title">Voice</h3>
