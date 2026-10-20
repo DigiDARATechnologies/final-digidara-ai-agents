@@ -3,7 +3,7 @@ import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 import { abandonAptitudeTest, createAptitudeTest, ensureAptitudeSession, getAptitudeQuestion, getMixedTestConfig, saveMixedTestConfig, getAptitudeResults, requestAptitudeHint, submitAptitudeAnswer, skipAptitudeQuestion, downloadAptitudeReport, type AptitudeQuestion } from "./aptitudeApi";
 
 export type AptitudeStep = "awaiting_mode" | "awaiting_category" | "awaiting_level" | "awaiting_language" | "awaiting_question" | "awaiting_next_question" | "completed";
-export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: TechnicalLanguage; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; tokenInterrupted?: boolean; }
+export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: TechnicalLanguage; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; hintError?: string; tokenInterrupted?: boolean; }
 export interface AptitudeFlowMessage { text: string; options?: ChatOption[]; }
 const categories = ["Quantitative Aptitude", "Logical Reasoning", "Verbal Ability", "Analytical Reasoning", "Computer Fundamentals", "Technical Aptitude"];
 const categoryOptions = categories.map((value) => ({ label: value, value }));
@@ -187,7 +187,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
     if (state.tokenInterrupted) {
       if (!/continue|resume/i.test(value)) return { state, messages: [{ text: "Top up your points, then choose Continue Test to restore the current question and timer.", options: resumeOptions }] };
       const question = await getAptitudeQuestion(state.sessionToken!, state.testId!);
-      return { state: { ...state, step: "awaiting_question" as const, question, tokenInterrupted: false, hintsRemaining: question.hints_remaining, hintText: undefined }, messages: [questionMessage(question)] };
+      return { state: { ...state, step: "awaiting_question" as const, question, tokenInterrupted: false, hintsRemaining: question.hints_remaining, hintText: undefined, hintError: undefined }, messages: [questionMessage(question)] };
     }
     if (state.step === "awaiting_mode" && (value === "role_mix" || value === "role_category")) {
       const goal = learnerGoal();
@@ -227,26 +227,29 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
         return { state, messages: [{ text: "Your previous answer was saved. Retry loading the next question to continue.", options: [{ label: "Retry question", value: "retry question" }] }] };
       }
       const nextQuestion = await getAptitudeQuestion(state.sessionToken!, state.testId!);
-      return { state: { ...state, step: "awaiting_question" as const, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined }, messages: [questionMessage(nextQuestion)] };
+      return { state: { ...state, step: "awaiting_question" as const, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined, hintError: undefined }, messages: [questionMessage(nextQuestion)] };
     }
     if (state.step === "awaiting_question") {
       const navMatch = value.match(/^__aptitude_nav:(\d+)$/);
       if (navMatch) {
         const question = await getAptitudeQuestion(state.sessionToken!, state.testId!, Number(navMatch[1]));
-        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined }, messages: [questionMessage(question)] };
+        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined, hintError: undefined }, messages: [questionMessage(question)] };
       }
       if (/^skip(?: question)?$/i.test(value)) {
         const question = await skipAptitudeQuestion(state.sessionToken!, state.testId!);
-        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined }, messages: [{ text: `Question ${state.question?.sequence} skipped. You can return to it from the question navigator.` }, questionMessage(question)] };
+        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined, hintError: undefined }, messages: [{ text: `Question ${state.question?.sequence} skipped. You can return to it from the question navigator.` }, questionMessage(question)] };
       }
       if (state.question?.status && state.question.status !== "unanswered") return { state, messages: [{ text: "This question is already submitted. Choose another question from the navigator." }] };
       if (value.toLowerCase() === "hint") {
         try {
           const result = await requestAptitudeHint(state.sessionToken!, state.testId!);
-          return { state: { ...state, hintsRemaining: result.hints_remaining, hintText: result.hint }, messages: [{ text: `Hint (${result.hints_remaining} remaining): ${result.hint}`, options: optionMap(state.question!.options) }] };
+          return { state: { ...state, hintsRemaining: result.hints_remaining, hintText: result.hint, hintError: undefined }, messages: [{ text: `Hint (${result.hints_remaining} remaining): ${result.hint}`, options: optionMap(state.question!.options) }] };
         } catch (error) {
           if (isTokenInterruption(error)) return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "You don't have enough points. Top up your points, then continue this test to restore the current question and timer.", options: resumeOptions }] };
-          return { state, messages: [{ text: `I could not generate a safe hint right now: ${(error as Error).message}`, options: optionMap(state.question!.options) }] };
+          // The chat hides the latest message during a live question, so the
+          // panel shows this error too; otherwise the hint seems to do nothing.
+          const reason = (error as Error).message;
+          return { state: { ...state, hintError: `Hint unavailable: ${reason}` }, messages: [{ text: `I could not generate a safe hint right now: ${reason}`, options: optionMap(state.question!.options) }] };
         }
       }
       // Accept only a real answer token. Previously any sentence containing
@@ -260,7 +263,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       const feedback = `${verdict}\nCorrect answer: ${result.correct_answer}\n\n${result.explanation}`;
       try {
         const nextQuestion = await getAptitudeQuestion(state.sessionToken!, state.testId!);
-        return { state: { ...state, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined }, messages: [{ text: feedback }, questionMessage(nextQuestion)] };
+        return { state: { ...state, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined, hintError: undefined }, messages: [{ text: feedback }, questionMessage(nextQuestion)] };
       } catch (error) {
         // The answer is already committed. Clear the old question so its
         // answer buttons cannot be submitted again while Question N+1 is

@@ -14,7 +14,7 @@ const plan = (id: string, name: string, amount: number, points: number, popular 
   id, name, amount, currency: 'INR', period: 'month', tokens: points * 2000, points, bonus_percent: 0, description: '', features: [], popular,
 });
 
-function Harness({ onBuy = jest.fn() }: { onBuy?: () => void }) {
+function Harness({ onBuy = jest.fn() }: { onBuy?: (planId: string | null) => void }) {
   const prompt = useLowPointsPrompt(true);
   return prompt.open
     ? <LowPointsModal points={prompt.points} outOfPoints={prompt.outOfPoints} onClose={prompt.dismiss} onBuy={onBuy} />
@@ -55,6 +55,18 @@ test('Buy points goes to checkout', async () => {
   render(<Harness onBuy={onBuy} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Buy points' }));
   expect(onBuy).toHaveBeenCalled();
+});
+
+test('the popular plan starts selected and any other plan can be chosen before buying', async () => {
+  balance(3);
+  const onBuy = jest.fn();
+  render(<Harness onBuy={onBuy} />);
+  const premium = await screen.findByRole('radio', { name: /Premium/ });
+  expect(screen.getByRole('radio', { name: /Standard/ })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(premium);
+  expect(premium).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(screen.getByRole('button', { name: 'Buy points' }));
+  expect(onBuy).toHaveBeenCalledWith('premium');
 });
 
 test('the gateway saying "not enough points" pops it up as out of points, even after Later on a low balance', async () => {

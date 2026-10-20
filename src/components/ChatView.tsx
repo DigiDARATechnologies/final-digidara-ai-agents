@@ -36,6 +36,9 @@ interface ChatViewProps {
    * App.tsx's sendMessage(text, editIndex) for how the resume actually
    * works. Absent means editing isn't offered (e.g. no host wired it up). */
   onEditMessage?: (index: number, newText: string) => void;
+  /** Checked before the editor opens. Returning false refuses the edit; the
+   * host tells the user why (e.g. an Aptitude answer already submitted). */
+  canEditMessage?: (index: number) => boolean;
   attachEnabled: boolean;
   /** File input `accept` string ... varies per agent (Capstone wants
    * `.docx,.zip`; Resume Builder wants resume documents). */
@@ -125,6 +128,7 @@ export default function ChatView({
   onSend,
   onChooseOption,
   onEditMessage,
+  canEditMessage,
   attachEnabled,
   attachAccept = ".docx,.zip",
   pendingFiles,
@@ -290,6 +294,7 @@ export default function ChatView({
   }
 
   function startEdit(index: number, text: string) {
+    if (canEditMessage && !canEditMessage(index)) return;
     setEditingIndex(index);
     setEditDraft(text);
   }

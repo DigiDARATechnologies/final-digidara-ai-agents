@@ -18,6 +18,7 @@ from reportlab.platypus import (
 
 from .test_label import test_label
 from ..utils.code_formatting import FENCE_PATTERN, LIKELY_CODE_PATTERN, decode_literal_layout
+from ..utils.explanation import normalize_explanation
 from ..utils.timezone import format_local_datetime, valid_timezone
 from ..topic_config import topic_is_starred
 
@@ -60,7 +61,21 @@ def _plain(value):
         "\u2018":"'","\u2019":"'","\u201c":"\"","\u201d":"\"",
         "\u2026":"...","\u00d7":" x ","\u00f7":" / ","\u2264":" <= ",
         "\u2265":" >= ","\u2260":" != ","\u2192":" -> ","\u00b7":" - ",
+        # Math the built-in fonts cannot draw. Without these an explanation
+        # printed "60 ? 40", "?16" and "? ? 3.14" for 60 - 40, sqrt(16), pi ~= 3.14.
+        "\u2212":"-","\u2215":"/","\u2217":"*","\u22c5":"x","\u2219":"x",
+        "\u20b9":"Rs. ","\u03c0":"pi","\u2248":"~=","\u2245":"~=","\u223c":"~",
+        "\u2234":"Therefore ","\u2235":"Since ","\u221e":"infinity","\u221d":"proportional to",
+        "\u0394":"Delta ","\u03b8":"theta","\u03b1":"alpha","\u03b2":"beta","\u03bb":"lambda","\u03bc":"mu","\u03c3":"sigma",
+        "\u2211":"sum ","\u220f":"product ","\u222b":"integral ","\u2208":"in","\u2209":"not in",
+        "\u2261":"==","\u21d2":"=>","\u21d4":"<=>","\u2190":"<-","\u2194":"<->","\u2220":"angle ",
+        "\u2153":"1/3","\u2154":"2/3","\u2155":"1/5","\u215b":"1/8",
+        "\u2070":"^0","\u2074":"^4","\u2075":"^5","\u2076":"^6","\u2077":"^7","\u2078":"^8","\u2079":"^9","\u207f":"^n",
+        "\u2080":"0","\u2081":"1","\u2082":"2","\u2083":"3","\u2084":"4","\u2085":"5","\u2086":"6","\u2087":"7","\u2088":"8","\u2089":"9",
+        "\u2009":" ","\u202f":" ","\u200b":"","\u2032":"'","\u2033":"\"","\u2713":"OK","\u2717":"x",
     }
+    # A square root keeps its operand readable: "\u221a16" -> "sqrt(16)".
+    text=re.sub("\u221a\\s*([0-9]+(?:\\.[0-9]+)?|[A-Za-z]\\w*)",r"sqrt(\1)",text).replace("\u221a","sqrt")
     for source,target in replacements.items():
         text=text.replace(source,target)
     return text.encode("cp1252","replace").decode("cp1252")
@@ -288,13 +303,17 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
             Paragraph(f"Question {question.sequence_no}: {_html(question.topic or 'Aptitude question')}",style["question_title"]),
             Paragraph(f"{_html(question.category)} | {_html(question.difficulty)} | <font color='{'#167A50' if state=='Correct' else '#A43B49'}'>{state}</font>",style["meta"]),
             *_content_flowables(question.question_text,style["body"],style["code"],question.category=="Technical Aptitude"),option_table,Spacer(1,3*mm),
-            Paragraph(f"Your answer: <b>{_html(selected or 'Not answered')}</b> &nbsp;&nbsp; Correct answer: <b>{_html(correct)}</b>",style["answer"]),
+            Paragraph(f"Your answer: <b>{_html(selected or ('Not answered (time ran out)' if answer and answer.timed_out else 'Not answered'))}</b> &nbsp;&nbsp; Correct answer: <b>{_html(correct)}</b>",style["answer"]),
         ]
         if question.explanation:
             block.extend([
                 Spacer(1,2*mm),
                 Paragraph("<b>Explanation</b>",style["answer"]),
-                *_content_flowables(question.explanation,style["explanation"],style["code"],question.category=="Technical Aptitude"),
+                # The chat's "Step N" layout; Technical Aptitude keeps its code as written.
+                *_content_flowables(
+                    question.explanation if question.category=="Technical Aptitude" else normalize_explanation(question.explanation),
+                    style["explanation"],style["code"],question.category=="Technical Aptitude",
+                ),
             ])
         story.extend([KeepTogether(block),Spacer(1,5*mm),HRFlowable(width="100%",thickness=.5,color=LINE),Spacer(1,5*mm)])
 

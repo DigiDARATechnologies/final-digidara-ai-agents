@@ -237,6 +237,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
   const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  // The plan picked in the low-points popup, highlighted when Billing opens.
+  const [billingPlanId, setBillingPlanId] = useState<string | null>(null);
   // "Buy points" popup when the balance runs low or out (signed-in users only).
   const lowPoints = useLowPointsPrompt(!!user);
   const [planName, setPlanName] = useState("Free");
@@ -1484,7 +1486,8 @@ export default function App() {
     }
 
     if (agent?.kind === "aptitude") {
-      const flowState = aptitudeStates[chatId] ?? createInitialAptitudeState();
+      // An edit replays from the state captured before that message.
+      const flowState = (isEdit ? resumeSnapshot as AptitudeFlowState | undefined : undefined) ?? aptitudeStates[chatId] ?? createInitialAptitudeState();
       handleAptitudeText(flowState, text, user)
         .then(({ state: nextState, messages }) => {
           if (flowState.testId && aptitudeFinalizedAttempts.current.has(flowState.testId)) return;
@@ -1634,6 +1637,36 @@ export default function App() {
 
   function editMessage(index: number, newText: string) {
     sendMessage(newText, index);
+  }
+
+  /** Aptitude answers are graded and saved the moment they are sent, so a
+   * message sent during a test cannot be edited, and nothing can be while a
+   * test is running (replaying an earlier step would collide with it). */
+  function canEditMessage(index: number) {
+    const chat = chats.find((c) => c.id === currentChatId);
+    if (!chat || findAgent(chat.agentId)?.kind !== "aptitude") return true;
+    const sentDuringTest = !!(chat.messages[index]?.stateSnapshot as AptitudeFlowState | undefined)?.testId;
+    const live = aptitudeStates[chat.id];
+    const testRunning = !!live?.testId && live.step !== "completed";
+    if (!sentDuringTest && !testRunning) return true;
+    showToast(sentDuringTest
+      ? "You can't edit an already answered question. Answers are saved as soon as you submit them."
+      : "You can't edit earlier messages while a test is running.");
+    return false;
+  }
+
+  /** The Aptitude panel's buttons are explicit commands, not typed text: they
+   * skip the Conductor (which otherwise answered "hint" itself, behind the
+   * live question) and show a readable label instead of the raw command. */
+  function chooseAptitude(value: string) {
+    const nav = value.match(/^__aptitude_nav:(\d+)$/);
+    const label = nav ? `Question ${nav[1]}`
+      : value === "hint" ? "Get a hint"
+      : value === "skip question" ? "Skip question"
+      : value === "exit test" ? "Exit test"
+      : value === "continue test" ? "Continue test"
+      : value;
+    sendMessage(value, undefined, false, label);
   }
 
   function handleChooseOption(value: string, label?: string) {
@@ -2173,6 +2206,7 @@ export default function App() {
                 onSend={sendMessage}
                 onChooseOption={handleChooseOption}
                 onEditMessage={isMockInterviewChat ? undefined : editMessage}
+                canEditMessage={canEditMessage}
                 attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
                 attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
                 pendingFiles={pendingFiles}
@@ -2206,7 +2240,7 @@ export default function App() {
                 connectorPendingTask={connectorPendingTask}
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
-                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={sendMessage} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && currentChat.messages.at(-1)?.text.trim().toLowerCase() === "hint"} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
+                contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={chooseAptitude} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && ["hint", "get a hint"].includes(currentChat.messages.at(-1)?.text.trim().toLowerCase() ?? "")} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
                   ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
                   : capstoneVivaLive && capstoneState
                     ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />
@@ -2278,7 +2312,7 @@ export default function App() {
           points={lowPoints.points}
           outOfPoints={lowPoints.outOfPoints}
           onClose={lowPoints.dismiss}
-          onBuy={() => { lowPoints.dismiss(); setSettingsTab("billing"); setSettingsOpen(true); }}
+          onBuy={(planId) => { lowPoints.dismiss(); setBillingPlanId(planId); setSettingsTab("billing"); setSettingsOpen(true); }}
         />
       )}
 
@@ -2289,6 +2323,7 @@ export default function App() {
         onAppearanceChange={setAppearance}
         onLogout={handleLogout}
         initialTab={settingsTab}
+        focusPlanId={billingPlanId}
         open={settingsOpen}
         user={displayUser ?? user}
         chats={chats}
@@ -2297,7 +2332,7 @@ export default function App() {
           openChatById(chatId);
         }}
         glowOn={glowOn}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => { setSettingsOpen(false); setBillingPlanId(null); }}
         onGlowToggle={setGlowOn}
         onClearHistory={handleClearHistory}
         onToast={showToast}
