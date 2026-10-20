@@ -52,6 +52,23 @@ def test_best_graded_score(client, summary_db):
         {"title": "Task tracker", "description": "Tracks tasks with due dates.", "skills": ["Flask", "SQL"], "score": 81.0}]
 
 
+def test_a_project_counts_toward_the_level_it_was_set_at():
+    from types import SimpleNamespace
+
+    def sub(assignment, difficulty, viva=True, status=SubmissionStatus.graded):
+        return SimpleNamespace(assignment_id=assignment, status=status, viva_passed=viva,
+                               score_json={"final_score": 80, "passed": True},
+                               assignment=SimpleNamespace(topic_json={"title": assignment, "difficulty": difficulty}))
+    # Two easy projects complete Beginner only -- not Medium and Hard as before.
+    assert readiness.level_scores([sub("a", "easy"), sub("b", "easy")]) == {
+        "easy": 100.0, "medium": 0.0, "hard": 0.0, "professional": 0.0}
+    # A passed hard project completes Hard and the levels below it.
+    assert readiness.level_scores([sub("c", "hard")]) == {
+        "easy": 100.0, "medium": 100.0, "hard": 100.0, "professional": 0.0}
+    # A professional project waiting for its viva is half of Professional.
+    assert readiness.level_scores([sub("c", "hard"), sub("d", "professional", None, SubmissionStatus.pending_viva)])["professional"] == 50.0
+
+
 def test_unknown_learner_is_empty(client, summary_db):
     assert _invoke(client, email="nobody@example.test").json()["score"] is None
 

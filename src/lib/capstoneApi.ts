@@ -51,7 +51,7 @@ export interface EligibilityCheckResult {
   topic_options: TopicOption[] | null;
 }
 
-export type ProjectDifficulty = "easy" | "medium" | "hard";
+export type ProjectDifficulty = "easy" | "medium" | "hard" | "professional";
 
 export interface TopicGenerationOptions {
   /** Titles this student was already shown in this chat — never offered again. */

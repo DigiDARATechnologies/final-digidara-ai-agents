@@ -295,7 +295,8 @@ def test_timer_persists_topic_and_submission_window(state, database):
     with database() as session:
         assignment = session.get(ProjectAssignment, "assignment")
         assert assignment.status == AssignmentStatus.in_progress
-        assert assignment.topic_json == state["chosen_topic"]
+        # Saved with the difficulty it was set at, for levels and the viva.
+        assert assignment.topic_json == {**state["chosen_topic"], "difficulty": state.get("difficulty") or "easy"}
         assert assignment.deadline_at is not None
 
 @pytest.mark.parametrize("passed", [True, False])

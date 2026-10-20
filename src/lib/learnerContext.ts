@@ -43,6 +43,13 @@ export function easyMediumHard(agentName: string): "easy" | "medium" | "hard" {
   return level === "beginner" ? "easy" : level === "medium" ? "medium" : "hard";
 }
 
+/** "easy" / "medium" / "hard" / "professional": all four levels, for agents
+ * that pitch Professional above Hard (Capstone projects). */
+export function easyToProfessional(agentName: string): "easy" | "medium" | "hard" | "professional" {
+  const level = learnerLevel(agentName);
+  return level === "beginner" ? "easy" : level;
+}
+
 /** "beginner" / "intermediate" / "advanced", for agents that use those. */
 export function beginnerToAdvanced(agentName: string): "beginner" | "intermediate" | "advanced" {
   const level = learnerLevel(agentName);

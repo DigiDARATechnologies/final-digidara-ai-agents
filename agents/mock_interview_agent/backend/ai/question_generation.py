@@ -72,6 +72,14 @@ TECHNICAL_LEVEL_GUIDANCE = {
         "coherent decision. Ask the candidate to justify a choice and its consequences, not to "
         "recite definitions. Keep one focused question under 45 words."
     ),
+    "professional": (
+        "PROFESSIONAL (above advanced): Interview as a senior engineer hiring for an industry role. "
+        "Ask one production scenario: scaling or performance under real load, failure modes and "
+        "recovery, observability and debugging in production, security hardening, testing strategy, "
+        "or choosing between named alternatives with their costs. The candidate must reason about "
+        "consequences in a real system, not explain a concept. Never ask a definition or a textbook "
+        "question. Keep one focused question under 45 words."
+    ),
 }
 
 HR_LEVEL_GUIDANCE = {
@@ -94,6 +102,12 @@ HR_LEVEL_GUIDANCE = {
         "complex conflict resolution, accountability, influencing without authority, or a "
         "difficult ethical or strategic trade-off. Invite the candidate to explain their judgment, "
         "actions, and consequences. Keep it focused and under 45 words."
+    ),
+    "professional": (
+        "PROFESSIONAL HR: Ask one senior-level scenario: leading a team through ambiguity or a crisis, "
+        "managing senior stakeholders, owning a failure with business impact, mentoring or hiring, "
+        "or a hard trade-off between quality, deadline and people. Invite the candidate's judgment, "
+        "actions and measurable outcome. Keep it focused and under 45 words."
     ),
 }
 
@@ -332,7 +346,7 @@ def fetch_live_real_questions(
         count=count,
         difficulty_guidance=(
             TECHNICAL_LEVEL_GUIDANCE if round_ == "technical" else HR_LEVEL_GUIDANCE
-        ).get(difficulty, ""),
+        ).get(learner_context.level_key(difficulty), ""),
         search_context=(
             f"Search for real, frequently-asked '{role}' interview "
             f"questions at '{difficulty}' level on Glassdoor and "
@@ -921,7 +935,7 @@ def generate_question(
 
     if round_type == "hr":
         difficulty_guidance = HR_LEVEL_GUIDANCE.get(
-            difficulty,
+            learner_context.level_key(difficulty),
             "Ask one realistic, conversational HR interview question.",
         )
         eligible_areas = HR_QUESTION_AREAS.get(
@@ -1024,7 +1038,7 @@ def generate_question(
         )
 
     difficulty_guidance = TECHNICAL_LEVEL_GUIDANCE.get(
-        difficulty,
+        learner_context.level_key(difficulty),
         "Match the selected difficulty and keep the question realistic and conversational.",
     )
 

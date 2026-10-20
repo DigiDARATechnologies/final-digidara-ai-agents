@@ -9,6 +9,7 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 from .speaking_local_rules import apply_local_speaking_correction
+from .level_rules import generation_rule, scoring_rule
 from .groq_common import (
     _chat,
     _clean_question,
@@ -748,6 +749,7 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
             "6. For Easy, use short and simple questions.\n"
             "7. For Medium, ask for explanations, reasons and examples.\n"
             "8. For Hard, ask analytical, professional or opinion-based questions.\n"
+            + (f"8a. {generation_rule(difficulty)}\n" if generation_rule(difficulty) else "") +
             "9. Return only the question as plain text, including your conversational transition.\n"
             "10. Do not add numbering, quotation marks or introductions."
         )
@@ -785,6 +787,7 @@ def generate_speaking_question(mode, difficulty, topic_title, turn_number, histo
             "7. For Easy, use short common sentences.\n"
             "8. For Medium, ask for some details and reasons.\n"
             "9. For Hard, encourage detailed and professional communication.\n"
+            + (f"9a. {generation_rule(difficulty)}\n" if generation_rule(difficulty) else "") +
             "10. If the student's answer is very short, unclear, or hard to follow, ask a gentle clarifying question "
             "such as \"Could you tell me a bit more about that?\" or pivot to a closely related daily-life angle.\n"
             "11. Return only the next question as plain text. Do not include feedback, numbering, quotation marks or explanations."
@@ -838,6 +841,7 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
         f"Difficulty: {difficulty}. Mode: {mode}. Topic: {topic_title or 'N/A'}.\n"
         f"Question asked: {question}\n"
         f"Student's spoken answer (transcribed): {answer}\n\n"
+        f"{scoring_rule(difficulty)}\n\n"
         "Mandatory conversational structure:\n"
         "A. Always fill reaction first with one brief natural response to the student's meaning.\n"
         "B. If grammar/phrasing has a real issue, include corrected_answer, mistakes, explanation, and short_feedback.\n"

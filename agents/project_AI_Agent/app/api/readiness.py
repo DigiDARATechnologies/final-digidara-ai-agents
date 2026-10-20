@@ -4,11 +4,12 @@ Score: the best graded project score (0-100) across the learner's
 submissions. A project that is chosen but not yet graded has no score; the
 summary says what is left to do instead.
 
-Levels: projects do not have a difficulty, so a level is a passed project --
-one that passed BOTH the code grading and the viva. The first passed project
-completes Beginner, the second Medium, the third Hard, the fourth
-Professional. A project whose code passed but whose viva is not passed yet
-is half of the next level.
+Levels: a level is completed by a passed project -- one that passed BOTH the
+code grading and the viva -- set at that level's difficulty or harder (easy
+-> Beginner, medium -> Medium, hard -> Hard, professional -> Professional).
+A project whose code passed but whose viva is not passed yet is half of its
+level. Projects chosen before the difficulty was saved with the topic keep
+the older rule so nobody's level drops: each one completes the next level.
 """
 from __future__ import annotations
 
@@ -31,13 +32,32 @@ def _code_passed(submission: Submission) -> bool:
             and score.get("passed") is not False)
 
 
+def _difficulty(submission: Submission) -> str | None:
+    topic = getattr(getattr(submission, "assignment", None), "topic_json", None) or {}
+    value = topic.get("difficulty") if isinstance(topic, dict) else None
+    return value if value in LEVEL_KEYS else None
+
+
 def level_scores(submissions: list[Submission]) -> dict[str, float]:
     """Progress (0-100) at each level, counted in passed projects."""
     passed = {s.assignment_id for s in submissions if _code_passed(s) and s.viva_passed is True}
     waiting = {s.assignment_id for s in submissions if _code_passed(s)} - passed
-    done = len(passed)
-    return {key: 100.0 if done > index else 50.0 if done == index and waiting else 0.0
-            for index, key in enumerate(LEVEL_KEYS)}
+    rank = {s.assignment_id: _difficulty(s) for s in submissions}
+    # Older projects (no saved difficulty): each passed one completes the next level.
+    legacy_done = len({a for a in passed if rank.get(a) is None})
+    legacy_waiting = any(rank.get(a) is None for a in waiting)
+    # Newer projects: one passed at a difficulty completes that level and the ones below.
+    done_rank = max((LEVEL_KEYS.index(rank[a]) for a in passed if rank.get(a)), default=-1)
+    waiting_rank = max((LEVEL_KEYS.index(rank[a]) for a in waiting if rank.get(a)), default=-1)
+    scores = {}
+    for index, key in enumerate(LEVEL_KEYS):
+        if legacy_done > index or done_rank >= index:
+            scores[key] = 100.0
+        elif (legacy_done == index and legacy_waiting) or waiting_rank >= index:
+            scores[key] = 50.0
+        else:
+            scores[key] = 0.0
+    return scores
 
 
 def _title(assignment: ProjectAssignment) -> str:

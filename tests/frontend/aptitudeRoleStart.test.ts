@@ -50,7 +50,7 @@ test('the opening offers a mixed test for the role and its focus area at the lea
 test('the focus area starts at once, at the learner level, in their own language', async () => {
   setLearnerContext(learner('ai engineer', 'hard'));
   const result = await handleAptitudeText(atMode, 'role_category', user);
-  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'category_practice', technical_language: 'Java', category: 'Technical Aptitude', level: 'Advanced' });
+  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'category_practice', technical_language: 'Java', learner_level: 'hard', category: 'Technical Aptitude', level: 'Advanced' });
   expect(result.state.step).toBe('awaiting_question');
 });
 
@@ -64,7 +64,7 @@ test('the role mix becomes the mixed test setup, then the test starts', async ()
     { category_id: 'c0', question_count: 6 }, { category_id: 'c1', question_count: 4 }, { category_id: 'c2', question_count: 1 },
     { category_id: 'c3', question_count: 5 }, { category_id: 'c4', question_count: 1 }, { category_id: 'c5', question_count: 3 },
   ]);
-  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'mixed', technical_language: 'Java' });
+  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'mixed', technical_language: 'Java', learner_level: 'medium' });
 });
 
 test('without a profile the opening is unchanged', () => {
@@ -91,7 +91,7 @@ test('Category Practice runs at the learner level with no level step, and one la
   setLearnerContext(withSkills('data analyst', ['sql', 'excel'], 'hard'));
   const atCategory: AptitudeFlowState = { step: 'awaiting_category', mode: 'category_practice', sessionToken: 's' };
   await handleAptitudeText(atCategory, 'Technical Aptitude', user);
-  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'category_practice', technical_language: 'SQL', category: 'Technical Aptitude', level: 'Advanced' });
+  expect(api.createAptitudeTest).toHaveBeenCalledWith('s', { mode: 'category_practice', technical_language: 'SQL', learner_level: 'hard', category: 'Technical Aptitude', level: 'Advanced' });
 });
 
 test('with two languages Category Practice asks which, offering only those', async () => {

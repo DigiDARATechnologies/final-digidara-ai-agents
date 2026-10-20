@@ -2,6 +2,8 @@
 
 import json
 
+import learner_context
+
 from .chat_client import json_object as _json_object
 from .chat_client import score as _score
 
@@ -42,6 +44,12 @@ TECHNICAL_LEVEL_SCORING = {
         "consequences, performance, security, reliability, or edge-case analysis as relevant. "
         "Credit defensible alternatives; do not require one preferred architecture or unasked details. "
     ),
+    "professional": (
+        "PROFESSIONAL SCORING: Judge as a senior engineer hiring for an industry role. A correct "
+        "verdict needs a specific, production-aware answer: the actual mechanism, the trade-off "
+        "chosen and why, and how failures are handled. A generic or textbook-only answer is at most "
+        "partial; a vague answer without concrete reasoning is wrong. "
+    ),
 }
 
 HR_LEVEL_SCORING = {
@@ -59,6 +67,11 @@ HR_LEVEL_SCORING = {
         "ADVANCED HR SCORING: Evaluate judgment in ambiguous situations, ownership, conflict "
         "resolution or leadership, and awareness of consequences when the question asks for them. "
         "Credit plausible alternative decisions supported by clear reasoning. "
+    ),
+    "professional": (
+        "PROFESSIONAL HR SCORING: Expect a specific, senior-level example with the candidate's own "
+        "decisions, the stakeholders involved and a measurable outcome or lesson. A generic answer "
+        "without a concrete situation and result is at most partial. "
     ),
 }
 
@@ -311,7 +324,7 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs, *, chat_fn):
         system_prompt = (
             "You are an expert HR and behavioral interview evaluator. Score the full spoken Q&A transcript "
             "at the stated difficulty. Judge the final "
-            f"{HR_LEVEL_SCORING.get(difficulty, '')}"
+            f"{HR_LEVEL_SCORING.get(learner_context.level_key(difficulty), '')}"
             "intended meaning and substance of each answer. Ignore fillers, hesitation, repetition, "
             "self-corrections, casual phrasing, and imperfect structure. Do not reward corporate "
             "buzzwords or penalize candidates for lacking them. Evaluate response relevance and "
@@ -343,7 +356,7 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs, *, chat_fn):
             "You are an interview evaluator. Score the full Q&A transcript. This is a spoken "
             "Conversation Mode interview: "
             f"{BEGINNER_TECHNICAL_RUBRIC if difficulty == 'beginner' else ''}"
-            f"{TECHNICAL_LEVEL_SCORING.get(difficulty, '')}"
+            f"{TECHNICAL_LEVEL_SCORING.get(learner_context.level_key(difficulty), '')}"
             "technical questions are expected to be answered through concepts, explanations, "
             "comparisons, logical reasoning, problem-solving approach, debugging approach, "
             "real-world scenarios, and communication clarity, not by writing or dictating code. "
@@ -416,7 +429,7 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     prompt = (
         f"Evaluate all Q&A pairs for a {round_type} interview at {difficulty} difficulty. "
         f"{BEGINNER_TECHNICAL_RUBRIC if round_type == 'technical' and difficulty == 'beginner' else ''}"
-        f"{(TECHNICAL_LEVEL_SCORING if round_type == 'technical' else HR_LEVEL_SCORING).get(difficulty, '')}"
+        f"{(TECHNICAL_LEVEL_SCORING if round_type == 'technical' else HR_LEVEL_SCORING).get(learner_context.level_key(difficulty), '')}"
         "Return one result per pair in the same order. For answered pairs, use verdict correct, partial, or wrong; "
         "include question_id, a concise reason, and recommended ideal_answer. For pairs marked unanswered=true, "
         "return only question_id, verdict null, and ideal_answer; do not include feedback or assess the student. "

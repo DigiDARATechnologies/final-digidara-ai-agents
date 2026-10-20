@@ -9,7 +9,7 @@ class FreeTopicRequest(BaseModel):
     # logged-in account with no phone (e.g. Google sign-in) still works.
     phone: str = ""
     course_name: str = Field(min_length=1)  # doubles as the free-text language/role/topic
-    difficulty: str = Field(default="easy", pattern="^(easy|medium|hard)$")
+    difficulty: str = Field(default="easy", pattern="^(easy|medium|hard|professional)$")
     # Titles this student was already shown in this chat (a "give me other
     # topics" regenerate) -- never offered again.
     exclude_titles: list[str] = Field(default_factory=list, max_length=60)
@@ -26,7 +26,7 @@ class IntakeMemory(BaseModel):
     focus: str | None = None  # the language, role or topic (first question)
     project_type: str | None = None  # the kind of project/application (second question)
     details: str | None = None  # any other preference worth passing to the topic generator
-    difficulty: str | None = Field(default=None, pattern="^(easy|medium|hard)$")
+    difficulty: str | None = Field(default=None, pattern="^(easy|medium|hard|professional)$")
 
 
 class IntakeTurn(BaseModel):

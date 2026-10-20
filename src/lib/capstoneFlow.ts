@@ -21,7 +21,7 @@ import {
   type SyntaxErrorDetail,
   type TopicOption,
 } from "./capstoneApi";
-import { displayRole, easyMediumHard, goalLine, learnerGoal } from "./learnerContext";
+import { displayRole, easyToProfessional, goalLine, learnerGoal } from "./learnerContext";
 
 /** A rough, deliberately over-inclusive heuristic: is this message the
  * student asking something or disputing a finding, rather than a plain
@@ -219,7 +219,7 @@ export function createInitialCapstoneState(user: User): CapstoneFlowState {
     email: user.email,
     phone: user.mobile,
     // The learner's Capstone level (Beginner -> easy ... Professional -> hard).
-    difficulty: easyMediumHard("capstone_project_agent"),
+    difficulty: easyToProfessional("capstone_project_agent"),
     pendingQuestion: "focus",
   };
 }
@@ -312,7 +312,7 @@ const DEFERRAL_ANSWER = /^(your|you'?re|any|the)?\s*(choice|pick|call|decision)$
 
 /** Words that make a message more than a plain answer: an edit, a request
  * for other topics, a difficulty change, or a question. */
-const NOT_A_PLAIN_ANSWER = /\?|\b(change|update|switch|instead|actually|not|no|regenerate|another|other|different|new|more|harder|easier|easy|medium|hard|difficulty|what|why|how|which|can|could|should|explain|help|hi|hello|hey)\b/i;
+const NOT_A_PLAIN_ANSWER = /\?|\b(change|update|switch|instead|actually|not|no|regenerate|another|other|different|new|more|harder|easier|easy|medium|hard|professional|difficulty|what|why|how|which|can|could|should|explain|help|hi|hello|hey)\b/i;
 
 /** A short reply ("Python", "Login page", "your choice") answering the
  * pending question -- taken as the answer directly, without a model call. */

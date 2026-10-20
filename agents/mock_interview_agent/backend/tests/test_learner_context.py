@@ -35,3 +35,26 @@ def test_context_ends_with_the_request():
     token = learner_context.set_from_envelope({"learner": LEARNER})
     learner_context.reset(token)
     assert learner_context.current() is None
+
+
+def test_a_professional_learner_gets_professional_questions_and_scoring():
+    """Professional interviews are stored as "advanced"; the signed level lifts them."""
+    from ai import answer_evaluation, question_generation
+
+    token = learner_context.set_from_envelope({"learner": {"level": "professional"}})
+    try:
+        key = learner_context.level_key("advanced")
+        assert key == "professional"
+        assert "PROFESSIONAL" in question_generation.TECHNICAL_LEVEL_GUIDANCE[key]
+        assert "PROFESSIONAL HR" in question_generation.HR_LEVEL_GUIDANCE[key]
+        assert "PROFESSIONAL SCORING" in answer_evaluation.TECHNICAL_LEVEL_SCORING[key]
+        assert "PROFESSIONAL HR SCORING" in answer_evaluation.HR_LEVEL_SCORING[key]
+        assert learner_context.level_key("intermediate") == "intermediate"  # only advanced is lifted
+    finally:
+        learner_context.reset(token)
+    # A Hard learner's advanced interview stays advanced.
+    token = learner_context.set_from_envelope({"learner": {"level": "hard"}})
+    try:
+        assert learner_context.level_key("advanced") == "advanced"
+    finally:
+        learner_context.reset(token)
