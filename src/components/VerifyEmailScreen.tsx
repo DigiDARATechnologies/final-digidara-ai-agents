@@ -53,7 +53,7 @@ export default function VerifyEmailScreen({ email, onVerified, onLogout }: Props
   }
 
   return (
-    <div className="login-overlay">
+    <div className="login-overlay login-overlay--light">
       <div className="login-card verify-email-card">
         <div className="login-logo">
           <Logo theme="light" size="md" />

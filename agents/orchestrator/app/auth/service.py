@@ -58,8 +58,12 @@ def create_user(
         session.close()
 
 
-def create_google_user(name: str, email: str, google_id: str, consent_policy_version: str) -> User:
-    """No password_hash — this account can only ever sign in via Google."""
+def create_google_user(name: str, email: str, google_id: str, consent_policy_version: str | None) -> User:
+    """No password_hash — this account can only ever sign in via Google.
+
+    `consent_policy_version` is None when the learner did not tick the consent
+    box before "Continue with Google": no consent is recorded, and onboarding
+    asks for it (POST /learner/consent) before the app opens."""
     session = get_session()
     try:
         user = User(
@@ -67,7 +71,7 @@ def create_google_user(name: str, email: str, google_id: str, consent_policy_ver
             email=email,
             google_id=google_id,
             email_verified=True,
-            consent_accepted_at=datetime.utcnow(),
+            consent_accepted_at=datetime.utcnow() if consent_policy_version else None,
             consent_policy_version=consent_policy_version,
         )
         session.add(user)

@@ -114,17 +114,13 @@ def google_auth(req: GoogleAuthRequest, request: Request) -> TokenResponse:
         if existing:
             user = service.link_google_id(existing.id, profile.sub)
         else:
-            # Creating a brand-new account -- DPDP Act 2023 requires the
-            # same affirmative consent as the password signup path. The
-            # frontend gates the "Continue with Google" button on the same
-            # checkbox used for the signup form, so this should never fire
-            # for a real user, but we still refuse server-side.
-            if not req.consent:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    "You must accept the Privacy Policy and Terms of Service to create an account.",
-                )
-            user = service.create_google_user(profile.name, profile.email, profile.sub, CONSENT_POLICY_VERSION)
+            # A brand-new account. "Continue with Google" no longer needs the
+            # consent box ticked first: without it the account records no
+            # consent, and onboarding (consent_required) asks for the same
+            # affirmative DPDP consent before any learner data is used.
+            user = service.create_google_user(
+                profile.name, profile.email, profile.sub, CONSENT_POLICY_VERSION if req.consent else None,
+            )
 
     return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
 

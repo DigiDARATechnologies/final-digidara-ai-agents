@@ -2539,3 +2539,28 @@ body:has(.modal-overlay.open) .boss-fab{display:none}
 .shared-chat-msg small{font-size:11px;color:#64748b}
 :root[data-theme="dark"] .shared-chat-msg.agent .bubble{background:#22262c}
 .shared-link-card .btn{align-self:flex-start}
+
+/* ---- OTP (verify email) and onboarding/target screens: white page ----
+   They reuse the login card, so every dark login colour is reset here. */
+.login-overlay.login-overlay--light{ background:#fff; overflow-y:auto; }
+.login-overlay--light::before{ display:none; }
+.login-overlay--light ::selection{ background:rgba(40,81,216,.18); color:#0f172a; -webkit-text-fill-color:#0f172a; }
+.login-overlay--light .login-card{
+  background:#fff; border:1px solid #e5e7eb; border-radius:20px; padding:32px 30px;
+  box-shadow:0 18px 50px rgba(15,23,42,.08);
+}
+.login-overlay--light .login-card h1{ color:#0f172a; }
+.login-overlay--light .login-sub{ color:#475569; }
+.login-overlay--light .login-card .field{ color:#334155; }
+.login-overlay--light .login-card .field input{ background:#fff; border-color:#d1d5db; color:#0f172a; }
+.login-overlay--light .login-card .field input::placeholder{ color:#94a3b8; }
+.login-overlay--light .login-card .field input:hover{ border-color:#94a3b8; }
+.login-overlay--light .login-card .field input:focus{ background:#fff; border-color:#2851d8; box-shadow:0 0 0 4px rgba(40,81,216,.15); }
+.login-overlay--light .login-card .field input:-webkit-autofill{ -webkit-text-fill-color:#0f172a; caret-color:#0f172a; -webkit-box-shadow:0 0 0 40px #fff inset; }
+.login-overlay--light .login-card .lp-skills input{ background:transparent !important; }
+.login-overlay--light .login-card .link-btn{ color:#2851d8; }
+.login-overlay--light .login-card .link-btn:hover{ color:#17348e; }
+.login-overlay--light .login-card .form-error{ color:#dc2626; }
+.login-overlay--light .lp-check, .login-overlay--light .lp-org-note{ color:#334155; }
+.login-overlay--light .btn-outline, .login-overlay--light .btn-ghost{ color:#0f172a; border-color:#d1d5db; background:#fff; }
+@media(max-width:520px){ .login-overlay--light .login-card{ border:0; box-shadow:none; padding:24px 6px; } }
