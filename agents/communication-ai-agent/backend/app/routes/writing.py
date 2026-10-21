@@ -50,6 +50,8 @@ DEFAULT_WRITING_TOPICS = {
 
 
 def _avg(*values):
+    # Out of 10: "Chat with AI" is scored 0-100, "Write about the topic" 0-10.
+    values = [to_score10(v) for v in values if v is not None]
     values = [v for v in values if v is not None]
     return round(sum(values) / len(values), 1) if values else None
 
@@ -181,11 +183,11 @@ def _store_turn_feedback(turn, feedback, answer):
     """Write an evaluate_writing_answer result onto a turn; returns (feedback, scores)."""
     feedback = feedback if isinstance(feedback, dict) else {}
     scores = feedback.get("scores") if isinstance(feedback.get("scores"), dict) else {}
-    turn.grammar_score = scores.get("grammar")
-    turn.vocabulary_score = scores.get("vocabulary")
-    turn.clarity_score = scores.get("clarity")
-    turn.knowledge_score = scores.get("knowledge")
-    turn.overall_score = scores.get("overall")
+    turn.grammar_score = to_score10(scores.get("grammar"))
+    turn.vocabulary_score = to_score10(scores.get("vocabulary"))
+    turn.clarity_score = to_score10(scores.get("clarity"))
+    turn.knowledge_score = to_score10(scores.get("knowledge"))
+    turn.overall_score = to_score10(scores.get("overall"))
     turn.corrected_answer = feedback.get("corrected_answer") or answer
     turn.better_natural_answer = feedback.get("better_natural_answer") or turn.corrected_answer
     turn.feedback_json = json.dumps(feedback)

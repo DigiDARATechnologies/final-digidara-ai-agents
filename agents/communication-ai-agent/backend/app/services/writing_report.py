@@ -1,6 +1,7 @@
 """Generate learner-facing Writing Practice Assessment PDFs."""
 
 import json
+from datetime import timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -15,6 +16,8 @@ from reportlab.platypus import (
     HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table,
     TableStyle,
 )
+
+from ..utils.score_utils import to_score10
 #below are the color definitions used in the PDF report
 TEAL = colors.HexColor("#0E90B4")
 INK = colors.HexColor("#1A202C")
@@ -26,6 +29,22 @@ ACCENT = colors.HexColor("#4A37D0")
 LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "digidara-logo.jpg"
 LOGO_WIDTH = 34 * mm
 LOGO_HEIGHT = 19 * mm
+
+
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
+
+
+def _ist(value):
+    """A stored (naive UTC) time in India time."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(IST)
+
+
+def _out_of_ten(value):
+    """A score shown out of 10 (a 0-100 value is scaled); a missing one is "—"."""
+    score = to_score10(value)
+    return "—" if score is None else score
 
 
 def _plain(value):
@@ -181,7 +200,8 @@ def generate_writing_report_pdf(session, learner_name="Learner"):
     story.append(Spacer(1, 4))
 
     # Metadata Card Table
-    created_date = session.created_at.strftime("%d %B %Y, %I:%M %p") if getattr(session, "created_at", None) else "Recent"
+    # Stored in UTC; learners read India time (IST).
+    created_date = _ist(session.created_at).strftime("%d %B %Y, %I:%M %p IST") if getattr(session, "created_at", None) else "Recent"
     mode_label = (session.mode or "Topic Practice").replace("_", " ").title()
     difficulty_label = (session.difficulty or "Medium").title()
     topic_label = session.topic_title or "General Conversation"
@@ -212,10 +232,12 @@ def generate_writing_report_pdf(session, learner_name="Learner"):
     story.append(Spacer(1, 10))
 
     # Overall Scorecard Banner
-    overall_val = round(float(session.overall_score), 1) if session.overall_score is not None else 8.0
-    grammar_val = round(float(session.grammar_score), 1) if getattr(session, "grammar_score", None) is not None else overall_val
-    vocab_val = round(float(session.vocabulary_score), 1) if getattr(session, "vocabulary_score", None) is not None else overall_val
-    clarity_val = round(float(session.clarity_score), 1) if getattr(session, "clarity_score", None) is not None else overall_val
+    # Every score out of 10 (a chat session saved before this fix holds 0-100),
+    # and never a made-up number: an unscored value shows as a dash.
+    overall_val = _out_of_ten(session.overall_score)
+    grammar_val = _out_of_ten(getattr(session, "grammar_score", None))
+    vocab_val = _out_of_ten(getattr(session, "vocabulary_score", None))
+    clarity_val = _out_of_ten(getattr(session, "clarity_score", None))
 
     score_data = [
         [

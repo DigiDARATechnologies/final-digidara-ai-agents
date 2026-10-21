@@ -41,13 +41,16 @@ interface Props {
 /**
  * The Capstone viva, the way the Mock Interview runs: the question is shown
  * and read aloud, then the microphone opens; a 5-second pause after speaking
- * sends the answer (transcribed by OpenAI). Typing in the answer box instead
+ * sends the answer (transcribed by OpenAI), and the words appear in the
+ * answer box as the student speaks. Typing in the answer box instead
  * hands control back to the student, who sends it with Submit. The attempt's
  * 20-minute timer is shown throughout. The chat flow itself is unchanged:
  * answers go through the same viva steps as typed ones.
  */
 export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: Props) {
-  const speech = useSpeechRecognition("en-IN", transcribeGeneralAudio, undefined, true);
+  // The same transcriber also re-reads the answer so far every few seconds,
+  // so the words appear in the answer box while the student is speaking.
+  const speech = useSpeechRecognition("en-IN", transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [mode, setMode] = useState<VivaMode>(loadMode);
   const [answer, setAnswer] = useState("");
   const [status, setStatus] = useState("");
@@ -83,7 +86,11 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
     setReading(false);
     setStatus("Starting microphone...");
     const started = speech.start((text, final) => {
-      if (!final) return;
+      if (!final) {
+        // Live text: what has been said so far, shown in the answer box.
+        if (text.trim() && !sentRef.current && !typedRef.current) setAnswer(text);
+        return;
+      }
       setCountdown(null);
       if (sentRef.current) return;
       if (typedRef.current) {
