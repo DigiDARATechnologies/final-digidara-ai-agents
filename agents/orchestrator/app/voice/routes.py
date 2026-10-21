@@ -35,9 +35,8 @@ def personas() -> dict:
     return {
         "default": tts.DEFAULT_PERSONA,
         "personas": [{"id": key, "label": p["label"], "description": p["description"]} for key, p in tts.PERSONAS.items()],
-        "languages": [
-            {"id": "auto", "label": "Automatic"}, {"id": "en", "label": "English"}, {"id": "ta", "label": "தமிழ் (Tamil)"},
-        ],
+        # Every agent speaks English only.
+        "languages": [{"id": "en", "label": "English"}],
     }
 
 

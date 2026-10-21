@@ -12,6 +12,7 @@ from app.auth.agent_signing import sign_headers
 from app.auth.security import decode_access_token
 from app.auth import service as auth_service
 from app.auth.verified import ensure_verified
+from app.english_only import ENGLISH_ONLY_MESSAGE, contains_non_english
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
 from app.registry import service as registry_service
@@ -184,6 +185,10 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         user = auth_service.get_by_id(user_id)
         # Also refuses an account that still has to verify its email.
         ensure_verified(user)
+        # Every agent works in English only: Tamil or any other script is
+        # refused here, before an agent or a model sees it.
+        if isinstance(envelope, dict) and contains_non_english(envelope.get("payload")):
+            raise HTTPException(400, ENGLISH_ONLY_MESSAGE)
 
     return await _forward(
         agent, agent_name, body, envelope, user,

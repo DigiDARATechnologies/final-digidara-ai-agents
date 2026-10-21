@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from app.english_only import require_english
 from app.admin.routes import require_admin
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
@@ -211,6 +212,7 @@ def organization_access_log(org_id: str, user_id: str = Depends(get_verified_use
 @limiter.limit("20/minute")
 async def ask_assistant(org_id: str, req: AssistantIn, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
     """The organization assistant (see assistant.py)."""
+    require_english(req.message)
     filters = {k: str(v)[:120] for k, v in req.filters.items() if k in insights.FILTER_FIELDS + ("code_id", "band", "status")}
     try:
         return await assistant.ask(user_id, org_id, req.message, filters)

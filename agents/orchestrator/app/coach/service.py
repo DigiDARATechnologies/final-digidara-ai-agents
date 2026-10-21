@@ -3,7 +3,7 @@
 1. Readiness asks every agent for its student summary (A2A).
 2. The learner's profile and shared memory add the goal and what they said.
 3. An LLM turns that into a few weeks of concrete tasks, each pointing at the
-   agent and level that does it, in English or Tamil.
+   agent and level that does it, in English.
 The plan is stored, and its headline becomes a shared memory so every agent
 knows what the learner is working on this week.
 """
@@ -28,7 +28,8 @@ from app.readiness import service as readiness_service
 logger = logging.getLogger("orchestrator.coach")
 
 WEEKS = 4
-LANGUAGES = {"en": "English", "ta": "Tamil (natural, friendly spoken-style Tamil; keep agent names and technical words in English)"}
+# Every agent works in English only; "ta" from an older client gets English.
+LANGUAGES = {"en": "English"}
 
 _SYSTEM = """You are DigiDARA's friendly career coach for students in India.
 Write a practical, encouraging job-readiness plan from the data given.

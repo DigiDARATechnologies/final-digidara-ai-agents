@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
+from app.english_only import require_english
 from app.learner import service as learner_service
 from app.links import service as links_service
 from app.llm import client as llm_client
@@ -55,6 +56,7 @@ def _charge(user_id: str, usage: dict[str, int], action: str) -> None:
 @router.post("/chat", response_model=ChatResponse)
 @limiter.limit(_CHAT_RATE_LIMIT)
 def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> ChatResponse:
+    require_english(req.message)
     thread_id = req.thread_id or uuid.uuid4().hex
     # Length only: a learner's message is personal data (DPDP Act 2023) and
     # must not be copied into logs that outlive their account.
@@ -78,6 +80,7 @@ def chat_route(req: RouteRequest, request: Request, user_id: str = Depends(get_v
     uses this to hand a matched message off to that agent's own dedicated
     multi-turn flow instead of a single stateless tool invocation."""
     logger.info("=== POST /chat/route user=%s message_chars=%d history_turns=%d", user_id, len(req.message), len(req.history))
+    require_english(req.message)
     _require_points(user_id)
     usage: dict[str, int] = {}
     try:
@@ -124,6 +127,7 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
         raise HTTPException(status_code=422, detail="The screenshot must be a JPEG, PNG or WebP image.")
     logger.info("=== POST /chat/assist/stream user=%s agent=%s message_chars=%d screenshot=%s voice=%s",
                 user_id, req.agent_id or "-", len(req.message), bool(req.screenshot), req.voice)
+    require_english(req.message)
     _require_points(user_id)
 
     # The signed-in learner's own profile, progress and chats -- looked up by
@@ -166,6 +170,7 @@ def chat_route_stream(req: RouteStreamRequest, request: Request, user_id: str = 
     written instead of after it is finished."""
     logger.info("=== POST /chat/route/stream user=%s message_chars=%d history_turns=%d voice=%s",
                 user_id, len(req.message), len(req.history), req.voice)
+    require_english(req.message)
     _require_points(user_id)
     context = _learner_context(user_id, req.message)
     history = [turn.model_dump() for turn in req.history]

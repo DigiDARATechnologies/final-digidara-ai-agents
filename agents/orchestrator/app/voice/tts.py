@@ -1,4 +1,4 @@
-"""Natural, friendly speech for every agent, in English, Tamil, or both.
+"""Natural, friendly speech for every agent, always in English.
 
 One place turns agent text into speech: OpenAI's steerable TTS model, with
 one fixed voice (Nila, a friendly Indian teacher) told how to sound -- slow,
@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import re
 import threading
 from collections import OrderedDict
 
@@ -45,7 +44,9 @@ PERSONAS: dict[str, dict[str, str]] = {
     "nila": {"voice": VOICE, "label": "Nila", "description": "Friendly Indian coach"},
 }
 DEFAULT_PERSONA = "nila"
-LANGUAGES = ("auto", "en", "ta")
+# Every agent speaks English only. "auto" and "ta" from older clients are
+# accepted and spoken as English.
+LANGUAGES = ("auto", "en")
 
 _BASE_STYLE = (
     "Voice: Nila, a friendly young Indian woman from Chennai who teaches students. Always the same person, "
@@ -60,40 +61,13 @@ _LANGUAGE_STYLE = {
         "Speak simple, clear Indian English with a natural Indian accent, the way a good teacher in an Indian "
         "school speaks. Not an American or British accent."
     ),
-    "ta": (
-        "The text is Tamil. Speak natural, everyday spoken Tamil with a neutral Tamil Nadu accent, the way a "
-        "friendly teacher talks, not stiff formal written Tamil. Say English technical words such as Python, "
-        "SQL, interview or resume the way Tamil speakers naturally say them."
-    ),
-    "mixed": (
-        "The text mixes Tamil and English. Switch between them smoothly, exactly as bilingual Tamil speakers "
-        "do in everyday conversation: Tamil sentences in natural spoken Tamil, English words and phrases in "
-        "clear Indian English."
-    ),
 }
-
-_TAMIL = re.compile(r"[஀-௿]")
-_LETTER = re.compile(r"[A-Za-z஀-௿]")
-
 
 class VoiceError(Exception):
     def __init__(self, status_code: int, message: str):
         super().__init__(message)
         self.status_code = status_code
         self.message = message
-
-
-def detect_language(text: str) -> str:
-    """"ta", "mixed" or "en", from how much of the text is Tamil script."""
-    letters = len(_LETTER.findall(text))
-    if not letters:
-        return "en"
-    share = len(_TAMIL.findall(text)) / letters
-    if share >= 0.6:
-        return "ta"
-    if share >= 0.1:
-        return "mixed"
-    return "en"
 
 
 # Boss's voice conversation is a quick back-and-forth, not a lesson: the same
@@ -173,12 +147,8 @@ def cached(text: str, language: str, persona: str, pace: str = "normal") -> byte
 
 
 def resolve_language(text: str, requested: str) -> str:
-    """The learner's chosen language wins when the text is in that script;
-    otherwise the text itself decides (an English reply is never read as Tamil)."""
-    detected = detect_language(text)
-    if requested == "ta" and detected != "en":
-        return "ta" if detected == "ta" else "mixed"
-    return detected
+    """Always "en": every agent speaks English only."""
+    return "en"
 
 
 def synthesize(text: str, language: str = "auto", persona: str = DEFAULT_PERSONA, pace: str = "normal") -> tuple[bytes, str, bool]:

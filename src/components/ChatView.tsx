@@ -12,6 +12,7 @@ import { recognitionLocale } from "../lib/voicePrefs";
 import { parseSpeakingTurn, speakingTurnSpeech } from "../lib/speakingTurn";
 import { isHoldRequest, joinAnswer, withoutHoldPhrase } from "../lib/holdPhrase";
 import { cancelVoiceConversation, setBossVoiceOpener, takeVoiceConversation, takeVoiceGreeting } from "../lib/voiceReply";
+import { ENGLISH_ONLY_MESSAGE, isEnglishText } from "../lib/englishOnly";
 import VoiceConversation from "./VoiceConversation";
 import AgentIcon from "./AgentIcon";
 
@@ -172,8 +173,8 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // The Communication Coach is English practice, so it always listens in
-  // English; every other agent listens in the learner's voice language.
+  // Every agent listens in English only (Indian English; the Communication
+  // Coach in US English for its pronunciation practice).
   const speech = useSpeechRecognition(agent.kind === "communication" ? "en-US" : recognitionLocale(), transcribeAudio, previewAudio, alwaysRecordVoice);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
@@ -317,6 +318,10 @@ export default function ChatView({
     const text = input.trim();
     if (!text && pendingFiles.length === 0) {
       setInputError(multilineMode ? "Please write your paragraph before submitting. ✍️" : "Please enter a message before sending.");
+      return;
+    }
+    if (!isEnglishText(text)) {
+      setInputError(ENGLISH_ONLY_MESSAGE);
       return;
     }
     setInputError("");

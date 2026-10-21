@@ -1,7 +1,8 @@
 /** The learner's voice settings, kept on this device. */
 /** One voice for the whole platform: Nila, a friendly Indian coach. */
 export type VoicePersona = "nila";
-export type VoiceLanguage = "auto" | "en" | "ta";
+/** Every agent speaks and listens in English only. */
+export type VoiceLanguage = "en";
 
 export interface VoicePrefs {
   enabled: boolean;
@@ -18,13 +19,11 @@ export const VOICE_PERSONAS: { id: VoicePersona; label: string; description: str
 ];
 
 export const VOICE_LANGUAGES: { id: VoiceLanguage; label: string }[] = [
-  { id: "auto", label: "Automatic (follows the reply)" },
   { id: "en", label: "English" },
-  { id: "ta", label: "தமிழ் (Tamil)" },
 ];
 
 const KEY = "digidara_voice";
-const DEFAULTS: VoicePrefs = { enabled: true, mode: "natural", persona: "nila", language: "auto", speed: 1 };
+const DEFAULTS: VoicePrefs = { enabled: true, mode: "natural", persona: "nila", language: "en", speed: 1 };
 
 export function loadVoicePrefs(): VoicePrefs {
   try {
@@ -33,7 +32,6 @@ export function loadVoicePrefs(): VoicePrefs {
     // Earlier versions let learners pick other voices or the device voice;
     // everyone now hears the same voice.
     prefs.persona = DEFAULTS.persona;
-    if (!VOICE_LANGUAGES.some((l) => l.id === prefs.language)) prefs.language = DEFAULTS.language;
     prefs.mode = "natural";
     // Every agent speaks and listens in English.
     prefs.language = "en";

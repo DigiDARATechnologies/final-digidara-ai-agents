@@ -1,6 +1,6 @@
 /**
- * Natural voice for every agent: warm, friendly speech in English, Tamil or
- * both (orchestrator POST /voice/speak), the way ChatGPT and Gemini voice
+ * Natural voice for every agent: warm, friendly speech, always in English
+ * (orchestrator POST /voice/speak), the way ChatGPT and Gemini voice
  * sound rather than a flat reading voice.
  *
  * Speed: the reply is split into sentence-sized chunks. The first chunk is
@@ -8,11 +8,10 @@
  * already being fetched, so speech starts after one sentence, not after the
  * whole reply. Every agent on every device speaks with the same voice (Nila,
  * a friendly Indian coach). Only if it cannot be reached at all (offline, no
- * points) does the device's Indian voice continue from the same point -- a
- * Tamil voice for Tamil text when the device has one.
+ * points) does the device's Indian English voice continue from the same point.
  */
 import { speakableText, splitForSpeech } from "./voiceText";
-import { loadVoicePrefs, voiceLanguagePreference, type VoicePrefs } from "./voicePrefs";
+import { loadVoicePrefs, type VoicePrefs } from "./voicePrefs";
 import { sessionToken } from "./session";
 import { pickIndianVoice } from "./indianVoice";
 import { VOICE_API_BASE } from "./voiceApiBase";
@@ -414,9 +413,6 @@ export async function speakNatural(text: string, handlers: SpeakHandlers = {}, f
 
 /** For the voice settings' Preview button. */
 export function previewVoice(handlers: SpeakHandlers = {}): Promise<boolean> {
-  const language = voiceLanguagePreference();
-  const sample = language === "ta"
-    ? "வணக்கம்! நான் உங்கள் DigiDARA பயிற்சியாளர். இன்று interview-க்கு சேர்ந்து தயார் ஆகலாமா?"
-    : "Hi! I'm your DigiDARA coach. Shall we get you interview-ready today?";
+  const sample = "Hi! I'm your DigiDARA coach. Shall we get you interview-ready today?";
   return speakNatural(sample, handlers, true);
 }
