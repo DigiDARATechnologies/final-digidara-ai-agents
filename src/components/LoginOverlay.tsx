@@ -124,11 +124,9 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
     setError(result ?? "");
   }
 
+  // No consent box needed for Google: a new Google account that has not
+  // ticked it is asked for consent on the onboarding screen instead.
   function handleGoogleClick() {
-    if (!consent) {
-      setError("Please accept the Terms of Service and Privacy Policy to continue.");
-      return;
-    }
     startGoogleSignIn(consent);
   }
 
@@ -241,20 +239,22 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
                 </div>
               )}
 
-              <label className="field consent-field">
-                <input
-                  type="checkbox"
-                  checked={consent}
-                  onChange={(e) => setConsent(e.target.checked)}
-                />
-                <span>
-                  I have read and agree to the DigiDARA{" "}
-                  <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
-                  {" "}and{" "}
-                  <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
-                  and consent to the collection and use of my personal data as described there.
-                </span>
-              </label>
+              {mode === "signup" && (
+                <label className="field consent-field">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={(e) => setConsent(e.target.checked)}
+                  />
+                  <span>
+                    I have read and agree to the DigiDARA{" "}
+                    <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+                    {" "}and{" "}
+                    <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
+                    and consent to the collection and use of my personal data as described there.
+                  </span>
+                </label>
+              )}
 
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>

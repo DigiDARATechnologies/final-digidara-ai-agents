@@ -99,6 +99,21 @@ def test_new_google_accounts_are_verified(api, google_says):
     assert auth_service.get_by_email("fresh@gmail.com").email_verified
 
 
+def test_new_google_account_without_the_consent_box_is_created_and_asked_at_onboarding(api, google_says):
+    google_says(email="noconsent@gmail.com")
+    response = api.post("/auth/google", json={"code": "c", "redirect_uri": "https://x/cb"})
+    assert response.status_code == 200
+    user = auth_service.get_by_email("noconsent@gmail.com")
+    # No consent recorded yet: onboarding sees consent_required and asks.
+    assert user.consent_accepted_at is None and user.consent_policy_version is None
+
+
+def test_new_google_account_with_the_consent_box_records_consent(api, google_says):
+    google_says(email="consented@gmail.com")
+    assert api.post("/auth/google", json={"code": "c", "redirect_uri": "https://x/cb", "consent": True}).status_code == 200
+    assert auth_service.get_by_email("consented@gmail.com").consent_accepted_at is not None
+
+
 def test_tokens_issued_before_session_versions_existed_still_work(api, database):
     session = database()
     session.add(User(id="legacy", name="Legacy", email="legacy@x.io", password_hash=hash_password("legacy-pass")))

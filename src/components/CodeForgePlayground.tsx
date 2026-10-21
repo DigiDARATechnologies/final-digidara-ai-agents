@@ -77,13 +77,15 @@ export default function CodeForgePlayground({ open, onClose, onToast }: Props) {
 
   return (
     <div className={`modal-overlay${open ? " open" : ""}`} onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="modal-card" style={{ maxWidth: 900, width: "92vw" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
+      {/* Never taller than the screen: the title bar stays put and the body
+          (code, stdin, output) scrolls. */}
+      <div className="modal-card" style={{ maxWidth: 900, width: "92vw", maxHeight: "calc(100dvh - 40px)", display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 22px", borderBottom: "1px solid var(--border)" }}>
           <h2 style={{ margin: 0 }}>Code Playground</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">×</button>
         </div>
 
-        <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div className="codeforge-playground-body" style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14, flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain" }}>
           <div>
             <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Language</label>
             {languages === null ? (

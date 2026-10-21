@@ -42,7 +42,7 @@ export default function OnboardingScreen({ name, summary, onDone, onLogout }: Pr
   }
 
   return (
-    <div className="login-overlay">
+    <div className="login-overlay login-overlay--light">
       <div className="login-card lp-onboard-card">
         <div className="login-logo"><Logo theme="light" size="md" /></div>
         <h1>Welcome, {firstName}</h1>
