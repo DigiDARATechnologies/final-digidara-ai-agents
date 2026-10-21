@@ -45,7 +45,7 @@ export async function transcribeGeneralAudio(audio: Blob): Promise<string> {
   const response = await fetch(`${ORCHESTRATOR_BASE}/chat/transcribe`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    // The learner's voice language: Tamil questions stay in Tamil script.
+    // Every agent listens in English only.
     body: JSON.stringify({ audio_base64: await audioBlobToBase64(audio), mime_type: baseAudioType(audio), language: "en" }),
   });
   if (!response.ok) {

@@ -150,12 +150,13 @@ def test_career_plan_is_built_over_a2a_and_remembered(api, monkeypatch):
 
     monkeypatch.setattr(coach_service, "call_text", fake_llm)
     learner_service.save_profile("learner", "Data Analyst", "B.Sc", ["SQL"], "fresher")
+    # An older client asking for Tamil still gets an English plan.
     plan = api.post("/learner/plan", headers=auth(), json={"language": "ta"}).json()["plan"]
-    assert plan["headline"] == "Data Analyst in 4 weeks" and plan["language"] == "ta"
+    assert plan["headline"] == "Data Analyst in 4 weeks" and plan["language"] == "en"
     assert [t["agent_name"] for t in plan["weeks"][0]["tasks"]] == ["codeforge_agent"]
     assert plan["weeks"][1]["tasks"][0]["level"] == "beginner"
     system, data = prompts[0]
-    assert "Tamil" in system and data["target_role"] == "data analyst" and len(data["areas"]) == 7
+    assert "English" in system and "Tamil" not in system and data["target_role"] == "data analyst" and len(data["areas"]) == 7
     assert any(c[1]["action"] == "get_student_summary" for c in api.remote.calls)
     assert api.get("/learner/plan", headers=auth()).json()["plan"]["headline"] == "Data Analyst in 4 weeks"
     assert any(m["text"] == "This week's plan: SQL basics" for m in memory_service.list_for("learner"))
@@ -197,13 +198,13 @@ def test_hub_lists_memory_and_coach_agents(api):
 
 # --- voice ---------------------------------------------------------------------
 
-@pytest.mark.parametrize("text, language", [
-    ("Hello, let's practise SQL today.", "en"),
+@pytest.mark.parametrize("text, requested", [
+    ("Hello, let's practise SQL today.", "auto"),
     ("வணக்கம்! இன்று நாம் பயிற்சி செய்வோம்.", "ta"),
-    ("இன்று SQL interview practice பண்ணலாமா? Ready ah?", "mixed"),
+    ("இன்று SQL interview practice பண்ணலாமா? Ready ah?", "auto"),
 ])
-def test_language_detection(text, language):
-    assert tts.detect_language(text) == language
+def test_every_reply_is_spoken_in_english(text, requested):
+    assert tts.resolve_language(text, requested) == "en"
 
 
 
@@ -229,16 +230,17 @@ def _fake_openai(monkeypatch, calls, content=b"x"):
     monkeypatch.setattr(tts, "_openai", lambda: Client())
 
 
-def test_speak_returns_mp3_with_a_friendly_tamil_style_and_caches(api, monkeypatch):
+def test_speak_returns_mp3_in_english_and_caches(api, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     calls = []
     _fake_openai(monkeypatch, calls, b"ID3fake-mp3")
-    text = "வணக்கம்! இன்று நாம் பயிற்சி செய்வோம்."
+    text = "Hello! Let us practise together today."
     response = api.post("/voice/speak", headers=auth(), json={"text": text, "persona": "arjun"})
     assert response.status_code == 200 and response.content == b"ID3fake-mp3"
-    assert response.headers["content-type"] == "audio/mpeg" and response.headers["x-voice-language"] == "ta"
+    assert response.headers["content-type"] == "audio/mpeg" and response.headers["x-voice-language"] == "en"
     # Every request is the one platform voice, whatever persona is sent.
-    assert calls[0]["voice"] == tts.VOICE and "spoken Tamil" in calls[0]["instructions"]
+    assert calls[0]["voice"] == tts.VOICE and "Indian English" in calls[0]["instructions"]
+    assert "Tamil" not in calls[0]["instructions"]
     assert "friendly" in calls[0]["instructions"]
     charged = 100000 - auth_service.get_by_id("learner").token_balance
     assert charged == len(text) * voice_routes.VOICE_TOKENS_PER_CHAR
@@ -346,3 +348,34 @@ def test_general_chat_knows_the_first_name_answers_straight_away_and_stays_short
     # Boss answers the question; it introduces itself only when greeted or asked who it is.
     assert "Never open with a greeting or an introduction" in system
     assert "no introduction" in prompts.VOICE_REPLY_RULES
+
+
+# --- English only ----------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "வணக்கம், எனக்கு SQL கற்றுக்கொடு",  # Tamil
+    "मुझे पायथन सिखाओ",  # Hindi
+    "నాకు జావా నేర్పు",  # Telugu
+    "教我编程",  # Chinese
+])
+def test_agents_refuse_other_languages(api, text):
+    calls_before = len(api.remote.calls)
+    response = api.post("/gateway/agents/aptitude_agent/invoke", headers=auth(),
+                        json={"action": "chat", "payload": {"message": text}})
+    assert response.status_code == 400 and "English" in response.json()["detail"]
+    assert len(api.remote.calls) == calls_before  # never reached the agent
+    assert api.post("/learner/memory", headers=auth(), json={"text": text, "kind": "note"}).status_code == 400
+
+
+@pytest.mark.parametrize("payload", [
+    {"message": "Explain recursion with an example, please!"},
+    {"answer": "Résumé tips: π ≈ 3.14, √16 = 4 👍"},
+    {"code": 'print("வணக்கம்")', "stdin": "வணக்கம்"},  # program code is not the learner talking
+])
+def test_english_payloads_and_code_reach_the_agent(api, payload):
+    response = api.post("/gateway/agents/aptitude_agent/invoke", headers=auth(), json={"action": "chat", "payload": payload})
+    assert response.status_code == 200
+
+
+def test_voice_offers_english_only(api):
+    assert api.get("/voice/personas").json()["languages"] == [{"id": "en", "label": "English"}]

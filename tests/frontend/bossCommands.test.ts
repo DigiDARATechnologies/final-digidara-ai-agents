@@ -11,8 +11,7 @@ test.each([
   ['open AI certification', 'certificate-agent'],
   ['can you open the job agent', 'job-fetch'],
   ['switch to communication coach.', 'communication-coach'],
-  ['aptitude open pannu', 'aptitude'],
-  ['mock interview ku po', 'mock-interview'],
+  ['aptitude open', 'aptitude'],
 ])('"%s" opens %s', (said, target) => {
   expect(parseBossCommand(said)).toMatchObject({ type: 'open', target });
 });

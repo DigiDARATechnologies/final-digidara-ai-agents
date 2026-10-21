@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
+from app.english_only import require_english
 from app.auth.verified import get_verified_user_id
 from app.conductor import service
 from app.rate_limit import limiter
@@ -27,5 +28,6 @@ class InterpretIn(BaseModel):
 @router.post("/interpret")
 @limiter.limit("40/minute")
 async def interpret(req: InterpretIn, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    require_english(req.message)
     options = [option.model_dump() for option in req.options]
     return await service.interpret(user_id, req.agent_name, req.step, options, req.message)

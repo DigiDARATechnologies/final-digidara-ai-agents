@@ -52,6 +52,7 @@ Professional); a learner's job readiness is 0-100: 25 points for every level com
 seven agents. Bands: Job ready >= 80, Almost ready >= 60, Developing >= 40, Not ready below that.
 
 Rules:
+- Always reply in simple, clear English (DigiDARA works in English only).
 - Only answer about this organization, its learners and DigiDARA. For anything else, say in one line that
   you can only help with {org}.
 - Get facts from the tools; never guess numbers or names. If a name matches several learners, ask which.

@@ -72,7 +72,7 @@ export default function MemoryPanel({ agentLabels, onToast }: Props) {
       <h2>What your agents remember</h2>
       <p className="rd-muted">Every agent uses these to personalise your practice. You can pin what matters most or delete anything.</p>
       <form className="mem-add" onSubmit={add}>
-        <input value={text} maxLength={500} placeholder="e.g. Explain answers in Tamil, I'm targeting product companies"
+        <input value={text} maxLength={500} placeholder="e.g. Explain answers with examples, I'm targeting product companies"
           onChange={(e) => setText(e.target.value)} />
         <select value={kind} onChange={(e) => setKind(e.target.value as MemoryKind)} aria-label="Type">
           {ADD_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}

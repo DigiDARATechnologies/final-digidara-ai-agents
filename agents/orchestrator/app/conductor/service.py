@@ -2,7 +2,7 @@
 
 Every agent's chat is a guided flow -- it offers choices and waits. When the
 learner types instead of tapping ("the second one", "change the role to data
-analyst", "can I do coding instead?", a question, Tamil), the flow alone
+analyst", "can I do coding instead?", a question), the flow alone
 cannot follow. The Conductor reads the turn with the flow's current step and
 choices, the learner's goal and shared memory, and decides one of:
 
@@ -59,17 +59,15 @@ Decide what the learner's message means. Return JSON only:
   "option_value": string or null, "agent_name": string or null, "reply": string or null}}
 
 - select_option: the message clearly means one of the choices above -- by
-  meaning, number or position ("the second one"), part of its name, a typo, or
-  in Tamil. option_value must be exactly one of the listed values.
+  meaning, number or position ("the second one"), part of its name or a typo.
+  option_value must be exactly one of the listed values.
 - switch_agent: the learner wants something a different agent does.
   agent_name must be one of the listed agent ids.
 - restart: the learner wants to change something they already chose earlier in
   THIS agent (another role, course, topic, difficulty) and no current choice fits.
 - reply: a question about this flow, the choices or DigiDARA. Answer in 1-3
-  short, warm sentences in the SAME language as the message itself: English
-  for an English message, Tamil only when the message is written in Tamil
-  (never switch language because of the learner context), then invite them
-  to pick one of the choices.
+  short, warm sentences, always in simple English (every DigiDARA agent
+  works in English only), then invite them to pick one of the choices.
 - continue: anything else, including a real answer the flow should take as it
   is (a custom topic or role, free text the step asks for), and ANY request to
   change, update, add, remove or fix something the learner has already given

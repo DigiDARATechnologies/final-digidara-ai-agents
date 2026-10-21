@@ -41,8 +41,8 @@ const VERB = String.raw`(?:open(?:\s+up)?|switch(?:\s+(?:me|over))?\s+to|change\
 const TAIL = String.raw`(?:\s+(?:agent|page|tab|screen|section|chat|one))?(?:[\s,]+(?:please|boss|now|for\s+me|again))*`;
 // "Open aptitude", "switch to the mock interview agent please".
 const COMMAND = new RegExp(String.raw`^${POLITE}${VERB}\s+(?:the\s+|my\s+)?(.+?)${TAIL}$`, "i");
-// Tamil/Hindi-English: "aptitude open pannu", "mock interview ku po", "resume kholo".
-const AFTER = new RegExp(String.raw`^${POLITE}(?:the\s+)?(.+?)${TAIL}\s+(?:open(?:\s+(?:pannu|pannunga|karo|kar\s+do))?|ku\s+po(?:nga)?|kholo)$`, "i");
+// "Aptitude open", "resume open please" (English only: every agent works in English).
+const AFTER = new RegExp(String.raw`^${POLITE}(?:the\s+)?(.+?)${TAIL}\s+open$`, "i");
 
 /** "Close the tab", "please close Boss", "you can close this": Boss closes. */
 export const CLOSE_PHRASE = /^(?:(?:ok(?:ay)?|please|now)[\s,]+)*(?:you\s+can\s+|can\s+you\s+)?(?:close|exit|hide|shut)(?:\s+(?:(?:the|this|that|your)\s+)?(?:tab|panel|window|boss|chat|assistant|it|this|yourself)(?:\s+(?:tab|panel|window))?)?(?:[\s,]+(?:please|boss))*[\s.!]*$/i;

@@ -12,6 +12,7 @@ from app.auth.consent import CONSENT_POLICY_VERSION
 from app.auth.security import get_current_user_id
 from app.auth.verified import get_verified_user_id
 from app.coach import service as coach_service
+from app.english_only import require_english
 from app.memory import service as memory_service
 from app.rate_limit import limiter
 from app.learner import levels as level_rules
@@ -64,6 +65,7 @@ def get_profile(user_id: str = Depends(get_current_user_id)) -> dict:
 
 @router.put("/profile")
 def save_profile(req: ProfileIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    require_english(req.target_role, req.degree, *req.skills)
     service.save_profile(user_id, req.target_role, req.degree, req.skills, req.experience)
     return _summary(user_id)
 
@@ -156,6 +158,7 @@ def list_memory(user_id: str = Depends(get_verified_user_id)) -> list[dict]:
 
 @router.post("/memory", status_code=201)
 def add_memory(req: MemoryIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    require_english(req.text)
     try:
         # The learner's own memories go to every agent and rank above notes.
         return memory_service.add(user_id, req.text, req.kind, "user", None, 4, req.pinned)

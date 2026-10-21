@@ -97,8 +97,8 @@ export function playBrowserCoachSpeech(text: string, options: CoachSpeechOptions
 }
 
 /**
- * Speak as the coach, through the natural voice engine (warm persona, English
- * or Tamil, sentence-by-sentence so it starts fast), which falls back to the
+ * Speak as the coach, through the natural voice engine (warm persona, always
+ * English, sentence-by-sentence so it starts fast), which falls back to the
  * browser voice on its own. Only onStart and onEnd fire: an error ends in
  * the fallback, so callers that resume listening from both never resume twice.
  */
