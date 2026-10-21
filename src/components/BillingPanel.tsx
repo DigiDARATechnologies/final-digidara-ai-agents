@@ -15,6 +15,19 @@ function money(amountMinor: number, currency = "INR", whole = false) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency, ...(whole ? { minimumFractionDigits: amountMinor % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 } : {}) }).format(amountMinor / 100);
 }
 
+/** The Razorpay Payment Page with the signed-in account's email (and phone,
+ * when known) pre-filled. The page's fields are named `email` and `phone`.
+ * Use the full pages.razorpay.com address: rzp.io short links drop the query. */
+export function paymentPageUrl(pageUrl: string, email: string, mobile?: string | null): string {
+  let url: URL;
+  try { url = new URL(pageUrl); } catch { return pageUrl; }
+  if (email) url.searchParams.set("email", email);
+  const digits = (mobile || "").replace(/\D/g, "");
+  const phone = digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+  if (phone.length === 10) url.searchParams.set("phone", phone);
+  return url.toString();
+}
+
 // Same rule as the server (billing/routes.py GSTIN_PATTERN).
 const GSTIN_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
@@ -93,7 +106,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
     if (plan.payment_page_url) {
       // Paid on DigiDARA's Razorpay page; the server credits the account whose
       // email is entered there, once Razorpay confirms the payment.
-      window.open(plan.payment_page_url, "_blank", "noopener,noreferrer");
+      window.open(paymentPageUrl(plan.payment_page_url, user.email, user.mobile), "_blank", "noopener,noreferrer");
       setPagePlan(plan);
       return;
     }

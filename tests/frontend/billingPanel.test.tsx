@@ -116,11 +116,12 @@ test('a malformed GSTIN stops the purchase before any order', async () => {
 test('a plan switched back to a payment page still opens that page', async () => {
   const open = jest.spyOn(window, 'open').mockReturnValue(null);
   const toast = setup();
-  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: 'https://rzp.io/rzp/x' })] });
+  mocked.fetchBillingPlans.mockResolvedValue({ plans: [plan('basic', 'Basic', 39900, 500000, 250, { payment_page_url: 'https://pages.razorpay.com/pl_X/view' })] });
   cleanup();
   render(<BillingPanel open user={user} onToast={toast} />);
   fireEvent.click(await screen.findByRole('button', { name: 'Buy Basic' }));
-  expect(open).toHaveBeenCalledWith('https://rzp.io/rzp/x', '_blank', 'noopener,noreferrer');
+  // The account's own email and phone are pre-filled on the page.
+  expect(open).toHaveBeenCalledWith('https://pages.razorpay.com/pl_X/view?email=asha%40example.com&phone=9999999999', '_blank', 'noopener,noreferrer');
   expect(mocked.createBillingOrder).not.toHaveBeenCalled();
   open.mockRestore();
 });
