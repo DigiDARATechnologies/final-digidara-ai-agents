@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { microphoneErrorMessage } from "../lib/voiceCapture";
+import { isEnglishNoticeEcho, isEnglishText, SPEAK_ENGLISH_MESSAGE } from "../lib/englishOnly";
 import { downloadMockInterviewReport, transcribeMockInterviewAudio, transcribeMockInterviewPreview } from "../lib/mockInterviewApi";
 import { AFTER_PROMPT_END_MS, AWAY_PROMPT, secondsUntilAction, silenceAction } from "../lib/answerSilence";
 import { speakNatural as speakBrowserText } from "../lib/voiceEngine";
@@ -168,6 +169,8 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   /** `fromPreview`: text from the phone's live preview transcription, which
    * lags behind the voice and so is not itself a sign of speaking. */
   function acceptVoiceTranscript(text: string, fromPreview = false) {
+    // Another language is never shown or kept as the answer (English only).
+    if (text && !isEnglishText(text)) return;
     if (!text || submittedRef.current) return;
     if (isQuestionEcho(text, state.question) || isQuestionEcho(text, AWAY_PROMPT)) return;
     // The browser recognizer can pick up the interviewer's own voice.
@@ -426,11 +429,17 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     const recordedAudio = await finishAudioCapture();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     const elapsed = startedAtRef.current ? Math.round((Date.now() - startedAtRef.current) / 1000) : 0;
-    let finalAnswer = initialAnswer;
+    // Every agent works in English only: another language is not an answer.
+    let notEnglish = Boolean(initialAnswer) && !isEnglishText(initialAnswer);
+    let finalAnswer = notEnglish ? "" : initialAnswer;
     if (shouldImproveTranscript && recordedAudio?.size && state.sessionToken && state.interviewId && state.questionOrder) {
       try {
         const result = await transcribeMockInterviewAudio(state.sessionToken, state.interviewId, state.questionOrder, recordedAudio);
-        if (result.transcript?.trim()) {
+        if (result.transcript?.trim() && !isEnglishText(result.transcript)) {
+          notEnglish = true;
+          finalAnswer = "";
+        } else if (result.transcript?.trim() && !isEnglishNoticeEcho(result.transcript)) {
+          notEnglish = false;
           finalAnswer = isQuestionEcho(result.transcript.trim(), state.question) ? "" : result.transcript.trim();
           spokenRef.current = finalAnswer;
           typedRef.current = finalAnswer;
@@ -455,9 +464,21 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       submittedRef.current = false;
       setTimerEpoch((epoch) => epoch + 1);
       resetSilenceTracking();
-      const recordingStarted = recordingSupported ? await beginAudioCapture() : false;
-      const startedListening = startLiveTranscript(recordingStarted);
-      setVoiceStatus(microphoneStatus(recordingStarted, startedListening, true));
+      const listenAgain = async () => {
+        const recordingStarted = recordingSupported ? await beginAudioCapture() : false;
+        const startedListening = startLiveTranscript(recordingStarted);
+        setVoiceStatus(notEnglish ? SPEAK_ENGLISH_MESSAGE : microphoneStatus(recordingStarted, startedListening, true));
+      };
+      if (notEnglish) {
+        // Say it first, then listen again, so the notice is not recorded as the answer.
+        setVoiceStatus(SPEAK_ENGLISH_MESSAGE);
+        let resumed = false;
+        const resume = () => { if (!resumed) { resumed = true; void listenAgain(); } };
+        const started = await speakBrowserText(SPEAK_ENGLISH_MESSAGE, { onEnd: resume, onError: resume }).catch(() => false);
+        if (!started) resume();
+        return;
+      }
+      await listenAgain();
       return;
     }
     sessionStorage.removeItem(`digidara_mock_interview_deadline_${questionKey}`);
@@ -486,7 +507,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
         if (previewFailuresRef.current >= 2) setVoiceStatus(microphoneStatus(true, false));
         previewFailuresRef.current = 0;
         const text = result.transcript?.trim() ?? "";
-        if (!text || isQuestionEcho(text, state.question) || isQuestionEcho(text, AWAY_PROMPT)) return;
+        if (!text || !isEnglishText(text) || isEnglishNoticeEcho(text) || isQuestionEcho(text, state.question) || isQuestionEcho(text, AWAY_PROMPT)) return;
         // New words are proof of speech even when the volume meter hears
         // nothing, so the silence rules keep working without it.
         if (text !== lastPreviewTextRef.current) {

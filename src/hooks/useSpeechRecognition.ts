@@ -13,6 +13,17 @@ import {
 } from "../lib/voiceCapture";
 import { analyserReader, VoiceDetector } from "../lib/voiceActivity";
 import { acquireMicrophone } from "../lib/micWarm";
+import { isEnglishNoticeEcho, isEnglishText, SPEAK_ENGLISH_MESSAGE } from "../lib/englishOnly";
+
+/** Every agent works in English only: another language spoken into the
+ * microphone is not sent; the agent says (and shows) that it needs English. */
+function askForEnglish(setError: (message: string) => void): void {
+  setError(SPEAK_ENGLISH_MESSAGE);
+  // Loaded when needed: the voice engine is only for saying this notice here.
+  void import("../lib/voiceEngine")
+    .then(({ speakNatural }) => speakNatural(SPEAK_ENGLISH_MESSAGE))
+    .catch(() => undefined);
+}
 
 /** Minimal ambient typing for the Web Speech API */
 interface SpeechRecognitionResultLike {
@@ -287,7 +298,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           // is nearly there) rather than send the whole recording again.
           if (options.finalFromPreview && endPreview && coversEverything(endPreview.takenAt)) {
             const text = await Promise.race([
-              endPreview.promise.then((value) => removeMobileTranscriptLoops(value), () => ""),
+              endPreview.promise.then((value) => { const t = removeMobileTranscriptLoops(value); return isEnglishText(t) ? t : ""; }, () => ""),
               new Promise<string>((resolve) => window.setTimeout(() => resolve(""), 3_000)),
             ]);
             if (session !== recordSessionRef.current) return;
@@ -305,12 +316,24 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           setTranscribing(true);
           try {
             const rawText = (await transcribeRef.current?.(audio))?.trim() ?? "";
-            const text = removeMobileTranscriptLoops(rawText);
+            const heard = removeMobileTranscriptLoops(rawText);
+            // The agent's own "speak in English" notice picked up by the microphone is not an answer.
+            const text = isEnglishNoticeEcho(heard) ? "" : heard;
             if (session !== recordSessionRef.current) return;
+            if (text && !isEnglishText(text)) {
+              askForEnglish(setError);
+              onResult("", true);
+              return;
+            }
             if (!text) setError("I couldn't hear any words in that recording. Tap the microphone and speak a little closer to the phone.");
             onResult(text, true);
           } catch (transcribeError) {
             if (session !== recordSessionRef.current) return;
+            if ((transcribeError as Error)?.message === SPEAK_ENGLISH_MESSAGE) {
+              askForEnglish(setError);
+              onResult("", true);
+              return;
+            }
             const reason = (transcribeError as Error)?.message || "the transcription service did not respond";
             setError(`Your answer couldn't be turned into text (${reason}). Tap the microphone to try again, or type your answer.`);
             onResult("", true);
@@ -411,6 +434,9 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
               .then((text) => {
                 if (session !== recordSessionRef.current) return;
                 const trimmed = removeMobileTranscriptLoops(text);
+                // Another language is never shown or used; the full
+                // transcription on stop asks the learner to speak English.
+                if (trimmed && !isEnglishText(trimmed)) return;
                 if (trimmed && (!latestPreview || takenAt > latestPreview.takenAt)) latestPreview = { text: trimmed, takenAt };
                 if (finished) return;
                 if (!trimmed || trimmed === lastText) return;
@@ -584,6 +610,11 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         vadCleanupRef.current = null;
         recognitionRef.current = null;
         const completedText = completedSessionsText.trim();
+        if (completedText && !isEnglishText(completedText)) {
+          askForEnglish(setError);
+          onResult("", true);
+          return;
+        }
         onResult(isMobileDevice ? removeMobileTranscriptLoops(completedText) : completedText, true);
       };
 

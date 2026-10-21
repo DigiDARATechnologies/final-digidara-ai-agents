@@ -105,10 +105,20 @@ def test_real_questions_about_the_agents_are_kept(api, monkeypatch):
     assert api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers()).json()["transcript"] == "What does the Capstone Project Agent do?"
 
 
-def test_speech_is_always_english_and_the_prompt_is_only_vocabulary(api, monkeypatch):
+def test_no_language_is_forced_and_the_prompt_is_only_vocabulary(api, monkeypatch):
+    # Forcing English turned Tamil speech into an empty "couldn't hear you";
+    # the spoken language is kept so it can be refused with a clear message.
     post = openai_replies(monkeypatch)
     api.post("/chat/transcribe", json={"audio_base64": AUDIO, "language": "ta"}, headers=headers())
     data = post.call_args.kwargs["data"]
-    assert data["language"] == "en" and data["prompt"] == speech.VOCABULARY_HINT
+    assert "language" not in data and data["prompt"] == speech.VOCABULARY_HINT
     assert "transcribe" not in data["prompt"].lower()
+
+
+@pytest.mark.parametrize("spoken", ["சரி ஓகே, இன்னைக்கு என்ன பண்ணலாம்?", "मुझे पायथन सिखाओ"])
+def test_other_languages_are_refused_with_a_speak_english_message(api, monkeypatch, spoken):
+    openai_replies(monkeypatch, body={"text": spoken})
+    response = api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
+    assert response.status_code == 422
+    assert response.json()["detail"] == "I only understand English. Could you please speak in English?"
 

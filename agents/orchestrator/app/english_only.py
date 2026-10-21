@@ -6,12 +6,16 @@ before it reaches an agent or a language model. Only scripts are checked: plain
 Latin letters, digits, punctuation, emoji, accented letters (résumé) and math
 symbols (π, Σ, √) are always accepted.
 
-Speech is already written as English by every microphone (the transcription
-calls pass language="en"), and the voice always speaks English.
+Speech is transcribed in the language actually spoken (no forced language),
+so Tamil speech comes back in Tamil script and is refused with
+SPEAK_ENGLISH_MESSAGE instead of turning into an empty "couldn't hear you".
+The voice always speaks English.
 """
 from __future__ import annotations
 
 ENGLISH_ONLY_MESSAGE = "Please type in English. DigiDARA agents understand and reply in English only."
+# Said (and shown) when a learner speaks another language into a microphone.
+SPEAK_ENGLISH_MESSAGE = "I only understand English. Could you please speak in English?"
 
 # Unicode blocks of scripts that are not English.
 _OTHER_SCRIPTS = (

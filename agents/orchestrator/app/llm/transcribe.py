@@ -14,6 +14,8 @@ import os
 
 import httpx
 
+from app.english_only import SPEAK_ENGLISH_MESSAGE, is_english_text
+
 logger = logging.getLogger("orchestrator.transcribe")
 
 OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
@@ -89,8 +91,9 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
             data={
                 "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
                 "prompt": VOCABULARY_HINT,
-                # Every agent works in English: the speech is always written as English.
-                "language": "en",
+                # No forced language: speech is written in the language spoken,
+                # so another language is recognised and refused below instead
+                # of coming back empty ("I couldn't hear any words").
             },
             timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
         )
@@ -109,6 +112,10 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
         # Silence or noise came back as the prompt itself: nothing was said.
         logger.info("transcription of %d bytes was the prompt echoed back; treated as silence", len(audio))
         return ""
+    if not is_english_text(text):
+        # Every agent works in English only.
+        logger.info("transcription of %d bytes was not English; asked the learner to speak English", len(audio))
+        raise TranscriptionError(422, SPEAK_ENGLISH_MESSAGE)
     logger.info("transcribed %d bytes of %s into %d chars", len(audio), base_type, len(text))
     return text
 
