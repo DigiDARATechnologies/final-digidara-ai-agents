@@ -1,4 +1,4 @@
-import { isEnglishText } from '../../src/lib/englishOnly';
+import { isEnglishNoticeEcho, isEnglishText } from '../../src/lib/englishOnly';
 
 test.each([
   'வணக்கம், எனக்கு SQL கற்றுக்கொடு',
@@ -16,4 +16,9 @@ test.each([
   'C++ vs. Java — which first?',
 ])('English is accepted: %s', (text) => {
   expect(isEnglishText(text)).toBe(true);
+});
+
+test('the agent\'s own "speak in English" notice heard by the microphone is recognised', () => {
+  expect(isEnglishNoticeEcho('I only understand English. Could you please speak in English?')).toBe(true);
+  expect(isEnglishNoticeEcho('I understand loops now')).toBe(false);
 });

@@ -603,18 +603,48 @@ def _normalise_email(recipient_email: str) -> str:
         raise ValueError("Enter a valid email address") from exc
 
 
+def _smtp_username() -> str:
+    """SMTP_USERNAME, or SMTP_USER (the orchestrator's name for the same setting)."""
+    return (settings.SMTP_USERNAME or os.environ.get("SMTP_USER") or "").strip()
+
+
+def _smtp_password() -> str:
+    """The SMTP password as the provider expects it. A Gmail app password is
+    shown by Google in four groups ("abcd efgh ijkl mnop") and is often pasted
+    with those spaces or in quotes; Gmail then rejects the login."""
+    password = (settings.SMTP_PASSWORD or "").strip().strip("\"'")
+    if "gmail" in (settings.SMTP_HOST or "").lower() or "google" in (settings.SMTP_HOST or "").lower():
+        password = "".join(password.split())
+    return password
+
+
 def _send_smtp_message(message: EmailMessage, certificate_id: int | None = None) -> None:
     """Send a learner-facing message without exposing mail-provider details."""
-    smtp_host = settings.SMTP_HOST
+    smtp_host = (settings.SMTP_HOST or "").strip()
     if not smtp_host:
+        logger.error("Certificate email is not configured: SMTP_HOST is empty")
         raise ValueError("Certificate email delivery is temporarily unavailable. Please try again later.")
+    username, password = _smtp_username(), _smtp_password()
+    port = int(settings.SMTP_PORT or 587)
     try:
-        with smtplib.SMTP(smtp_host, settings.SMTP_PORT, timeout=25) as smtp:
-            if settings.SMTP_USE_TLS:
+        if port == 465:
+            # Port 465 is TLS from the first byte (STARTTLS there never answers).
+            smtp = smtplib.SMTP_SSL(smtp_host, port, timeout=25, context=ssl.create_default_context())
+        else:
+            smtp = smtplib.SMTP(smtp_host, port, timeout=25)
+        with smtp:
+            if port != 465 and settings.SMTP_USE_TLS:
                 smtp.starttls(context=ssl.create_default_context())
-            if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
-                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            if username and password:
+                smtp.login(username, password)
             smtp.send_message(message)
+    except smtplib.SMTPAuthenticationError as exc:
+        # The usual cause: a normal Gmail password instead of an App Password,
+        # or the App Password was revoked. Code and server reply only.
+        logger.error("Certificate email login to %s rejected (SMTP %s): %s -- check SMTP_USERNAME and the "
+                     "Gmail App Password in the certificate agent's .env", smtp_host, exc.smtp_code,
+                     (exc.smtp_error or b"")[:200])
+        raise ValueError("Certificate email delivery is temporarily unavailable. Please try again later.") from exc
     except Exception as exc:
         logger.exception("Certificate email delivery failed%s", f" for certificate {certificate_id}" if certificate_id else "")
         raise ValueError("Certificate email delivery is temporarily unavailable. Please try again later.") from exc
@@ -630,7 +660,7 @@ def request_certificate_email_verification(user_id: int, certificate_id: int, re
     email = _normalise_email(recipient_email)
     _get_owned_certificate(user_id, certificate_id)
 
-    sender = settings.SMTP_FROM or settings.SMTP_USERNAME
+    sender = settings.SMTP_FROM or _smtp_username()
     if not sender:
         raise ValueError("Certificate email delivery is temporarily unavailable. Please try again later.")
 
@@ -699,7 +729,7 @@ def email_certificate_pdf(user_id: int, certificate_id: int, recipient_email: st
     if not file_path or not os.path.exists(file_path):
         raise ValueError("The certificate file is temporarily unavailable. Please try again shortly.")
 
-    sender = settings.SMTP_FROM or settings.SMTP_USERNAME
+    sender = settings.SMTP_FROM or _smtp_username()
     if not sender:
         raise ValueError("Certificate email delivery is temporarily unavailable. Please download the certificate instead or try again later.")
 

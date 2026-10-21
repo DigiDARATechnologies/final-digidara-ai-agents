@@ -115,7 +115,9 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         files={"file": (filename or "speaking-answer.webm", audio_bytes, content_type or "audio/webm")},
         data={
             "model": model,
-            "language": "en",
+            # No forced language: Tamil or other speech comes back in its own
+            # script, and the DigiDARA app asks the learner to speak English,
+            # instead of an empty transcript ("I couldn't hear any words").
             "response_format": "json",
             "temperature": "0",
         },

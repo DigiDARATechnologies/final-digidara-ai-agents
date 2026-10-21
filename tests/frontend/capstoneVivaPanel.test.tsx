@@ -72,3 +72,12 @@ test('shows the 20-minute timer and reports time up once', () => {
   expect(onTimeUp).toHaveBeenCalledTimes(1);
   jest.useRealTimers();
 });
+
+test('the words appear in the answer box while the student is speaking', async () => {
+  const onAnswer = jest.fn();
+  render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={onAnswer} onTimeUp={jest.fn()} />);
+  await waitFor(() => expect(mockStart).toHaveBeenCalled());
+  act(() => { mockStart.mock.calls[0][0]('It keeps data', false); });
+  expect(screen.getByLabelText(/Your answer/)).toHaveValue('It keeps data');
+  expect(onAnswer).not.toHaveBeenCalled();
+});

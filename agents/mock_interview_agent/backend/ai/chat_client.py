@@ -125,7 +125,8 @@ def transcribe_audio(
     request_options = {
         "file": (filename or "answer.webm", audio_file, resolved_content_type),
         "model": TRANSCRIPTION_MODEL,
-        "language": "en",
+        # No forced language: another language comes back in its own script
+        # and the DigiDARA app asks the candidate to speak English.
         # gpt-4o-mini-transcribe returns the OpenAI transcription JSON object.
         "response_format": "json",
         "temperature": 0,
