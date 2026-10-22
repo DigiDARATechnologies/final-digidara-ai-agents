@@ -28,9 +28,14 @@ PASS_THRESHOLD = _int("PASS_THRESHOLD", 70)
 # A submission still `processing` after this long belongs to a dead worker; it no longer blocks a new upload.
 SUBMISSION_STALE_MINUTES = _int("SUBMISSION_STALE_MINUTES", 10)
 
-MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 50)
+MAX_UPLOAD_MB = _int("MAX_UPLOAD_MB", 100)
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
-MAX_ZIP_FILES = _int("MAX_ZIP_FILES", 1000)
+# Limit on the student's own files. Files in ZIP_IGNORE_DIR_NAMES folders
+# (node_modules, venv, .git, ...) don't count towards it.
+MAX_ZIP_FILES = _int("MAX_ZIP_FILES", 5000)
+# Hard limit on every entry in the archive, ignored folders included. Stops
+# junk or zip-bomb archives while still allowing a zipped node_modules.
+MAX_ZIP_ENTRIES_TOTAL = _int("MAX_ZIP_ENTRIES_TOTAL", 100000)
 
 # How much of the student's source code the reviewers read, in characters.
 # Every file is sent in full while the whole zip fits; past this the biggest
