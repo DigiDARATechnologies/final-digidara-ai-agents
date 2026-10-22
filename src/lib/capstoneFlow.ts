@@ -1079,6 +1079,6 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
         };
       }
     }
-    return { state, messages: [{ text: `Submission failed: ${message}. Re-attach the files to try again.` }] };
+    return { state, messages: [{ text: `Submission failed: ${message.replace(/\.+$/, "")}. Re-attach the files to try again.` }] };
   }
 }

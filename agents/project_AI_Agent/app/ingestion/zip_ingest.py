@@ -24,6 +24,9 @@ def _is_ignored(rel_path: str) -> bool:
     return any(part in config.ZIP_IGNORE_DIR_NAMES for part in parts)
 
 
+_IGNORE_HINT = "node_modules, venv, .git, dist and build"
+
+
 def _is_safe_member(name: str) -> bool:
     if name.startswith("/") or name.startswith("\\"):
         return False
@@ -44,38 +47,55 @@ def ingest_zip(zip_path: str) -> dict:
 
         if len(infos) == 0:
             raise ZipIngestError("The zip is empty.")
-        if len(infos) > config.MAX_ZIP_FILES:
+        if len(infos) > config.MAX_ZIP_ENTRIES_TOTAL:
             raise ZipIngestError(
-                f"The zip contains {len(infos)} entries, exceeding the {config.MAX_ZIP_FILES} limit."
+                f"Your zip has {len(infos)} files, which is far more than a project needs. "
+                f"Delete folders like {_IGNORE_HINT} from your project, zip it again and upload it."
             )
 
         for info in infos:
-            if info.flag_bits & 0x1:
-                raise ZipIngestError("The zip is password-protected and cannot be scanned.")
             if not _is_safe_member(info.filename):
                 raise ZipIngestError(
                     f"The zip contains an unsafe path entry ('{info.filename}') and was rejected."
                 )
 
-        total_uncompressed = sum(info.file_size for info in infos)
+        # Dependency and build folders are skipped from here on: they don't
+        # count towards the limits and are never decompressed.
+        kept = [info for info in infos if not _is_ignored(info.filename)]
+        kept_files = [info for info in kept if not info.is_dir()]
+
+        if len(kept_files) > config.MAX_ZIP_FILES:
+            raise ZipIngestError(
+                f"Your zip has {len(kept_files)} project files, more than the {config.MAX_ZIP_FILES} allowed. "
+                f"Remove generated or downloaded files (for example {_IGNORE_HINT}), zip the project again "
+                "and upload it."
+            )
+
+        for info in kept:
+            if info.flag_bits & 0x1:
+                raise ZipIngestError("The zip is password-protected and cannot be scanned.")
+
+        total_uncompressed = sum(info.file_size for info in kept)
         if total_uncompressed > config.MAX_UPLOAD_BYTES * 10:
             # Generous multiple of the upload cap — catches zip-bomb style
             # archives without penalizing normal small-project submissions.
             raise ZipIngestError("The zip's uncompressed contents are too large to process.")
 
-        bad_entry = zf.testzip()
-        if bad_entry is not None:
-            raise ZipIngestError(f"The zip is corrupt — entry '{bad_entry}' failed its CRC check.")
+        for info in kept_files:
+            try:
+                with zf.open(info) as fh:
+                    while fh.read(1024 * 1024):
+                        pass
+            except (zipfile.BadZipFile, OSError, EOFError) as exc:
+                raise ZipIngestError(
+                    f"The zip is corrupt — entry '{info.filename}' could not be read."
+                ) from exc
 
         file_tree: list[str] = []
         code_files: dict[str, str] = {}
 
-        for info in infos:
-            if info.is_dir():
-                continue
+        for info in kept_files:
             rel_path = info.filename
-            if _is_ignored(rel_path):
-                continue
             file_tree.append(rel_path)
 
             suffix = "." + rel_path.rsplit(".", 1)[-1].lower() if "." in rel_path else ""
@@ -86,7 +106,7 @@ def ingest_zip(zip_path: str) -> dict:
                 except UnicodeDecodeError:
                     code_files[rel_path] = raw.decode("utf-8", errors="replace")
 
-        screenshot_evidence = ingest_screenshots(zf, infos)
+        screenshot_evidence = ingest_screenshots(zf, kept_files)
 
         if not code_files:
             found = sorted(file_tree)[:8]

@@ -692,9 +692,22 @@ def _screenshots_block(state: dict[str, Any]) -> str:
         f"  {index}. {item['filename']} [{item['module']}]: {item['description']}"
         for index, item in enumerate(status["required"], start=1)
     )
+    reviewed = ""
+    if status.get("ai_reviewed"):
+        seen = "\n".join(
+            f"  - {image['file']}: {image.get('shows') or '?'}"
+            + ("" if image.get("is_app_screenshot") else " (not a screenshot of the running project)")
+            for image in status.get("images") or []
+        )
+        proven = "\n".join(f"  - {item['filename']}: shown in {item['found_in']}" for item in status["matched"]) or "  - none"
+        reviewed = (
+            f"- What a vision model saw in each image:\n{seen}\n"
+            f"- Required screenshots it found proof of:\n{proven}\n"
+        )
     return (
         f"- Output screenshots this project requires (image files in the zip's output_screenshots folder):\n{required}\n"
         f"- Screenshot images found in the zip ({len(status['found_files'])}): {status['found_files'] or 'none'}\n"
+        f"{reviewed}"
         f"- Text read out of those images by OCR (imperfect - garbled characters are normal):\n"
         f"{evidence.get('ocr_text', 'none')}"
     )

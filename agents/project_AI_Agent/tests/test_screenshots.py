@@ -191,3 +191,101 @@ def test_the_qa_agent_is_told_to_explain_screenshots_in_full_from_the_project_br
     assert "output_screenshots folder" in prompt and "NOT put in" in prompt
     assert "exact file name" in prompt and "step by step" in prompt
     assert "never say something is not" in prompt.replace("\n", " ")
+
+
+# --- Screenshots found by what they are, and reviewed by a vision model --------------------
+
+def big_png(color="white"):
+    buffer = io.BytesIO()
+    Image.new("RGB", (400, 300), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_screenshots_are_found_in_any_folder_and_app_assets_are_left_out(tmp_path):
+    archive = make_zip(tmp_path / "p.zip", {
+        "Proj/src/App.jsx": "export default 1\n",
+        "Proj/Output Images/02-dashboard.png": png_bytes("red"),     # marked by its numbered name
+        "Proj/Screenshot 2026-10-22 132431.png": png_bytes("blue"),  # marked by its name, at the root
+        "Proj/pics/form.png": big_png("green"),                      # unmarked, screenshot sized: AI decides
+        "Proj/src/assets/hero.png": big_png("white"),                # an app asset
+        "Proj/public/favicon.png": png_bytes("black"),               # an app asset
+        "Proj/pics/tiny.png": png_bytes("gray"),                     # icon sized
+    })
+    evidence = ingest_zip(archive)["screenshot_evidence"]
+    assert evidence["valid_files"] == ["Proj/Output Images/02-dashboard.png", "Proj/Screenshot 2026-10-22 132431.png"]
+    assert evidence["other_images"] == ["Proj/pics/form.png"]
+    assert evidence["loose_files"] == ["Proj/pics/form.png"]
+    assert evidence["unreadable_files"] == []
+
+
+def test_loose_images_count_when_there_is_no_screenshot_folder_and_no_ai_review():
+    evidence = {"valid_files": [], "other_images": ["P/pics/a.png", "P/src/assets/b.png"], "loose_files": ["P/pics/a.png"]}
+    status = screenshot_status(GUIDE, evidence)
+    assert status["found_files"] == ["P/pics/a.png"] and status["shortfall"] == 2
+
+
+REVIEW = {
+    "ok": True,
+    "images": [
+        {"file": "P/shots/a.png", "shows": "The login form with an invalid email error", "is_app_screenshot": True},
+        {"file": "P/shots/b.png", "shows": "A dashboard listing three items", "is_app_screenshot": True},
+        {"file": "P/src/assets/hero.png", "shows": "A stock illustration", "is_app_screenshot": False},
+    ],
+    "required": [
+        {"filename": "01-login-form.png", "status": "present", "file": "P/shots/a.png", "reason": ""},
+        {"filename": "02-dashboard.png", "status": "present", "file": "P/shots/b.png", "reason": ""},
+        {"filename": "03-tests-passing.png", "status": "missing", "file": None, "reason": "No image shows a terminal running the tests."},
+    ],
+}
+
+
+def test_with_an_ai_review_each_required_screenshot_must_actually_be_shown():
+    status = screenshot_status(GUIDE, {"valid_files": ["P/shots/a.png", "P/shots/b.png"], "ai_review": REVIEW})
+    assert status["ai_reviewed"] is True and status["complete"] is False and status["shortfall"] == 1
+    assert [item["filename"] for item in status["matched"]] == ["01-login-form.png", "02-dashboard.png"]
+    assert [item["filename"] for item in status["unmatched"]] == ["03-tests-passing.png"]
+    assert status["found_files"] == ["P/shots/a.png", "P/shots/b.png"]       # the illustration is not a screenshot
+
+    text = revision.explain_missing_screenshots(status)
+    assert text.startswith("**1 of the 3 required output screenshots are missing.**")
+    assert "P/shots/a.png: The login form with an invalid email error -> counts as 01-login-form.png" in text
+    assert "P/src/assets/hero.png: A stock illustration -> not a screenshot of your running project" in text
+    assert "03-tests-passing.png [Test run]: the terminal showing every test passing. Why it is missing: No image shows a terminal" in text
+    assert "How to capture it: Run python -m pytest." in text
+    assert "01-login-form.png [" not in text                                 # what is there is not asked for again
+
+
+def test_a_complete_ai_review_passes_the_gate_and_a_failed_one_falls_back_to_counting():
+    present = {**REVIEW, "required": [{**item, "status": "present", "file": "P/shots/a.png"} for item in REVIEW["required"]]}
+    base = {"structure_score": {"is_complete": True}, "submission_guide": GUIDE}
+    assert nodes.structure_gate_passed({**base, "screenshot_evidence": {"valid_files": ["P/shots/a.png"], "ai_review": present}}) is True
+    failed = {"valid_files": ["a.png", "b.png", "c.png"], "ai_review": {"ok": False, "error": "timeout"}}
+    assert nodes.structure_gate_passed({**base, "screenshot_evidence": failed}) is True
+
+
+def test_the_review_trusts_only_what_the_model_saw_in_a_real_app_screenshot(tmp_path):
+    from app.vision import screenshot_review
+    archive = make_zip(tmp_path / "p.zip", {"P/shots/a.png": big_png("red"), "P/pics/b.png": big_png("blue")})
+    evidence = {"valid_files": ["P/shots/a.png"], "other_images": ["P/pics/b.png"],
+                "ocr_text": "[Screenshot 1: P/shots/a.png]\nSign in Email invalid\n\n[Screenshot 2: P/pics/b.png]\nlogo"}
+    calls = []
+
+    def model(**kwargs):
+        calls.append(kwargs)
+        return {
+            "images": [{"image": 1, "shows": "Login form", "is_app_screenshot": True},
+                       {"image": 2, "shows": "A logo", "is_app_screenshot": False}],
+            "required": [
+                {"filename": "01-login-form.png", "status": "present", "image": 1},
+                {"filename": "02-dashboard.png", "status": "present", "image": 2},   # a logo cannot prove it
+                {"filename": "made-up.png", "status": "present", "image": 1},        # not required: dropped
+            ],
+        }
+
+    review = screenshot_review.review_screenshots(str(archive), GUIDE, evidence, "Login Page", llm=model)
+    assert len(calls[0]["image_data_url"]) == 2 and "Sign in Email invalid" in calls[0]["system"]
+    assert {item["filename"]: item["status"] for item in review["required"]} == {
+        "01-login-form.png": "present", "02-dashboard.png": "missing", "03-tests-passing.png": "missing"}
+    # A reply without the expected lists is a failed review, not "everything missing".
+    assert screenshot_review.review_screenshots(str(archive), GUIDE, evidence, llm=lambda **k: {"is_complete": True})["ok"] is False
+    assert screenshot_review.review_screenshots(str(archive), {}, evidence, llm=model) is None
