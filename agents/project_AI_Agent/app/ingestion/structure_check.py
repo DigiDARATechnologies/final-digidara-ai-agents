@@ -88,19 +88,57 @@ def _normalize_parts(path: str) -> list[str]:
     return [part.lower() for part in posix.parts if part not in ("", "/")]
 
 
-def check_required_paths(required_paths: list[dict] | None, zip_file_tree: list[str] | None) -> dict:
+_SOURCE_DIRS = {"src", "source", "sources", "code", "app", "lib", "backend", "frontend", "server", "client", "main"}
+_TEST_DIRS = {"tests", "test", "__tests__", "spec", "specs", "testing"}
+_SOURCE_EXTENSIONS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rb", ".php", ".c", ".h", ".cpp", ".hpp", ".cs",
+    ".rs", ".kt", ".swift", ".dart", ".vue", ".svelte", ".html", ".ipynb", ".sql", ".sh",
+}
+_TEST_FILE_RE = re.compile(
+    r"(^test_.+\.py$|.+_test\.(py|go)$|.+\.(test|spec)\.[cm]?[jt]sx?$|^test.*\.java$|.+tests?\.(java|kt|cs)$|.+_spec\.rb$)",
+    re.IGNORECASE,
+)
+
+
+def _loose(name: str) -> str:
+    """"Output_Screenshots", "output-screenshot" and "outputscreenshots" are the same folder."""
+    squashed = re.sub(r"[^a-z0-9]", "", name.lower())
+    return squashed[:-1] if squashed.endswith("s") else squashed
+
+
+def _role(target: str) -> str | None:
+    if target in _SOURCE_DIRS:
+        return "source"
+    if target in _TEST_DIRS:
+        return "tests"
+    if "screenshot" in target or target in {"output", "outputs"}:
+        return "screenshots"
+    return None
+
+
+def check_required_paths(
+    required_paths: list[dict] | None, zip_file_tree: list[str] | None, screenshots_found: bool | None = None,
+) -> dict:
     """required_paths: [{"path": str, "type": "dir"|"file", "description": str}, ...]
     (from the submission guide's `required_paths`, see submission_guide_prompt).
     zip_file_tree: flat list of file paths as returned by ingest_zip.
+    screenshots_found: whether ingest found any screenshot images anywhere in the zip.
 
-    Matches on the required path's trailing segment (e.g. "src" out of
-    "<slug>/src") against every path segment actually present in the zip --
-    tolerant of the student naming their root folder differently than the
-    suggested slug, since that's cosmetic, not a real omission.
+    A required folder counts as present when the zip holds what belongs in it,
+    whatever the folder is called or how deep it sits:
+    - a source folder ("src", ...): any source code file in the zip;
+    - a tests folder: a tests/test folder or any test file (test_x.py, x.test.js, ...);
+    - the screenshots folder: any screenshot image in the zip;
+    - any other folder: a folder with that name, ignoring case, "-", "_" and a plural "s".
+    A required file matches by file name, ignoring case.
     """
     entries = [_normalize_parts(p) for p in (zip_file_tree or [])]
-    all_segments = {segment for parts in entries for segment in parts}
+    all_segments = {segment for parts in entries for segment in parts[:-1]}
+    loose_segments = {_loose(segment) for segment in all_segments}
     all_basenames = {parts[-1] for parts in entries if parts}
+    has_source = any(PurePosixPath(name).suffix in _SOURCE_EXTENSIONS for name in all_basenames)
+    has_tests = bool(all_segments & _TEST_DIRS) or any(_TEST_FILE_RE.match(name) for name in all_basenames)
+    has_screenshot_folder = any("screenshot" in segment for segment in all_segments)
 
     matched: list[dict] = []
     missing: list[dict] = []
@@ -114,7 +152,17 @@ def check_required_paths(required_paths: list[dict] | None, zip_file_tree: list[
             continue
         target = parts[-1]
 
-        found = target in (all_basenames if item_type == "file" else all_segments)
+        if item_type == "file":
+            found = target in all_basenames
+        else:
+            role = _role(target)
+            found = target in all_segments or _loose(target) in loose_segments
+            if role == "source":
+                found = found or has_source
+            elif role == "tests":
+                found = found or has_tests
+            elif role == "screenshots":
+                found = found or has_screenshot_folder or bool(screenshots_found)
         entry = {"path": raw_path, "type": item_type, "description": item.get("description", "")}
         (matched if found else missing).append(entry)
 

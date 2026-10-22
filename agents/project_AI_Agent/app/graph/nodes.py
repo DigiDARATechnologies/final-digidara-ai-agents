@@ -36,6 +36,7 @@ from app.ingestion.screenshots import ensure_screenshot_folder, normalise_requir
 from app.ingestion.syntax_check import check_syntax
 from app.ingestion.zip_ingest import ZipIngestError, ingest_zip
 from app.llm.client import call_json, call_text
+from app.vision.screenshot_review import review_screenshots
 
 # Grading/validation calls want maximally consistent, repeatable judgments —
 # lower than call_json's own default (0.2) and set explicitly at every
@@ -328,6 +329,25 @@ def zip_ingest_node(state: ProjectAgentState) -> dict:
     }
 
 
+# --- ScreenshotReviewNode (vision LLM, never fatal) -------------------------
+
+@log_node
+def screenshot_review_node(state: ProjectAgentState) -> dict:
+    """A vision model looks at every image in the zip and decides which of the
+    required output screenshots each one actually shows, whatever the file is
+    called and wherever it was saved. If it cannot run, screenshot_status falls
+    back to counting screenshot images."""
+    evidence = dict(state.get("screenshot_evidence") or {})
+    review = review_screenshots(
+        state["zip_path"], state.get("submission_guide") or {}, evidence,
+        project_title=str((state.get("chosen_topic") or {}).get("title") or ""), llm=call_json,
+    )
+    if review is None:
+        return {}
+    evidence["ai_review"] = review
+    return {"screenshot_evidence": evidence}
+
+
 # --- SyntaxCheckNode (deterministic) ---------------------------------------
 
 @log_node
@@ -369,7 +389,10 @@ def structure_validation_node(state: ProjectAgentState) -> dict:
 @log_node
 def zip_structure_validation_node(state: ProjectAgentState) -> dict:
     guide = state.get("submission_guide") or {}
-    deterministic = check_required_paths(guide.get("required_paths"), state.get("zip_file_tree"))
+    shots = screenshot_status(guide, state.get("screenshot_evidence"))
+    deterministic = check_required_paths(
+        guide.get("required_paths"), state.get("zip_file_tree"), screenshots_found=bool(shots["found_files"]),
+    )
 
     result = call_json(
         system=prompts.zip_structure_validation_prompt(state, deterministic),
@@ -637,7 +660,8 @@ def feedback_generator_node(state: ProjectAgentState) -> dict:
                 # Kept for the final project report (app/reports/final_report.py).
                 "syntax_report": {key: (state.get("syntax_report") or {}).get(key)
                                   for key in ("checked_files", "checked_languages", "error_count")},
-                "screenshot_evidence": {"valid_files": (state.get("screenshot_evidence") or {}).get("valid_files") or []},
+                "screenshot_evidence": {"valid_files": screenshot_status(
+                    state.get("submission_guide") or {}, state.get("screenshot_evidence"))["found_files"]},
                 "submitted_files": list(state.get("zip_file_tree") or [])[:300],
             }
             submission.feedback_text = feedback_text

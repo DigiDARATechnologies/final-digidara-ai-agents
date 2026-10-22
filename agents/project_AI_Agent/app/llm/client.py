@@ -134,14 +134,19 @@ def _record_usage(usage: Any, caller: str, model: str) -> None:
 
 def _complete(
     system: str, user: str, json_mode: bool, caller: str, call_id: int, temperature: float,
-    web_search: bool = False, image_data_url: str | None = None,
+    web_search: bool = False, image_data_url: str | list[str] | None = None,
 ) -> str:
     # A vision-capable model (the default gpt-4o-mini included) accepts the
     # user message as a content-parts list instead of a plain string --
     # only build it that way when an image is actually attached, so every
-    # existing text-only call site is unaffected.
+    # existing text-only call site is unaffected. A list sends several images
+    # in one call, each at low detail to keep the cost per image small.
     user_content: Any = user
-    if image_data_url:
+    if isinstance(image_data_url, list) and image_data_url:
+        user_content = [{"type": "text", "text": user}] + [
+            {"type": "image_url", "image_url": {"url": url, "detail": "low"}} for url in image_data_url
+        ]
+    elif isinstance(image_data_url, str) and image_data_url:
         user_content = [
             {"type": "text", "text": user},
             {"type": "image_url", "image_url": {"url": image_data_url}},
@@ -208,7 +213,7 @@ def _complete(
 
 def call_json(
     system: str, user: str, retries: int = 1, temperature: float = 0.2, web_search: bool = False,
-    image_data_url: str | None = None,
+    image_data_url: str | list[str] | None = None,
 ) -> dict[str, Any]:
     """Call the configured LLM and return parsed JSON. Retries once with a
     stricter reminder if the first response isn't valid JSON.
@@ -250,7 +255,7 @@ def call_json(
 
 
 def call_text(
-    system: str, user: str, temperature: float = 0.2, web_search: bool = False, image_data_url: str | None = None,
+    system: str, user: str, temperature: float = 0.2, web_search: bool = False, image_data_url: str | list[str] | None = None,
 ) -> str:
     """Call the configured LLM and return plain text (for the final,
     human-readable feedback message — not routed on, so no JSON needed)."""

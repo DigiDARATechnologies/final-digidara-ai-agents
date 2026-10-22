@@ -18,11 +18,27 @@ def test_check_required_paths_all_present():
 
 
 def test_check_required_paths_detects_missing_folder():
-    tree = ["TaskTracker/main.py"]  # no src/ or output_screenshots/ at all
+    tree = ["TaskTracker/README.md"]  # no code, no screenshots at all
     result = check_required_paths(REQUIRED_PATHS, tree)
     assert result["is_complete"] is False
     missing_paths = {item["path"] for item in result["missing_items"]}
     assert missing_paths == {"TaskTracker/src", "TaskTracker/output_screenshots"}
+
+
+def test_folders_count_by_what_is_inside_them_not_their_names():
+    required = REQUIRED_PATHS + [
+        {"path": "TaskTracker/tests", "type": "dir"},
+        {"path": "TaskTracker/static", "type": "dir"},
+    ]
+    # Code at the root, tests next to it, screenshots in "Output Screenshots", "Static" capitalised.
+    tree = ["Proj/App.jsx", "Proj/test_add_expense.py", "Proj/Output Screenshots/1.png", "Proj/Static/site.css"]
+    assert check_required_paths(required, tree)["is_complete"] is True
+    # Screenshots found by ingest anywhere in the zip also satisfy the screenshots folder.
+    result = check_required_paths(required, ["Proj/main.py", "Proj/spec/a.py", "Proj/static/x.css"], screenshots_found=True)
+    assert result["is_complete"] is True
+    # No test file and no tests folder: still missing.
+    missing = check_required_paths(required, ["Proj/main.py", "Proj/static/x.css"], screenshots_found=True)["missing_items"]
+    assert [item["path"] for item in missing] == ["TaskTracker/tests"]
 
 
 def test_check_required_paths_tolerates_different_root_folder_name():

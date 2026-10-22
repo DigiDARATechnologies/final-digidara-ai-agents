@@ -102,9 +102,11 @@ def explain_missing_screenshots(status: dict[str, Any]) -> str | None:
     must be visible in it -- never just "screenshots missing"."""
     if status["complete"]:
         return None
+    if status.get("ai_reviewed"):
+        return _explain_reviewed_screenshots(status)
     required, found = status["required"], status["found_files"]
     have = (
-        f"Your output_screenshots folder has {len(found)} readable image(s): {', '.join(found)}."
+        f"Your zip has {len(found)} readable screenshot image(s): {', '.join(found)}."
         if found else "Your zip has no readable screenshot images in an output_screenshots folder."
     )
     lines = [
@@ -119,6 +121,44 @@ def explain_missing_screenshots(status: dict[str, Any]) -> str | None:
         lines.append(f"  - {item['filename']}{module}: {item['description']}.{capture}")
     if status["unreadable_files"]:
         lines.append("These files are in the folder but could not be read as images: " + ", ".join(status["unreadable_files"]) + ".")
+    return "\n".join(lines)
+
+
+def _explain_reviewed_screenshots(status: dict[str, Any]) -> str:
+    """The AI looked at every image: say what each one shows, which required
+    screenshots they already prove, and exactly which are still missing."""
+    required, matched, unmatched = status["required"], status["matched"], status["unmatched"]
+    lines = [
+        f"**{len(unmatched)} of the {len(required)} required output screenshots are missing.** "
+        "Every image in your zip was checked by what it shows, not by its file name or folder."
+    ]
+    images = status.get("images") or []
+    if images:
+        lines.append("What your images show:")
+        proves = {}
+        for item in matched:
+            proves.setdefault(item["found_in"], []).append(item["filename"])
+        for image in images:
+            shows = image.get("shows") or "could not tell what it shows"
+            if image.get("is_app_screenshot"):
+                verdict = f" -> counts as {', '.join(proves[image['file']])}" if image["file"] in proves else \
+                    " -> a screenshot of your app, but it does not show any of the required screens"
+            else:
+                verdict = " -> not a screenshot of your running project, so it does not count"
+            lines.append(f"  - {image['file']}: {shows}{verdict}")
+    else:
+        lines.append("Your zip has no screenshot images.")
+    lines.append(
+        "Still missing - run your project, take these screenshots, save each one as an image file in your zip "
+        "(the output_screenshots folder is best, not in the .docx report), then zip again:"
+    )
+    for item in unmatched:
+        module = f" [{item['module']}]" if item.get("module") else ""
+        why = f" Why it is missing: {item['reason'].rstrip('.')}." if item.get("reason") else ""
+        capture = f" How to capture it: {item['how_to_capture']}" if item.get("how_to_capture") else ""
+        lines.append(f"  - {item['filename']}{module}: {item['description']}.{why}{capture}")
+    if status["unreadable_files"]:
+        lines.append("These image files could not be opened: " + ", ".join(status["unreadable_files"]) + ".")
     return "\n".join(lines)
 
 
