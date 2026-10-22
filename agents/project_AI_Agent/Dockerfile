@@ -25,7 +25,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# /app/uploads must exist in the image so the capstone_uploads volume
+# (docker-compose.yml) starts out owned by appuser, not root.
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/uploads \
     && chown -R appuser:appuser /app
 USER appuser
 

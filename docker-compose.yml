@@ -73,6 +73,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./agents/project_AI_Agent/.env
+    # Submitted .docx/.zip files must outlive a redeploy: the viva retry
+    # re-reads the zip later (UPLOAD_DIR=./uploads -> /app/uploads).
+    volumes:
+      - capstone_uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -230,4 +234,5 @@ services:
 volumes:
   mysql_data:
   job_uploads:
+  capstone_uploads:
   qdrant_data:
