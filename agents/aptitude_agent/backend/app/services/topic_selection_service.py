@@ -4,6 +4,7 @@ import random
 import uuid
 
 from flask import current_app
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from ..extensions import db
 from ..models.topic_history import LearnerLastTopics
@@ -77,17 +78,22 @@ def select_topics_for_attempt(
 
 
 def save_last_topics(learner_id, category, level, topics):
-    """Overwrite shared category history after test generation succeeds."""
-    row=_shared_history_row(learner_id,category,lock=True)
-    if not row:
-        row = LearnerLastTopics(
-            id=str(uuid.uuid4()), learner_id=learner_id,
-            category_id=category, level=SHARED_HISTORY_SCOPE,
-        )
-        db.session.add(row)
-    row.topics_used = list(topics)
-    row.updated_at = utcnow()
-    return row
+    """Overwrite shared category history after test generation succeeds.
+
+    One INSERT ... ON DUPLICATE KEY UPDATE. The old SELECT ... FOR UPDATE on a
+    row a new learner does not have yet took a gap lock, and two new learners
+    finishing a test together deadlocked on each other's INSERT (13 of 300 in
+    a staging load test, 2026-10-23).
+    """
+    table=LearnerLastTopics.__table__
+    statement=mysql_insert(table).values(
+        id=str(uuid.uuid4()),learner_id=learner_id,category_id=category,
+        level=SHARED_HISTORY_SCOPE,topics_used=list(topics),updated_at=utcnow(),
+    )
+    statement=statement.on_duplicate_key_update(
+        topics_used=statement.inserted.topics_used,updated_at=statement.inserted.updated_at,
+    )
+    db.session.execute(statement)
 
 
 def attempt_topic_schedule(test, count):

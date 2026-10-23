@@ -91,7 +91,9 @@ def test_a_slot_that_keeps_failing_still_fails_but_only_ever_asks_for_that_slot(
     )
     with pytest.raises(ValueError, match="question 2"):
         run(monkeypatch, provider, [SLOT] * 3, attempts=3)
-    assert provider.asked_for == [3, 1, 1]
+    # Three attempts, then two rescue attempts on another topic -- each still
+    # only for the one failing slot.
+    assert provider.asked_for == [3, 1, 1, 1, 1]
 
 
 def test_a_wrong_count_on_the_retry_is_retried_without_losing_accepted_questions(monkeypatch):
@@ -216,3 +218,19 @@ def test_offender_reasons_say_which_kind_of_repeat_each_one_is():
         [item(Q_MANAGER), item(Q_CHAIRS)], {0, 1}, [RECENT_CHAIRS], return_reasons=True)
     assert offenders == {1} and first == test_generation.RECENT_REPEAT_REASON and reasons == {1: first}
     assert test_generation._cross_check_offenders([item(Q_MANAGER)], {0}, [], return_reasons=True) == (set(), "", {})
+
+
+def malformed(question):
+    # Raw model shape with a missing distractor: rejected while unpacking the
+    # response, before validation (like "calculation does not derive correct option").
+    return {"question": question, "correct_option": "First", "distractors": ["Second"]}
+
+
+def test_a_malformed_item_fails_only_its_own_slot(monkeypatch):
+    provider = Provider(
+        [good(Q_MANAGER), malformed(Q_CODE), good(Q_CHAIRS)],
+        [good(Q_AGES)],
+    )
+    questions, _model, _usage = run(monkeypatch, provider, [SLOT] * 3)
+    assert provider.asked_for == [3, 1]
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_AGES, Q_CHAIRS]

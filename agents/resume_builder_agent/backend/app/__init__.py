@@ -177,6 +177,13 @@ def create_app(config_object: str | None = None) -> Flask:
     if not app.config.get("SQLALCHEMY_DATABASE_URI"):
         app.config["SQLALCHEMY_DATABASE_URI"] = build_database_uri()
     app.config.setdefault("SQLALCHEMY_TRACK_MODIFICATIONS", False)
+    if not app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite"):
+        # Per gunicorn worker, sized for its 32 request threads (see Dockerfile).
+        app.config.setdefault("SQLALCHEMY_ENGINE_OPTIONS", {
+            "pool_pre_ping": True, "pool_recycle": 280, "pool_timeout": 30,
+            "pool_size": int(os.getenv("DB_POOL_SIZE") or "32"),
+            "max_overflow": int(os.getenv("DB_MAX_OVERFLOW") or "16"),
+        })
     app.config.setdefault("MAX_CONTENT_LENGTH", 6 * 1024 * 1024)
     app.config.setdefault("MAX_FORM_MEMORY_SIZE", 6 * 1024 * 1024)
     app.config.setdefault("PERMANENT_SESSION_LIFETIME", 60 * 60 * 24 * 30)

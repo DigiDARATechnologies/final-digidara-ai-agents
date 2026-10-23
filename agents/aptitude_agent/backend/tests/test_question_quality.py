@@ -289,6 +289,45 @@ def test_batch_item_builds_answer_and_explanation_from_one_correct_option():
     assert validate_generated_item({**canonical,**SLOT},SLOT)["correct_answer"]==canonical["correct_answer"]
 
 
+ANALYTICAL_SLOT={"category":"Analytical Reasoning","topic":"Advanced Caselets","difficulty":"Medium"}
+
+
+def caselet(reason="",step_1="",step_2=""):
+    return {
+        "question":"A company has 200 employees and 60% of them are men. How many men work there?",
+        "correct_option":"120","distractors":["80","100","140"],
+        "reason":reason,"calculation_step_1":step_1,"calculation_step_2":step_2,
+        "question_code":None,"correct_option_code":None,"distractor_codes":[None,None,None],
+    }
+
+
+def test_numeric_caselet_uses_calculation_steps_when_reason_is_empty():
+    # Production 2026-10-23: the model put a caselet's working in the
+    # calculation fields, the explanation became only "Answer = 120." and
+    # whole tests failed after every retry.
+    canonical=test_generation._canonicalize_batch_item(caselet(step_1="60% of 200 = 120"),ANALYTICAL_SLOT)
+    assert canonical["explanation"]=="60% of 200 = 120. Answer = 120."
+    assert validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)["correct_answer"]==canonical["correct_answer"]
+
+
+def test_non_quantitative_answer_with_no_reasoning_is_still_rejected():
+    canonical=test_generation._canonicalize_batch_item(caselet(),ANALYTICAL_SLOT)
+    assert canonical["explanation"]==" Answer = 120."
+    with pytest.raises(ValueError,match="explanation must explain"):
+        validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)
+
+
+def test_restating_the_answer_as_an_equation_is_not_a_calculation():
+    canonical=test_generation._canonicalize_batch_item(caselet(reason="Men = 120"),ANALYTICAL_SLOT)
+    with pytest.raises(ValueError,match="explanation must explain"):
+        validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)
+
+
+def test_generation_prompt_asks_for_reason_on_numeric_analytical_items():
+    prompt=test_generation._batch_prompt([],[],[],"batch")
+    assert "including Analytical Reasoning caselets" in prompt
+
+
 @pytest.mark.parametrize("field",["question","explanation","A"])
 def test_rejects_internal_prompt_tokens_in_all_public_fields(field):
     generated=item()
@@ -367,3 +406,73 @@ def test_a_rejected_item_logs_its_actual_content_not_just_the_static_message(mon
     logged=" ".join(record.getMessage() for record in caplog.records if "Question validation failed" in record.getMessage())
     assert bad_explanation in logged
     assert "42" in logged and "Quantitative Aptitude" in logged
+
+
+QUANT_TOPICS=[item["name"] for item in test_generation.topic_definitions_for("Quantitative Aptitude")]
+
+
+def rescue_slots(count=4):
+    return [{**SLOT,"topic":QUANT_TOPICS[index]} for index in range(count)]
+
+
+def test_swapped_topics_stay_in_the_category_and_avoid_topics_already_in_the_test():
+    slots=rescue_slots()
+    swapped=test_generation._swap_topics([slots[1]],[slot["topic"] for slot in slots])
+    assert swapped[0]["category"]=="Quantitative Aptitude"
+    assert swapped[0]["topic"] in QUANT_TOPICS
+    assert swapped[0]["topic"] not in {slot["topic"] for slot in slots}
+    assert swapped[0]["difficulty"]==slots[1]["difficulty"]
+
+
+def test_one_slot_that_fails_every_attempt_is_rescued_on_another_topic(monkeypatch):
+    # Production: one stubborn question ("calculation does not derive correct
+    # option") failed the whole 30-question test after every retry.
+    slots=rescue_slots()
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    seen={}
+
+    def fake_generate(rescue,**kwargs):
+        seen.update(slots=rescue,**kwargs)
+        return [{"question":"rescued","topic":rescue[0]["topic"]}],"test-model",{"total_tokens":7}
+
+    monkeypatch.setattr(test_generation,"generate_questions",fake_generate)
+    app=Flask(__name__)
+    with app.app_context():
+        result=test_generation._rescue_failed_slots(
+            slots,accepted,ValueError("quantitative calculation does not derive correct option"),True,
+            avoid_questions=["old"],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        )
+    assert result==({"total_tokens":7},"test-model")
+    assert accepted[1]["question"]=="rescued"
+    assert seen["slots"][0]["topic"]!=slots[1]["topic"]
+    assert seen["_rescue"] is False  # never recurses twice
+    assert set(seen["avoid_questions"])=={"old","q0","q2","q3"}
+
+
+@pytest.mark.parametrize("accepted,enabled",[
+    ({0:{"question":"q0"},3:{"question":"q3"}},True),   # half the test failed: a real problem, not one topic
+    ({},True),                                          # nothing valid at all
+    ({0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}},False),  # already a rescue
+])
+def test_rescue_is_only_for_a_few_slots_once(monkeypatch,accepted,enabled):
+    monkeypatch.setattr(test_generation,"generate_questions",lambda *a,**k: pytest.fail("must not generate"))
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            rescue_slots(),dict(accepted),ValueError("x"),enabled,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is None
+
+
+def test_a_failed_rescue_leaves_the_original_failure(monkeypatch):
+    def failing(*_args,**_kwargs):
+        raise ValueError("still invalid")
+    monkeypatch.setattr(test_generation,"generate_questions",failing)
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            rescue_slots(),accepted,ValueError("x"),True,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is None
+    assert 1 not in accepted

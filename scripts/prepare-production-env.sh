@@ -164,8 +164,20 @@ harden_judge0_conf() {
     fi
     changed=true
   done
+  # Judge0's default queue holds 100 submissions; past that it refuses runs
+  # with "queue is full". Keep up to 1000 waiting (16 run at once) so a whole
+  # class pressing Run together waits a moment instead of seeing an error.
+  if grep -qE '^MAX_QUEUE_SIZE=[0-9]+$' "$conf"; then
+    :
+  elif grep -q '^MAX_QUEUE_SIZE=' "$conf"; then
+    sed -i 's/^MAX_QUEUE_SIZE=.*/MAX_QUEUE_SIZE=1000/' "$conf"
+    changed=true
+  else
+    printf '\nMAX_QUEUE_SIZE=1000\n' >> "$conf"
+    changed=true
+  fi
   if [ "$changed" = true ]; then
-    echo "updated agents/codeforge_agent/judge0/judge0.conf (sandbox network off)"
+    echo "updated agents/codeforge_agent/judge0/judge0.conf (sandbox network off, queue 1000)"
     if command -v docker >/dev/null 2>&1; then
       (cd "$PROJECT_ROOT" && docker compose restart server worker >/dev/null 2>&1) || true
     fi

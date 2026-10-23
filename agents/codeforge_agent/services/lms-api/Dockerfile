@@ -32,4 +32,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # (schema_migrations tracking; INSERT ... ON DUPLICATE KEY UPDATE), so it's
 # safe to run them on every boot, same pattern as aptitude_agent's
 # "flask db upgrade".
-CMD ["sh", "-c", "python scripts/migrate.py up && python scripts/seed.py && exec gunicorn -w 4 -b 0.0.0.0:4000 'lms_api:create_app()'"]
+CMD ["sh", "-c", "python scripts/migrate.py up && python scripts/seed.py && exec gunicorn -w 4 -k gthread --threads 32 --timeout 120 -b 0.0.0.0:4000 'lms_api:create_app()'"]

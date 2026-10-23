@@ -208,6 +208,17 @@ async def invoke_json(agent_name: str, action: str, payload: dict, user, caller:
     return await _forward(agent, agent_name, body, envelope, user, "application/json", "application/json")
 
 
+def _signature_rejected(upstream: httpx.Response) -> bool:
+    """The agent refused the gateway's signature (it never ran the request)."""
+    if upstream.status_code != 401:
+        return False
+    try:
+        data = upstream.json()
+    except ValueError:
+        return False
+    return isinstance(data, dict) and data.get("code") == "invalid_service_signature"
+
+
 async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None) -> Response:
     user_id = user.id if user is not None else None
     action_name = envelope.get("action") if isinstance(envelope, dict) else None
@@ -268,13 +279,22 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
     )
     # Sign last, over the final body and the exact identity headers set above,
     # so agents can trust x-digidara-user-id / x-digidara-is-admin.
-    headers.update(sign_headers(
-        agent.agent_name, "POST", agent.endpoint, body,
-        headers.get("x-digidara-user-id"), headers.get("x-digidara-is-admin"),
-    ))
+    def signed() -> dict[str, str]:
+        return {**headers, **sign_headers(
+            agent.agent_name, "POST", agent.endpoint, body,
+            headers.get("x-digidara-user-id"), headers.get("x-digidara-is-admin"),
+        )}
+
     try:
         async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-            upstream = await client.post(agent.endpoint, content=body, headers=headers)
+            upstream = await client.post(agent.endpoint, content=body, headers=signed())
+            if _signature_rejected(upstream):
+                # A signature is valid for 60 s from signing. When an agent is
+                # saturated, a request can wait in its queue longer than that
+                # and is refused before it runs -- so it is safe to send again
+                # with a fresh signature (and a fresh nonce) once.
+                logger.warning("gateway signature refused by %s (agent busy?); re-signing once: action=%s", agent_name, action_name)
+                upstream = await client.post(agent.endpoint, content=body, headers=signed())
     except httpx.TimeoutException as exc:
         logger.exception("gateway call timed out: agent=%s action=%s endpoint=%s timeout_seconds=%s", agent_name, action_name, agent.endpoint, timeout_seconds)
         raise HTTPException(504, f"Agent {agent_name!r} did not complete {action_name!r} before the gateway timeout.") from exc
@@ -282,7 +302,12 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         logger.exception("gateway call failed: agent=%s endpoint=%s", agent_name, agent.endpoint)
         raise HTTPException(502, f"Registered agent {agent_name!r} could not be reached.") from exc
 
-    if is_billable:
+    if upstream.status_code >= 400:
+        # The learner got an error, not an answer: never charge for it (the
+        # flat fallback below used to bill every failed call too).
+        if user_id and not is_free_action:
+            logger.info("gateway: not charging failed call agent=%s action=%s status=%s", agent_name, action_name, upstream.status_code)
+    elif is_billable:
         real_tokens = None
         header_value = upstream.headers.get("x-tokens-used")
         if header_value is not None:

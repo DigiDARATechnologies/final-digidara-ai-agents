@@ -5,9 +5,11 @@ Small helper around mysql-connector so app.py stays clean.
 
 import os
 import json
+import time
 from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import pooling
+from mysql.connector.errors import PoolError
 
 load_dotenv()
 
@@ -18,18 +20,24 @@ dbconfig = {
     "database": os.environ.get("DB_NAME", "mock_interview_db"),
 }
 
-MAX_POOL_SIZE = 4
+# Per gunicorn worker. MySQL now allows 2000 connections (docker-compose.yml),
+# so each of the 4 workers may keep up to 16 open for its 32 request threads.
+DEFAULT_POOL_SIZE = 8
+MAX_POOL_SIZE = 16
+# A full pool makes a request wait this long for a free connection instead of
+# failing at once with "pool exhausted".
+POOL_WAIT_SECONDS = float(os.environ.get("DB_POOL_WAIT_SECONDS", "15"))
 
 
 def pool_size_from_env(value):
     """mysql-connector opens every pooled connection eagerly, per gunicorn
     worker, on a MySQL server shared with the other agents. The old default of
-    10 x 4 workers hit "1040 Too many connections" on deploy, so cap it even
-    if an older .env still says DB_POOL_SIZE=10."""
+    10 x 4 workers hit "1040 Too many connections" on deploy when MySQL
+    allowed only 151, so keep a hard cap even if an .env asks for more."""
     try:
-        requested = int(value) if value else MAX_POOL_SIZE
+        requested = int(value) if value else DEFAULT_POOL_SIZE
     except ValueError:
-        requested = MAX_POOL_SIZE
+        requested = DEFAULT_POOL_SIZE
     return max(1, min(requested, MAX_POOL_SIZE))
 
 
@@ -42,7 +50,15 @@ pool = pooling.MySQLConnectionPool(
 
 
 def get_conn():
-    return pool.get_connection()
+    """A pooled connection; waits up to POOL_WAIT_SECONDS when all are busy."""
+    deadline = time.monotonic() + POOL_WAIT_SECONDS
+    while True:
+        try:
+            return pool.get_connection()
+        except PoolError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def query(sql, params=None, fetch=False, fetchone=False):

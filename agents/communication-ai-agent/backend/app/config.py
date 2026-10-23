@@ -27,7 +27,12 @@ class Config:
         "DATABASE_URL", "mysql+pymysql://root:password@localhost:3306/communication_module"
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
+    # Per gunicorn worker, sized for its 32 request threads (see Dockerfile).
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True, "pool_recycle": 280, "pool_timeout": 30,
+        "pool_size": int(os.getenv("DB_POOL_SIZE") or "32"),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW") or "16"),
+    }
     PROFILE_UPLOAD_FOLDER = os.getenv("PROFILE_UPLOAD_FOLDER", str(BASE_DIR / "uploads"))
 
     AI_PROVIDER = os.getenv("AI_PROVIDER", "auto").strip().lower()

@@ -24,4 +24,6 @@ EXPOSE 5001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,json; req=urllib.request.Request('http://127.0.0.1:5001/api/invoke', data=json.dumps({'action':'health'}).encode(), headers={'Content-Type':'application/json'}); urllib.request.urlopen(req, timeout=3).read()" || exit 1
 
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "run:app"]
+# Threads, not more processes: a request mostly waits on OpenAI or MySQL, so
+# one worker serves 32 learners at once (gthread) and the server stays idle.
+CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "32", "--timeout", "120", "-b", "0.0.0.0:5001", "run:app"]

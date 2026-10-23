@@ -173,11 +173,28 @@ class ExecutableStatementsTests(unittest.TestCase):
 
 class PoolSizeTests(unittest.TestCase):
     def test_pool_size_is_capped_for_the_shared_mysql_server(self):
-        self.assertEqual(db.pool_size_from_env("10"), 4)  # a stale .env value
+        self.assertEqual(db.pool_size_from_env("10"), 10)
+        self.assertEqual(db.pool_size_from_env("50"), 16)  # hard cap
         self.assertEqual(db.pool_size_from_env("2"), 2)
-        self.assertEqual(db.pool_size_from_env(None), 4)
-        self.assertEqual(db.pool_size_from_env("abc"), 4)
+        self.assertEqual(db.pool_size_from_env(None), 8)
+        self.assertEqual(db.pool_size_from_env("abc"), 8)
         self.assertEqual(db.pool_size_from_env("0"), 1)
+
+    def test_a_full_pool_waits_for_a_free_connection(self):
+        from unittest import mock
+        connection = object()
+        fake_pool = mock.Mock()
+        fake_pool.get_connection.side_effect = [db.PoolError("pool exhausted"), db.PoolError("pool exhausted"), connection]
+        with mock.patch.object(db, "pool", fake_pool), mock.patch.object(db.time, "sleep"):
+            self.assertIs(db.get_conn(), connection)
+
+    def test_a_pool_that_stays_full_still_fails_after_the_wait(self):
+        from unittest import mock
+        fake_pool = mock.Mock()
+        fake_pool.get_connection.side_effect = db.PoolError("pool exhausted")
+        with mock.patch.object(db, "pool", fake_pool), mock.patch.object(db.time, "sleep"),                 mock.patch.object(db, "POOL_WAIT_SECONDS", 0):
+            with self.assertRaises(db.PoolError):
+                db.get_conn()
 
 
 if __name__ == "__main__":

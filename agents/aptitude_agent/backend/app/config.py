@@ -17,8 +17,10 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True, "pool_recycle": 280,
-        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        # Per gunicorn worker, sized for its 32 request threads: a test being
+        # generated keeps its connection while it waits for OpenAI.
+        "pool_size": int(os.getenv("DB_POOL_SIZE") or "32"),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW") or "16"),
         "pool_timeout": 30,
     }
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
@@ -35,7 +37,13 @@ class Config:
     ALLOW_DEMO_QUESTIONS = flag("ALLOW_DEMO_QUESTIONS", True)
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    OPENAI_FALLBACK_MODELS = tuple(model.strip() for model in os.getenv("OPENAI_FALLBACK_MODELS", "").split(",") if model.strip())
+    # OpenAI rate limits are per model, so a fallback model is also extra
+    # capacity when hundreds of learners start a test at once. It is used only
+    # while the primary model is rate-limited or failing. "none" disables it.
+    OPENAI_FALLBACK_MODELS = tuple(
+        model.strip() for model in (os.getenv("OPENAI_FALLBACK_MODELS") or "gpt-4.1-mini").split(",")
+        if model.strip() and model.strip().lower() != "none"
+    )
     # Learner-facing OpenAI calls are strictly bounded.
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12"))
     OPENAI_BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("OPENAI_BACKGROUND_TIMEOUT_SECONDS", "20"))

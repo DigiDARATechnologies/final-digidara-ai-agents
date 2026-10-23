@@ -60,7 +60,8 @@ def test_persistent_batch_collision_stops_after_three_attempts(monkeypatch):
     app=Flask(__name__);app.config.update(OPENAI_API_KEY="test",OPENAI_MODEL="test-model",ALLOW_DEMO_QUESTIONS=False)
     with app.app_context(),pytest.raises(ValueError,match="after 3 attempts"):
         test_generation.generate_questions([SLOT,SLOT])
-    assert len(calls)==3
+    # Three attempts, then the one-slot rescue on another topic (two attempts).
+    assert len(calls)==5
 
 
 def test_numeric_pattern_preserves_multiplicity_and_percent_type():

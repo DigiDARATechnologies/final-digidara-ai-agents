@@ -16,17 +16,21 @@ from app.auth.schemas import (
 )
 from app.auth.security import create_access_token, get_current_user_id, hash_password, verify_password
 from app.models import User
-from app.rate_limit import limiter
+from app.rate_limit import allow_account_attempt, limiter
 from app import agent_data, job_data
 
 logger = logging.getLogger("orchestrator.auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Neither route carries a bearer token yet, so `limiter`'s key function
-# falls back to per-IP — exactly what a credential-stuffing / signup-spam
-# guard on these two routes needs.
+# Sign-in and sign-up carry no bearer token yet, so `limiter` counts them per
+# IP. A college's students all share one address, so that count is loose; the
+# real credential-stuffing / spam guard is the per-account limit below.
+_LOGIN_IP_RATE_LIMIT = "120/minute"
+_LOGIN_ACCOUNT_RATE_LIMIT = "5/minute"
+_GOOGLE_RATE_LIMIT = "120/minute"
+# Signed-in password changes are counted per user (bearer token).
 _LOGIN_RATE_LIMIT = "5/minute"
-_GOOGLE_RATE_LIMIT = "10/minute"
+_TOO_MANY_ATTEMPTS = "Too many attempts for this account. Please wait a minute and try again."
 # Per account. Each send is an email; each verify is a guess at a 6-digit code
 # (which also locks after 5 wrong tries).
 _SEND_CODE_RATE_LIMIT = "5/hour"
@@ -48,9 +52,11 @@ def _to_out(user: User) -> UserOut:
 
 
 @router.post("/signup", response_model=TokenResponse, status_code=201)
-@limiter.limit(_LOGIN_RATE_LIMIT)
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
 def signup(req: SignupRequest, request: Request) -> TokenResponse:
     email = req.email.strip().lower()
+    if not allow_account_attempt("signup", email, _LOGIN_ACCOUNT_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
     if service.get_by_email(email):
         raise HTTPException(status.HTTP_409_CONFLICT, "An account with this email already exists.")
     user = service.create_user(req.name.strip(), email, req.mobile, hash_password(req.password), CONSENT_POLICY_VERSION)
@@ -89,8 +95,10 @@ def verify_email_code(req: VerifyEmailRequest, request: Request, user_id: str = 
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit(_LOGIN_RATE_LIMIT)
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
 def login(req: LoginRequest, request: Request) -> TokenResponse:
+    if not allow_account_attempt("login", req.email, _LOGIN_ACCOUNT_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
     user = service.get_by_email(req.email.strip().lower())
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password.")
@@ -103,7 +111,8 @@ def login(req: LoginRequest, request: Request) -> TokenResponse:
 @router.post("/google", response_model=TokenResponse)
 # Each call makes two outbound requests to Google with our client secret;
 # unthrottled, it lets anyone burn that quota or hammer the code exchange.
-# A little looser than password login: a failed Google redirect is retried.
+# Per IP, and a college shares one address; every code is single-use and
+# checked by Google, so there is no password to guess here.
 @limiter.limit(_GOOGLE_RATE_LIMIT)
 def google_auth(req: GoogleAuthRequest, request: Request) -> TokenResponse:
     profile = google_oauth.exchange_code(req.code, req.redirect_uri)

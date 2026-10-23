@@ -206,6 +206,12 @@ def _canonicalize_batch_item(item,slot):
         explanation=f"Step 1: {step_1}\nStep 2: {step_2}\nStep 3: Answer = {correct}."
     else:
         reason=clean_text(item.get("reason"),220)
+        if not reason:
+            # For a numeric Analytical Reasoning caselet or chart the model
+            # often writes its working in the calculation fields and leaves
+            # reason empty; that working is the explanation.
+            steps=[clean_text(item.get(key),140) for key in ("calculation_step_1","calculation_step_2")]
+            reason=" ".join(f"{step.rstrip('.')}." for step in steps if step)
         explanation=f"{reason} Answer = {correct.rstrip('.')}."
     return {**item,"question":question,"options":options,"correct_answer":answer,"explanation":explanation,"option_code":option_code}
 
@@ -329,7 +335,7 @@ def _batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id):
     return f"""Generate exactly {count} original four-option aptitude MCQs: one for each of the {count} ordered slots below.
 The questions array MUST contain exactly {count} objects in slot order. Do not stop early, skip a slot, add a slot, or return partial output.
 Copy each slot's category, topic, and difficulty exactly. Omit all seed fields. Keep question text under 280 characters, every option under 140 characters, and every explanation under 300 characters. Use concise options and compact JSON.
-For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Use reason only for non-quantitative items; use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
+For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Fill reason for every item whose category is not Quantitative Aptitude -- including Analytical Reasoning caselets, charts and data questions whose answer is a number: there, reason says in words which figures are combined and how. Use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
 
 Difficulty (each question must genuinely match its slot's difficulty, and its rigor when present):
 - Easy: one step on a single familiar concept, with numbers that work out mentally; a fresher solves it in under a minute.
@@ -402,7 +408,58 @@ def _cross_check_offenders(validated,fresh,forbidden_questions,*,return_reasons=
     return (offenders,first,reasons) if return_reasons else (offenders,first)
 
 
-def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
+def _swap_topics(failed_slots,used_topics,rng=None):
+    """The same slots on a different topic of the same category, where one exists."""
+    rng=rng or random.SystemRandom()
+    used={str(topic).casefold() for topic in used_topics}
+    swapped=[]
+    for slot in failed_slots:
+        candidates=[
+            item["name"] for item in topic_definitions_for(slot["category"])
+            if item["name"].casefold() not in used
+        ]
+        topic=rng.choice(candidates) if candidates else slot["topic"]
+        used.add(topic.casefold())
+        swapped.append({**slot,"topic":topic})
+    return swapped
+
+
+def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avoid_number_patterns,deadline,background,request_timeout):
+    """Fill the few slots that failed every attempt with a question on another topic.
+
+    The model sometimes cannot write a valid question for one particular topic
+    (e.g. a calculation that never derives its own answer). That one slot used
+    to fail the whole test. When most of the batch is already valid, ask once
+    more for just those slots on different topics of the same category.
+    Updates `accepted` in place; returns (usage, model) or None when not rescued.
+    """
+    count=len(slots)
+    pending=[index for index in range(count) if index not in accepted]
+    if not enabled or not accepted or not pending or len(pending)>max(1,count//4):
+        return None
+    if deadline is not None and time.monotonic()>=deadline:
+        return None
+    swapped=_swap_topics([slots[index] for index in pending],[slot["topic"] for slot in slots])
+    current_app.logger.warning(
+        "Batch generation rescuing %s slot(s) on a different topic (%s) after: %s",
+        len(pending),[slot["topic"] for slot in swapped],str(last_error)[:200],
+    )
+    keep=list(avoid_questions or [])+[accepted[index]["question"] for index in sorted(accepted)]
+    try:
+        questions,model,usage=generate_questions(
+            swapped,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
+            allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
+            background=background,request_timeout=request_timeout,_rescue=False,
+        )
+    except (ValueError,TimeoutError) as exc:
+        current_app.logger.warning("Batch generation rescue failed: %s",str(exc)[:200])
+        return None
+    for index,question in zip(pending,questions):
+        accepted[index]=question
+    return usage,model
+
+
+def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True):
     total_started=time.perf_counter()
     if not current_app.config.get("OPENAI_API_KEY"):
         if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
@@ -473,8 +530,17 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 usage.get("finish_reason"),usage.get("response_truncated",False),
             )
             candidate_questions=_candidate_question_texts(items)
-            if len(items)==len(attempt_slots):
-                canonical_items=[_canonicalize_batch_item(item,slot) for item,slot in zip(items,attempt_slots)]
+            # One malformed item (e.g. its calculation does not derive its own
+            # answer) fails only its own slot. It used to raise here and throw
+            # away every valid question in the response.
+            canonical_items,canonical_errors=[],{}
+            for position,(item,slot) in enumerate(zip(items,attempt_slots)):
+                try:
+                    canonical_items.append(_canonicalize_batch_item(item,slot))
+                except ValueError as exc:
+                    canonical_items.append(item if isinstance(item,dict) else {})
+                    canonical_errors[position]=exc
+            if len(items)==len(attempt_slots) and not canonical_errors:
                 minimal=[_minimal_safe_item(item,slot,(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id)) for item,slot,prompt_slot in zip(canonical_items,attempt_slots,attempt_prompt_slots)]
                 if all(minimal) and not any(questions_are_near_duplicates(item["question"],seen) for item in minimal for seen in forbidden_questions):
                     # Keep the singleton fallback used by callers outside the
@@ -487,6 +553,8 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
             for position,(item,slot,prompt_slot) in enumerate(zip(canonical_items,attempt_slots,attempt_prompt_slots)):
                 slot_index=pending[position]
                 try:
+                    if position in canonical_errors:
+                        raise canonical_errors[position]
                     new_items[slot_index]=validate_generated_item(
                     # category/topic/difficulty (and technical_language) are
                     # already known server-side from `slot` — the model is
@@ -608,6 +676,16 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
                 return [last_minimal],last_model or current_app.config["OPENAI_MODEL"],accumulated_usage
+    rescued=_rescue_failed_slots(
+        slots,accepted,last_error,_rescue,
+        avoid_questions=avoid_questions,avoid_number_patterns=avoid_number_patterns,
+        deadline=deadline,background=background,request_timeout=request_timeout,
+    )
+    if rescued is not None:
+        rescue_usage,model=rescued
+        accumulated_usage=merge_usage(accumulated_usage,rescue_usage)
+        accumulated_usage["validation_attempt_count"]=max_validation_attempts
+        return [accepted[index] for index in range(count)],model,accumulated_usage
     if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]:
         current_app.logger.error(
             "OpenAI question validation exhausted; using the local development fixture: %s",

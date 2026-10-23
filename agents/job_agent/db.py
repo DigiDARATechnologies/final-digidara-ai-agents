@@ -1,25 +1,33 @@
 import logging
 import os
+import threading
+import time
 
 import mysql.connector
 from mysql.connector import pooling
+from mysql.connector.errors import PoolError
 
 
 logger = logging.getLogger(__name__)
 
 _pool = None
+_pool_lock = threading.Lock()
+# A full pool makes a request wait this long for a free connection instead of
+# failing at once with "pool exhausted" (gunicorn runs 32 threads per worker).
+POOL_WAIT_SECONDS = float(os.getenv("DB_POOL_WAIT_SECONDS", "15"))
 _SCHEMA_LOCK_NAME = "digidara_job_agent_schema_init"
 _SCHEMA_LOCK_TIMEOUT_SECONDS = 120
 
 
-DEFAULT_POOL_SIZE = 4
-MAX_POOL_SIZE = max(DEFAULT_POOL_SIZE, int(os.getenv("MAX_DB_POOL_SIZE", "10")))
+DEFAULT_POOL_SIZE = 8
+# mysql-connector itself refuses pools larger than 32.
+MAX_POOL_SIZE = min(32, max(DEFAULT_POOL_SIZE, int(os.getenv("MAX_DB_POOL_SIZE", "16"))))
 
 
 def _pool_size():
     # mysql-connector opens every pooled connection eagerly, per gunicorn
     # worker plus the worker container. Allow tuning up to MAX_POOL_SIZE while
-    # defaulting to 4 to prevent connection exhaustion on shared dev instances.
+    # defaulting to 8 to prevent connection exhaustion on shared dev instances.
     try:
         requested = int(os.getenv("DB_POOL_SIZE", str(DEFAULT_POOL_SIZE)))
     except ValueError:
@@ -43,8 +51,17 @@ def get_db():
     """Return a pooled connection. Own database — never the shared platform DB."""
     global _pool
     if _pool is None:
-        _pool = mysql.connector.pooling.MySQLConnectionPool(**_pool_config())
-    return _pool.get_connection()
+        with _pool_lock:
+            if _pool is None:
+                _pool = mysql.connector.pooling.MySQLConnectionPool(**_pool_config())
+    deadline = time.monotonic() + POOL_WAIT_SECONDS
+    while True:
+        try:
+            return _pool.get_connection()
+        except PoolError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def _add_column(cursor, statement):

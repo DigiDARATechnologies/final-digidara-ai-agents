@@ -93,7 +93,8 @@ def upstream(client, database, monkeypatch):
     with database() as session:
         session.add(User(id="learner", name="Learner", email="learner@example.test", token_balance=1000))
         session.commit()
-    remote = SimpleNamespace(calls=[], timeouts=[], response=httpx.Response(200, json={"ok": True}), error=None)
+    # `responses`, when set, is answered in order before falling back to `response`.
+    remote = SimpleNamespace(calls=[], timeouts=[], response=httpx.Response(200, json={"ok": True}), responses=[], error=None)
     class FakeClient:
         def __init__(self, **kwargs): remote.timeouts.append(kwargs.get("timeout"))
         async def __aenter__(self): return self
@@ -101,7 +102,7 @@ def upstream(client, database, monkeypatch):
         async def post(self, url, **kwargs):
             remote.calls.append((url, kwargs))
             if remote.error: raise remote.error
-            return remote.response
+            return remote.responses.pop(0) if remote.responses else remote.response
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
     return remote
@@ -202,6 +203,15 @@ def test_billing_and_binary_response_forwarding(client, upstream, database, repo
         # Each charge is recorded for the monthly usage in Settings.
         events = session.query(TokenUsageEvent).filter_by(user_id="learner").all()
         assert [(e.agent_name, e.tokens) for e in events] == [("test-agent", cost)]
+
+
+@pytest.mark.parametrize("status", [400, 401, 404, 429, 500, 503])
+def test_a_failed_agent_call_costs_the_learner_nothing(client, upstream, database, status):
+    upstream.response = httpx.Response(status, json={"error": "failed", "code": "generation_failed"}, headers={"x-tokens-used": "40"})
+    assert invoke(client, "generate").status_code == status
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+        assert session.query(TokenUsageEvent).filter_by(user_id="learner").count() == 0
 
 
 def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
