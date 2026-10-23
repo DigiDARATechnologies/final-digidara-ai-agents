@@ -1,6 +1,10 @@
 import json
+import os
+import threading
+import time
 import mysql.connector
 from mysql.connector import pooling
+from mysql.connector.errors import PoolError
 import logging
 from typing import Optional, List, Dict
 
@@ -10,24 +14,45 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 _pool = None
+_pool_lock = threading.Lock()
+# Per gunicorn worker; FastAPI runs each request on one of 40 threads, so all
+# connections can be busy at once. mysql-connector caps a pool at 32.
+POOL_SIZE = max(1, min(32, int(os.getenv("DB_POOL_SIZE") or "16")))
+# A full pool makes a request wait this long for a free connection instead of
+# failing at once with "pool exhausted".
+POOL_WAIT_SECONDS = float(os.getenv("DB_POOL_WAIT_SECONDS") or "15")
 
 
 def get_pool():
     global _pool
     if _pool is None:
-        _pool = mysql.connector.pooling.MySQLConnectionPool(
-            pool_name="cert_pool",
-            pool_size=10,
-            host=settings.DB_HOST,
-            user=settings.DB_USER,
-            password=settings.DB_PASSWORD,
-            database=settings.DB_NAME,
-        )
+        with _pool_lock:
+            if _pool is None:
+                _pool = _new_pool()
     return _pool
 
 
+def _new_pool():
+    return mysql.connector.pooling.MySQLConnectionPool(
+        pool_name="cert_pool",
+        pool_size=POOL_SIZE,
+        host=settings.DB_HOST,
+        user=settings.DB_USER,
+        password=settings.DB_PASSWORD,
+        database=settings.DB_NAME,
+    )
+
+
 def get_connection():
-    return get_pool().get_connection()
+    pool = get_pool()
+    deadline = time.monotonic() + POOL_WAIT_SECONDS
+    while True:
+        try:
+            return pool.get_connection()
+        except PoolError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def init_db():

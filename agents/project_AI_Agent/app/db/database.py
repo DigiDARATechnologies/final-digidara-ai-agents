@@ -5,7 +5,9 @@ from app import config
 
 # pool_pre_ping guards against MySQL's default 8-hour idle-connection
 # timeout killing a connection the pool still thinks is good.
-engine = create_engine(config.DATABASE_URL, pool_pre_ping=True, pool_recycle=280)
+# Per worker, sized for FastAPI's 40 request threads (see app/api/routes.py).
+_POOL = {} if config.DATABASE_URL.startswith("sqlite") else {"pool_size": 20, "max_overflow": 20, "pool_timeout": 30}
+engine = create_engine(config.DATABASE_URL, pool_pre_ping=True, pool_recycle=280, **_POOL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
