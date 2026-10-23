@@ -37,7 +37,13 @@ class Config:
     ALLOW_DEMO_QUESTIONS = flag("ALLOW_DEMO_QUESTIONS", True)
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    OPENAI_FALLBACK_MODELS = tuple(model.strip() for model in os.getenv("OPENAI_FALLBACK_MODELS", "").split(",") if model.strip())
+    # OpenAI rate limits are per model, so a fallback model is also extra
+    # capacity when hundreds of learners start a test at once. It is used only
+    # while the primary model is rate-limited or failing. "none" disables it.
+    OPENAI_FALLBACK_MODELS = tuple(
+        model.strip() for model in (os.getenv("OPENAI_FALLBACK_MODELS") or "gpt-4.1-mini").split(",")
+        if model.strip() and model.strip().lower() != "none"
+    )
     # Learner-facing OpenAI calls are strictly bounded.
     OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "12"))
     OPENAI_BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("OPENAI_BACKGROUND_TIMEOUT_SECONDS", "20"))

@@ -29,6 +29,7 @@ from ..topic_config import topic_is_starred
 from ..utils.authentication import require_student
 from ..utils.explanation import normalize_explanation
 from ..utils.errors import APIError
+from ..utils.database_errors import retry_on_deadlock
 from .common import calculate_test_duration, elapsed_seconds, ensure_overall_timer, overall_remaining_seconds, owned_test, public_question, test_summary, utcnow
 
 bp=Blueprint("assessment",__name__,url_prefix="/api/aptitude")
@@ -161,29 +162,34 @@ def create_test():
             difficulty=LEARNER_LEVEL_DIFFICULTY.get(learner_level or ""),rigor=rigor,
         )
         if not slots:raise APIError("Select at least one question",400,"empty_mixed_test")
-    abandon_stale_tests(g.student.id)
-    db.session.query(Student).filter_by(id=g.student.id).with_for_update().one()
-    active_tests=AptitudeTest.query.filter(AptitudeTest.student_id==g.student.id,AptitudeTest.status.in_(["generating","ready","in_progress"])).with_for_update().all()
-    for active in active_tests:
-        abandon_attempt(active,"superseded_by_new_test")
-    hint_budget=2 if mode=="category_practice" else current_app.config["HINTS_PER_TEST"]
-    test=AptitudeTest(id=test_id,student_id=g.student.id,status="generating",total_questions=len(slots),test_mode=mode,selected_category=category if mode=="category_practice" else None,selected_level=level if mode=="category_practice" else None,technical_language=technical_language,timezone=student_timezone,focus_category=None,mixed_category_counts=mixed_counts,hints_allowed=hint_budget)
-    if selected_topics:
-        # Question one is generated before the successful topic schedule is
-        # persisted, so keep the planned schedule on this ORM instance.
-        test._category_topic_schedule=list(selected_topics)
-    if mixed_topics:
-        # Preserve the selected schedules until successful generation commits
-        # them to the shared learner history rows.
-        test._mixed_topic_schedules={
-            category:list(topics) for category,topics in mixed_topics.items()
-        }
-    db.session.add(test)
-    # AuditEvent references the new test. Flush the parent first so MySQL's
-    # foreign-key check never observes the audit row before aptitude_tests.
-    db.session.flush()
-    record_event("test_created",g.student.id,test.id)
-    db.session.commit()
+    def open_attempt():
+        # Runs again after a MySQL deadlock: two new learners starting at the
+        # same moment can lock each other's index gaps on aptitude_tests.
+        abandon_stale_tests(g.student.id)
+        db.session.query(Student).filter_by(id=g.student.id).with_for_update().one()
+        active_tests=AptitudeTest.query.filter(AptitudeTest.student_id==g.student.id,AptitudeTest.status.in_(["generating","ready","in_progress"])).with_for_update().all()
+        for active in active_tests:
+            abandon_attempt(active,"superseded_by_new_test")
+        hint_budget=2 if mode=="category_practice" else current_app.config["HINTS_PER_TEST"]
+        test=AptitudeTest(id=test_id,student_id=g.student.id,status="generating",total_questions=len(slots),test_mode=mode,selected_category=category if mode=="category_practice" else None,selected_level=level if mode=="category_practice" else None,technical_language=technical_language,timezone=student_timezone,focus_category=None,mixed_category_counts=mixed_counts,hints_allowed=hint_budget)
+        if selected_topics:
+            # Question one is generated before the successful topic schedule is
+            # persisted, so keep the planned schedule on this ORM instance.
+            test._category_topic_schedule=list(selected_topics)
+        if mixed_topics:
+            # Preserve the selected schedules until successful generation commits
+            # them to the shared learner history rows.
+            test._mixed_topic_schedules={
+                category:list(topics) for category,topics in mixed_topics.items()
+            }
+        db.session.add(test)
+        # AuditEvent references the new test. Flush the parent first so MySQL's
+        # foreign-key check never observes the audit row before aptitude_tests.
+        db.session.flush()
+        record_event("test_created",g.student.id,test.id)
+        db.session.commit()
+        return test
+    test=retry_on_deadlock(open_attempt)
     try:
         questions,model,usage=generate_and_store_question_batch(test,slots)
         if mode=="category_practice":

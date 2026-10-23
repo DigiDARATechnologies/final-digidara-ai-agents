@@ -7,6 +7,7 @@ here so question, hint, and recommendation calls behave consistently.
 """
 import json
 import math
+import random
 import threading
 import time
 from typing import Any
@@ -16,6 +17,13 @@ from openai import OpenAI
 
 
 _circuit_lock = threading.Lock()
+# When every model answers 429, wait as long as OpenAI asks and try again this
+# many more rounds (if the request deadline leaves room for a real call).
+RATE_LIMIT_ROUNDS = 3
+RATE_LIMIT_DEFAULT_WAIT_SECONDS = 2.0
+RATE_LIMIT_MAX_WAIT_SECONDS = 30.0
+# Time a call needs after a rate-limit wait for retrying to be worth it.
+RATE_LIMIT_MIN_CALL_SECONDS = 5.0
 _circuits = {}
 
 
@@ -34,6 +42,11 @@ def _provider_error(exc):
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", {}) or {}
     retry_after = headers.get("retry-after")
+    if headers.get("retry-after-ms"):
+        try:
+            retry_after = float(headers.get("retry-after-ms")) / 1000
+        except (TypeError, ValueError):
+            pass
     if status == 400 and "json_validate_failed" in str(exc):
         return AIProviderError("invalid_json", str(exc), True, status, retry_after)
     if "auth" in name or status in (401, 403):
@@ -109,10 +122,14 @@ def _failure(model, error):
 
 
 def _rate_limited(model, error):
+    # A 429 says "slow down for a moment", not "OpenAI is down": without a
+    # Retry-After header this used to block the model for the whole 60-90 s
+    # outage cooldown, failing every learner on this worker meanwhile.
     try:
         retry_after = max(0.1, float(error.retry_after))
     except (TypeError, ValueError):
-        retry_after = float(current_app.config["OPENAI_CIRCUIT_COOLDOWN_SECONDS"])
+        retry_after = RATE_LIMIT_DEFAULT_WAIT_SECONDS
+    retry_after = min(retry_after, RATE_LIMIT_MAX_WAIT_SECONDS)
     with _circuit_lock:
         state = _circuits.setdefault(model, {"failures": 0, "open_until": 0})
         state["open_until"] = max(state.get("open_until", 0), time.monotonic() + retry_after + 0.15)
@@ -130,12 +147,51 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
     wait_ms = 0.0
     retries = 0
     attempts = 0
-    available = [model for model in selected_models if _available(model)]
-    if not available and selected_models and deadline is not None:
-        with _circuit_lock:
-            wait = min(max(0.0, _circuits.get(model, {}).get("open_until", 0) - time.monotonic()) for model in selected_models)
-        if 0 < wait < deadline - time.monotonic():
-            time.sleep(wait)
+    for rate_limit_round in range(RATE_LIMIT_ROUNDS + 1):
+        if rate_limit_round:
+            if not _wait_for_a_model(selected_models, deadline, after_rate_limit=True):
+                break
+            retries += 1
+            current_app.logger.info("OpenAI rate limited on every model; retrying round=%s/%s", rate_limit_round, RATE_LIMIT_ROUNDS)
+        else:
+            _wait_for_a_model(selected_models, deadline)
+        result, last_error, wait_ms, retries, attempts = _try_models(
+            request_builder, selected_models, deadline, timeout, last_error, wait_ms, retries, attempts,
+        )
+        if result is not None:
+            return result
+        if not last_error or last_error.kind != "rate_limit":
+            break
+    if last_error:
+        last_error.provider_attempt_count = attempts
+        last_error.provider_retry_count = retries
+        last_error.provider_wait_ms = round(wait_ms, 2)
+        raise last_error
+    raise AIProviderError("circuit_open", f"OpenAI circuit is open for configured models: {', '.join(selected_models)}", True)
+
+
+def _wait_for_a_model(selected_models, deadline, after_rate_limit=False):
+    """Sleep until the soonest model may be called again, when the deadline
+    allows; return False when it does not (or nothing is blocked)."""
+    if not selected_models:
+        return False
+    with _circuit_lock:
+        wait = min(max(0.0, _circuits.get(model, {}).get("open_until", 0) - time.monotonic()) for model in selected_models)
+    if wait <= 0:
+        return True
+    remaining = _remaining_seconds(deadline)
+    needed = wait + (RATE_LIMIT_MIN_CALL_SECONDS if after_rate_limit else 0)
+    if remaining is not None and needed >= remaining:
+        return False
+    if remaining is None and wait > RATE_LIMIT_MAX_WAIT_SECONDS:
+        return False
+    # Jitter so the threads that were all told to wait do not retry together.
+    time.sleep(wait + (random.uniform(0, min(1.0, wait / 2)) if after_rate_limit else 0))
+    return True
+
+
+def _try_models(request_builder, selected_models, deadline, timeout, last_error, wait_ms, retries, attempts):
+    """One pass over the configured models. Returns (result or None, ...counters)."""
     for model in selected_models:
         if not _available(model):
             continue
@@ -155,7 +211,8 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
                 wait_ms += elapsed
                 _success(model)
                 current_app.logger.info("OpenAI provider timing model=%s attempt=%s status=success duration_ms=%.2f retry_count=%s", model, model_attempt + 1, elapsed, retries)
-                return response, model, {"provider_wait_ms": round(wait_ms, 2), "provider_retry_count": retries, "provider_attempt_count": attempts}
+                info = {"provider_wait_ms": round(wait_ms, 2), "provider_retry_count": retries, "provider_attempt_count": attempts}
+                return (response, model, info), last_error, wait_ms, retries, attempts
             except Exception as exc:
                 elapsed = (time.perf_counter() - started) * 1000
                 wait_ms += elapsed
@@ -169,12 +226,7 @@ def _complete(request_builder, *, models=None, deadline=None, timeout=None):
                 if not last_error.transient or model_attempt == 1:
                     break
                 retries += 1
-    if last_error:
-        last_error.provider_attempt_count = attempts
-        last_error.provider_retry_count = retries
-        last_error.provider_wait_ms = round(wait_ms, 2)
-        raise last_error
-    raise AIProviderError("circuit_open", f"OpenAI circuit is open for configured models: {', '.join(selected_models)}", True)
+    return None, last_error, wait_ms, retries, attempts
 
 
 def json_completion(system: str, prompt: str, temperature: float = 0, *, models=None, deadline=None, timeout=None, maximum_tokens=None, response_schema=None, schema_name="aptitude_response"):

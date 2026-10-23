@@ -530,8 +530,17 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 usage.get("finish_reason"),usage.get("response_truncated",False),
             )
             candidate_questions=_candidate_question_texts(items)
-            if len(items)==len(attempt_slots):
-                canonical_items=[_canonicalize_batch_item(item,slot) for item,slot in zip(items,attempt_slots)]
+            # One malformed item (e.g. its calculation does not derive its own
+            # answer) fails only its own slot. It used to raise here and throw
+            # away every valid question in the response.
+            canonical_items,canonical_errors=[],{}
+            for position,(item,slot) in enumerate(zip(items,attempt_slots)):
+                try:
+                    canonical_items.append(_canonicalize_batch_item(item,slot))
+                except ValueError as exc:
+                    canonical_items.append(item if isinstance(item,dict) else {})
+                    canonical_errors[position]=exc
+            if len(items)==len(attempt_slots) and not canonical_errors:
                 minimal=[_minimal_safe_item(item,slot,(prompt_slot["variation_seed"],prompt_slot["scenario_seed"],batch_id)) for item,slot,prompt_slot in zip(canonical_items,attempt_slots,attempt_prompt_slots)]
                 if all(minimal) and not any(questions_are_near_duplicates(item["question"],seen) for item in minimal for seen in forbidden_questions):
                     # Keep the singleton fallback used by callers outside the
@@ -544,6 +553,8 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
             for position,(item,slot,prompt_slot) in enumerate(zip(canonical_items,attempt_slots,attempt_prompt_slots)):
                 slot_index=pending[position]
                 try:
+                    if position in canonical_errors:
+                        raise canonical_errors[position]
                     new_items[slot_index]=validate_generated_item(
                     # category/topic/difficulty (and technical_language) are
                     # already known server-side from `slot` — the model is

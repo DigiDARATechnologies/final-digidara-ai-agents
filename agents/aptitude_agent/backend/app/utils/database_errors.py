@@ -56,3 +56,28 @@ def register_database_error_handler(app, rollback):
         if code == BUSY[1]:
             response.headers["Retry-After"] = "5"
         return response, 503
+
+
+DEADLOCK_ERRNOS = {1213, 1205}  # deadlock; lock wait timeout
+
+
+def retry_on_deadlock(work, attempts=3, sleep=None):
+    """Run `work()` (a short transaction ending in commit) again when MySQL
+    picks it as a deadlock victim, as MySQL's documentation advises. Any
+    other error, or the last failed attempt, is raised unchanged."""
+    import random
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    from ..extensions import db
+
+    sleep = sleep or time.sleep
+    for attempt in range(1, attempts + 1):
+        try:
+            return work()
+        except OperationalError as error:
+            db.session.rollback()
+            if mysql_error(error)[0] not in DEADLOCK_ERRNOS or attempt == attempts:
+                raise
+            sleep(0.05 * attempt + random.uniform(0, 0.05))
