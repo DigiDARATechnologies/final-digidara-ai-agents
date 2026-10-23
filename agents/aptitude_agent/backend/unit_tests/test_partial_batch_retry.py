@@ -91,7 +91,9 @@ def test_a_slot_that_keeps_failing_still_fails_but_only_ever_asks_for_that_slot(
     )
     with pytest.raises(ValueError, match="question 2"):
         run(monkeypatch, provider, [SLOT] * 3, attempts=3)
-    assert provider.asked_for == [3, 1, 1]
+    # Three attempts, then two rescue attempts on another topic -- each still
+    # only for the one failing slot.
+    assert provider.asked_for == [3, 1, 1, 1, 1]
 
 
 def test_a_wrong_count_on_the_retry_is_retried_without_losing_accepted_questions(monkeypatch):

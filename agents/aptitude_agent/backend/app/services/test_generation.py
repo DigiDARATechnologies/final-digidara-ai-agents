@@ -408,7 +408,58 @@ def _cross_check_offenders(validated,fresh,forbidden_questions,*,return_reasons=
     return (offenders,first,reasons) if return_reasons else (offenders,first)
 
 
-def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None):
+def _swap_topics(failed_slots,used_topics,rng=None):
+    """The same slots on a different topic of the same category, where one exists."""
+    rng=rng or random.SystemRandom()
+    used={str(topic).casefold() for topic in used_topics}
+    swapped=[]
+    for slot in failed_slots:
+        candidates=[
+            item["name"] for item in topic_definitions_for(slot["category"])
+            if item["name"].casefold() not in used
+        ]
+        topic=rng.choice(candidates) if candidates else slot["topic"]
+        used.add(topic.casefold())
+        swapped.append({**slot,"topic":topic})
+    return swapped
+
+
+def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avoid_number_patterns,deadline,background,request_timeout):
+    """Fill the few slots that failed every attempt with a question on another topic.
+
+    The model sometimes cannot write a valid question for one particular topic
+    (e.g. a calculation that never derives its own answer). That one slot used
+    to fail the whole test. When most of the batch is already valid, ask once
+    more for just those slots on different topics of the same category.
+    Updates `accepted` in place; returns (usage, model) or None when not rescued.
+    """
+    count=len(slots)
+    pending=[index for index in range(count) if index not in accepted]
+    if not enabled or not accepted or not pending or len(pending)>max(1,count//4):
+        return None
+    if deadline is not None and time.monotonic()>=deadline:
+        return None
+    swapped=_swap_topics([slots[index] for index in pending],[slot["topic"] for slot in slots])
+    current_app.logger.warning(
+        "Batch generation rescuing %s slot(s) on a different topic (%s) after: %s",
+        len(pending),[slot["topic"] for slot in swapped],str(last_error)[:200],
+    )
+    keep=list(avoid_questions or [])+[accepted[index]["question"] for index in sorted(accepted)]
+    try:
+        questions,model,usage=generate_questions(
+            swapped,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
+            allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
+            background=background,request_timeout=request_timeout,_rescue=False,
+        )
+    except (ValueError,TimeoutError) as exc:
+        current_app.logger.warning("Batch generation rescue failed: %s",str(exc)[:200])
+        return None
+    for index,question in zip(pending,questions):
+        accepted[index]=question
+    return usage,model
+
+
+def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True):
     total_started=time.perf_counter()
     if not current_app.config.get("OPENAI_API_KEY"):
         if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
@@ -614,6 +665,16 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
                 return [last_minimal],last_model or current_app.config["OPENAI_MODEL"],accumulated_usage
+    rescued=_rescue_failed_slots(
+        slots,accepted,last_error,_rescue,
+        avoid_questions=avoid_questions,avoid_number_patterns=avoid_number_patterns,
+        deadline=deadline,background=background,request_timeout=request_timeout,
+    )
+    if rescued is not None:
+        rescue_usage,model=rescued
+        accumulated_usage=merge_usage(accumulated_usage,rescue_usage)
+        accumulated_usage["validation_attempt_count"]=max_validation_attempts
+        return [accepted[index] for index in range(count)],model,accumulated_usage
     if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]:
         current_app.logger.error(
             "OpenAI question validation exhausted; using the local development fixture: %s",

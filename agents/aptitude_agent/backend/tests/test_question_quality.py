@@ -406,3 +406,73 @@ def test_a_rejected_item_logs_its_actual_content_not_just_the_static_message(mon
     logged=" ".join(record.getMessage() for record in caplog.records if "Question validation failed" in record.getMessage())
     assert bad_explanation in logged
     assert "42" in logged and "Quantitative Aptitude" in logged
+
+
+QUANT_TOPICS=[item["name"] for item in test_generation.topic_definitions_for("Quantitative Aptitude")]
+
+
+def rescue_slots(count=4):
+    return [{**SLOT,"topic":QUANT_TOPICS[index]} for index in range(count)]
+
+
+def test_swapped_topics_stay_in_the_category_and_avoid_topics_already_in_the_test():
+    slots=rescue_slots()
+    swapped=test_generation._swap_topics([slots[1]],[slot["topic"] for slot in slots])
+    assert swapped[0]["category"]=="Quantitative Aptitude"
+    assert swapped[0]["topic"] in QUANT_TOPICS
+    assert swapped[0]["topic"] not in {slot["topic"] for slot in slots}
+    assert swapped[0]["difficulty"]==slots[1]["difficulty"]
+
+
+def test_one_slot_that_fails_every_attempt_is_rescued_on_another_topic(monkeypatch):
+    # Production: one stubborn question ("calculation does not derive correct
+    # option") failed the whole 30-question test after every retry.
+    slots=rescue_slots()
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    seen={}
+
+    def fake_generate(rescue,**kwargs):
+        seen.update(slots=rescue,**kwargs)
+        return [{"question":"rescued","topic":rescue[0]["topic"]}],"test-model",{"total_tokens":7}
+
+    monkeypatch.setattr(test_generation,"generate_questions",fake_generate)
+    app=Flask(__name__)
+    with app.app_context():
+        result=test_generation._rescue_failed_slots(
+            slots,accepted,ValueError("quantitative calculation does not derive correct option"),True,
+            avoid_questions=["old"],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        )
+    assert result==({"total_tokens":7},"test-model")
+    assert accepted[1]["question"]=="rescued"
+    assert seen["slots"][0]["topic"]!=slots[1]["topic"]
+    assert seen["_rescue"] is False  # never recurses twice
+    assert set(seen["avoid_questions"])=={"old","q0","q2","q3"}
+
+
+@pytest.mark.parametrize("accepted,enabled",[
+    ({0:{"question":"q0"},3:{"question":"q3"}},True),   # half the test failed: a real problem, not one topic
+    ({},True),                                          # nothing valid at all
+    ({0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}},False),  # already a rescue
+])
+def test_rescue_is_only_for_a_few_slots_once(monkeypatch,accepted,enabled):
+    monkeypatch.setattr(test_generation,"generate_questions",lambda *a,**k: pytest.fail("must not generate"))
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            rescue_slots(),dict(accepted),ValueError("x"),enabled,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is None
+
+
+def test_a_failed_rescue_leaves_the_original_failure(monkeypatch):
+    def failing(*_args,**_kwargs):
+        raise ValueError("still invalid")
+    monkeypatch.setattr(test_generation,"generate_questions",failing)
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            rescue_slots(),accepted,ValueError("x"),True,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is None
+    assert 1 not in accepted

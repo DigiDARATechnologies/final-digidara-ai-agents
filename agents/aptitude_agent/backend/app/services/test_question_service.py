@@ -87,11 +87,17 @@ def generate_question_set(slots, *, avoid_questions, deadline):
         usage = merge_usage(usage, chunk_usage)
 
     # Chunks are written independently, so two can land on the same question.
-    for index in _cross_chunk_duplicates(generated):
-        others = [item["question"] for position, item in enumerate(generated) if position != index]
-        replacement, _, repair_usage = run([slots[index]], list(avoid_questions) + others)
-        generated[index] = replacement[0]
-        usage = merge_usage(usage, repair_usage)
+    # A replacement can itself resemble another question, so repair up to
+    # three rounds before giving up (one round failed ~5% of tests under load).
+    for _round in range(3):
+        duplicates = _cross_chunk_duplicates(generated)
+        if not duplicates or time.monotonic() >= deadline:
+            break
+        for index in duplicates:
+            others = [item["question"] for position, item in enumerate(generated) if position != index]
+            replacement, _, repair_usage = run([slots[index]], list(avoid_questions) + others)
+            generated[index] = replacement[0]
+            usage = merge_usage(usage, repair_usage)
     if _cross_chunk_duplicates(generated):
         raise ValueError("Generated chunks still contain a repeated question")
     current_app.logger.info("Generated %s questions in %s parallel chunk(s)", len(generated), len(chunks))
