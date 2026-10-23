@@ -26,4 +26,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # 2 workers x 4 threads (the module was built for threaded waitress) keeps the
 # shared MySQL server at 2 x 4 pooled connections instead of 4 x 10.
-CMD ["gunicorn", "-w", "2", "--threads", "4", "--timeout", "240", "-b", "0.0.0.0:5030", "app:app"]
+# Threads, not more processes: a request mostly waits on OpenAI or MySQL, so
+# one worker serves 32 learners at once (gthread) and the server stays idle.
+CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "32", "--timeout", "240", "-b", "0.0.0.0:5030", "app:app"]

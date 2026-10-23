@@ -289,6 +289,45 @@ def test_batch_item_builds_answer_and_explanation_from_one_correct_option():
     assert validate_generated_item({**canonical,**SLOT},SLOT)["correct_answer"]==canonical["correct_answer"]
 
 
+ANALYTICAL_SLOT={"category":"Analytical Reasoning","topic":"Advanced Caselets","difficulty":"Medium"}
+
+
+def caselet(reason="",step_1="",step_2=""):
+    return {
+        "question":"A company has 200 employees and 60% of them are men. How many men work there?",
+        "correct_option":"120","distractors":["80","100","140"],
+        "reason":reason,"calculation_step_1":step_1,"calculation_step_2":step_2,
+        "question_code":None,"correct_option_code":None,"distractor_codes":[None,None,None],
+    }
+
+
+def test_numeric_caselet_uses_calculation_steps_when_reason_is_empty():
+    # Production 2026-10-23: the model put a caselet's working in the
+    # calculation fields, the explanation became only "Answer = 120." and
+    # whole tests failed after every retry.
+    canonical=test_generation._canonicalize_batch_item(caselet(step_1="60% of 200 = 120"),ANALYTICAL_SLOT)
+    assert canonical["explanation"]=="60% of 200 = 120. Answer = 120."
+    assert validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)["correct_answer"]==canonical["correct_answer"]
+
+
+def test_non_quantitative_answer_with_no_reasoning_is_still_rejected():
+    canonical=test_generation._canonicalize_batch_item(caselet(),ANALYTICAL_SLOT)
+    assert canonical["explanation"]==" Answer = 120."
+    with pytest.raises(ValueError,match="explanation must explain"):
+        validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)
+
+
+def test_restating_the_answer_as_an_equation_is_not_a_calculation():
+    canonical=test_generation._canonicalize_batch_item(caselet(reason="Men = 120"),ANALYTICAL_SLOT)
+    with pytest.raises(ValueError,match="explanation must explain"):
+        validate_generated_item({**canonical,**ANALYTICAL_SLOT},ANALYTICAL_SLOT)
+
+
+def test_generation_prompt_asks_for_reason_on_numeric_analytical_items():
+    prompt=test_generation._batch_prompt([],[],[],"batch")
+    assert "including Analytical Reasoning caselets" in prompt
+
+
 @pytest.mark.parametrize("field",["question","explanation","A"])
 def test_rejects_internal_prompt_tokens_in_all_public_fields(field):
     generated=item()

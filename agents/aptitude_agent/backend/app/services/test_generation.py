@@ -206,6 +206,12 @@ def _canonicalize_batch_item(item,slot):
         explanation=f"Step 1: {step_1}\nStep 2: {step_2}\nStep 3: Answer = {correct}."
     else:
         reason=clean_text(item.get("reason"),220)
+        if not reason:
+            # For a numeric Analytical Reasoning caselet or chart the model
+            # often writes its working in the calculation fields and leaves
+            # reason empty; that working is the explanation.
+            steps=[clean_text(item.get(key),140) for key in ("calculation_step_1","calculation_step_2")]
+            reason=" ".join(f"{step.rstrip('.')}." for step in steps if step)
         explanation=f"{reason} Answer = {correct.rstrip('.')}."
     return {**item,"question":question,"options":options,"correct_answer":answer,"explanation":explanation,"option_code":option_code}
 
@@ -329,7 +335,7 @@ def _batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id):
     return f"""Generate exactly {count} original four-option aptitude MCQs: one for each of the {count} ordered slots below.
 The questions array MUST contain exactly {count} objects in slot order. Do not stop early, skip a slot, add a slot, or return partial output.
 Copy each slot's category, topic, and difficulty exactly. Omit all seed fields. Keep question text under 280 characters, every option under 140 characters, and every explanation under 300 characters. Use concise options and compact JSON.
-For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Use reason only for non-quantitative items; use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
+For each item, put the answer text in correct_option and the three wrong choices in distractors. Do not output option letters. Fill reason for every item whose category is not Quantitative Aptitude -- including Analytical Reasoning caselets, charts and data questions whose answer is a number: there, reason says in words which figures are combined and how. Use calculation_step_1 and calculation_step_2 only for Quantitative Aptitude. Set all code fields to null unless raw source code is essential.
 
 Difficulty (each question must genuinely match its slot's difficulty, and its rigor when present):
 - Easy: one step on a single familiar concept, with numbers that work out mentally; a fresher solves it in under a minute.

@@ -17,8 +17,10 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True, "pool_recycle": 280,
-        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+        # Per gunicorn worker, sized for its 32 request threads: a test being
+        # generated keeps its connection while it waits for OpenAI.
+        "pool_size": int(os.getenv("DB_POOL_SIZE") or "32"),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW") or "16"),
         "pool_timeout": 30,
     }
     FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")

@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import pytest
 from app.auth import agent_signing as signing
 
@@ -93,3 +94,33 @@ def test_body_is_signed_after_ensure_session_rewrites_it(client, upstream):  # n
         "learner", "false", sent,
     )
     assert headers["x-digidara-signature"] == signing.signature_for(signing._key(), canonical)
+
+
+def signature_refused():
+    return httpx.Response(401, json={"error": "Invalid service signature", "code": "invalid_service_signature"})
+
+
+def test_a_signature_that_expired_in_a_busy_agents_queue_is_resent_freshly_signed(client, upstream):  # noqa: F811
+    upstream.responses = [signature_refused()]
+    response = invoke(client, "generate")
+    assert response.status_code == 200
+    assert len(upstream.calls) == 2
+    first, second = (call[1]["headers"] for call in upstream.calls)
+    assert first["x-digidara-nonce"] != second["x-digidara-nonce"]
+    canonical = signing.canonical_string(
+        second["x-digidara-timestamp"], second["x-digidara-nonce"], "POST", "/api/invoke", "test-agent",
+        second["x-digidara-user-id"], second["x-digidara-is-admin"], upstream.calls[1][1]["content"],
+    )
+    assert second["x-digidara-signature"] == signing.signature_for(signing._key(), canonical)
+
+
+def test_a_refused_signature_is_resent_only_once(client, upstream):  # noqa: F811
+    upstream.response = signature_refused()
+    assert invoke(client, "generate").status_code == 401
+    assert len(upstream.calls) == 2
+
+
+def test_other_agent_401s_are_not_resent(client, upstream):  # noqa: F811
+    upstream.response = httpx.Response(401, json={"error": "Session expired", "code": "session_expired"})
+    assert invoke(client, "generate").status_code == 401
+    assert len(upstream.calls) == 1

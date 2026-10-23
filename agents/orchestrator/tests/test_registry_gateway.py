@@ -93,7 +93,8 @@ def upstream(client, database, monkeypatch):
     with database() as session:
         session.add(User(id="learner", name="Learner", email="learner@example.test", token_balance=1000))
         session.commit()
-    remote = SimpleNamespace(calls=[], timeouts=[], response=httpx.Response(200, json={"ok": True}), error=None)
+    # `responses`, when set, is answered in order before falling back to `response`.
+    remote = SimpleNamespace(calls=[], timeouts=[], response=httpx.Response(200, json={"ok": True}), responses=[], error=None)
     class FakeClient:
         def __init__(self, **kwargs): remote.timeouts.append(kwargs.get("timeout"))
         async def __aenter__(self): return self
@@ -101,7 +102,7 @@ def upstream(client, database, monkeypatch):
         async def post(self, url, **kwargs):
             remote.calls.append((url, kwargs))
             if remote.error: raise remote.error
-            return remote.response
+            return remote.responses.pop(0) if remote.responses else remote.response
     monkeypatch.setattr(gateway.httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(gateway, "ALLOWED_AGENT_HOSTS", {"localhost"})
     return remote

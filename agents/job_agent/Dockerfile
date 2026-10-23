@@ -26,4 +26,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # 90-second ceiling still gives one-source validation/import endpoints room
 # for bounded provider retries without allowing wedged HTTP workers to live
 # for five minutes.
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5020", "--timeout", "90", "job_agent.app:create_app()"]
+# Threads, not more processes: a request mostly waits on OpenAI or MySQL, so
+# one worker serves 32 learners at once (gthread) and the server stays idle.
+CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "32", "-b", "0.0.0.0:5020", "--timeout", "90", "job_agent.app:create_app()"]

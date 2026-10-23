@@ -8,13 +8,17 @@ rejected with 401 by that dependency rather than ever being counted here.
 """
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import Request
+from limits import parse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from app.auth.security import decode_access_token
+
+logger = logging.getLogger("orchestrator.rate_limit")
 
 
 def _rate_limit_key(request: Request) -> str:
@@ -39,3 +43,19 @@ limiter = Limiter(
     in_memory_fallback_enabled=not RATE_LIMIT_STORAGE_URI.startswith("memory://"),
     key_prefix="digidara",
 )
+
+
+def allow_account_attempt(scope: str, account: str, limit: str) -> bool:
+    """Count one attempt against `account` (an email) and say whether it is
+    still within `limit`, e.g. "5/minute".
+
+    Sign-in and sign-up have no bearer token, so `limiter` can only count them
+    per IP address -- and a whole college shares one. This per-account count
+    keeps password guessing on any single account slow while the per-IP limit
+    stays loose. If the counter store is unreachable the attempt is allowed:
+    the per-IP limit (which has its own in-memory fallback) still applies."""
+    try:
+        return limiter.limiter.hit(parse(limit), "account", scope, account.strip().lower())
+    except Exception:  # noqa: BLE001 - never turn a Redis outage into failed logins
+        logger.warning("account rate limit unavailable for %s", scope, exc_info=True)
+        return True

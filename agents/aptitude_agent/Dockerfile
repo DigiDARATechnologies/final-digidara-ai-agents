@@ -29,4 +29,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 # every request in production until someone ran `flask db upgrade` by hand.
 # Doing it here (not in each of the 4 workers) avoids concurrent-upgrade races,
 # and a failed migration keeps the container unhealthy instead of serving errors.
-CMD ["sh", "-c", "flask --app app db upgrade && exec gunicorn -w 4 --timeout 240 -b 0.0.0.0:5000 app:app"]
+# Threads, not more processes: a request mostly waits on OpenAI or MySQL, so
+# one worker serves 32 learners at once (gthread) and the server stays idle.
+# 8 x 32 = 256 tests can be generated at the same time.
+CMD ["sh", "-c", "flask --app app db upgrade && exec gunicorn -w 8 -k gthread --threads 32 --timeout 240 -b 0.0.0.0:5000 app:app"]

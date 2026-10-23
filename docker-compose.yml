@@ -17,6 +17,11 @@ services:
   mysql:
     image: mysql:8
     restart: unless-stopped
+    # Every agent shares this server. The default 151 connections peaked at
+    # 118 on an ordinary day, and the agents now run 32 request threads per
+    # worker (300+ learners at once), so allow far more; a 128 MB default
+    # buffer pool also kept too little of the data in memory.
+    command: ["--max-connections=2000", "--innodb-buffer-pool-size=1G"]
     env_file:
       - docker/mysql/.env
     volumes:
