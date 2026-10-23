@@ -302,7 +302,12 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         logger.exception("gateway call failed: agent=%s endpoint=%s", agent_name, agent.endpoint)
         raise HTTPException(502, f"Registered agent {agent_name!r} could not be reached.") from exc
 
-    if is_billable:
+    if upstream.status_code >= 400:
+        # The learner got an error, not an answer: never charge for it (the
+        # flat fallback below used to bill every failed call too).
+        if user_id and not is_free_action:
+            logger.info("gateway: not charging failed call agent=%s action=%s status=%s", agent_name, action_name, upstream.status_code)
+    elif is_billable:
         real_tokens = None
         header_value = upstream.headers.get("x-tokens-used")
         if header_value is not None:

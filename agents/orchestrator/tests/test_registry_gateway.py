@@ -205,6 +205,15 @@ def test_billing_and_binary_response_forwarding(client, upstream, database, repo
         assert [(e.agent_name, e.tokens) for e in events] == [("test-agent", cost)]
 
 
+@pytest.mark.parametrize("status", [400, 401, 404, 429, 500, 503])
+def test_a_failed_agent_call_costs_the_learner_nothing(client, upstream, database, status):
+    upstream.response = httpx.Response(status, json={"error": "failed", "code": "generation_failed"}, headers={"x-tokens-used": "40"})
+    assert invoke(client, "generate").status_code == status
+    with database() as session:
+        assert session.get(User, "learner").token_balance == 1000
+        assert session.query(TokenUsageEvent).filter_by(user_id="learner").count() == 0
+
+
 def test_gateway_forwards_multipart_upload_bytes_unchanged(client, upstream):
     response = client.post(
         "/gateway/agents/test-agent/invoke",
