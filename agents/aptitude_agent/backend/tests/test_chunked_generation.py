@@ -90,3 +90,21 @@ def test_a_question_repeated_across_chunks_is_replaced(app, monkeypatch):
     texts = [q["question"] for q in questions]
     assert texts.count("Same question") == 1
     assert calls[-1] == ["Topic 15"]  # only the repeat was regenerated
+
+
+def test_a_repeat_that_comes_back_on_its_topic_is_replaced_on_another_topic(app, monkeypatch):
+    # Staging load test: regenerating the same topic kept producing the same
+    # question, and 6 of 300 tests failed with "still contain a repeated question".
+    calls = []
+
+    def stubborn(slots, avoid_questions=None, **_):
+        calls.append([s["topic"] for s in slots])
+        texts = ["Same question" if s["topic"] in {"Topic 3", "Topic 15"} else wording(s["topic"]) for s in slots]
+        return [item(text) for text in texts], "gpt-test", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}
+
+    monkeypatch.setattr(service, "generate_questions", stubborn)
+    with app.app_context():
+        questions, _, _ = service.generate_question_set([slot(i) for i in range(20)], avoid_questions=[], deadline=time.monotonic() + 60)
+    assert [q["question"] for q in questions].count("Same question") == 1
+    assert calls[-2] == ["Topic 15"]          # first repair: same topic, same question again
+    assert calls[-1][0] not in {"Topic 3", "Topic 15"}  # second repair: another topic

@@ -12,7 +12,7 @@ from .audit_service import record_event
 from .question_timing import question_time_seconds
 from .ai_service import empty_usage, merge_usage
 from .question_validation import questions_are_near_duplicates
-from .test_generation import generate_questions
+from .test_generation import _swap_topics, generate_questions
 from .usage_service import record_usage
 
 
@@ -89,13 +89,16 @@ def generate_question_set(slots, *, avoid_questions, deadline):
     # Chunks are written independently, so two can land on the same question.
     # A replacement can itself resemble another question, so repair up to
     # three rounds before giving up (one round failed ~5% of tests under load).
-    for _round in range(3):
+    # From the second round the slot moves to another topic of its category:
+    # the same topic tends to produce the same question again.
+    for repair_round in range(3):
         duplicates = _cross_chunk_duplicates(generated)
         if not duplicates or time.monotonic() >= deadline:
             break
         for index in duplicates:
             others = [item["question"] for position, item in enumerate(generated) if position != index]
-            replacement, _, repair_usage = run([slots[index]], list(avoid_questions) + others)
+            slot = slots[index] if repair_round == 0 else _swap_topics([slots[index]], [item["topic"] for item in generated])[0]
+            replacement, _, repair_usage = run([slot], list(avoid_questions) + others)
             generated[index] = replacement[0]
             usage = merge_usage(usage, repair_usage)
     if _cross_chunk_duplicates(generated):
