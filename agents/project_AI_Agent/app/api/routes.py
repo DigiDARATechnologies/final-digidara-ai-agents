@@ -586,7 +586,10 @@ async def submission_upload(
             raise HTTPException(404, "Submission not found.")
         submission.viva_questions_json = questions
         submission.viva_answers_json = []
-        submission.viva_started_at = datetime.now(timezone.utc)
+        # The 20-minute clock starts when the learner starts the viva (action
+        # start_viva_attempt), not the moment grading finishes: they are told
+        # their project passed and choose when to begin. See _begin_first_attempt.
+        submission.viva_started_at = None
         submission.status = SubmissionStatus.pending_viva
         submission.score_json = {
             "final_score": result.get("final_score"),
@@ -611,8 +614,9 @@ async def submission_upload(
         viva_attempt=1,
         viva_attempts_left=VIVA_ATTEMPTS - 1,
         viva_attempts_total=VIVA_ATTEMPTS,
-        viva_seconds_left=VIVA_TIME_LIMIT_SECONDS,
+        viva_seconds_left=None,
         viva_time_limit_seconds=VIVA_TIME_LIMIT_SECONDS,
+        viva_ready_to_start=True,
     )
 
 
@@ -646,6 +650,10 @@ def submit_viva_answer(req: VivaAnswerRequest) -> SubmissionResultResponse:
         if req.question_id != expected_index:
             raise HTTPException(409, f"Expected an answer for question {expected_index}, got {req.question_id}.")
 
+        if submission.viva_started_at is None:
+            # Answered without pressing Start viva (an older page): the clock
+            # starts with this first answer.
+            submission.viva_started_at = datetime.now(timezone.utc)
         left = viva_seconds_left(submission.viva_started_at)
         if _viva_overdue(submission.viva_started_at, VIVA_GRACE_SECONDS):
             # Too late even for the grace period: the attempt ends without
@@ -813,6 +821,25 @@ def viva_time_up(req: VivaTimeUpRequest) -> SubmissionResultResponse:
         session.close()
 
 
+def _begin_first_attempt(session, submission, questions, answers) -> SubmissionResultResponse:
+    """The learner pressed Start viva: the first attempt's clock starts now."""
+    submission.viva_started_at = datetime.now(timezone.utc)
+    session.commit()
+    question = questions[len(answers)]
+    return SubmissionResultResponse(
+        thread_id=submission.assignment.thread_id,
+        status="pending_viva",
+        submission_id=submission.id,
+        viva_question=VivaQuestionOut(**question),
+        viva_progress=f"{len(answers) + 1} of {len(questions)}",
+        viva_attempt=1,
+        viva_attempts_left=VIVA_ATTEMPTS - 1,
+        viva_attempts_total=VIVA_ATTEMPTS,
+        viva_seconds_left=VIVA_TIME_LIMIT_SECONDS,
+        viva_time_limit_seconds=VIVA_TIME_LIMIT_SECONDS,
+    )
+
+
 def start_viva_attempt(payload: dict) -> SubmissionResultResponse:
     """Begin the next viva attempt after a failed one: a fresh set of questions,
     none repeating an earlier attempt's. Only valid while attempts remain."""
@@ -829,6 +856,8 @@ def start_viva_attempt(payload: dict) -> SubmissionResultResponse:
         history = list(submission.viva_attempts_json or [])
         questions = submission.viva_questions_json or []
         answers = submission.viva_answers_json or []
+        if not history and submission.viva_started_at is None and questions and len(answers) < len(questions):
+            return _begin_first_attempt(session, submission, questions, answers)
         if not history or len(answers) < len(questions):
             raise HTTPException(409, "Finish the current viva attempt first.")
         if len(history) >= VIVA_ATTEMPTS:

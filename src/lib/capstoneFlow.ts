@@ -683,7 +683,9 @@ export async function handleCapstoneText(
                   vivaDeadlineAt: vivaDeadline(result.viva_seconds_left),
                 },
                 messages: [{
-                  text: `Viva attempt ${result.viva_attempt ?? nextAttempt} of ${result.viva_attempts_total ?? total} — a new set of questions.\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
+                  text: nextAttempt === 1
+                    ? `Viva started: attempt 1 of ${result.viva_attempts_total ?? total}.${result.viva_seconds_left ? ` You have ${Math.round(result.viva_seconds_left / 60)} minutes.` : ""}\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`
+                    : `Viva attempt ${result.viva_attempt ?? nextAttempt} of ${result.viva_attempts_total ?? total} — a new set of questions.\n\nQuestion ${result.viva_progress}:\n\n${result.viva_question.question}`,
                 }],
               };
             }
@@ -707,7 +709,9 @@ export async function handleCapstoneText(
           state,
           messages: [
             ...(answer ? [{ text: answer }] : []),
-            { text: `Start viva attempt ${nextAttempt} of ${total} whenever you're ready.`, options: vivaRetryOptions(nextAttempt, total) },
+            nextAttempt === 1
+              ? { text: "Your project passed content grading. Press Start viva whenever you're ready; the timer starts then.", options: [{ label: "Start viva", value: START_VIVA_ACTION }] }
+              : { text: `Start viva attempt ${nextAttempt} of ${total} whenever you're ready.`, options: vivaRetryOptions(nextAttempt, total) },
           ],
         };
       }
@@ -992,6 +996,35 @@ export async function submitCapstoneFiles(state: CapstoneFlowState): Promise<{ s
       return {
         state: nextState,
         messages: [{ text: `Revision needed:\n${result.revision_notes ?? "Review the validation notes."}\n\nFix the issues and attach both files again.` }],
+      };
+    }
+    if (result.status === "pending_viva" && result.viva_ready_to_start) {
+      const total = result.viva_attempts_total ?? 3;
+      const minutes = Math.round((result.viva_time_limit_seconds ?? 1200) / 60);
+      return {
+        state: {
+          ...state,
+          docxFile: undefined,
+          zipFile: undefined,
+          step: "awaiting_viva_answer",
+          vivaSubmissionId: result.submission_id,
+          // Waiting for "Start viva": attempt 0, so the next one is attempt 1.
+          vivaRetryPending: true,
+          vivaAttempt: 0,
+          vivaAttemptsTotal: total,
+          vivaQuestionId: null,
+          vivaQuestionText: null,
+          vivaProgress: null,
+          vivaDeadlineAt: null,
+        },
+        messages: [{
+          text: `✅ Project submitted — it passed content grading.
+
+Next step: a short viva before your score is revealed. I'll ask questions about your own project; answer at least ${VIVA_PASS_PERCENT}% correctly to pass. You have ${minutes} minutes per attempt and up to ${total} attempts.
+
+The timer starts only when you press Start viva, so take a moment to get ready.`,
+          options: [{ label: "Start viva", value: START_VIVA_ACTION, description: `${minutes} minutes · attempt 1 of ${total}` }],
+        }],
       };
     }
     if (result.status === "pending_viva" && result.viva_question) {

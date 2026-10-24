@@ -37,7 +37,7 @@ import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import OnboardingScreen from "./components/OnboardingScreen";
 import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
-import { setLearnerContext } from "./lib/learnerContext";
+import { onLearnerContextRefreshed, setLearnerContext } from "./lib/learnerContext";
 import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
 import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
@@ -158,6 +158,8 @@ export default function App() {
   }, [learnerUserId]);
   // Every agent's chat flow reads the learner's goal and levels from here.
   useEffect(() => { setLearnerContext(learnerSummary); }, [learnerSummary]);
+  // An agent refreshed the learner's levels (e.g. Coding unlocked Hard).
+  useEffect(() => onLearnerContextRefreshed(setLearnerSummary), []);
   // Signed-out visitors land on the public home page; "Login" swaps to the
   // existing login screen and mirrors it in the URL (/login) so it is linkable.
   // A link Boss made (a shared chat, a certificate download): kept until the
@@ -1776,6 +1778,10 @@ export default function App() {
           setCapstoneStates((prev) => ({ ...prev, [chatId]: finalState }));
           appendAgentMessages(chatId, finalMessages);
           setTyping(false);
+          // Grading can take a few minutes: say so even if they looked away.
+          if (finalState.vivaRetryPending && finalState.vivaAttempt === 0) {
+            showToast("✅ Project submitted and passed grading. Your viva is ready: press Start viva when you are.");
+          }
         });
       }
       return;

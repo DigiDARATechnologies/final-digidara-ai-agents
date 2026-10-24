@@ -40,6 +40,33 @@ def test_registration_upsert_and_deregistration(client):
     assert signed(client, "DELETE", path).status_code == 404
     assert service.resolve_healthy("test-agent") is None
 
+def test_a_worker_exiting_does_not_delete_the_registration(client):
+    # Each gunicorn worker deregisters when it exits; its siblings keep
+    # serving and their next heartbeat brings the agent straight back.
+    assert signed(client, "POST", "/registry/register", PAYLOAD).status_code == 201
+    assert signed(client, "DELETE", "/registry/deregister?agent_name=test-agent&version=v1").status_code == 200
+    assert service.resolve_healthy("test-agent") is None
+    assert signed(client, "POST", "/registry/heartbeat", {"agent_name": "test-agent", "version": "v1"}).status_code == 200
+    assert service.resolve_healthy("test-agent") is not None
+
+def test_traffic_still_reaches_an_agent_whose_heartbeat_is_a_little_late(client, database):
+    service.register(AgentRegisterRequest(**PAYLOAD))
+    with database() as session:
+        row = session.get(AgentRegistry, ("test-agent", "v1"))
+        row.last_heartbeat = datetime.utcnow() - timedelta(seconds=config.HEARTBEAT_TTL_SECONDS + 10)
+        session.commit()
+    assert service.resolve_healthy("test-agent") is None
+    assert service.resolve_for_traffic("test-agent").endpoint == PAYLOAD["endpoint"]
+
+def test_traffic_stops_after_the_grace_period(client, database):
+    service.register(AgentRegisterRequest(**PAYLOAD))
+    with database() as session:
+        row = session.get(AgentRegistry, ("test-agent", "v1"))
+        row.last_heartbeat = datetime.utcnow() - timedelta(seconds=service.TRAFFIC_GRACE_SECONDS + 10)
+        session.commit()
+    assert service.resolve_for_traffic("test-agent") is None
+    assert service.resolve_for_traffic("never-registered") is None
+
 def test_heartbeat_resyncs_a_stale_endpoint(client):
     """register() only runs once at process boot -- a long-lived agent whose
     AGENT_PUBLIC_URL was corrected after it last started must self-heal via

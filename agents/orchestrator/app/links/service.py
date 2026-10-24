@@ -154,7 +154,7 @@ def certificate_link_owner(token: str, viewer_id: str) -> str:
 def _certificate_endpoint() -> str:
     from app.gateway.routes import ALLOWED_AGENT_HOSTS
 
-    agent = registry_service.resolve_healthy(CERTIFICATE_AGENT)
+    agent = registry_service.resolve_for_traffic(CERTIFICATE_AGENT)
     if agent is None or urlparse(agent.endpoint).hostname not in ALLOWED_AGENT_HOSTS:
         raise LinkError(503, "AI Certification is not reachable right now. Please try again in a minute.")
     return agent.endpoint

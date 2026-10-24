@@ -9,9 +9,36 @@
 import type { LearnerSummary, LevelId } from "./learnerApi";
 
 let summary: LearnerSummary | null = null;
+const listeners = new Set<(next: LearnerSummary) => void>();
 
 export function setLearnerContext(next: LearnerSummary | null): void {
   summary = next;
+}
+
+/** App.tsx keeps its own copy of the summary in sync through this. */
+export function onLearnerContextRefreshed(listener: (next: LearnerSummary) => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+/** Moving up a level happens when readiness is computed (it promotes a
+ * learner who completed their level). An agent that just saw the last
+ * problem of a level solved calls this, so the next level opens at once
+ * instead of after a page reload. Returns the learner's level with that
+ * agent afterwards. */
+export async function refreshLearnerLevels(agentName: string): Promise<LevelId> {
+  try {
+    // Loaded on use: this module is otherwise types-only, which keeps every
+    // agent flow (and its tests) free of the network layer.
+    const { fetchLearnerSummary, fetchReadiness } = await import("./learnerApi");
+    await fetchReadiness(true);
+    const next = await fetchLearnerSummary();
+    summary = next;
+    listeners.forEach((listener) => listener(next));
+  } catch {
+    // Keep the level we had; a reload will pick up the change.
+  }
+  return learnerLevel(agentName);
 }
 
 export interface LearnerGoal {

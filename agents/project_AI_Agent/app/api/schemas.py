@@ -143,6 +143,9 @@ class SubmissionResultResponse(BaseModel):
     # Seconds left to finish the current attempt, and the whole limit.
     viva_seconds_left: int | None = None
     viva_time_limit_seconds: int | None = None
+    # The viva is ready but its clock has not started: the learner presses
+    # Start viva (start_viva_attempt) when they are ready.
+    viva_ready_to_start: bool = False
     # The attempt just closed because its time ran out.
     viva_timed_out: bool | None = None
 

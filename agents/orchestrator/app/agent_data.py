@@ -33,7 +33,7 @@ class AgentDataUnavailable(RuntimeError):
 
 
 def _endpoint(agent_name: str) -> str:
-    agent = registry_service.resolve_healthy(agent_name)
+    agent = registry_service.resolve_for_traffic(agent_name)
     if agent is None:
         raise AgentDataUnavailable(f"{agent_name} is temporarily unavailable. Please try again.")
     if urlparse(agent.endpoint).hostname not in ALLOWED_AGENT_HOSTS:

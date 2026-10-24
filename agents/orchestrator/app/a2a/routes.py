@@ -57,7 +57,7 @@ def _healthy_cards(base_url: str) -> list[dict]:
 def _card_for(agent_name: str, base_url: str) -> dict:
     if agent_name in cards.LOCAL_AGENTS:
         return cards.local_card(base_url, agent_name)
-    row = registry_service.resolve_healthy(agent_name)
+    row = registry_service.resolve_for_traffic(agent_name)
     if row is None:
         raise HTTPException(404, f"No reachable agent named {agent_name!r}.")
     return cards.agent_card(base_url, row.agent_name, row.description, row.version)

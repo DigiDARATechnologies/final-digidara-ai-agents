@@ -1,5 +1,5 @@
 import type { ChatOption, User } from "../types";
-import { easyMediumHard, goalLine, goalMatchScore, learnerGoal, learnerLevel } from "./learnerContext";
+import { easyMediumHard, goalLine, goalMatchScore, learnerGoal, learnerLevel, refreshLearnerLevels } from "./learnerContext";
 import {
   askTutor,
   ensureSession,
@@ -133,6 +133,37 @@ function nextProblem(state: CodeForgeFlowState): ProblemSummary | undefined {
   return ordered.find((p) => p.progress !== "Solved");
 }
 
+/** The problems with this one marked solved. */
+function withSolved(state: CodeForgeFlowState): ProblemSummary[] {
+  return state.problems.map((p) => (p.slug === state.problemSlug ? { ...p, progress: "Solved" } : p));
+}
+
+/** When the problem just solved was the last open one of the learner's level
+ * in this technology, the level may now be complete: ask the platform (the
+ * same check a page reload makes) and, when the learner moved up, say so and
+ * open the next level at once. Null when nothing changed. */
+async function levelUpMessage(problems: ProblemSummary[]): Promise<CodeForgeFlowMessage | null> {
+  const before = learnerLevel("codeforge_agent");
+  const difficulty = easyMediumHard("codeforge_agent");
+  const atLevel = problems.filter((p) => p.difficulty.toLowerCase() === difficulty);
+  if (!atLevel.length || atLevel.some((p) => p.progress !== "Solved")) return null;
+  const after = await refreshLearnerLevels("codeforge_agent");
+  if (after === before) return null;
+  if (after === "professional") {
+    return {
+      text: `🎉 ${LEVEL_LABELS[before]} level complete! The Professional level is unlocked: take a timed Professional assessment from the problem list.`,
+      options: [{ label: "📋 Problem list", value: "__problemset__", description: "Start the Professional assessment" }],
+    };
+  }
+  return {
+    text: `🎉 ${LEVEL_LABELS[before]} level complete! ${LEVEL_LABELS[after]} problems are unlocked now.`,
+    options: [
+      { label: `Start ${LEVEL_LABELS[after]} problems`, value: "choose_another_problem" },
+      { label: "📋 Problem list", value: "__problemset__", description: `Every problem, ${LEVEL_LABELS[after]} level open` },
+    ],
+  };
+}
+
 /** Ways to move on after a problem. */
 function afterProblemOptions(state: CodeForgeFlowState): ChatOption[] {
   const { level } = levelNames();
@@ -154,9 +185,20 @@ function mcqOptions(options: Record<string, string>): ChatOption[] {
 /** The chosen technology's problems open in the problem list (a table, like
  * LeetCode), not as chat buttons. The level's problems are kept here too, so
  * "Next problem" works after each one. The server serves only this level. */
-async function enterLevelProblems(state: CodeForgeFlowState): Promise<CodeForgeResult> {
+async function enterLevelProblems(state: CodeForgeFlowState, checkLevelUp = true): Promise<CodeForgeResult> {
   const { level, difficulty } = levelNames();
   const { problems } = await listLevelProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, difficulty.toLowerCase());
+  // Every problem of the level solved (e.g. the last one in another chat, or
+  // before levels moved up on their own): check now and open the next level
+  // instead of offering the finished one again.
+  if (checkLevelUp && problems.length && problems.every((p) => p.progress === "Solved")) {
+    const before = learnerLevel("codeforge_agent");
+    const after = await refreshLearnerLevels("codeforge_agent");
+    if (after !== before && after !== "professional") {
+      const opened = await enterLevelProblems(state, false);
+      return { ...opened, messages: [{ text: `🎉 ${LEVEL_LABELS[before]} level complete! ${LEVEL_LABELS[after]} problems are unlocked now.` }, ...opened.messages] };
+    }
+  }
   const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", problems, topics: [] };
   const solved = problems.filter((p) => p.progress === "Solved").length;
   const options: ChatOption[] = [
@@ -241,7 +283,7 @@ function formatGuidance(guidance: TutorGuidance): string {
     guidance.explanation,
     "",
     "Workflow:",
-    ...guidance.workflow.map((step, i) => `${i + 1}. ${step}`),
+    ...guidance.workflow.map((step, i) => `${i + 1}. ${step.replace(/^\s*\d+[.)]\s*/, "")}`),
     "",
     `Next: ${guidance.nextAction}`,
   ];
@@ -363,14 +405,14 @@ export async function submitCodeForgeCode(
       return { state: next, messages: [{ text: `${formatResult(result)}\n\nBest for this problem: ${Math.max(...items.filter((i) => i.position === a.position).map((i) => i.best_score))}/100`, options: assessmentOptions(next) }] };
     }
     const accepted = result.status === "Accepted";
+    const problems = accepted ? withSolved(state) : state.problems;
     const nextOptions: ChatOption[] = accepted
-      ? [
-          ...afterProblemOptions({ ...state, problems: state.problems.map((p) => (p.slug === state.problemSlug ? { ...p, progress: "Solved" } : p)) }),
-        ]
+      ? afterProblemOptions({ ...state, problems })
       : [{ label: "Explain this error", value: "explain_error" }];
+    const levelUp = accepted ? await levelUpMessage(problems) : null;
     return {
-      state: { ...state, step: accepted ? "awaiting_problem" : "awaiting_code", lastResult: result, lastGuidance: undefined },
-      messages: [{ text: formatResult(result), options: nextOptions }],
+      state: { ...state, problems, step: accepted ? "awaiting_problem" : "awaiting_code", lastResult: result, lastGuidance: undefined },
+      messages: [{ text: formatResult(result), options: levelUp ? undefined : nextOptions }, ...(levelUp ? [levelUp] : [])],
     };
   } catch (error) {
     // The attempt's time ran out: show the result instead of an error.
@@ -537,14 +579,14 @@ export async function handleCodeForgeText(
           !result.isCorrect ? `Correct answer: ${result.correctKey}. ${options[result.correctKey] ?? ""}` : "",
           result.explanation,
         ].filter(Boolean).join("\n\n");
+        const problems = result.isCorrect ? withSolved(state) : state.problems;
+        const levelUp = result.isCorrect ? await levelUpMessage(problems) : null;
         return {
-          state: { ...state, step: "awaiting_problem" },
-          messages: [{
-            text: feedback,
-            options: afterProblemOptions(result.isCorrect
-              ? { ...state, problems: state.problems.map((p) => (p.slug === state.problemSlug ? { ...p, progress: "Solved" } : p)) }
-              : state),
-          }],
+          state: { ...state, problems, step: "awaiting_problem" },
+          messages: [
+            { text: feedback, options: levelUp ? undefined : afterProblemOptions({ ...state, problems }) },
+            ...(levelUp ? [levelUp] : []),
+          ],
         };
       } catch (error) {
         return { state, messages: [{ text: `Could not submit your answer: ${(error as Error).message}`, options: mcqOptions(options) }] };

@@ -119,12 +119,18 @@ def mark_unhealthy(agent_name: str, version: str) -> bool:
 
 
 def deregister(agent_name: str, version: str) -> bool:
+    """Takes the agent out of rotation. The row is kept (status
+    "deregistered") rather than deleted: an agent runs several gunicorn
+    workers and each deregisters when it exits, so one worker restarting used
+    to delete the registration while its siblings were still serving, and
+    every learner got "not registered" until the next heartbeat (up to 30 s).
+    The next heartbeat from any live worker marks it healthy again."""
     session = get_session()
     try:
         row = session.get(AgentRegistry, (agent_name, version))
-        if row is None:
+        if row is None or row.status == "deregistered":
             return False
-        session.delete(row)
+        row.status = "deregistered"
         session.commit()
         return True
     finally:
@@ -156,6 +162,42 @@ def list_healthy() -> list[AgentRegistry]:
         )
     finally:
         session.close()
+
+
+# How long after its last heartbeat an agent is still tried when it is not
+# currently "healthy" (a late heartbeat, a worker that just restarted).
+TRAFFIC_GRACE_SECONDS = 600
+
+
+def resolve_for_traffic(agent_name: str) -> AgentRegistry | None:
+    """Where to send a learner's request: the healthy agent, or else the one
+    that checked in most recently within TRAFFIC_GRACE_SECONDS. A heartbeat
+    that is a few seconds late (the platform briefly busy, a worker
+    restarting) no longer turns every click into "agent unavailable"; if the
+    agent really is down, the call itself fails with "could not be reached"."""
+    agent = resolve_healthy(agent_name)
+    if agent is not None:
+        return agent
+    session = get_session()
+    try:
+        cutoff = datetime.utcnow() - timedelta(seconds=TRAFFIC_GRACE_SECONDS)
+        agent = (
+            session.query(AgentRegistry)
+            .filter(AgentRegistry.agent_name == agent_name)
+            # Not an agent that reported itself failing (mark_unhealthy).
+            .filter(AgentRegistry.status.in_(("healthy", "deregistered")))
+            .filter(AgentRegistry.last_heartbeat >= cutoff)
+            .order_by(AgentRegistry.last_heartbeat.desc(), AgentRegistry.version.desc())
+            .first()
+        )
+    finally:
+        session.close()
+    if agent is not None:
+        logger.warning(
+            "routing to %s although its heartbeat is late (status=%s last_heartbeat=%s)",
+            agent_name, agent.status, agent.last_heartbeat,
+        )
+    return agent
 
 
 def resolve_healthy(agent_name: str) -> AgentRegistry | None:

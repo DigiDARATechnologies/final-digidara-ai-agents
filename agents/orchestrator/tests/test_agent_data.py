@@ -10,7 +10,7 @@ from app import agent_data
 def _registry(monkeypatch, healthy):
     monkeypatch.setattr(
         agent_data.registry_service,
-        "resolve_healthy",
+        "resolve_for_traffic",
         lambda name: SimpleNamespace(endpoint=f"http://localhost:1/{name}/api/invoke") if name in healthy else None,
     )
 
