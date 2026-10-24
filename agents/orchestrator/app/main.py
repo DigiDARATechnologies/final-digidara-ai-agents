@@ -27,6 +27,7 @@ from app.organizations.routes import router as organizations_router  # noqa: E40
 from app.voice.routes import router as voice_router  # noqa: E402
 from app.conductor.routes import router as conductor_router  # noqa: E402
 from app.links.routes import router as links_router  # noqa: E402
+from app.proctoring.routes import router as proctoring_router  # noqa: E402
 
 app = FastAPI(title="DigiDARA Orchestrator", version="1.0.0")
 
@@ -72,6 +73,7 @@ app.include_router(a2a_router)
 app.include_router(voice_router)
 app.include_router(conductor_router)
 app.include_router(links_router)
+app.include_router(proctoring_router)
 
 
 @app.on_event("startup")

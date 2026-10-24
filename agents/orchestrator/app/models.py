@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
@@ -464,3 +464,93 @@ class ChatShareLink(Base):
     conversation_id: Mapped[str] = mapped_column(String(128))
     mode: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+# ---------------------------------------------------------------------------
+# Proctoring and assessment links (app/proctoring).
+# ---------------------------------------------------------------------------
+
+
+class Assessment(Base):
+    """A test an organization admin hands out as a link. Opening the link
+    (signed in) starts the test on this platform with the admin's settings:
+    which interview, how many questions, at what level, and which
+    proctoring checks run."""
+
+    __tablename__ = "assessments"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    # Only "mock_interview" for now.
+    kind: Mapped[str] = mapped_column(String(32), default="mock_interview")
+    # {"round_type", "role_name", "subject", "num_questions", "level"}.
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Which checks run: {"tab", "fullscreen", "copy_paste", "webcam", "face", "max_warnings"}.
+    proctoring: Mapped[dict] = mapped_column(JSON, default=dict)
+    # The link itself (/assessment/<token>); never derived from the id.
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Open between these times (UTC); either may be empty.
+    opens_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closes_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Members of the organization only, or anyone signed in who has the link.
+    members_only: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class ProctorSession(Base):
+    """One proctored sitting: a Hard/Professional mock interview or capstone
+    viva, or an attempt at an assessment link. The learner agreed to it
+    (consent_at) before the camera or any check started."""
+
+    __tablename__ = "proctor_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # "mock_interview_agent" or "capstone_project_agent".
+    agent_name: Mapped[str] = mapped_column(String(64))
+    # What is proctored: the interview id, or "<submission id>:<attempt>" for a viva.
+    ref: Mapped[str] = mapped_column(String(128), default="", index=True)
+    assessment_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("assessments.id", ondelete="CASCADE"), nullable=True, index=True)
+    level: Mapped[str] = mapped_column(String(16), default="")
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
+    # "active", "completed" or "terminated" (too many warnings).
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    warnings: Mapped[int] = mapped_column(Integer, default=0)
+    integrity: Mapped[int] = mapped_column(Integer, default=100)
+    # The agent's result, recorded by the gateway: {"score", "max", "label"}.
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    consent_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ProctorEvent(Base):
+    """Something the proctor noticed, e.g. the learner left the tab or a
+    second face was in the camera."""
+
+    __tablename__ = "proctor_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(32), ForeignKey("proctor_sessions.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[str] = mapped_column(String(255), default="")
+    penalty: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class ProctorSnapshot(Base):
+    """A small webcam still taken during a proctored sitting. Kept for
+    SNAPSHOT_RETENTION_DAYS (app/proctoring/service.py), then deleted."""
+
+    __tablename__ = "proctor_snapshots"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(32), ForeignKey("proctor_sessions.id", ondelete="CASCADE"), index=True)
+    image: Mapped[bytes] = mapped_column(LargeBinary(length=2**24))
+    # What the face check found: number of faces (null until checked).
+    faces: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    note: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)

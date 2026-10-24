@@ -4,6 +4,7 @@ import {
   type MockInterviewExit, type MockInterviewQuestion, type MockInterviewSummary,
 } from "./mockInterviewApi";
 import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
+import { levelDifficulty, takeAssessmentLaunch, type AssessmentLaunch } from "./proctoring";
 
 export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "choose_question_count" | "in_interview" | "completed" | "error";
 export interface MockInterviewFlowState {
@@ -22,6 +23,9 @@ export interface MockInterviewFlowState {
   totalQuestions?: number;
   summary?: MockInterviewSummary;
   error?: string;
+  /** An assessment link's attempt: the interview is proctored with its settings. */
+  proctorSessionId?: string;
+  assessmentTitle?: string;
 }
 export interface MockInterviewMessage { text: string; options?: ChatOption[]; }
 export interface MockInterviewFlowResult { state: MockInterviewFlowState; messages: MockInterviewMessage[]; }
@@ -155,10 +159,37 @@ async function finish(state: MockInterviewFlowState): Promise<MockInterviewFlowR
   }
 }
 
+/** Runs an assessment link's interview at once, with the organization's
+ * settings (the gateway applies them too, whatever is sent from here). */
+async function beginAssessment(sessionToken: string, launch: AssessmentLaunch): Promise<MockInterviewFlowResult> {
+  try {
+    const active = await getActiveMockInterview(sessionToken);
+    // Only one interview runs at a time: a practice interview left open is closed first.
+    if (active.active && active.interview_id) await exitMockInterview(sessionToken, active.interview_id, active.question_order).catch(() => undefined);
+  } catch { /* Nothing open. */ }
+  const { config } = launch;
+  const state: MockInterviewFlowState = {
+    step: "choose_question_count", sessionToken,
+    roundType: config.round_type,
+    interviewMode: config.round_type === "hr" ? "course" : config.role_name ? "role" : "custom_topic",
+    roleName: config.role_name || undefined,
+    subject: config.subject || undefined,
+    proctorSessionId: launch.sessionId,
+    assessmentTitle: launch.title,
+  };
+  const result = await begin(state, levelDifficulty(config.level), config.num_questions);
+  if (result.state.step !== "in_interview") {
+    return { state: { ...result.state, step: "error" }, messages: [{ text: `I couldn't start the assessment "${launch.title}": ${result.state.error ?? "please try again"}. Open the assessment link again to retry.` }] };
+  }
+  return { state: result.state, messages: [{ text: `Assessment: **${launch.title}**. This interview is proctored. Good luck!` }, ...result.messages] };
+}
+
 export async function openMockInterviewChat(user: User): Promise<MockInterviewFlowResult> {
   const state = createInitialMockInterviewState();
+  const launch = takeAssessmentLaunch();
   try {
     const session = await ensureMockInterviewSession(user.id, user.name, user.email);
+    if (launch) return beginAssessment(session.sessionToken, launch);
     try {
       const active = await getActiveMockInterview(session.sessionToken);
       if (active.active && active.question && active.interview_id) {

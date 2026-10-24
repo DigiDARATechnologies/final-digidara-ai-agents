@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import { BarList, ColumnTrend, LevelStacks } from "./charts";
 import ClassSelect from "./ClassSelect";
 import StudentDrawer from "./StudentDrawer";
+import OrgAssessments from "./OrgAssessments";
 import { ScoreRing } from "../ReadinessView";
 import { parseMemberLines } from "../../lib/memberImport";
 import { addOrgMembers, BAND_TONE, LEVEL_IDS, LEVEL_LABELS, type AddMemberResult, type Band, type OrgMember } from "../../lib/learnerApi";
@@ -413,7 +414,7 @@ function AccessLog({ entries }: { entries: AccessEntry[] }) {
 
 /** The organization admin's dashboard; DigiDARA's platform admin opens the same one for any organization. */
 export default function OrgDashboard({ org, onToast, extraTabs = [], headerAction }: Props) {
-  const tabs = useMemo(() => ["Overview", "Students", "Join codes", ...extraTabs.map((t) => t.name), "Access log"], [extraTabs]);
+  const tabs = useMemo(() => ["Overview", "Students", "Assessments", "Join codes", ...extraTabs.map((t) => t.name), "Access log"], [extraTabs]);
   const [tab, setTab] = useState("Overview");
   const [filters, setFilters] = useState<OrgFilters>({});
   const [analytics, setAnalytics] = useState<OrgAnalytics | null>(null);
@@ -494,6 +495,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
       {tab === "Students" && (
         <Students org={org} members={members} analytics={analytics} onOpen={setOpenId} onReload={() => void loadData()} onToast={onToast} />
       )}
+      {tab === "Assessments" && <OrgAssessments orgId={org.id} onToast={onToast} />}
       {tab === "Join codes" && <Codes org={org} codes={codes} options={options} onReload={() => void loadSetup()} onToast={onToast} />}
       {tab === "Access log" && <AccessLog entries={log} />}
       {extra && extra.render(filters)}
