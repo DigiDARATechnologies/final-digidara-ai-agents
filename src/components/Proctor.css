@@ -1,0 +1,76 @@
+/* Proctoring: consent screen, live bar, camera preview, full-screen overlay,
+   and the assessment link page. Built on the app tokens so both themes work. */
+
+.proctor-consent { max-width: 620px; margin: 8px auto; padding: 22px; border: 1px solid var(--line-1); border-radius: 16px; background: var(--surf-1); color: var(--tx-1); box-shadow: 0 8px 24px rgb(var(--sh) / calc(.12 * var(--shk))); }
+.proctor-consent h3 { margin: 10px 0 6px; font-size: 20px; letter-spacing: -.01em; }
+.proctor-lead { margin: 0 0 12px; color: var(--tx-2); }
+.proctor-badge { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--canvas-accent-soft); color: var(--accent3); font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.proctor-rules { margin: 0 0 14px; padding-left: 20px; display: grid; gap: 6px; line-height: 1.5; }
+.proctor-privacy { margin: 0 0 14px; padding: 10px 12px; border-radius: 10px; background: var(--surf-2); color: var(--tx-2); font-size: 13px; line-height: 1.5; }
+.proctor-agree { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 16px; cursor: pointer; font-weight: 600; }
+.proctor-agree input { width: 18px; height: 18px; margin-top: 2px; flex: 0 0 auto; }
+.proctor-error { margin: 0 0 12px; padding: 9px 12px; border-radius: 10px; background: rgba(220, 38, 38, .12); color: var(--tx-1); font-size: 13px; }
+
+.proctor-live { position: relative; }
+.proctor-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; padding: 6px 12px; border-radius: 10px; background: var(--surf-2); color: var(--tx-1); font-size: 13px; font-weight: 600; }
+.proctor-dot { width: 9px; height: 9px; border-radius: 50%; background: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, .25); animation: proctorPulse 1.6s ease-in-out infinite; }
+@keyframes proctorPulse { 50% { opacity: .45; } }
+.proctor-meta { color: var(--tx-3); font-weight: 600; }
+.proctor-notice { padding: 3px 10px; border-radius: 999px; background: rgba(245, 158, 11, .18); color: var(--tx-1); }
+.proctor-ended { padding: 16px; border-radius: 12px; background: rgba(220, 38, 38, .12); color: var(--tx-1); line-height: 1.5; }
+
+.proctor-cam { position: fixed; right: 16px; bottom: 16px; z-index: 150; display: grid; gap: 6px; justify-items: center; width: 148px; padding: 4px; border-radius: 12px; background: var(--surf-1); border: 1px solid var(--line-1); box-shadow: 0 10px 26px rgb(var(--sh) / calc(.3 * var(--shk))); }
+.proctor-cam video { width: 140px; height: 105px; border-radius: 9px; object-fit: cover; background: #000; transform: scaleX(-1); }
+.proctor-cam.lost { border-color: #dc2626; }
+
+.proctor-overlay { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: rgba(5, 10, 20, .82); }
+.proctor-overlay-card { max-width: 420px; padding: 24px; border-radius: 16px; background: var(--surf-1); color: var(--tx-1); text-align: center; }
+.proctor-overlay-card h3 { margin: 0 0 8px; font-size: 20px; }
+.proctor-overlay-card p { margin: 0 0 12px; color: var(--tx-2); }
+
+/* Assessment link page */
+.assess-backdrop { position: fixed; inset: 0; z-index: 260; display: grid; place-items: center; padding: 16px; background: rgba(5, 10, 20, .6); overflow-y: auto; }
+.assess-card { width: min(640px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 24px; border-radius: 18px; background: var(--surf-1); color: var(--tx-1); box-shadow: 0 20px 50px rgb(var(--sh) / calc(.4 * var(--shk))); }
+.assess-card h2 { margin: 10px 0 4px; font-size: 22px; letter-spacing: -.01em; }
+.assess-org { margin: 0 0 14px; color: var(--tx-2); }
+.assess-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.assess-fact { padding: 10px 12px; border-radius: 12px; background: var(--surf-2); }
+.assess-fact span { display: block; color: var(--tx-3); font-size: 12px; font-weight: 600; }
+.assess-fact strong { display: block; margin-top: 2px; font-size: 14px; }
+.assess-camera { display: flex; align-items: center; gap: 12px; margin: 0 0 14px; }
+.assess-camera video { width: 160px; height: 120px; border-radius: 10px; object-fit: cover; background: #000; transform: scaleX(-1); }
+.assess-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* Organization admin: assessments */
+.assess-form { display: grid; gap: 12px; }
+.assess-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.assess-form label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; color: var(--tx-2); }
+.assess-form input[type="text"], .assess-form input[type="datetime-local"], .assess-form input[type="number"], .assess-form select { width: 100%; padding: 9px 11px; border: 1px solid var(--line-1); border-radius: 10px; background: var(--surf-2); color: var(--tx-1); font: inherit; }
+.assess-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.assess-checks label { display: flex; align-items: center; gap: 7px; font-weight: 600; color: var(--tx-1); }
+.assess-link { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.assess-link code { flex: 1 1 260px; min-width: 0; padding: 7px 10px; border-radius: 8px; background: var(--surf-2); color: var(--tx-1); font-size: 12px; overflow-wrap: anywhere; }
+.assess-list { display: grid; gap: 12px; margin-top: 16px; }
+.assess-item-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.assess-item-head h4 { margin: 0; font-size: 15px; }
+.assess-sub { color: var(--tx-3); font-size: 13px; }
+.assess-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+.assess-table th, .assess-table td { padding: 8px 6px; border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+.assess-table th { color: var(--tx-3); font-weight: 700; }
+.assess-table-wrap { overflow-x: auto; }
+.integrity { display: inline-block; min-width: 38px; padding: 2px 8px; border-radius: 999px; font-weight: 700; text-align: center; }
+.integrity-good { background: rgba(22, 163, 74, .16); color: var(--tx-1); }
+.integrity-fair { background: rgba(245, 158, 11, .2); color: var(--tx-1); }
+.integrity-poor { background: rgba(220, 38, 38, .18); color: var(--tx-1); }
+.proctor-timeline { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.proctor-timeline li { display: flex; gap: 10px; justify-content: space-between; padding: 7px 10px; border-radius: 9px; background: var(--surf-2); font-size: 13px; }
+.proctor-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 8px; }
+.proctor-shots figure { margin: 0; }
+.proctor-shots img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; background: var(--surf-2); }
+.proctor-shots figcaption { font-size: 11px; color: var(--tx-3); }
+
+@media (max-width: 640px) {
+  .proctor-cam { width: 104px; right: 10px; bottom: 10px; }
+  .proctor-cam video { width: 96px; height: 72px; }
+  .assess-card { padding: 18px; }
+}

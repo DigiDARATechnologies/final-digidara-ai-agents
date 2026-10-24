@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { fetchMemberProctoring, type ProctorSummary } from "../../lib/proctorApi";
+import { ProctorReport, ProctorTable } from "./ProctorReview";
 import ClassSelect from "./ClassSelect";
 import { ScoreRing } from "../ReadinessView";
 import {
@@ -36,7 +38,7 @@ interface Props {
   onToast: (message: string) => void;
 }
 
-const TABS = ["Overview", "Chats", "Activity", "Manage"] as const;
+const TABS = ["Overview", "Chats", "Activity", "Proctoring", "Manage"] as const;
 type Tab = (typeof TABS)[number];
 
 function when(iso: string | null | undefined): string {
@@ -54,6 +56,8 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [busy, setBusy] = useState(false);
   const [classFields, setClassFields] = useState<ClassFields>({ department: member.department, year: member.year, section: member.section });
+  const [proctored, setProctored] = useState<ProctorSummary[] | null>(null);
+  const [report, setReport] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!member.progress_shared) return;
@@ -66,6 +70,10 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
   }, [orgId, member.member_id, member.progress_shared]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (tab !== "Proctoring" || !member.progress_shared) return;
+    fetchMemberProctoring(orgId, member.member_id).then(setProctored).catch((err) => setError((err as Error).message));
+  }, [tab, orgId, member.member_id, member.progress_shared]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (transcript ? setTranscript(null) : onClose());
     window.addEventListener("keydown", onKey);
@@ -225,6 +233,14 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
                 )}
               </div>
             )}
+
+            {detail && tab === "Proctoring" && (
+              <div className="org-drawer-body">
+                <p className="rd-muted">Hard and Professional mock interviews and capstone vivas are proctored, and so are your assessment links.</p>
+                {proctored ? <ProctorTable rows={proctored} showPerson={false} onOpen={setReport} /> : <div className="org-skeleton" />}
+              </div>
+            )}
+            {report && <ProctorReport orgId={orgId} sessionId={report} onClose={() => setReport(null)} />}
 
             {detail && tab === "Manage" && (
               <div className="org-drawer-body">

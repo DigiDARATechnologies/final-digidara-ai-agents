@@ -15,6 +15,7 @@ from app.auth.verified import ensure_verified
 from app.english_only import ENGLISH_ONLY_MESSAGE, contains_non_english
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
+from app.proctoring import service as proctoring_service
 from app.registry import service as registry_service
 
 logger = logging.getLogger("orchestrator.gateway")
@@ -259,6 +260,12 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
             # be the caller's own.
             payload.update({"user_id": user.id, "name": user.name, "email": user.email, "mobile": user.mobile or ""})
             envelope["payload"] = payload
+        # An interview started for an assessment link runs with the admin's
+        # settings (before the learner's own level fills in a difficulty).
+        try:
+            proctoring_service.apply_assessment(user_id, agent_name, envelope)
+        except Exception:
+            logger.warning("assessment settings not applied: agent=%s action=%s", agent_name, action_name, exc_info=True)
         _add_learner_context(agent_name, envelope, user_id)
         body = json.dumps(envelope).encode("utf-8")
 
@@ -330,6 +337,15 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
                     auth_service.settle_tokens(user_id, parsed, agent_name, action_name or "")
             except ValueError:
                 pass
+
+    if (user_id and upstream.status_code < 400 and isinstance(envelope, dict)
+            and action_name in proctoring_service.RESULT_ACTIONS.get(agent_name, ())):
+        # Proctored sittings keep the interview's or viva's result, recorded here
+        # (not reported by the browser).
+        try:
+            proctoring_service.after_agent_call(user_id, agent_name, action_name or "", envelope.get("payload"), upstream.json())
+        except Exception:
+            logger.warning("proctoring result not recorded: agent=%s action=%s", agent_name, action_name, exc_info=True)
 
     response_headers: dict[str, str] = {}
     if upstream_content_type := upstream.headers.get("content-type"):

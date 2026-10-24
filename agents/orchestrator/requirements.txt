@@ -30,3 +30,10 @@ Pillow==13.0.0
 # passes the pip-audit/Trivy gate with.
 mem0ai==2.2.1
 qdrant-client==1.19.1
+# Knowledge tests (app/knowledge): admins upload PDF, Word, PowerPoint and
+# text files; uploads need python-multipart. Same pypdf/python-docx pins the
+# other agents already pass the pip-audit/Trivy gate with.
+pypdf==6.21.2
+python-docx==1.1.2
+python-pptx==1.0.2
+python-multipart==0.0.31

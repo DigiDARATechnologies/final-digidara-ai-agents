@@ -1,5 +1,5 @@
 import { autoChatTitle, nextChatTitle, type AgentStates } from "./lib/chatTitles";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
@@ -19,6 +19,7 @@ import {
   handleCodeForgeText,
   openCodeForgeChat,
   openCodeForgeProblem,
+  problemListCourse,
   enterAssessment,
   runCodeForgeCode,
   submitCodeForgeCode,
@@ -74,6 +75,11 @@ import SaveIndicator from "./components/SaveIndicator";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
 import MockInterviewPanel from "./components/MockInterviewPanel";
 import CapstoneVivaPanel from "./components/CapstoneVivaPanel";
+import ProctorGate from "./components/ProctorGate";
+import AssessmentGate from "./components/AssessmentGate";
+import { markFreshSession, mockInterviewProctored, setAssessmentLaunch, vivaProctored, type AssessmentStart } from "./lib/proctoring";
+import KnowledgeTestView from "./components/KnowledgeTestView";
+import type { ProctoredAgent } from "./lib/proctorApi";
 import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
@@ -97,6 +103,15 @@ const SESSION_SWITCH_KEY = "digidara_session_switched";
 const GOOGLE_OAUTH_CALLBACK_PATH = "/auth/google/callback";
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
 const isGoogleOAuthCallback = () => window.location.pathname === GOOGLE_OAUTH_CALLBACK_PATH;
+
+interface ProctorWrap { key: string; agentName: ProctoredAgent; refId: string; sessionId?: string; label: string; onTerminate: () => void }
+
+/** A Hard/Professional interview or viva, or an assessment, runs inside the proctoring screen. */
+function withProctoring(wrap: ProctorWrap | null, panel: ReactNode): ReactNode {
+  if (!wrap) return panel;
+  const { key, ...props } = wrap;
+  return <ProctorGate key={key} {...props}>{panel}</ProctorGate>;
+}
 
 function loadUser(): User | null {
   const saved = JSON.parse(localStorage.getItem("digidara_user") || "null") as User | null;
@@ -173,6 +188,7 @@ export default function App() {
     return link;
   });
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
+  const [knowledgeRun, setKnowledgeRun] = useState<{ sessionId: string; title: string } | null>(null);
   const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login" || initialLink !== null);
   useEffect(() => {
     const onPop = () => setShowLogin(window.location.pathname === "/login");
@@ -1148,6 +1164,20 @@ export default function App() {
     switchView("chat");
   }
 
+  /** An organization's assessment link was started: an interview runs in a
+   * new Mock Interview chat, a knowledge test on its own screen. */
+  function startAssessmentChat(start: AssessmentStart) {
+    setSharedLink(null);
+    if (start.kind === "knowledge_test") {
+      markFreshSession(start.sessionId);
+      setKnowledgeRun({ sessionId: start.sessionId, title: start.title });
+      return;
+    }
+    const { kind: _kind, ...launch } = start;
+    setAssessmentLaunch(launch);
+    openAgentChat("mock-interview");
+  }
+
   function openAgentDetails(agentId: string) {
     const agent = findAgent(agentId);
     if (agent) setSelectedAgent(agent);
@@ -1323,7 +1353,7 @@ export default function App() {
         setPlaygroundOpen(true);
       } else {
         const flow = codeforgeStates[chatId];
-        setProblemSetScope({ courseSlug: flow?.courseSlug, technologySlug: flow?.technologySlug });
+        setProblemSetScope({ courseSlug: flow ? problemListCourse(flow) : undefined, technologySlug: flow?.technologySlug });
         setProblemSetOpen(true);
       }
       return;
@@ -2231,9 +2261,31 @@ export default function App() {
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={chooseAptitude} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && ["hint", "get a hint"].includes(currentChat.messages.at(-1)?.text.trim().toLowerCase() ?? "")} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview", undefined, false, "Exit interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
+                  ? withProctoring(
+                    mockInterviewState.step === "in_interview" && mockInterviewState.interviewId
+                      && (mockInterviewProctored(mockInterviewState.difficulty) || Boolean(mockInterviewState.proctorSessionId))
+                      ? {
+                        key: `proctor:${currentChat.id}:${mockInterviewState.interviewId}`, agentName: "mock_interview_agent",
+                        refId: String(mockInterviewState.interviewId), sessionId: mockInterviewState.proctorSessionId,
+                        label: mockInterviewState.assessmentTitle || "Hard / Professional mock interview",
+                        onTerminate: () => sendMessage("exit_interview", undefined, false, "Test ended by proctoring"),
+                      }
+                      : null,
+                    <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview", undefined, false, "Exit interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />,
+                  )
                   : capstoneVivaLive && capstoneState
-                    ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />
+                    ? withProctoring(
+                      vivaProctored(capstoneState.difficulty) && capstoneState.vivaSubmissionId
+                        ? {
+                          key: `proctor:${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
+                          agentName: "capstone_project_agent",
+                          refId: `${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
+                          label: "Capstone viva",
+                          onTerminate: () => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Viva ended by proctoring"),
+                        }
+                        : null,
+                      <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />,
+                    )
                     : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
@@ -2340,9 +2392,15 @@ export default function App() {
         onStartChat={startChatFromDetails}
       />
 
-      {sharedLink && (
+      {sharedLink && sharedLink.kind !== "assessment" && (
         <SharedLinkView link={sharedLink} onClose={() => setSharedLink(null)}
           onOpenOwnChat={(chatId) => { setSharedLink(null); openChatById(chatId); }} />
+      )}
+      {sharedLink?.kind === "assessment" && user && (
+        <AssessmentGate token={sharedLink.token} onClose={() => setSharedLink(null)} onStart={startAssessmentChat} />
+      )}
+      {knowledgeRun && user && (
+        <KnowledgeTestView key={knowledgeRun.sessionId} sessionId={knowledgeRun.sessionId} title={knowledgeRun.title} onClose={() => setKnowledgeRun(null)} />
       )}
 
       <Toast message={toastMsg} show={toastShow} />

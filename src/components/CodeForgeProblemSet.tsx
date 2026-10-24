@@ -155,6 +155,7 @@ export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, te
               <p>
                 Your Coding level: <b>{data.level_name}</b> · {level} problems are open
                 {nextLevel && mine ? ` · solve all ${mine.total} of them (${mine.solved} done) to unlock ${nextLevel}` : ""}
+                {courseSlug ? " · languages of your course" : ""}
               </p>
             )}
           </div>
