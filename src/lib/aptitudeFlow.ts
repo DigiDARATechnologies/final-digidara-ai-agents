@@ -94,10 +94,9 @@ const optionMap = (options: Record<string, string>): ChatOption[] => Object.entr
 // The gateway answers 402 "Not enough points" (formerly "Insufficient token balance").
 const isTokenInterruption = (error: unknown) => /not enough points|insufficient token balance|token balance/i.test((error as Error)?.message || "");
 const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
-/** Starting a test can occasionally fail validation on the AI provider's side (a
- * transient generation defect, not a real outage) -- retried once silently before ever
- * bothering the student, and offered one click to retry (with the same configuration,
- * no need to reconfigure) if it still fails. See RETRY_START_TEST below. */
+/** A failed generation is surfaced once and offered as an explicit retry. We do
+ * not automatically issue a second paid generation request; the learner can
+ * retry with the same configuration via RETRY_START_TEST. */
 export const RETRY_START_TEST = "retry_start_test";
 export const createInitialAptitudeState = (): AptitudeFlowState => ({ step: "awaiting_mode" });
 export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: learnerGoal()

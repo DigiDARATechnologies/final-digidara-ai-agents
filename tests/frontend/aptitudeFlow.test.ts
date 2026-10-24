@@ -109,11 +109,11 @@ test('exit also works when an active question is interrupted for tokens', async 
   expect(result.state.step).toBe('awaiting_mode');
 });
 
-test('a failed backend exit leaves the attempt active', async () => {
+test('an already-expired backend exit closes the attempt cleanly', async () => {
   jest.mocked(api.abandonAptitudeTest).mockRejectedValueOnce(new Error('The assessment time has expired'));
   const result = await handleAptitudeText(active, 'exit test');
-  expect(result.state).toBe(active);
-  expect(result.messages[0].text).toContain('The assessment time has expired');
+  expect(result.state).toEqual({ step: 'awaiting_mode', sessionToken: 'session' });
+  expect(result.messages[0].text).toContain('already ended');
 });
 
 test('skip preserves the attempt and opens the next stored question', async () => {
@@ -133,22 +133,19 @@ test('question navigation retrieves an existing stored question by sequence', as
   expect(result.state.question?.sequence).toBe(3);
 });
 
-describe('starting a test is resilient to a one-off generation failure', () => {
+describe('starting a test exposes generation failures without duplicate requests', () => {
   const readyQuestion: api.AptitudeQuestion = { test_id: 't1', sequence: 1, total_questions: 20, category: 'Logical Reasoning', topic: 'Patterns', difficulty: 'Easy', question: 'Which pattern?', options: { A: 'First', B: 'Second' }, allowed_time_seconds: 60, hints_remaining: 2 };
 
-  test('a single failure is retried silently -- the student never sees it', async () => {
-    jest.mocked(api.createAptitudeTest)
-      .mockRejectedValueOnce(new Error('We could not prepare a quality assessment right now. Please try again shortly.'))
-      .mockResolvedValueOnce({ test_id: 't1' } as Awaited<ReturnType<typeof api.createAptitudeTest>>);
-    jest.mocked(api.getAptitudeQuestion).mockResolvedValue(readyQuestion);
+  test('a generation failure makes one request and offers an explicit retry', async () => {
+    jest.mocked(api.createAptitudeTest).mockRejectedValueOnce(new Error('We could not prepare a quality assessment right now. Please try again shortly.'));
 
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'mixed', sessionToken: 'session' };
     const result = await handleAptitudeText(languageState, 'start mixed test');
 
-    expect(api.createAptitudeTest).toHaveBeenCalledTimes(2);
-    expect(result.state.step).toBe('awaiting_question');
-    expect(result.state.testId).toBe('t1');
-    expect(result.messages.some((m) => /could not prepare/i.test(m.text))).toBe(false);
+    expect(api.createAptitudeTest).toHaveBeenCalledTimes(1);
+    expect(result.state.step).toBe('awaiting_language');
+    expect(result.messages[0].text).toContain('could not prepare your test');
+    expect(result.messages[0].options).toEqual([{ label: 'Try again', value: 'retry_start_test' }]);
   });
 
   test('two failures in a row offer Try again without losing the chosen configuration', async () => {
@@ -157,7 +154,7 @@ describe('starting a test is resilient to a one-off generation failure', () => {
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'category_practice', category: 'Technical Aptitude', level: 'Beginner', sessionToken: 'session' };
     const result = await handleAptitudeText(languageState, 'start mixed test');
 
-    expect(api.createAptitudeTest).toHaveBeenCalledTimes(2);
+    expect(api.createAptitudeTest).toHaveBeenCalledTimes(1);
     expect(result.messages[0].text).toContain('could not prepare your test');
     expect(result.messages[0].options).toEqual([{ label: 'Try again', value: 'retry_start_test' }]);
     // The failed attempt's own configuration is preserved on state, not reset.
