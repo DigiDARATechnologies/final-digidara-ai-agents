@@ -131,7 +131,8 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Conditional Statements", "Loops", "Functions", "Arrays", "Strings",
             "Basic Algorithms", "Debugging Basics", "Object-Oriented Basics", "Code Tracing",
             "Data Structures and Algorithms", "SQL Queries & Joins", "OOP Four Pillars",
-            "Flowcharts", "Pseudocode", "Output Prediction",
+            "Flowcharts", "Pseudocode", "Output Prediction", "Machine Learning Fundamentals",
+            "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
         "Intermediate": (
             "Data Structures", "Searching Algorithms", "Sorting Algorithms", "Recursion",
@@ -140,6 +141,7 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Searching & Sorting Algorithms", "SQL Queries & Joins", "OOP Four Pillars",
             "Asymptotic Notation", "Database Normalization", "ACID Properties",
             "Keys & Relationships", "Constructors/Destructors/Garbage Collection",
+            "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
         "Advanced": (
             "Advanced Data Structures", "Graph Algorithms", "Dynamic Programming",
@@ -148,6 +150,7 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Advanced Recursion", "Algorithm Optimization", "API Design",
             "Advanced Data Structures and Algorithms", "Advanced Searching & Sorting Algorithms",
             "Advanced SQL Queries & Joins", "Advanced OOP Four Pillars",
+            "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
     },
 }
@@ -305,7 +308,17 @@ def select_rotating_topic_names(definitions,previous_topics,count,rng):
     previous={str(topic).strip().casefold() for topic in previous_topics or ()}
     fresh=[name for key,name in unique.items() if key not in previous]
     recent=[name for key,name in unique.items() if key in previous]
-    rng.shuffle(fresh);rng.shuffle(recent)
+    # Rotate a deterministic permutation instead of drawing an independent
+    # random prefix. Independent prefixes can systematically starve the tail
+    # of a large topic pool across repeated seeded attempts; a cyclic slice
+    # gives every topic the same long-run opportunity while preserving the
+    # caller's seeded variation.
+    if fresh:
+        start=rng.randrange(len(fresh))
+        fresh=fresh[start:]+fresh[:start]
+    if recent:
+        start=rng.randrange(len(recent))
+        recent=recent[start:]+recent[:start]
     selected=(fresh+recent)[:count]
     while len(selected)<count:
         choices=list(unique.values())

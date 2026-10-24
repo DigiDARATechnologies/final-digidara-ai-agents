@@ -13,6 +13,7 @@ from ..topic_config import (
     topic_definitions_for,topic_is_starred,
 )
 from ..models.base import utcnow
+from .role_topics import role_skill_topics_for_level, role_topics_for_category, role_topics_for_level
 
 
 SHARED_HISTORY_SCOPE="Shared"
@@ -56,7 +57,7 @@ def choose_topics(pool, previous_topics, count, rng=None):
 
 
 def select_topics_for_attempt(
-    learner_id,category,level,count,*,apply_priority_weighting=True,
+    learner_id,category,level,count,*,apply_priority_weighting=True,topic_pool=None,
 ):
     """Select using the latest successful attempt in this category.
 
@@ -67,6 +68,9 @@ def select_topics_for_attempt(
     row=_recent_history_row(learner_id,category)
     previous = row.topics_used if row and isinstance(row.topics_used, list) else []
     definitions=topic_definitions_for(category)
+    if topic_pool is not None:
+        allowed={str(topic).casefold() for topic in topic_pool}
+        definitions=tuple(item for item in definitions if item["name"].casefold() in allowed) or definitions
     selector=(select_weighted_topic_names if apply_priority_weighting else select_rotating_topic_names)
     selected=selector(definitions,previous,count,random.SystemRandom())
     starred=sum(topic_is_starred(category,topic) for topic in selected)
@@ -120,14 +124,68 @@ def attempt_topic_schedule(test, count):
     )
 
 
-def select_mixed_topics_for_attempt(learner_id,category_counts):
+def select_mixed_topics_for_attempt(learner_id,category_counts,*,technical_role=None,technical_skills=(),technical_level="Beginner"):
     """Create equal-probability, all-topic-rotating Mixed schedules."""
-    return {
-        category:select_topics_for_attempt(
-            learner_id,category,"Mixed",int(count),apply_priority_weighting=False,
+    schedules = {}
+    for category, count in category_counts.items():
+        count = int(count)
+        # Zero is a valid Mixed Test setting. Do not send an empty request to
+        # the topic selector, which requires at least one topic and previously
+        # caused an unhandled exception (HTTP 500) when a learner disabled a
+        # category such as Technical Aptitude.
+        if count <= 0:
+            schedules[category] = []
+            continue
+        if category == "Technical Aptitude" and technical_role and technical_skills:
+            # Start with one topic per saved skill, then rotate through the
+            # wider role pool.  The old implementation only compared the
+            # one-topic-per-skill list, so once every skill had been used the
+            # next test selected the exact same schedule again.  Keeping the
+            # complete role pool in the freshness check changes the topic set
+            # on each attempt while retaining skill coverage.
+            skill_topics = list(role_skill_topics_for_level(technical_role, technical_skills, technical_level))
+            # With saved skills, keep the Technical Aptitude schedule strictly
+            # skill-specific.  Broad role topics (for example Variables or
+            # Functions) can otherwise be paired with a SQL/Power BI skill and
+            # cause correct provider questions to fail skill validation.
+            pool = list(dict.fromkeys(skill_topics))
+            history = _shared_history_row(learner_id, category)
+            previous = {str(topic).casefold() for topic in (history.topics_used if history and isinstance(history.topics_used, list) else [])}
+            fresh = [topic for topic in skill_topics if topic.casefold() not in previous]
+            fresh.extend(topic for topic in pool if topic.casefold() not in previous and topic.casefold() not in {item.casefold() for item in fresh})
+            ordered = fresh + [topic for topic in skill_topics if topic.casefold() in previous]
+            ordered.extend(topic for topic in pool if topic.casefold() in previous and topic.casefold() not in {item.casefold() for item in ordered})
+            selected = ordered[:count]
+            if len(selected) < count:
+                # There may be more slots than saved skills. Repeat the
+                # skill-specific topics round-robin while preserving the
+                # rotated order. If every skill topic was used in the last
+                # attempt, retain one additional role-specific topic in the
+                # history schedule so the next attempt has a real rotation
+                # point; build_slots reconciles stale/broad entries back to
+                # the current skill-specific pool before generation.
+                cursor = 0
+                while len(selected) < count and skill_topics:
+                    selected.append(skill_topics[cursor % len(skill_topics)])
+                    cursor += 1
+                if len(selected) == count and count > len(skill_topics) and not fresh:
+                    alternates = [topic for topic in role_topics_for_category(technical_role, technical_skills)
+                                  if topic.casefold() not in {item.casefold() for item in skill_topics}]
+                    if alternates:
+                        selected[-1] = alternates[0]
+            if len(selected) < count:
+                selected.extend(select_topics_for_attempt(
+                    learner_id, category, "Mixed", count - len(selected),
+                    apply_priority_weighting=False, topic_pool=pool,
+                ))
+            schedules[category] = selected[:count]
+            continue
+        schedules[category] = select_topics_for_attempt(
+            learner_id,category,"Mixed",count,apply_priority_weighting=False,
+            topic_pool=(role_topics_for_category(technical_role,technical_skills)
+                        if category=="Technical Aptitude" and technical_role else None),
         )
-        for category,count in category_counts.items()
-    }
+    return schedules
 
 
 def save_mixed_topics(learner_id,topics_by_category):

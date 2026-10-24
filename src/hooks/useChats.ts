@@ -3,6 +3,26 @@ import type { Chat } from "../types";
 import { fetchChatHistory, syncChatHistory } from "../lib/chatApi";
 import { sessionToken } from "../lib/session";
 
+/**
+ * Remove the pre-role-based Aptitude language picker from persisted chats.
+ * New Aptitude tests choose their technical context from the learner profile,
+ * so replaying this historical prompt is misleading. Only the exact legacy
+ * agent prompt is removed; user answers and all assessment messages remain.
+ */
+export function removeLegacyAptitudeLanguagePrompt(chats: Chat[]): { chats: Chat[]; changed: boolean } {
+  let changed = false;
+  const cleaned = chats.map((chat) => {
+    if (chat.agentId !== "aptitude") return chat;
+    const messages = chat.messages.filter((message) => {
+      const isLegacyPrompt = message.role === "agent" && /choose the technical aptitude language\s*\(python is the default\)/i.test(message.text);
+      if (isLegacyPrompt) changed = true;
+      return !isLegacyPrompt;
+    });
+    return messages.length === chat.messages.length ? chat : { ...chat, messages, updatedAt: Date.now() };
+  });
+  return { chats: cleaned, changed };
+}
+
 function chatsKey(email: string) {
   return `digidara_chats_${email}`;
 }

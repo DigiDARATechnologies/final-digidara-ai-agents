@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
-import { newChatId, nowStr, useChats } from "./hooks/useChats";
+import { newChatId, nowStr, removeLegacyAptitudeLanguagePrompt, useChats } from "./hooks/useChats";
 import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
@@ -427,10 +427,16 @@ export default function App() {
   useEffect(() => {
     let active = true;
     if (user) {
-      const localChats = loadChats();
+      const localResult = removeLegacyAptitudeLanguagePrompt(loadChats());
+      const localChats = localResult.chats;
       setChats(localChats);
       loadAccountChats(localChats).then((accountChats) => {
-        if (active && accountChats) setChats(accountChats);
+        if (!active || !accountChats) return;
+        const accountResult = removeLegacyAptitudeLanguagePrompt(accountChats);
+        setChats(accountResult.chats);
+        // Persist the migration so the obsolete prompt is not restored on the
+        // next sign-in or device sync. No other agent history is touched.
+        if (accountResult.changed) saveChats(accountResult.chats);
       });
     } else {
       setChats([]);

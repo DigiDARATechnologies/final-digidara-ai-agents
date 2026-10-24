@@ -389,7 +389,7 @@ def test_exit_preserves_answers_and_blocks_resume_results_and_pdf(
     assert replacement.get_json()["test_id"] != test_id
 
 
-def test_expired_and_completed_tests_cannot_be_exited(
+def test_expired_tests_can_be_exited_and_completed_tests_cannot_be_exited(
     app, client, auth_headers, monkeypatch
 ):
     calls = []
@@ -407,10 +407,11 @@ def test_expired_and_completed_tests_cannot_be_exited(
         test.expires_at = utcnow() - timedelta(seconds=1)
         db.session.commit()
     expired_exit = client.post(f"{url}/abandon", headers=auth_headers)
-    assert expired_exit.status_code == 409
-    assert expired_exit.get_json()["code"] == "test_timed_out"
+    assert expired_exit.status_code == 200
+    assert expired_exit.get_json()["status"] == "abandoned"
+    assert expired_exit.get_json()["abandoned"] is True
     timeout = client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "", "timed_out": True})
-    assert timeout.status_code == 200 and timeout.get_json()["complete"] is True
+    assert timeout.status_code == 409
     completed_exit = client.post(f"{url}/abandon", headers=auth_headers)
     assert completed_exit.status_code == 409
     with app.app_context():

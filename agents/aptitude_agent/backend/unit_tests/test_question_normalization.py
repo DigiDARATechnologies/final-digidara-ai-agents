@@ -1,7 +1,7 @@
 import pytest
 from flask import Flask
 
-from backend.app.services.question_validation import content_hash, normalize_question_text, questions_are_near_duplicates
+from backend.app.services.question_validation import _validate_assumptions_and_scope, content_hash, normalize_question_text, questions_are_near_duplicates, validate_generated_item
 from backend.app.services.test_generation import build_category_slots, demo_questions
 
 
@@ -28,6 +28,38 @@ def test_meaningfully_different_questions_remain_distinct():
         "Which protocol automatically assigns IP addresses on a network?",
         "What is the main purpose of a database index?",
     )
+
+
+def test_topic_alignment_rejects_oop_question_labeled_as_loops():
+    with pytest.raises(ValueError, match="does not match"):
+        _validate_assumptions_and_scope(
+            "Which principle hides an object's internal state from callers?",
+            {"A": "Encapsulation", "B": "Iteration", "C": "Sorting", "D": "Indexing"},
+            "Technical Aptitude", "Loops",
+        )
+
+
+def test_topic_alignment_rejects_testing_question_labeled_as_variables():
+    with pytest.raises(ValueError, match="does not match"):
+        _validate_assumptions_and_scope(
+            "Which practice checks a function in isolation with assertions?",
+            {"A": "Unit testing", "B": "Variable assignment", "C": "Looping", "D": "Sorting"},
+            "Technical Aptitude", "Variables & Data Types",
+        )
+
+
+def test_saved_skill_alignment_rejects_generic_question_with_skill_label():
+    slot = {"category": "Technical Aptitude", "topic": "Programming Fundamentals", "difficulty": "Easy", "technical_skill": "Machine Learning"}
+    item = {**slot, "question": "What does a function parameter provide?", "options": {"A": "Input", "B": "Output", "C": "A table", "D": "A file"}, "correct_answer": "A", "explanation": "A parameter provides input to a function."}
+    with pytest.raises(ValueError, match="saved technical skill"):
+        validate_generated_item(item, slot)
+
+
+def test_saved_skill_alignment_rejects_power_bi_question_in_machine_learning_slot():
+    slot = {"category": "Technical Aptitude", "topic": "Machine Learning Fundamentals", "difficulty": "Easy", "technical_skill": "Machine Learning", "technical_role_terms": ("python", "machine learning", "sql", "power bi")}
+    item = {**slot, "question": "Which Power BI visualization best compares categories?", "options": {"A": "Bar chart", "B": "Slicer", "C": "Measure", "D": "Card"}, "correct_answer": "A", "explanation": "Machine learning is unrelated here; a bar chart is a Power BI visualization for comparing categories."}
+    with pytest.raises(ValueError, match="does not match"):
+        validate_generated_item(item, slot)
 
 
 @pytest.mark.parametrize("category",[

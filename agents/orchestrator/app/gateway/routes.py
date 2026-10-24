@@ -37,13 +37,16 @@ router = APIRouter(prefix="/gateway", tags=["gateway"])
 # job-agent-specific repair), which is exactly the class of bug that script
 # had to work around after the fact. Keep this in sync with
 # agents/orchestrator/.env.example's ALLOWED_AGENT_HOSTS.
-ALLOWED_AGENT_HOSTS = {
-    h.strip() for h in os.environ.get(
-        "ALLOWED_AGENT_HOSTS",
-        "capstone-agent,codeforge-agent,communication-agent,aptitude-agent,"
-        "resume-builder-agent,certificate-agent,job-agent,mock-interview-agent,"
-        "127.0.0.1,localhost",
-    ).split(",") if h.strip()
+_KNOWN_AGENT_HOSTS = {
+    "capstone-agent", "codeforge-agent", "communication-agent", "aptitude-agent",
+    "resume-builder-agent", "certificate-agent", "job-agent", "mock-interview-agent",
+    "127.0.0.1", "localhost",
+}
+# Keep explicitly configured hosts while retaining the trusted Compose service
+# names. A shortened local .env must not make registered agents unusable after a
+# restart; only these fixed internal names are ever added.
+ALLOWED_AGENT_HOSTS = _KNOWN_AGENT_HOSTS | {
+    h.strip() for h in os.environ.get("ALLOWED_AGENT_HOSTS", "").split(",") if h.strip()
 }
 
 # Used only as a fallback when an agent hasn't yet been upgraded to report
