@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { fetchProctorDetail, fetchSnapshotUrl, type ProctorDetail, type ProctorSummary } from "../../lib/proctorApi";
 import { EVENT_LABELS, formatWhen as when, integrityBand, resultText } from "../../lib/proctoring";
+import { downloadKnowledgeReport, fetchAdminKnowledgeReport, type KnowledgeReport } from "../../lib/knowledgeApi";
+import KnowledgeReportView from "../KnowledgeReportView";
 import "../Proctor.css";
 
-const AGENT_TEXT: Record<string, string> = { mock_interview_agent: "Mock interview", capstone_project_agent: "Capstone viva" };
+const AGENT_TEXT: Record<string, string> = { mock_interview_agent: "Mock interview", capstone_project_agent: "Capstone viva", knowledge_test_agent: "Knowledge test" };
 const STATUS_TEXT: Record<string, string> = { active: "In progress", completed: "Finished", terminated: "Ended: too many warnings" };
 
 export function Integrity({ score }: { score: number }) {
@@ -64,8 +66,15 @@ function Snapshot({ orgId, sessionId, shot }: { orgId: string; sessionId: string
 export function ProctorReport({ orgId, sessionId, onClose }: { orgId: string; sessionId: string; onClose: () => void }) {
   const [detail, setDetail] = useState<ProctorDetail | null>(null);
   const [error, setError] = useState("");
+  const [answers, setAnswers] = useState<KnowledgeReport | null>(null);
+  const [answersNote, setAnswersNote] = useState("");
   useEffect(() => {
-    fetchProctorDetail(orgId, sessionId).then(setDetail).catch((err) => setError((err as Error).message));
+    fetchProctorDetail(orgId, sessionId).then((next) => {
+      setDetail(next);
+      if (next.agent_name === "knowledge_test_agent") {
+        fetchAdminKnowledgeReport(orgId, sessionId).then(setAnswers).catch((err) => setAnswersNote((err as Error).message));
+      }
+    }).catch((err) => setError((err as Error).message));
   }, [orgId, sessionId]);
 
   return (
@@ -87,6 +96,11 @@ export function ProctorReport({ orgId, sessionId, onClose }: { orgId: string; se
               <div className="assess-fact"><span>Warnings</span><strong>{detail.warnings} of {detail.settings.max_warnings}</strong></div>
               <div className="assess-fact"><span>Started</span><strong>{when(detail.started_at)}</strong></div>
             </div>
+            {detail.agent_name === "knowledge_test_agent" && (
+              answers
+                ? <div style={{ margin: "0 0 16px" }}><KnowledgeReportView report={answers} onDownload={() => downloadKnowledgeReport({ orgId, sessionId }, `${answers.title}_${answers.learner}`)} /></div>
+                : <p className="assess-sub">{answersNote || "Loading the answers…"}</p>
+            )}
             <h3 style={{ margin: "0 0 4px", fontSize: 15 }}>What happened</h3>
             {detail.events.length === 0
               ? <p className="assess-sub">Nothing was flagged.</p>

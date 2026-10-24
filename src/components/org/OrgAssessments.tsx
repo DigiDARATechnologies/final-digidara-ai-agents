@@ -5,6 +5,7 @@ import {
   type Assessment, type ProctorSettings, type ProctorSummary,
 } from "../../lib/proctorApi";
 import { formatWhen as when } from "../../lib/proctoring";
+import { fetchKnowledgeTests, QUESTION_TYPE_LABELS, type KnowledgeTest } from "../../lib/knowledgeApi";
 import { ProctorReport, ProctorTable } from "./ProctorReview";
 import "../Proctor.css";
 
@@ -23,6 +24,9 @@ function linkFor(assessment: Assessment): string {
 
 function describe(assessment: Assessment): string {
   const { config } = assessment;
+  if (assessment.kind === "knowledge_test") {
+    return `Knowledge test: ${config.test_title ?? ""} · ${config.num_questions} questions · ${QUESTION_TYPE_LABELS[config.question_type ?? "mcq"]}`;
+  }
   const what = config.round_type === "hr" ? "HR interview" : config.role_name ? `${config.role_name} interview` : `${config.subject} interview`;
   return `${what} · ${config.num_questions} questions · ${config.level_label ?? config.level}`;
 }
@@ -32,8 +36,21 @@ function toIso(local: string): string | null {
   return local ? new Date(local).toISOString() : null;
 }
 
-function CreateForm({ orgId, onCreated, onToast }: { orgId: string; onCreated: (a: Assessment) => void; onToast: (m: string) => void }) {
+function CreateForm({ orgId, presetTestId, onCreated, onToast }: {
+  orgId: string; presetTestId?: string | null; onCreated: (a: Assessment) => void; onToast: (m: string) => void;
+}) {
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<"mock_interview" | "knowledge_test">(presetTestId ? "knowledge_test" : "mock_interview");
+  const [tests, setTests] = useState<KnowledgeTest[]>([]);
+  const [testId, setTestId] = useState(presetTestId ?? "");
+  useEffect(() => {
+    fetchKnowledgeTests(orgId).then((all) => {
+      const ready = all.filter((t) => t.status === "ready" && t.question_count > 0);
+      setTests(ready);
+      const chosen = ready.find((t) => t.id === presetTestId);
+      if (chosen) setTitle((current) => current || chosen.title);
+    }).catch(() => setTests([]));
+  }, [orgId, presetTestId]);
   const [roundType, setRoundType] = useState<"technical" | "hr">("technical");
   const [focus, setFocus] = useState<"role" | "topic">("role");
   const [focusValue, setFocusValue] = useState("");
@@ -49,7 +66,11 @@ function CreateForm({ orgId, onCreated, onToast }: { orgId: string; onCreated: (
     event.preventDefault();
     setBusy(true);
     try {
-      const created = await createAssessment(orgId, {
+      const created = await createAssessment(orgId, kind === "knowledge_test" ? {
+        title, kind, config: { test_id: testId },
+        proctoring: { ...checks, face: checks.webcam && checks.face },
+        opens_at: toIso(opensAt), closes_at: toIso(closesAt), members_only: membersOnly,
+      } : {
         title,
         config: {
           round_type: roundType,
@@ -81,6 +102,22 @@ function CreateForm({ orgId, onCreated, onToast }: { orgId: string; onCreated: (
         <label>Title
           <input type="text" value={title} required minLength={3} maxLength={200} placeholder="e.g. Placement drive – round 1" onChange={(e) => setTitle(e.target.value)} />
         </label>
+        <label>Test
+          <select value={kind} onChange={(e) => setKind(e.target.value as "mock_interview" | "knowledge_test")}>
+            <option value="mock_interview">Mock interview</option>
+            <option value="knowledge_test">Knowledge test (from your documents)</option>
+          </select>
+        </label>
+        {kind === "knowledge_test" && (
+          <label>Knowledge test
+            <select value={testId} required onChange={(e) => setTestId(e.target.value)}>
+              <option value="">Choose a test…</option>
+              {tests.map((t) => <option key={t.id} value={t.id}>{t.title} ({t.question_count} questions)</option>)}
+            </select>
+            {tests.length === 0 && <small>No ready knowledge tests yet. Build one in the Knowledge tests tab.</small>}
+          </label>
+        )}
+        {kind === "mock_interview" && <>
         <div className="assess-form-row">
           <label>Interview
             <select value={roundType} onChange={(e) => setRoundType(e.target.value as "technical" | "hr")}>
@@ -113,6 +150,9 @@ function CreateForm({ orgId, onCreated, onToast }: { orgId: string; onCreated: (
               {LEVEL_IDS.map((id) => <option key={id} value={id}>{LEVEL_LABELS[id]}</option>)}
             </select>
           </label>
+        </div>
+        </>}
+        <div className="assess-form-row">
           <label>Opens <small>(optional)</small>
             <input type="datetime-local" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} />
           </label>
@@ -192,7 +232,7 @@ function AssessmentItem({ orgId, assessment, onChanged, onToast, onOpenReport }:
 }
 
 /** The organization admin's assessment links and their results. */
-export default function OrgAssessments({ orgId, onToast }: { orgId: string; onToast: (m: string) => void }) {
+export default function OrgAssessments({ orgId, onToast, presetTestId = null }: { orgId: string; onToast: (m: string) => void; presetTestId?: string | null }) {
   const [items, setItems] = useState<Assessment[] | null>(null);
   const [error, setError] = useState("");
   const [report, setReport] = useState<string | null>(null);
@@ -204,7 +244,7 @@ export default function OrgAssessments({ orgId, onToast }: { orgId: string; onTo
 
   return (
     <div>
-      <CreateForm orgId={orgId} onToast={onToast} onCreated={(created) => setItems((current) => [created, ...(current ?? [])])} />
+      <CreateForm key={presetTestId ?? "new"} orgId={orgId} presetTestId={presetTestId} onToast={onToast} onCreated={(created) => setItems((current) => [created, ...(current ?? [])])} />
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="assess-list">
         {items === null && !error && <div className="org-skeleton" />}

@@ -47,9 +47,10 @@ export function ruleLines(settings: ProctorSettings): string[] {
 }
 
 /** "Score 7 / 10" style text for a proctored result. */
-export function resultText(result: { score?: number | null; max?: number | null; label?: string | null; passed?: boolean } | null): string {
+export function resultText(result: { score?: number | null; max?: number | null; label?: string | null; passed?: boolean; percent?: number } | null): string {
   if (!result) return "-";
   if (result.label) return `${result.label}${result.passed === undefined ? "" : result.passed ? " (passed)" : " (not passed)"}`;
+  if (result.percent != null && result.score != null && result.max != null) return `${result.score} / ${result.max} (${Math.round(result.percent)}%)`;
   if (result.score != null && result.max != null) return `${Number(result.score).toFixed(Number.isInteger(result.score) ? 0 : 1)} / ${result.max}`;
   return "-";
 }
@@ -66,12 +67,22 @@ export interface AssessmentLaunch {
   config: { round_type: "technical" | "hr"; role_name: string; subject: string; num_questions: 5 | 10 | 15; level: LevelId };
 }
 
+/** What starting an assessment link leads to: a Mock Interview chat, or a knowledge test screen. */
+export type AssessmentStart =
+  | ({ kind: "mock_interview" } & AssessmentLaunch)
+  | { kind: "knowledge_test"; sessionId: string; title: string };
+
 let pendingLaunch: AssessmentLaunch | null = null;
 const freshSessions = new Set<string>();
 
 export function setAssessmentLaunch(launch: AssessmentLaunch): void {
   pendingLaunch = launch;
   freshSessions.add(launch.sessionId);
+}
+
+/** An attempt the learner just started and agreed to on the link's page. */
+export function markFreshSession(sessionId: string): void {
+  freshSessions.add(sessionId);
 }
 
 export function takeAssessmentLaunch(): AssessmentLaunch | null {

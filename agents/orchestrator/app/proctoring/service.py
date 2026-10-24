@@ -81,7 +81,9 @@ ATTACH_WINDOW = timedelta(minutes=30)
 
 ROUND_TYPES = ("technical", "hr")
 QUESTION_COUNTS = (5, 10, 15)
-KINDS = ("mock_interview",)
+KINDS = ("mock_interview", "knowledge_test")
+# The proctored session's agent for each kind of assessment.
+KIND_AGENTS = {"mock_interview": "mock_interview_agent", "knowledge_test": "knowledge_test_agent"}
 # Agent calls whose response the gateway hands to after_agent_call.
 RESULT_ACTIONS = {
     "mock_interview_agent": frozenset({"start_interview", "end_interview", "exit_interview"}),
@@ -407,6 +409,8 @@ def _window_state(assessment: Assessment, org: Organization | None) -> str:
 
 
 def _config_view(config: dict) -> dict:
+    if config.get("test_id"):
+        return dict(config)
     level = config.get("level", "medium")
     return {**config, "level_label": level_rules.LEVEL_LABELS.get(level, level.title())}
 
@@ -468,7 +472,7 @@ def start_assessment(user_id: str, token: str, consent: bool) -> dict:
             ps = session.get(ProctorSession, attempt["session_id"])
             _add_event(session, ps, "session_resumed", "The assessment was reopened.")
         else:
-            ps = ProctorSession(user_id=user_id, agent_name="mock_interview_agent", ref="",
+            ps = ProctorSession(user_id=user_id, agent_name=KIND_AGENTS.get(assessment.kind, "mock_interview_agent"), ref="",
                                 assessment_id=assessment.id, level=(assessment.config or {}).get("level", ""),
                                 settings=clean_settings(assessment.proctoring))
             session.add(ps)
@@ -612,14 +616,26 @@ def create_assessment(user_id: str, org_id: str, data: dict) -> dict:
         raise ProctorError(400, "Give the assessment a title.")
     kind = data.get("kind") or "mock_interview"
     if kind not in KINDS:
-        raise ProctorError(400, "Only mock interview assessments can be shared as links for now.")
-    config = _clean_config(data.get("config"))
+        raise ProctorError(400, "Choose a mock interview or a knowledge test.")
     opens_at, closes_at = _parse_time(data.get("opens_at")), _parse_time(data.get("closes_at"))
     if opens_at and closes_at and closes_at <= opens_at:
         raise ProctorError(400, "The closing time must be after the opening time.")
     session = db.get_session()
     try:
         _admin(session, user_id, org_id)
+    finally:
+        session.close()
+    if kind == "knowledge_test":
+        from app.knowledge import service as knowledge_service
+
+        try:
+            config = knowledge_service.assessment_config(org_id, (data.get("config") or {}).get("test_id"))
+        except knowledge_service.KnowledgeError as exc:
+            raise ProctorError(exc.status_code, exc.message) from exc
+    else:
+        config = _clean_config(data.get("config"))
+    session = db.get_session()
+    try:
         if session.query(Assessment).filter_by(organization_id=org_id).count() >= 1000:
             raise ProctorError(409, "An organization can have at most 1000 assessments.")
         assessment = Assessment(

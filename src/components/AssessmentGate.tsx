@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { previewAssessment, startAssessment, type AssessmentPreview } from "../lib/proctorApi";
-import { formatWhen as when, resultText, ruleLines, type AssessmentLaunch } from "../lib/proctoring";
+import { formatWhen as when, resultText, ruleLines, type AssessmentStart } from "../lib/proctoring";
+import { QUESTION_TYPE_LABELS } from "../lib/knowledgeApi";
 import "./Proctor.css";
 
 interface Props {
   token: string;
   onClose: () => void;
-  /** The attempt started: run its interview. */
-  onStart: (launch: AssessmentLaunch) => void;
+  /** The attempt started: run its interview or knowledge test. */
+  onStart: (start: AssessmentStart) => void;
 }
 
 /**
@@ -67,8 +68,12 @@ export default function AssessmentGate({ token, onClose, onStart }: Props) {
       const started = await startAssessment(token);
       stopCamera();
       const { config } = started.assessment;
+      if (preview.kind === "knowledge_test") {
+        onStart({ kind: "knowledge_test", sessionId: started.id, title: started.assessment.title });
+        return;
+      }
       onStart({
-        sessionId: started.id, title: started.assessment.title,
+        kind: "mock_interview", sessionId: started.id, title: started.assessment.title,
         config: { round_type: config.round_type, role_name: config.role_name, subject: config.subject, num_questions: config.num_questions, level: config.level },
       });
     } catch (failure) {
@@ -80,7 +85,9 @@ export default function AssessmentGate({ token, onClose, onStart }: Props) {
 
   const needsCamera = Boolean(preview?.proctoring.webcam);
   const config = preview?.config;
-  const topic = config ? (config.round_type === "hr" ? "HR interview" : config.role_name ? `${config.role_name} interview` : `${config.subject} interview`) : "";
+  const isKnowledge = preview?.kind === "knowledge_test";
+  const topic = !config ? "" : isKnowledge ? "Knowledge test"
+    : config.round_type === "hr" ? "HR interview" : config.role_name ? `${config.role_name} interview` : `${config.subject} interview`;
   const resuming = preview?.attempt?.status === "active";
 
   return (
@@ -102,7 +109,12 @@ export default function AssessmentGate({ token, onClose, onStart }: Props) {
             <div className="assess-facts">
               <div className="assess-fact"><span>Test</span><strong>{topic}</strong></div>
               <div className="assess-fact"><span>Questions</span><strong>{config.num_questions}</strong></div>
-              <div className="assess-fact"><span>Level</span><strong>{config.level_label ?? config.level}</strong></div>
+              {isKnowledge
+                ? <>
+                  <div className="assess-fact"><span>Questions are</span><strong>{QUESTION_TYPE_LABELS[config.question_type ?? "mcq"]}</strong></div>
+                  {config.seconds_per_question && <div className="assess-fact"><span>Time per question</span><strong>{config.seconds_per_question >= 60 ? `${Math.round(config.seconds_per_question / 6) / 10} min` : `${config.seconds_per_question} s`}</strong></div>}
+                </>
+                : <div className="assess-fact"><span>Level</span><strong>{config.level_label ?? config.level}</strong></div>}
               {preview.closes_at && <div className="assess-fact"><span>Closes</span><strong>{when(preview.closes_at)}</strong></div>}
               {preview.window === "not_open" && preview.opens_at && <div className="assess-fact"><span>Opens</span><strong>{when(preview.opens_at)}</strong></div>}
             </div>

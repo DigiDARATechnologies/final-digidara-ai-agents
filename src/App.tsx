@@ -77,7 +77,8 @@ import MockInterviewPanel from "./components/MockInterviewPanel";
 import CapstoneVivaPanel from "./components/CapstoneVivaPanel";
 import ProctorGate from "./components/ProctorGate";
 import AssessmentGate from "./components/AssessmentGate";
-import { mockInterviewProctored, setAssessmentLaunch, vivaProctored, type AssessmentLaunch } from "./lib/proctoring";
+import { markFreshSession, mockInterviewProctored, setAssessmentLaunch, vivaProctored, type AssessmentStart } from "./lib/proctoring";
+import KnowledgeTestView from "./components/KnowledgeTestView";
 import type { ProctoredAgent } from "./lib/proctorApi";
 import AgentDetailsModal from "./components/AgentDetailsModal";
 import { checkCapstoneHealth } from "./lib/capstoneApi";
@@ -187,6 +188,7 @@ export default function App() {
     return link;
   });
   const [sharedLink, setSharedLink] = useState<SharedLink | null>(null);
+  const [knowledgeRun, setKnowledgeRun] = useState<{ sessionId: string; title: string } | null>(null);
   const [showLogin, setShowLogin] = useState(() => window.location.pathname === "/login" || initialLink !== null);
   useEffect(() => {
     const onPop = () => setShowLogin(window.location.pathname === "/login");
@@ -1162,9 +1164,16 @@ export default function App() {
     switchView("chat");
   }
 
-  /** An organization's assessment link was started: its interview runs in a new Mock Interview chat. */
-  function startAssessmentChat(launch: AssessmentLaunch) {
+  /** An organization's assessment link was started: an interview runs in a
+   * new Mock Interview chat, a knowledge test on its own screen. */
+  function startAssessmentChat(start: AssessmentStart) {
     setSharedLink(null);
+    if (start.kind === "knowledge_test") {
+      markFreshSession(start.sessionId);
+      setKnowledgeRun({ sessionId: start.sessionId, title: start.title });
+      return;
+    }
+    const { kind: _kind, ...launch } = start;
     setAssessmentLaunch(launch);
     openAgentChat("mock-interview");
   }
@@ -2389,6 +2398,9 @@ export default function App() {
       )}
       {sharedLink?.kind === "assessment" && user && (
         <AssessmentGate token={sharedLink.token} onClose={() => setSharedLink(null)} onStart={startAssessmentChat} />
+      )}
+      {knowledgeRun && user && (
+        <KnowledgeTestView key={knowledgeRun.sessionId} sessionId={knowledgeRun.sessionId} title={knowledgeRun.title} onClose={() => setKnowledgeRun(null)} />
       )}
 
       <Toast message={toastMsg} show={toastShow} />

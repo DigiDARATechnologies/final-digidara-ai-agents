@@ -19,7 +19,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-export type ProctoredAgent = "mock_interview_agent" | "capstone_project_agent";
+export type ProctoredAgent = "mock_interview_agent" | "capstone_project_agent" | "knowledge_test_agent";
 
 export interface ProctorSettings {
   tab: boolean;
@@ -53,11 +53,18 @@ export interface AssessmentConfig {
   num_questions: 5 | 10 | 15;
   level: "beginner" | "medium" | "hard" | "professional";
   level_label?: string;
+  /** Knowledge test links only. */
+  test_id?: string;
+  test_title?: string;
+  question_type?: "mcq" | "qa" | "mixed";
+  seconds_per_question?: number;
 }
+
+export type AssessmentKind = "mock_interview" | "knowledge_test";
 
 export interface AssessmentPreview {
   title: string;
-  kind: string;
+  kind: AssessmentKind;
   organization: string;
   config: AssessmentConfig;
   proctoring: ProctorSettings;
@@ -77,6 +84,7 @@ export interface ProctorResult {
   max?: number | null;
   overall?: number | null;
   ended_early?: boolean;
+  percent?: number;
   label?: string | null;
   passed?: boolean;
 }
@@ -84,7 +92,7 @@ export interface ProctorResult {
 export interface Assessment {
   id: string;
   title: string;
-  kind: string;
+  kind: AssessmentKind;
   config: AssessmentConfig;
   proctoring: ProctorSettings;
   path: string;
@@ -130,12 +138,12 @@ export const fetchProctorState = (sessionId: string) => request<ProctorState>(`/
 export const endProctoring = (sessionId: string) => request<ProctorState>(`/proctoring/sessions/${sessionId}/end`, post({}));
 export const previewAssessment = (token: string) => request<AssessmentPreview>(`/assessments/${encodeURIComponent(token)}`);
 export const startAssessment = (token: string) =>
-  request<ProctorState & { assessment: { title: string; config: AssessmentConfig } }>(`/assessments/${encodeURIComponent(token)}/start`, post({ consent: true }));
+  request<ProctorState & { assessment: { title: string; kind?: AssessmentKind; config: AssessmentConfig } }>(`/assessments/${encodeURIComponent(token)}/start`, post({ consent: true }));
 
 // Organization admins
 export const fetchAssessments = (orgId: string) => request<Assessment[]>(`/organizations/${orgId}/assessments`);
 export const createAssessment = (orgId: string, body: {
-  title: string; config: Omit<AssessmentConfig, "level_label">; proctoring: ProctorSettings;
+  title: string; kind?: AssessmentKind; config: Partial<Omit<AssessmentConfig, "level_label">>; proctoring: ProctorSettings;
   opens_at: string | null; closes_at: string | null; members_only: boolean;
 }) => request<Assessment>(`/organizations/${orgId}/assessments`, post(body));
 export const setAssessmentActive = (orgId: string, assessmentId: string, active: boolean) =>

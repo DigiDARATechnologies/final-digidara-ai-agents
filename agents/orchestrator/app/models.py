@@ -554,3 +554,85 @@ class ProctorSnapshot(Base):
     faces: Mapped[int | None] = mapped_column(Integer, nullable=True)
     note: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge tests (app/knowledge): an organization admin uploads documents,
+# the model writes questions from them, and learners take the test through an
+# assessment link.
+# ---------------------------------------------------------------------------
+
+
+class KnowledgeTest(Base):
+    __tablename__ = "knowledge_tests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    # "mcq", "qa" (written or spoken answers) or "mixed".
+    question_type: Mapped[str] = mapped_column(String(8), default="mcq")
+    num_questions: Mapped[int] = mapped_column(Integer, default=10)
+    seconds_per_question: Mapped[int] = mapped_column(Integer, default=90)
+    # What the admin wants the questions to focus on (optional).
+    instructions: Mapped[str] = mapped_column(Text, default="")
+    # "draft", "generating", "ready" or "failed".
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    error: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class KnowledgeDocument(Base):
+    """One uploaded file and the text read from it (for an image, what the
+    vision model read and saw in it). The file itself is not kept."""
+
+    __tablename__ = "knowledge_documents"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    test_id: Mapped[str] = mapped_column(String(32), ForeignKey("knowledge_tests.id", ondelete="CASCADE"), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    # "pdf", "docx", "pptx", "txt" or "image".
+    kind: Mapped[str] = mapped_column(String(16))
+    chars: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(Text().with_variant(LONGTEXT, "mysql"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class KnowledgeQuestion(Base):
+    __tablename__ = "knowledge_questions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    test_id: Mapped[str] = mapped_column(String(32), ForeignKey("knowledge_tests.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    # "mcq" or "qa".
+    qtype: Mapped[str] = mapped_column(String(8))
+    question: Mapped[str] = mapped_column(Text)
+    # Four choices for a multiple choice question; empty for "qa".
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    # The right choice's index (mcq).
+    correct: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The model answer (qa), used to grade; shown in the report.
+    answer: Mapped[str] = mapped_column(Text, default="")
+    explanation: Mapped[str] = mapped_column(Text, default="")
+
+
+class KnowledgeAttempt(Base):
+    """One learner's sitting of a knowledge test, through an assessment link
+    (its proctored session)."""
+
+    __tablename__ = "knowledge_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    test_id: Mapped[str] = mapped_column(String(32), ForeignKey("knowledge_tests.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    proctor_session_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("proctor_sessions.id", ondelete="CASCADE"), nullable=True, unique=True)
+    # "active" or "completed".
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    # question id -> {"answer", "time_taken", "timed_out"}.
+    answers: Mapped[dict] = mapped_column(JSON, default=dict)
+    report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
