@@ -1055,7 +1055,9 @@ body.glow-off .send-btn:hover{
 }
 .code-composer:focus-within{ border-color:var(--accent1); box-shadow:0 0 0 5px var(--canvas-accent-soft); }
 .code-editor{
-  width:100%; min-height:70px; max-height:180px; overflow-y:auto; resize:vertical;
+  /* Room to write a whole solution without scrolling (about 10 lines on a
+     laptop); still drag-resizable, up to most of the window. */
+  width:100%; height:clamp(220px, 32vh, 360px); min-height:150px; max-height:65vh; overflow-y:auto; resize:vertical;
   border:none; outline:none; padding:14px 18px;
   font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Liberation Mono",monospace;
   font-size:13.5px; line-height:1.6; background:transparent; color:var(--canvas-text);

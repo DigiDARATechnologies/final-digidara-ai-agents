@@ -121,7 +121,7 @@ IDENTITY_ACTIONS = frozenset({"ensure_session", "ensure_profile", "bridge_identi
 
 def _resolve_agent(agent_name: str):
     """The live registry row for agent_name, or the gateway's 503/403."""
-    agent = registry_service.resolve_healthy(agent_name)
+    agent = registry_service.resolve_for_traffic(agent_name)
     if agent is None:
         raise HTTPException(503, f"Agent {agent_name!r} is not registered or its heartbeat is stale.")
 

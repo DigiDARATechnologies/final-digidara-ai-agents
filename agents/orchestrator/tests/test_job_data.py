@@ -10,7 +10,7 @@ from app import job_data
 def test_job_data_bridge_forwards_only_server_identity(monkeypatch):
     monkeypatch.setattr(
         job_data.registry_service,
-        "resolve_healthy",
+        "resolve_for_traffic",
         lambda name: SimpleNamespace(endpoint="http://localhost:5020/api/invoke") if name == "job_agent" else None,
     )
     captured = {}
@@ -35,6 +35,6 @@ def test_job_data_bridge_forwards_only_server_identity(monkeypatch):
 
 
 def test_job_data_bridge_fails_closed_when_agent_is_unavailable(monkeypatch):
-    monkeypatch.setattr(job_data.registry_service, "resolve_healthy", lambda name: None)
+    monkeypatch.setattr(job_data.registry_service, "resolve_for_traffic", lambda name: None)
     with pytest.raises(job_data.JobDataUnavailable):
         job_data.delete_user_data("verified-user")

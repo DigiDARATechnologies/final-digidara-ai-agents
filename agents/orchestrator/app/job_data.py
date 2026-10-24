@@ -31,7 +31,7 @@ class JobDataUnavailable(RuntimeError):
 
 
 def _invoke(action: str, user_id: str) -> dict:
-    agent = registry_service.resolve_healthy("job_agent")
+    agent = registry_service.resolve_for_traffic("job_agent")
     if agent is None:
         raise JobDataUnavailable("Job Agent is temporarily unavailable. Please try again.")
     if urlparse(agent.endpoint).hostname not in ALLOWED_AGENT_HOSTS:
