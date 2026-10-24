@@ -6,6 +6,8 @@ from decimal import Decimal, InvalidOperation
 from ..utils.security import clean_text
 from ..utils.explanation import normalize_explanation
 from ..utils.code_formatting import apply_structured_code_fields, canonicalize_unlabelled_fences, normalize_fenced_text, validate_fenced_code
+from ..topic_config import CATEGORY_PRACTICE_TOPICS
+from .role_topics import SKILL_TOPIC_RULES
 
 
 INTERNAL_TOKEN_PATTERN=re.compile(
@@ -29,6 +31,194 @@ CONCEPT_PATTERNS={
 
 
 CONCEPT_MAX_CONTENT_WORDS=8
+
+_PLACEHOLDER_PATTERN = re.compile(
+    r"(?:\[\s*(?:x|y|z|value|number|blank)\s*\]|\.{3,}|\?{2,}|\b(?:something|somebody|etc\.?|as follows)\b)",
+    re.IGNORECASE,
+)
+_TOPIC_IDENTIFICATION_PLACEHOLDER = re.compile(
+    r"\b(?:practice\s+item|assigned\s+topic|configured\s+topic|which\s+response\s+correctly\s+identifies|"
+    r"assessment\s+dataset|in\s+slot\s+\d+|best\s+applies\s+to\s+.+\s+here)\b",
+    re.IGNORECASE,
+)
+_QUESTION_START_PATTERN = re.compile(
+    r"^(?:what|which|who|whom|where|when|why|how|is|are|does|do|can|could|should|find|choose|select|identify|determine|complete|calculate|consider|given)\b",
+    re.IGNORECASE,
+)
+_ASSUMPTION_WORDS = re.compile(
+    r"\b(?:average[- ]case|worst[- ]case|best[- ]case|amortized|undirected|directed|"
+    r"one[- ]way|two[- ]way|per pair|only|without|assuming|when|under|given|"
+    r"in this scenario|all other|relative order|search structure|index on)\b",
+    re.IGNORECASE,
+)
+
+
+def _option_key(value):
+    """Normalize an option enough to catch equivalent distractors."""
+    normalized = _normalized_words(str(value or ""))
+    # Numeric options such as ``50`` and ``50.0`` are the same answer.
+    numeric = re.fullmatch(r"[-+]?\d+(?:\.\d+)?", normalized)
+    if numeric:
+        try:
+            return f"number:{Decimal(numeric.group()).normalize():f}"
+        except InvalidOperation:
+            pass
+    return normalized
+
+
+def _validate_question_clarity(question, options, category):
+    words = re.findall(r"[A-Za-z0-9]+", question)
+    if len(words) < 5:
+        raise ValueError("question is incomplete or too short")
+    if _PLACEHOLDER_PATTERN.search(question):
+        raise ValueError("question contains an unspecified placeholder or condition")
+    if _TOPIC_IDENTIFICATION_PLACEHOLDER.search(question):
+        raise ValueError("question is a topic-identification placeholder")
+    if "?" not in question and not _QUESTION_START_PATTERN.search(question.strip()):
+        raise ValueError("question is not a complete question")
+    if any(_normalized_words(question) == _normalized_words(value) for value in options.values()):
+        raise ValueError("question duplicates an answer option")
+
+
+def _validate_saved_skill_alignment(question, options, explanation, slot):
+    skill = str(slot.get("technical_skill") or "").strip()
+    if not skill or slot.get("category") != "Technical Aptitude":
+        return
+    content = " ".join((question, *(str(value) for value in options.values()), explanation)).casefold()
+    # Only aliases of the assigned skill are evidence.  Treating every saved
+    # skill in technical_role_terms as evidence let a Power BI question pass a
+    # Machine Learning slot merely because both skills belonged to the same
+    # learner profile.
+    aliases = (skill, *SKILL_TOPIC_RULES.get(skill.casefold(), ()))
+    for term in aliases:
+        if len(str(term).strip()) < 3:
+            continue
+        alias = re.escape(term.casefold()).replace(r"\ ", r"\s+")
+        if re.search(rf"(?<![a-z0-9]){alias}(?![a-z0-9])", content):
+            return
+    raise ValueError("question does not explicitly assess its saved technical skill")
+
+
+def _validate_assumptions_and_scope(question, options, category, topic):
+    """Reject stems whose answer changes with an unstated interpretation."""
+    text = question.casefold()
+    assumptions = _ASSUMPTION_WORDS.search(question)
+    topic_text = str(topic or "").casefold()
+    option_text = " ".join(str(value) for value in options.values()).casefold()
+
+    # Deterministic topic guardrails catch common model routing mistakes before
+    # an item is accepted.  They are intentionally limited to strong signals;
+    # broad conceptual questions still go through the normal prompt/schema
+    # checks without being rejected for a shared keyword.
+    strong_signals = {
+        "oop": r"\b(?:class(?:es)?|object(?:s)?|inheritance|encapsulation|polymorphism|abstraction)\b",
+        "testing": r"\b(?:unit test(?:ing)?|test case|assert(?:ion)?s?|regression test|test suite|mock(?:ing)?)\b",
+        "loops": r"\b(?:for loop|while loop|loop iteration|iterate(?:s|d)? over)\b",
+        "variables": r"\b(?:variable declaration|assign(?:s|ed)? a variable|data type of|mutable variable)\b",
+    }
+    topic_family = None
+    if re.search(r"\b(?:oop|object[- ]oriented|four pillars)\b", topic_text): topic_family = "oop"
+    elif re.search(r"\b(?:testing|debugging)\b", topic_text): topic_family = "testing"
+    elif re.search(r"\b(?:loop|loops)\b", topic_text): topic_family = "loops"
+    elif re.search(r"\b(?:variable|variables|data types)\b", topic_text): topic_family = "variables"
+    if topic_family:
+        conflicting = [name for name, pattern in strong_signals.items() if name != topic_family and re.search(pattern, question, re.IGNORECASE)]
+        if conflicting:
+            raise ValueError("question content does not match its configured topic")
+
+    if ("improve database query performance" in text or "method to improve database" in text) and not re.search(
+        r"\b(?:index|search structure|partition|normaliz|denormaliz)\b", text
+    ):
+        raise ValueError("database-performance question needs a specified mechanism")
+    if re.search(r"\bwhich database query is faster\b", text) and not assumptions:
+        raise ValueError("database-performance question needs a specified mechanism")
+    if re.search(r"\b(?:beats|overtakes|passes)\b", text) and not re.search(
+        r"\b(?:only|without|not\s+(?:also\s+)?\w+|all other|relative)\b", text
+    ):
+        raise ValueError("ranking question does not state which relative positions change")
+    if "primary benefit" in text and not assumptions:
+        raise ValueError("primary-benefit question needs a scenario or criterion")
+    if "time complexity" in text and "hash table" in text and not re.search(
+        r"\b(?:average|worst|best|amortized|collision|load factor)\b", text
+    ):
+        raise ValueError("hash-table complexity question needs a case or assumption")
+    if "communicate with every other" in text and not re.search(
+        r"\b(?:undirected|directed|one[- ]way|two[- ]way|pair|connection between)\b", text
+    ):
+        raise ValueError("connection-count question needs a directed or undirected model")
+    if re.search(r"\bedges?\b", text) and re.search(r"\bgraph\b", text) and re.search(
+        r"\bvertices?\b", text
+    ) and not re.search(r"\b(?:complete|simple|undirected|directed|connected|tree|cycle|degree)\b", text):
+        raise ValueError("graph edge question needs a specified graph structure")
+    if "____" in question and re.search(r"\b(?:very|was|were|is|are)\b", text) and not assumptions:
+        raise ValueError("fill-in-the-blank wording question lacks a distinguishing condition")
+
+    # Topic labels are not enough: obvious domain signals must agree with the
+    # configured topic. This catches SQL retrieval questions mislabeled as
+    # graph or array questions while leaving broad conceptual questions alone.
+    sql_signal = re.search(
+        r"(?:\b(?:select|insert|update|delete|join|sql|query|table|database)\b|\bselect\b[\s\S]*\bfrom\b)",
+        text,
+    )
+    if sql_signal and not re.search(r"\b(?:sql|database|query|relational|join|normaliz|transaction|index)\b", topic_text):
+        raise ValueError("question content does not match its configured topic")
+    graph_topic = re.search(r"\b(?:graph algorithms?|graph theory|graphs? traversal|graph data structures?)\b", topic_text)
+    if graph_topic and not re.search(r"\b(?:graph|vertex|vertices|edge|path|travers|node)\b", text):
+        raise ValueError("question content does not match its graph topic")
+    if re.search(r"\barray", topic_text) and not re.search(
+        r"\b(?:arrays?|lists?|indices|indexes?|elements?)\b", text
+    ):
+        raise ValueError("question content does not match its array topic")
+
+    # Strong cross-domain signals must not be accepted under a different
+    # saved-skill topic.  This catches the common provider drift seen in live
+    # batches: a Power BI visualization question labelled Machine Learning.
+    ml_topic = re.search(r"\b(?:machine learning|ml|model training|classification|regression)\b", topic_text)
+    power_bi_topic = re.search(r"\b(?:power bi|data visualization|business intelligence)\b", topic_text)
+    ml_signal = re.search(
+        r"\b(?:machine learning|ml model|training dataset|test dataset|overfitting|classification|regression|"
+        r"feature engineering|prediction|precision|recall|f1 score|clustering)\b", text,
+    )
+    power_bi_signal = re.search(
+        r"\b(?:power bi|dashboard|slicer|dax|visualization|bar chart|line chart|report page)\b", text,
+    )
+    if ml_topic and power_bi_signal and not ml_signal:
+        raise ValueError("question content does not match its configured topic")
+    if power_bi_topic and ml_signal and not power_bi_signal:
+        raise ValueError("question content does not match its configured topic")
+
+    # A spelling polarity question must not mark a correctly spelled word as
+    # the misspelling. The deterministic dictionary is intentionally small and
+    # conservative; uncertain spelling items are rejected for regeneration.
+    if "misspelled" in text or "incorrectly spelled" in text:
+        known = {"receive", "separate", "necessary", "definitely", "accommodate", "embarrass", "occurrence", "recommend"}
+        normalized = [re.sub(r"[^a-z]", "", value.casefold()) for value in options.values()]
+        known_count = sum(value in known for value in normalized)
+        verified = next((value for value in normalized if value in known), None)
+        typo_count = sum(
+            1 for value in normalized
+            if verified and SequenceMatcher(None, value, verified).ratio() >= 0.65
+        )
+        if verified and typo_count != 1:
+            raise ValueError("spelling question does not have exactly one verified misspelling")
+
+
+def _validate_slot_metadata(item, slot):
+    """Do not silently accept a model item for the wrong configured slot."""
+    for field in ("category", "topic", "difficulty"):
+        if field not in item or item[field] in (None, ""):
+            continue
+        actual = str(item[field]).strip()
+        expected = str(slot[field]).strip()
+        if actual.casefold() != expected.casefold():
+            raise ValueError(f"generated {field} does not match the requested slot")
+    category = str(slot.get("category") or "").strip()
+    topic = str(slot.get("topic") or "").strip().casefold()
+    configured = CATEGORY_PRACTICE_TOPICS.get(category)
+    if configured is not None:
+        known = {str(name).strip().casefold() for names in configured.values() for name in names}
+        if topic not in known:
+            raise ValueError("generated topic is not configured for the requested category")
 
 
 def normalize_question_text(text):
@@ -258,8 +448,68 @@ def _has_matching_math_conclusion(explanation, option_text):
     return bool(re.search(rf"(?<!\w){re.escape(normalized_option)}(?!\w)",_normalized_words(derivation_text)))
 
 
+def _question_arithmetic_result(question):
+    """Solve the small, explicit arithmetic stems commonly produced for MCQs.
+
+    This is deliberately conservative: returning ``None`` means the stem is
+    left to the normal explanation and model validation rather than guessed by
+    the application.
+    """
+    text = str(question or "")
+    number = r"(-?\d+(?:\.\d+)?)"
+    patterns = (
+        (rf"{number}\s*%\s*of\s*{number}", lambda a, b: a / 100 * b),
+        (rf"{number}\s*\+\s*{number}", lambda a, b: a + b),
+        (rf"{number}\s+plus\s+{number}", lambda a, b: a + b),
+        (rf"{number}\s*-\s*{number}", lambda a, b: a - b),
+        (rf"{number}\s+minus\s+{number}", lambda a, b: a - b),
+        (rf"subtract\s+{number}\s+from\s+{number}", lambda a, b: b - a),
+        (rf"{number}\s+times\s+{number}", lambda a, b: a * b),
+        (rf"{number}\s*[x×]\s*{number}", lambda a, b: a * b),
+        (rf"{number}\s+divided\s+by\s+{number}", lambda a, b: a / b if b else None),
+    )
+    for pattern, operation in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            value = operation(Decimal(match.group(1)), Decimal(match.group(2)))
+        except (InvalidOperation, ZeroDivisionError):
+            return None
+        if value is not None:
+            return value.normalize()
+    return None
+
+
+def _validate_explicit_arithmetic_answer(question, options, answer):
+    expected = _question_arithmetic_result(question)
+    if expected is None:
+        return
+    matching = []
+    for key, value in options.items():
+        candidate = re.search(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])", str(value))
+        if not candidate:
+            continue
+        try:
+            if Decimal(candidate.group()).normalize() == expected:
+                matching.append(key)
+        except InvalidOperation:
+            continue
+    # A stem with exactly one numeric option has an independently verifiable
+    # key. Reject both wrong keys and ambiguous duplicate numeric answers.
+    if not matching:
+        raise ValueError("question has no option matching its calculable result")
+    if len(matching) == 1 and matching[0] != answer:
+        raise ValueError("answer key does not match the calculable question result")
+    if len(matching) > 1:
+        raise ValueError("question has multiple options matching its calculable result")
+
+
 def validate_generated_item(item, slot, internal_values=()):
     selected_language=str(slot.get("technical_language") or "python").lower()
+    if not isinstance(item, dict):
+        raise ValueError("generated question must be an object")
+    _validate_slot_metadata(item, slot)
     item=apply_structured_code_fields(item,slot["category"],selected_language)
     required = {"question","options","correct_answer","explanation","category","topic","difficulty"}
     if not isinstance(item, dict) or not required.issubset(item): raise ValueError("missing required fields")
@@ -275,7 +525,8 @@ def validate_generated_item(item, slot, internal_values=()):
         key:(normalize_fenced_text(canonicalize_unlabelled_fences(value,selected_language),500) if technical else clean_text(value,500))
         for key,value in options.items()
     }
-    if any(not value for value in options.values()) or len({value.casefold() for value in options.values()}) != 4: raise ValueError("options must be unique and non-empty")
+    option_keys = [_option_key(value) for value in options.values()]
+    if any(not value for value in options.values()) or len(set(option_keys)) != 4: raise ValueError("options must be unique and non-empty")
     answer = clean_text(item["correct_answer"],1).upper()
     if answer not in options: raise ValueError("invalid answer key")
     question = normalize_fenced_text(canonicalize_unlabelled_fences(item["question"],selected_language),2000) if technical else clean_text(item["question"],2000)
@@ -290,6 +541,9 @@ def validate_generated_item(item, slot, internal_values=()):
     if INTERNAL_TOKEN_PATTERN.search(public_text):raise ValueError("generated content exposes an internal prompt token")
     exposed_values=[str(value).strip() for value in internal_values if len(str(value).strip())>=4]
     if any(value.casefold() in public_text.casefold() for value in exposed_values):raise ValueError("generated content exposes an internal seed value")
+    _validate_question_clarity(question, options, slot["category"])
+    _validate_saved_skill_alignment(question, options, explanation, slot)
+    _validate_assumptions_and_scope(question, options, slot["category"], slot.get("topic"))
     if len(question) < 12 or len(explanation) < 10: raise ValueError("question or explanation too short")
     if len(explanation) > 600: raise ValueError("explanation exceeds 600 characters")
     # "Answer = $5.00." alone (an empty reason from the model) taught nothing
@@ -305,6 +559,7 @@ def validate_generated_item(item, slot, internal_values=()):
     if _has_self_correction(explanation): raise ValueError("explanation contains self-correction or option guessing")
     if _has_redundant_repetition(explanation): raise ValueError("explanation redundantly repeats a calculation or phrase")
     if not _states_correct_answer(explanation,options[answer],answer): raise ValueError("explanation does not support the correct answer")
+    _validate_explicit_arithmetic_answer(question, options, answer)
     option_has_number=bool(re.search(r"-?\d+(?:[.,]\d+)?%?",options[answer]))
     uses_steps=bool(re.search(r"\bStep\s+\d+\s*:",explanation,re.IGNORECASE))
     # Only quantitative questions require a formal calculated conclusion.

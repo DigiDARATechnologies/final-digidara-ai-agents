@@ -131,7 +131,8 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Conditional Statements", "Loops", "Functions", "Arrays", "Strings",
             "Basic Algorithms", "Debugging Basics", "Object-Oriented Basics", "Code Tracing",
             "Data Structures and Algorithms", "SQL Queries & Joins", "OOP Four Pillars",
-            "Flowcharts", "Pseudocode", "Output Prediction",
+            "Flowcharts", "Pseudocode", "Output Prediction", "Machine Learning Fundamentals",
+            "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
         "Intermediate": (
             "Data Structures", "Searching Algorithms", "Sorting Algorithms", "Recursion",
@@ -140,6 +141,7 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Searching & Sorting Algorithms", "SQL Queries & Joins", "OOP Four Pillars",
             "Asymptotic Notation", "Database Normalization", "ACID Properties",
             "Keys & Relationships", "Constructors/Destructors/Garbage Collection",
+            "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
         "Advanced": (
             "Advanced Data Structures", "Graph Algorithms", "Dynamic Programming",
@@ -148,6 +150,7 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Advanced Recursion", "Algorithm Optimization", "API Design",
             "Advanced Data Structures and Algorithms", "Advanced Searching & Sorting Algorithms",
             "Advanced SQL Queries & Joins", "Advanced OOP Four Pillars",
+            "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
         ),
     },
 }

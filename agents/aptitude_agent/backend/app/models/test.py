@@ -19,6 +19,9 @@ class AptitudeTest(db.Model):
     selected_category = db.Column(db.String(80))
     selected_level = db.Column(db.Enum("Beginner", "Intermediate", "Advanced", name="practice_level"))
     technical_language = db.Column(db.String(20))
+    # Snapshot of the verified onboarding context used for Technical Aptitude.
+    # Nullable so historical attempts remain readable without a migration backfill.
+    technical_context = db.Column(db.JSON)
     timezone = db.Column(db.String(80))
     focus_category = db.Column(db.String(80))
     # Immutable per-attempt snapshot of the learner's six configured counts.

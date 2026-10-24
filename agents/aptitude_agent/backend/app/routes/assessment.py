@@ -24,6 +24,7 @@ from ..services.topic_selection_service import (
     save_last_topics,save_mixed_topics,select_mixed_topics_for_attempt,
     select_topics_for_attempt,
 )
+from ..services.role_topics import normalize_technical_skills, role_technical_context, role_topics_for_level
 from ..services.usage_service import record_usage
 from ..topic_config import topic_is_starred
 from ..utils.authentication import require_student
@@ -132,11 +133,23 @@ def create_test():
     if learner_level is not None and learner_level not in LEARNER_LEVEL_DIFFICULTY:
         raise APIError("learner_level must be beginner, medium, hard or professional",400,"invalid_learner_level")
     rigor=PROFESSIONAL_RIGOR if learner_level=="professional" else None
-    requested_language=str(body.get("technical_language") or DEFAULT_TECHNICAL_LANGUAGE).strip()
+    target_role=str(body.get("target_role") or "").strip()
+    target_skills=body.get("target_skills") or body.get("skills") or []
+    if not isinstance(target_skills,list):
+        target_skills=[]
+    target_skills=normalize_technical_skills(target_skills)
+    role_context=role_technical_context(target_role,target_skills)
+    # Specific roles select their own formatter. Generic or missing roles are
+    # deliberately language-neutral and ignore any legacy browser language.
+    has_role_context = "target_role" in body or "target_skills" in body or "skills" in body
+    requested_language = None if has_role_context and role_context["family"] == "generic" else str(body.get("technical_language") or DEFAULT_TECHNICAL_LANGUAGE).strip()
+    if target_role and role_context["family"] != "generic":
+        requested_language=role_context["language"]
     language_by_key={language.casefold():language for language in TECHNICAL_LANGUAGES}
-    if requested_language.casefold() not in language_by_key:
-        raise APIError("Choose C, Java, Python or SQL",400,"invalid_technical_language")
-    requested_language=language_by_key[requested_language.casefold()]
+    if requested_language is not None:
+        if requested_language.casefold() not in language_by_key:
+            raise APIError("Choose C, Java, Python or SQL",400,"invalid_technical_language")
+        requested_language=language_by_key[requested_language.casefold()]
     student_timezone=valid_timezone(body.get("timezone"))
     test_id=str(uuid.uuid4())
     selected_topics=None
@@ -147,19 +160,26 @@ def create_test():
         if level not in CATEGORY_LEVELS:raise APIError("Choose Beginner, Intermediate or Advanced",400,"invalid_level")
         selected_topics=select_topics_for_attempt(
             g.student.id,category,level,CATEGORY_PRACTICE_QUESTION_COUNT,
+            topic_pool=(role_topics_for_level(target_role,target_skills,level)
+                        if category=="Technical Aptitude" and target_role else None),
         )
         technical_language=requested_language if category=="Technical Aptitude" else None
-        slots=build_category_slots(category,level,selected_topics,technical_language=technical_language,rigor=rigor)
+        slots=build_category_slots(category,level,selected_topics,technical_language=technical_language,rigor=rigor,technical_role=target_role,technical_skills=target_skills)
     else:
         if category and category not in CATEGORIES:raise APIError("Choose a valid aptitude category",400,"invalid_category")
         if category or level:raise APIError("Category and level are only accepted for category practice",400,"invalid_mixed_configuration")
         mixed_counts=mixed_counts_by_name(g.student.id)
-        mixed_topics=select_mixed_topics_for_attempt(g.student.id,mixed_counts)
+        mixed_topics=select_mixed_topics_for_attempt(
+            g.student.id, mixed_counts, technical_role=target_role,
+            technical_skills=target_skills,
+            technical_level={"beginner": "Beginner", "medium": "Intermediate", "hard": "Advanced", "professional": "Advanced"}.get(learner_level or "beginner", "Beginner"),
+        )
         technical_language=requested_language
         slots=build_slots(
             seed=test_id,category_counts=mixed_counts,
             technical_language=technical_language,topics_by_category=mixed_topics,
             difficulty=LEARNER_LEVEL_DIFFICULTY.get(learner_level or ""),rigor=rigor,
+            technical_role=target_role,technical_skills=target_skills,
         )
         if not slots:raise APIError("Select at least one question",400,"empty_mixed_test")
     def open_attempt():
@@ -171,7 +191,8 @@ def create_test():
         for active in active_tests:
             abandon_attempt(active,"superseded_by_new_test")
         hint_budget=2 if mode=="category_practice" else current_app.config["HINTS_PER_TEST"]
-        test=AptitudeTest(id=test_id,student_id=g.student.id,status="generating",total_questions=len(slots),test_mode=mode,selected_category=category if mode=="category_practice" else None,selected_level=level if mode=="category_practice" else None,technical_language=technical_language,timezone=student_timezone,focus_category=None,mixed_category_counts=mixed_counts,hints_allowed=hint_budget)
+        technical_context={"role": role_context["role"], "family": role_context["family"], "skills": [str(skill).strip() for skill in target_skills if str(skill).strip()]} if target_role or target_skills else None
+        test=AptitudeTest(id=test_id,student_id=g.student.id,status="generating",total_questions=len(slots),test_mode=mode,selected_category=category if mode=="category_practice" else None,selected_level=level if mode=="category_practice" else None,technical_language=technical_language,technical_context=technical_context,timezone=student_timezone,focus_category=None,mixed_category_counts=mixed_counts,hints_allowed=hint_budget)
         if selected_topics:
             # Question one is generated before the successful topic schedule is
             # persisted, so keep the planned schedule on this ORM instance.
@@ -284,8 +305,11 @@ def abandon(test_id):
         return {"test_id":test.id,"status":test.status,"abandoned":False}
     if test.status not in {"generating","ready","in_progress"}:
         raise APIError("This assessment cannot be exited",409,"test_not_active")
-    if test.status=="in_progress" and overall_remaining_seconds(test)<=0:
-        raise APIError("The assessment time has expired",409,"test_timed_out")
+    # Exit is an explicit learner action and must remain available even when
+    # the overall timer reached zero (including a test paused for an exhausted
+    # points balance).  Timeout handling for scoring is still performed by the
+    # answer endpoint; abandoning here simply ends the attempt without adding
+    # an answer or changing its score.
     changed=abandon_attempt(test,"student_exit")
     if changed:
         db.session.commit()

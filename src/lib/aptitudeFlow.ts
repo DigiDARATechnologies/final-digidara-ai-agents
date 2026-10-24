@@ -13,7 +13,7 @@ export function exitScoreText(result: { answered_count?: number; correct_count?:
   return `Test exited. ${score}\n\nYou can start a new Category or Mixed Test.`;
 }
 
-export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: TechnicalLanguage; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; hintError?: string; tokenInterrupted?: boolean; }
+export interface AptitudeFlowState { step: AptitudeStep; mode?: "mixed" | "category_practice"; category?: string; level?: "Beginner" | "Intermediate" | "Advanced"; technicalLanguage?: TechnicalLanguage; sessionToken?: string; testId?: string; question?: AptitudeQuestion; score?: number; totalQuestions?: number; hintsRemaining?: number; hintText?: string; hintError?: string; startError?: string; tokenInterrupted?: boolean; }
 export interface AptitudeFlowMessage { text: string; options?: ChatOption[]; }
 const categories = ["Quantitative Aptitude", "Logical Reasoning", "Verbal Ability", "Analytical Reasoning", "Computer Fundamentals", "Technical Aptitude"];
 const categoryOptions = categories.map((value) => ({ label: value, value }));
@@ -69,11 +69,6 @@ export function aptitudeLanguages(): TechnicalLanguage[] {
   return [roleFamily(goal.targetRole) === "data" ? "SQL" : "Python"];
 }
 
-/** The language for Technical Aptitude: the learner's first matching one. */
-function skillLanguage(): TechnicalLanguage | undefined {
-  return learnerGoal() ? aptitudeLanguages()[0] : undefined;
-}
-
 /** One-tap starts built from the learner's role, skills and level. */
 function roleStartOptions(): ChatOption[] {
   const goal = learnerGoal();
@@ -82,10 +77,9 @@ function roleStartOptions(): ChatOption[] {
   const family = ROLE_FAMILIES[roleFamily(goal.targetRole)];
   const top = Object.entries(family.mix).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name]) => name);
   const level = LEVEL_NAMES[beginnerToAdvanced("aptitude_agent")];
-  const language = family.focus === "Technical Aptitude" ? skillLanguage() ?? "Python" : undefined;
   return [
     { label: `Mixed test for ${role}`, value: "role_mix", description: `20 questions weighted toward ${top.join(", ")}` },
-    { label: `${family.focus} at your level`, value: "role_category", description: `${level}${language ? ` · ${language}` : ""} · what ${role} roles test most` },
+    { label: `${family.focus} at your level`, value: "role_category", description: `${level} - what ${role} roles test most` },
   ];
 }
 
@@ -96,10 +90,6 @@ function learnerPracticeLevel(): "Beginner" | "Intermediate" | "Advanced" {
   return LEVEL_NAMES[beginnerToAdvanced("aptitude_agent")];
 }
 
-/** Only the languages the learner's skills and target role use. */
-function languageChoices(): ChatOption[] {
-  return aptitudeLanguages().map((value) => ({ label: value, value }));
-}
 const optionMap = (options: Record<string, string>): ChatOption[] => Object.entries(options).map(([value, label]) => ({ value, label: `${value}. ${label}` }));
 // The gateway answers 402 "Not enough points" (formerly "Insufficient token balance").
 const isTokenInterruption = (error: unknown) => /not enough points|insufficient token balance|token balance/i.test((error as Error)?.message || "");
@@ -108,7 +98,7 @@ const resumeOptions = [{ label: "Continue Test", value: "continue test" }];
  * transient generation defect, not a real outage) -- retried once silently before ever
  * bothering the student, and offered one click to retry (with the same configuration,
  * no need to reconfigure) if it still fails. See RETRY_START_TEST below. */
-const RETRY_START_TEST = "retry_start_test";
+export const RETRY_START_TEST = "retry_start_test";
 export const createInitialAptitudeState = (): AptitudeFlowState => ({ step: "awaiting_mode" });
 export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ text: learnerGoal()
   ? `Hi ${user.name.split(" ")[0]}! Aptitude rounds are a common first filter for ${displayRole(learnerGoal()!.targetRole)} roles. Start with a test built for your role, or choose your own.`
@@ -129,31 +119,30 @@ async function startTest(state: AptitudeFlowState, user?: User) {
     localStorage.setItem(`digidara_aptitude_token_${user.email.toLowerCase()}`, sessionToken);
   }
   // learner_level: every question is set at the learner's level (Professional above Hard).
-  const payload: Record<string, unknown> = { mode: state.mode, technical_language: state.technicalLanguage || "Python", learner_level: learnerLevel("aptitude_agent") };
+  const goal = learnerGoal();
+  const payload: Record<string, unknown> = {
+    mode: state.mode,
+    learner_level: learnerLevel("aptitude_agent"),
+    ...(goal ? { target_role: goal.targetRole, target_skills: goal.skills } : {}),
+  };
   if (state.mode === "category_practice") Object.assign(payload, { category: state.category, level: state.level });
   const created = await createAptitudeTest(state.sessionToken!, payload);
   const question = await getAptitudeQuestion(state.sessionToken!, created.test_id);
-  return { state: { ...state, step: "awaiting_question" as const, testId: created.test_id, question, totalQuestions: question.total_questions, hintsRemaining: question.hints_remaining }, messages: [questionMessage(question)] };
+  return { state: { ...state, step: "awaiting_question" as const, testId: created.test_id, question, totalQuestions: question.total_questions, hintsRemaining: question.hints_remaining, startError: undefined }, messages: [questionMessage(question)] };
 }
 
 async function startTestWithRetry(state: AptitudeFlowState, user?: User) {
   try {
     return await startTest(state, user);
   } catch (error) {
-    // An insufficient balance is a real, non-transient problem -- retrying changes
-    // nothing, so it's left to the caller's normal token-interruption handling.
     if (isTokenInterruption(error)) throw error;
-    try {
-      return await startTest(state, user);
-    } catch (retryError) {
-      return {
-        state,
-        messages: [{
-          text: `I could not prepare your test: ${(retryError as Error).message}`,
-          options: [{ label: "Try again", value: RETRY_START_TEST }],
-        }],
-      };
-    }
+    return {
+      state: { ...state, startError: (error as Error).message },
+      messages: [{
+        text: `I could not prepare your test: ${(error as Error).message}`,
+        options: [{ label: "Try again", value: RETRY_START_TEST }],
+      }],
+    };
   }
 }
 
@@ -181,7 +170,21 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       };
     }
     if (/^exit test$/i.test(value) && state.testId && state.sessionToken && (state.step === "awaiting_question" || state.step === "awaiting_next_question")) {
-      const result = await abandonAptitudeTest(state.sessionToken, state.testId);
+      let result: Awaited<ReturnType<typeof abandonAptitudeTest>>;
+      try {
+        result = await abandonAptitudeTest(state.sessionToken, state.testId);
+      } catch (error) {
+        // A paused attempt can be finalized by the server's stale-attempt
+        // cleanup while the learner is deciding whether to continue. The
+        // learner still needs the Exit action to dismiss the stale panel.
+        if (/test_not_active|test_timed_out|cannot be exited|assessment time has expired/i.test((error as Error).message || "")) {
+          return {
+            state: { step: "awaiting_mode" as const, sessionToken: state.sessionToken },
+            messages: [{ text: "This test has already ended. You can start a new Category or Mixed Test.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
+          };
+        }
+        throw error;
+      }
       if (result.status !== "abandoned") throw new Error("The test could not be exited. Please try again.");
       return {
         state: { step: "awaiting_mode" as const, sessionToken: state.sessionToken },
@@ -204,23 +207,22 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       const goal = learnerGoal();
       if (goal) {
         const family = ROLE_FAMILIES[roleFamily(goal.targetRole)];
-        const technicalLanguage = skillLanguage() ?? "Python";
         if (value === "role_category") {
           const level = LEVEL_NAMES[beginnerToAdvanced("aptitude_agent")];
-          return await startTestWithRetry({ ...state, mode: "category_practice", category: family.focus, level, technicalLanguage }, user);
+          return await startTestWithRetry({ ...state, mode: "category_practice", category: family.focus, level }, user);
         }
         // The role's mix becomes the learner's Mixed Test setup, then the test starts.
         const config = await getMixedTestConfig(state.sessionToken!);
         await saveMixedTestConfig(state.sessionToken!, config.categories.map((c) => ({
           category_id: c.category_id, question_count: family.mix[c.category_name] ?? 0,
         })));
-        return await startTestWithRetry({ ...state, mode: "mixed", technicalLanguage }, user);
+        return await startTestWithRetry({ ...state, mode: "mixed" }, user);
       }
     }
     if (state.step === "awaiting_mode") {
       const mode = value.toLowerCase().includes("category") ? "category_practice" : value.toLowerCase().includes("mixed") ? "mixed" : undefined;
       if (!mode) return { state, messages: [{ text: "Choose Mixed Test or Category Practice.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }] };
-      return mode === "category_practice" ? { state: { ...state, mode, step: "awaiting_category" as const }, messages: [{ text: "Choose a category:", options: categoryOptions }] } : { state: { ...state, mode, step: "awaiting_language" as const }, messages: [{ text: `Choose the Technical Aptitude language (${aptitudeLanguages()[0]} is the default):`, options: languageChoices() }] };
+      return mode === "category_practice" ? { state: { ...state, mode, step: "awaiting_category" as const }, messages: [{ text: "Choose a category:", options: categoryOptions }] } : { state: { ...state, mode, step: "awaiting_language" as const }, messages: [{ text: "Configure the question counts below, then choose Start Mixed Test. Technical questions will use your saved role automatically." }] };
     }
     if (state.step === "awaiting_category" || state.step === "awaiting_level") {
       // No level choice: Category Practice runs at the learner's Job Readiness level.
@@ -228,11 +230,12 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       if (!category) return { state, messages: [{ text: "Choose a category from the list.", options: categoryOptions }] };
       const level = learnerPracticeLevel();
       if (category !== "Technical Aptitude") return await startTestWithRetry({ ...state, category, level }, user);
-      const languages = aptitudeLanguages();
-      if (languages.length === 1) return await startTestWithRetry({ ...state, category, level, technicalLanguage: languages[0] }, user);
-      return { state: { ...state, category, level, step: "awaiting_language" as const }, messages: [{ text: "Choose a programming language:", options: languageChoices() }] };
+      return await startTestWithRetry({ ...state, category, level }, user);
     }
-    if (state.step === "awaiting_language") { const language = aptitudeLanguages().find((item) => item.toLowerCase() === value.toLowerCase()); if (!language) return { state, messages: [{ text: `Choose ${aptitudeLanguages().join(", ")}.`, options: languageChoices() }] }; return await startTestWithRetry({ ...state, technicalLanguage: language }, user); }
+    if (state.step === "awaiting_language") {
+      if (/^start(?: mixed)? test$/i.test(value) || /^continue$/i.test(value)) return await startTestWithRetry(state, user);
+      return { state, messages: [{ text: "Configure the question counts below, then choose Start Mixed Test." }] };
+    }
     if (state.step === "awaiting_next_question") {
       if (!/retry|question|continue/i.test(value)) {
         return { state, messages: [{ text: "Your previous answer was saved. Retry loading the next question to continue.", options: [{ label: "Retry question", value: "retry question" }] }] };

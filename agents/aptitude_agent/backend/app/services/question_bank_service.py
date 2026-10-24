@@ -4,7 +4,7 @@ from flask import current_app
 from ..extensions import db
 from ..models import BackgroundJob, QuestionBankItem, RecentQuestionHash
 from .hint_service import TOPIC_HINTS
-from .question_validation import questions_are_near_duplicates
+from .question_validation import questions_are_near_duplicates, validate_generated_item
 from .test_generation import CATEGORIES, generate_questions
 
 
@@ -34,10 +34,21 @@ def select_approved_item(student_id, category, topic, difficulty, strict_topic=F
         .with_for_update(skip_locked=True)
         .limit(30).all()
     )
-    item=next((candidate for candidate in candidates if not any(
-        questions_are_near_duplicates(candidate.question_text,seen_text)
-        for seen_text in excluded_question_texts
-    )),None)
+    def usable(candidate):
+        if any(questions_are_near_duplicates(candidate.question_text,seen_text) for seen_text in excluded_question_texts):
+            return False
+        try:
+            validate_generated_item({
+                "category":candidate.category,"topic":candidate.topic,"difficulty":candidate.difficulty,
+                "question":candidate.question_text,
+                "options":candidate.options,"correct_answer":candidate.correct_answer,
+                "explanation":candidate.explanation,
+            }, {"category":candidate.category,"topic":candidate.topic,"difficulty":candidate.difficulty})
+            return True
+        except ValueError as exc:
+            current_app.logger.warning("Skipping invalid approved bank item id=%s reason=%s",candidate.id,str(exc)[:180])
+            return False
+    item=next((candidate for candidate in candidates if usable(candidate)),None)
     if not item:
         from flask import current_app
         bank_total=QuestionBankItem.query.filter_by(status="approved").count()

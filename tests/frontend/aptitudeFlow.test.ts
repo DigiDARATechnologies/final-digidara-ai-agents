@@ -143,7 +143,7 @@ describe('starting a test is resilient to a one-off generation failure', () => {
     jest.mocked(api.getAptitudeQuestion).mockResolvedValue(readyQuestion);
 
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'mixed', sessionToken: 'session' };
-    const result = await handleAptitudeText(languageState, 'Python');
+    const result = await handleAptitudeText(languageState, 'start mixed test');
 
     expect(api.createAptitudeTest).toHaveBeenCalledTimes(2);
     expect(result.state.step).toBe('awaiting_question');
@@ -155,32 +155,32 @@ describe('starting a test is resilient to a one-off generation failure', () => {
     jest.mocked(api.createAptitudeTest).mockRejectedValue(new Error('We could not prepare a quality assessment right now. Please try again shortly.'));
 
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'category_practice', category: 'Technical Aptitude', level: 'Beginner', sessionToken: 'session' };
-    const result = await handleAptitudeText(languageState, 'Java');
+    const result = await handleAptitudeText(languageState, 'start mixed test');
 
     expect(api.createAptitudeTest).toHaveBeenCalledTimes(2);
     expect(result.messages[0].text).toContain('could not prepare your test');
     expect(result.messages[0].options).toEqual([{ label: 'Try again', value: 'retry_start_test' }]);
     // The failed attempt's own configuration is preserved on state, not reset.
-    expect(result.state).toMatchObject({ mode: 'category_practice', category: 'Technical Aptitude', level: 'Beginner', technicalLanguage: 'Java' });
+    expect(result.state).toMatchObject({ mode: 'category_practice', category: 'Technical Aptitude', level: 'Beginner' });
   });
 
   test('clicking Try again retries with the same configuration and can succeed', async () => {
     jest.mocked(api.createAptitudeTest).mockRejectedValue(new Error('still failing'));
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'mixed', sessionToken: 'session' };
-    const firstFailure = await handleAptitudeText(languageState, 'Python');
+    const firstFailure = await handleAptitudeText(languageState, 'start mixed test');
     jest.mocked(api.createAptitudeTest).mockReset();
     jest.mocked(api.createAptitudeTest).mockResolvedValue({ test_id: 't2' } as Awaited<ReturnType<typeof api.createAptitudeTest>>);
     jest.mocked(api.getAptitudeQuestion).mockResolvedValue(readyQuestion);
 
     const retried = await handleAptitudeText(firstFailure.state, 'retry_start_test');
-    expect(api.createAptitudeTest).toHaveBeenCalledWith('session', { mode: 'mixed', technical_language: 'Python', learner_level: 'beginner' });
+    expect(api.createAptitudeTest).toHaveBeenCalledWith('session', { mode: 'mixed', learner_level: 'beginner' });
     expect(retried.state.step).toBe('awaiting_question');
   });
 
   test('an insufficient token balance is never blindly retried', async () => {
     jest.mocked(api.createAptitudeTest).mockRejectedValue(new Error('Insufficient token balance. Please top up to continue.'));
     const languageState: AptitudeFlowState = { step: 'awaiting_language', mode: 'mixed', sessionToken: 'session' };
-    const result = await handleAptitudeText(languageState, 'Python');
+    const result = await handleAptitudeText(languageState, 'start mixed test');
     expect(api.createAptitudeTest).toHaveBeenCalledTimes(1);
     expect(result.messages[0].options ?? []).not.toContainEqual({ label: 'Try again', value: 'retry_start_test' });
   });

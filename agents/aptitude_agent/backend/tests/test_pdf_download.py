@@ -53,7 +53,9 @@ def _completed_technical_test(student_id):
         id=test_id,student_id=student_id,status="completed",current_sequence=1,
         total_questions=1,test_mode="category_practice",
         selected_category="Technical Aptitude",selected_level="Beginner",
-        technical_language="C",correct_count=1,score=1,percentage=100,
+        technical_language=None,
+        technical_context={"role":"Full Stack Developer","family":"mern","skills":["Python","SQL","React"]},
+        correct_count=1,score=1,percentage=100,
         total_time_seconds=12,completed_at=utcnow(),
     )
     question=AptitudeTestQuestion(
@@ -72,6 +74,18 @@ def _completed_technical_test(student_id):
     )
     db.session.add_all([test,question,answer]);db.session.commit()
     return test_id
+
+
+def test_role_based_pdf_reports_role_and_saved_skills_without_legacy_language(app,client,auth_headers):
+    with app.app_context():
+        student=Student.query.filter_by(email="learner@example.com").one()
+        test_id=_completed_technical_test(student.id)
+    response=client.get(f"/api/aptitude/tests/{test_id}/download",headers=auth_headers)
+    assert response.status_code==200
+    text=_pdf_text(response)
+    assert "Full Stack Developer" in text
+    assert "Python, SQL, React" in text
+    assert "TECHNICAL LANGUAGE" not in text
 
 
 def test_completed_test_pdf_has_expected_content_and_excludes_dormant_diagnostics(app,client,auth_headers):
@@ -126,6 +140,7 @@ def test_pdf_priority_topics_branding_metadata_and_attempt_timezone(app,client,a
         test.timezone="Asia/Kolkata"
         test.questions[0].category="Quantitative Aptitude"
         test.questions[0].topic="Profit & Loss"
+        test.questions[0].answer.is_correct=False
         db.session.commit()
 
     response=client.get(f"/api/aptitude/tests/{test_id}/download",headers=auth_headers)

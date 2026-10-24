@@ -248,6 +248,16 @@ def invoke():
         return jsonify(error="payload must be an object", code="invalid_payload"), 400
     if action == "health":
         return jsonify(status="ok", agent_name="aptitude_agent")
+    # The gateway adds this server-resolved context to the signed envelope.
+    # Copy only role fields into test creation; never trust a browser-supplied
+    # learner identity or let the context alter other actions.
+    if action == "create_test" and isinstance(request_body.get("learner"),dict):
+        learner=request_body["learner"]
+        profile=learner.get("profile") if isinstance(learner.get("profile"),dict) else learner
+        if isinstance(profile,dict):
+            payload={**payload,
+                     "target_role": str(profile.get("target_role") or "").strip(),
+                     "target_skills": list(profile.get("skills") or [])}
     if action == "ensure_session":
         return _ensure_session(payload)
     if action in {"export_user_data", "delete_user_data"}:

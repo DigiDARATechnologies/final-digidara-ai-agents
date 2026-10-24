@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { aptitudeLanguages, type AptitudeFlowState } from "../lib/aptitudeFlow";
+import { RETRY_START_TEST, type AptitudeFlowState } from "../lib/aptitudeFlow";
 import { getMixedTestConfig, saveMixedTestConfig, type MixedTestCategory, type MixedTestConfig } from "../lib/aptitudeApi";
 import { renderMessageText } from "../lib/messageText";
-import { learnerLevel } from "../lib/learnerContext";
+import { learnerGoal, learnerLevel } from "../lib/learnerContext";
 
 const LEVEL_DIFFICULTY = { beginner: "Easy", medium: "Medium", hard: "Hard", professional: "Professional" } as const;
 
@@ -19,6 +19,39 @@ const CATEGORY_ICONS: Record<string, string> = {
   "Quantitative Aptitude": "🔢", "Logical Reasoning": "🧩", "Verbal Ability": "📖",
   "Analytical Reasoning": "💡", "Computer Fundamentals": "🖥️", "Technical Aptitude": "</>",
 };
+
+const TECHNICAL_TOPIC_DETAILS: Record<string, string> = {
+  python: "Python programming fundamentals, functions, and data structures",
+  javascript: "JavaScript, web, and API fundamentals",
+  react: "React components, state, and frontend integration",
+  sql: "SQL queries, joins, tables, and database reasoning",
+  "machine learning": "Machine learning datasets, models, evaluation, and overfitting",
+  "power bi": "Power BI reports, measures, dashboards, and data visualization",
+  flask: "Flask APIs, routing, and request handling",
+  django: "Django models, views, routing, and web application structure",
+};
+
+function technicalTopicSummary(): string[] {
+  const goal = learnerGoal();
+  const matched = (goal?.skills || [])
+    .map((skill) => {
+      const cleaned = skill.trim();
+      if (!cleaned) return "";
+      return TECHNICAL_TOPIC_DETAILS[cleaned.toLowerCase()] ||
+        `${cleaned} concepts, tools, and practical problem-solving`;
+    })
+    .filter(Boolean);
+  return matched.length ? Array.from(new Set(matched)) : [
+    "Programming fundamentals, object-oriented concepts, and data structures",
+    "Database, networking, operating-system, and software-engineering basics",
+  ];
+}
+
+function TechnicalTopicPreview() {
+  const goal = learnerGoal();
+  const topics = technicalTopicSummary();
+  return <div className="aptitude-topic-preview" aria-label="Technical Aptitude topics"><strong>Technical topics covered</strong><small>{goal?.skills?.length ? `Based on your ${goal.targetRole} skills:` : "General software and IT fundamentals:"}</small><ul>{topics.map((topic) => <li key={topic}>{topic}</li>)}</ul></div>;
+}
 
 function OverviewStat({ label, value }: { label: string; value: string }) {
   return <div className="aptitude-overview-stat"><span>{label}</span><strong>{value}</strong></div>;
@@ -163,7 +196,8 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
 
   if (state.mode === "mixed" && state.step === "awaiting_language") {
     return <section className="aptitude-practice-panel" aria-label="Mixed Test overview and setup">
-      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">MIXED TEST</span><h2>Test Overview</h2><p>Build a balanced mix of aptitude topics, all set at your level, then choose the Technical Aptitude language below.</p></div>
+      <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">MIXED TEST</span><h2>Test Overview</h2><p>Build a balanced mix of aptitude topics, all set at your level, then start the test; Technical Aptitude uses your saved role.</p></div>
+      <TechnicalTopicPreview />
       <div className="aptitude-overview-grid"><OverviewStat label="Categories" value="6 areas" /><OverviewStat label="Questions" value={loading ? "…" : `${total || 0} total`} /><OverviewStat label="Timer" value="60–120 sec" /><OverviewStat label="Difficulty" value={`${LEVEL_DIFFICULTY[learnerLevel("aptitude_agent")]} (your level)`} /></div>
       <div className="aptitude-config-heading"><div><h3>Categories Covered</h3><p>Set each category independently from 0 to 10 questions. Select at least one question overall.</p></div><b>{total} total</b></div>
       <div className="aptitude-config-grid">
@@ -171,7 +205,7 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
       </div>
       {error && <p className="aptitude-panel-error" role="alert">{error}</p>}
       <div className="aptitude-panel-actions"><span>{dirty ? "Save your changes before starting." : "Your saved configuration is ready."}</span><button type="button" onClick={save} disabled={!dirty || saving || !!limits && total > limits.max_total}>{saving ? "Saving…" : "Save configuration"}</button></div>
-      <div className="aptitude-choice-row"><span>Technical Aptitude language</span>{aptitudeLanguages().map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div>
+      <div className="aptitude-panel-actions"><span>{learnerGoal() ? "Technical questions will be tailored to your saved role." : "No saved role was found, so general Technical Aptitude topics will be used."}</span><button type="button" onClick={() => onChoose("start mixed test")} disabled={saving || loading || total === 0 || !!limits && total > limits.max_total}>Start Mixed Test</button><button type="button" onClick={() => onChoose(RETRY_START_TEST)} disabled={saving || loading || total === 0 || !!limits && total > limits.max_total}>Try Again</button></div>
     </section>;
   }
 
@@ -179,11 +213,9 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
     return <section className="aptitude-practice-panel" aria-label="Category Practice overview">
       <div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">CATEGORY PRACTICE</span><h2>Choose a category</h2><p>10 focused questions at your Job Readiness level. ★ marks a priority topic area.</p></div>
       <div className="aptitude-category-grid">{Object.entries(CATEGORY_DETAILS).map(([category, description]) => <button type="button" key={category} onClick={() => onChoose(category)}><span>{CATEGORY_ICONS[category]}</span><strong>{category}</strong><small>{description}</small><em>★ Priority topics included</em></button>)}</div>
+      <TechnicalTopicPreview />
+      {state.startError && <div className="aptitude-panel-actions"><span>Assessment generation failed. You can try again.</span><button type="button" onClick={() => onChoose(RETRY_START_TEST)} disabled={loading || saving || exitPending}>Try Again</button></div>}
     </section>;
-  }
-
-  if (state.step === "awaiting_language") {
-    return <section className="aptitude-practice-panel" aria-label="Technical Aptitude language selection"><div className="aptitude-panel-heading"><span className="aptitude-panel-eyebrow">TECHNICAL APTITUDE</span><h2>Choose a programming language</h2><p>Only the languages in your skills and target role. Questions and code examples will match your selection.</p></div><div className="aptitude-choice-row">{aptitudeLanguages().map((language) => <button type="button" key={language} onClick={() => onChoose(language)}>{language}</button>)}</div></section>;
   }
 
   return null;

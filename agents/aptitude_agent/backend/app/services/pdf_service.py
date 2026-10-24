@@ -139,6 +139,14 @@ def _completed_at(test, fallback_timezone=None):
     return format_local_datetime(value,timezone_name)
 
 
+def _difficulty_summary(test):
+    """Describe the difficulties actually persisted in this report."""
+    order = ("Easy", "Medium", "Hard")
+    present = {str(question.difficulty or "").strip().title() for question in test.questions}
+    labels = [difficulty for difficulty in order if difficulty in present]
+    return " & ".join(labels) if labels else "Not recorded"
+
+
 def _styles():
     base=getSampleStyleSheet()
     return {
@@ -241,14 +249,22 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
     story.extend([detail_table,Spacer(1,7*mm)])
 
     category=test.selected_category if test.test_mode=="category_practice" else "All configured categories"
-    difficulty=test.selected_level if test.test_mode=="category_practice" else "Easy, Medium & Hard"
+    difficulty=test.selected_level if test.test_mode=="category_practice" else _difficulty_summary(test)
     summary=[
         ["SCORE",f"{test.score} / {test.total_questions}"],
         ["PERCENTAGE",f"{float(test.percentage):g}%"],
         ["CATEGORY",category or "Category Practice"],
         ["DIFFICULTY",difficulty or "Fixed"],
     ]
-    if test.technical_language:
+    context = test.technical_context if isinstance(getattr(test, "technical_context", None), dict) else {}
+    if context.get("role") or context.get("skills"):
+        if context.get("role"):
+            summary.append(["ROLE / TOPIC", context["role"]])
+        skills = [str(skill).strip() for skill in context.get("skills", []) if str(skill).strip()]
+        if skills:
+            summary.append(["ASSESSMENT SKILLS", ", ".join(skills)])
+    elif test.technical_language:
+        # Historical records predate role/skills snapshots.
         summary.append(["TECHNICAL LANGUAGE",test.technical_language])
     summary_table=Table(
         [[Paragraph(_html(label),style["label"]),Paragraph(_html(value),style["value"])] for label,value in summary],
@@ -267,8 +283,15 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
     for question in test.questions:
         category=str(question.category or "").strip()
         topic=str(question.topic or "").strip()
+        answer=question.answer
         key=(category.casefold(),topic.casefold())
-        if category and topic and key not in seen_topics and topic_is_starred(category,topic):
+        # "Priority Topics to Improve" is a performance result, not the
+        # configured topic-selection weighting. Only an answered, incorrect
+        # response should put a starred topic in this section.
+        if (
+            category and topic and key not in seen_topics and topic_is_starred(category,topic)
+            and answer and not answer.timed_out and not answer.is_correct
+        ):
             priority_topics.append((category,topic));seen_topics.add(key)
     if priority_topics:
         for category,topic in priority_topics:

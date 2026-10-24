@@ -2566,3 +2566,4 @@ body:has(.modal-overlay.open) .boss-fab{display:none}
 .login-overlay--light .lp-check, .login-overlay--light .lp-org-note{ color:#334155; }
 .login-overlay--light .btn-outline, .login-overlay--light .btn-ghost{ color:#0f172a; border-color:#d1d5db; background:#fff; }
 @media(max-width:520px){ .login-overlay--light .login-card{ border:0; box-shadow:none; padding:24px 6px; } }
+.aptitude-topic-preview{margin-top:14px;border:1px solid var(--line-1);border-radius:12px;background:rgba(108,195,232,.08);padding:12px 14px}.aptitude-topic-preview strong,.aptitude-topic-preview small{display:block}.aptitude-topic-preview strong{color:var(--tx-1);font-size:13px}.aptitude-topic-preview small{margin-top:4px;color:var(--tx-3);font-size:11px}.aptitude-topic-preview ul{margin:8px 0 0;padding-left:18px;color:var(--tx-2);font-size:12px;line-height:1.55}

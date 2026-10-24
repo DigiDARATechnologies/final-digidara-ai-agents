@@ -24,6 +24,198 @@ def test_accepts_short_consistent_step_explanation():
     assert validate_generated_item(item(),SLOT)["correct_answer"]=="C"
 
 
+def test_rejects_a_provider_item_for_the_wrong_slot():
+    generated={**item(),"topic":"Profit & Loss"}
+    with pytest.raises(ValueError,match="does not match the requested slot"):
+        validate_generated_item(generated,SLOT)
+
+
+def test_rejects_slot_based_technical_placeholder_question():
+    slot = {
+        "category": "Technical Aptitude",
+        "topic": "Machine Learning Fundamentals",
+        "difficulty": "Easy",
+        "technical_skill": "Machine Learning",
+    }
+    generated = {
+        **slot,
+        "question": "Consider a new python assessment dataset for Machine Learning Fundamentals in slot 5. Which statement best applies to Machine Learning Fundamentals here?",
+        "options": {
+            "A": "The stated concept applies",
+            "B": "It is unrelated",
+            "C": "It is never used",
+            "D": "No conclusion follows",
+        },
+        "correct_answer": "A",
+        "explanation": "The Machine Learning concept in this slot is represented by the stated correct option.",
+    }
+    with pytest.raises(ValueError, match="placeholder"):
+        validate_generated_item(generated, slot)
+
+
+def test_rejects_equivalent_numeric_distractors():
+    generated=item()
+    generated["options"]={"A":"10","B":"15","C":"20","D":"20.0"}
+    with pytest.raises(ValueError,match="unique"):
+        validate_generated_item(generated,SLOT)
+
+
+def test_rejects_an_incorrect_key_for_an_explicit_arithmetic_stem():
+    generated={
+        **SLOT,
+        "question":"What is 12 plus 8?",
+        "options":{"A":"18","B":"19","C":"20","D":"21"},
+        "correct_answer":"A",
+        "explanation":"Step 1: 12 + 8 = 20. Step 2: The result is 20. Step 3: Answer = 18.",
+    }
+    with pytest.raises(ValueError,match="calculable question result"):
+        validate_generated_item(generated,SLOT)
+
+
+def test_rejects_an_explicit_arithmetic_stem_with_no_correct_option():
+    generated={
+        **SLOT,
+        "question":"What is 12 plus 8?",
+        "options":{"A":"17","B":"18","C":"19","D":"21"},
+        "correct_answer":"A",
+        "explanation":"Step 1: 12 + 8 = 20. Step 2: The result is 20. Step 3: Answer = 17.",
+    }
+    with pytest.raises(ValueError,match="no option"):
+        validate_generated_item(generated,SLOT)
+
+
+def test_rejects_an_incomplete_question_stem():
+    generated={**item(),"question":"Choose the answer."}
+    with pytest.raises(ValueError,match="incomplete"):
+        validate_generated_item(generated,SLOT)
+
+
+@pytest.mark.parametrize(
+    ("slot", "question", "options", "answer", "explanation", "reason"),
+    [
+        (
+            {"category":"Computer Fundamentals","topic":"Database Basics","difficulty":"Easy"},
+            "Which of the following is a method to improve database query performance?",
+            {"A":"Normalization","B":"Denormalization","C":"Indexing","D":"Partitioning"},
+            "C", "Indexing can improve lookup performance by using a search structure. Answer = Indexing.",
+            "database-performance",
+        ),
+        (
+            {"category":"Computer Fundamentals","topic":"Database Basics","difficulty":"Easy"},
+            "Which database query is faster?",
+            {"A":"Query A","B":"Query B","C":"Both are identical","D":"Not enough information"},
+            "A", "The database, data distribution, and execution conditions are not specified. Answer = Query A.",
+            "database-speed",
+        ),
+        (
+            {"category":"Logical Reasoning","topic":"Ranking & Ordering","difficulty":"Easy"},
+            "Alice is first, Bob second, and Charlie third. If Charlie beats Bob, what will be their new ranks?",
+            {"A":"Alice first, Charlie second, Bob third","B":"Charlie first, Alice second, Bob third","C":"Bob first, Alice second, Charlie third","D":"Alice first, Bob second, Charlie third"},
+            "A", "The result is uncertain because the stem does not say whether Charlie passes Alice. Answer = Alice first, Charlie second, Bob third.",
+            "ranking-assumption",
+        ),
+        (
+            {"category":"Computer Fundamentals","topic":"Cloud Architecture","difficulty":"Medium"},
+            "What is the primary benefit of using cloud architecture?",
+            {"A":"Scalability","B":"Cost reduction","C":"Data security","D":"Speed"},
+            "A", "The broad wording does not define a use case that makes scalability primary. Answer = Scalability.",
+            "cloud-context",
+        ),
+        (
+            {"category":"Technical Aptitude","topic":"Hashing","difficulty":"Medium","technical_language":"Python"},
+            "What is the time complexity of accessing an element in a hash table?",
+            {"A":"O(1)","B":"O(n)","C":"O(log n)","D":"O(n log n)"},
+            "A", "Hash lookup is O(1) on average but can be O(n) in the worst case. Answer = O(1).",
+            "hash-assumption",
+        ),
+        (
+            {"category":"Quantitative Aptitude","topic":"Combinations","difficulty":"Medium"},
+            "Five computers can communicate with every other computer. How many unique connections can be formed?",
+            {"A":"5","B":"10","C":"15","D":"20"},
+            "B", "The connection model is not specified, so directed and undirected interpretations differ. Answer = 10.",
+            "connection-assumption",
+        ),
+        (
+            {"category":"Technical Aptitude","topic":"Graph Algorithms","difficulty":"Medium","technical_language":"Python"},
+            "How many edges are there in a graph with four vertices?",
+            {"A":"3","B":"4","C":"6","D":"12"},
+            "C", "The graph structure is not specified, so the edge count is not unique. Answer = 6.",
+            "graph-structure",
+        ),
+        (
+            {"category":"Verbal Ability","topic":"Spelling","difficulty":"Easy"},
+            "Identify the misspelled word.",
+            {"A":"Recieve","B":"Receeve","C":"Receive","D":"Recive"},
+            "C", "Receive is correctly spelled, so it cannot be the misspelled word. Answer = Receive.",
+            "spelling-polarity",
+        ),
+    ],
+)
+def test_rejects_ambiguous_or_unsupported_single_answer_items(slot, question, options, answer, explanation, reason):
+    generated={**slot,"question":question,"options":options,"correct_answer":answer,"explanation":explanation}
+    with pytest.raises(ValueError):
+        validate_generated_item(generated,slot)
+
+
+def test_accepts_explicit_assumptions_for_context_sensitive_questions():
+    slot={"category":"Computer Fundamentals","topic":"Cloud Architecture","difficulty":"Medium"}
+    generated={
+        **slot,
+        "question":"When demand changes throughout the day, what primary cloud benefit lets a service adjust resources?",
+        "options":{"A":"Scalability","B":"A fixed hardware layout","C":"Manual backups","D":"Offline access"},
+        "correct_answer":"A",
+        "explanation":"Scalability lets resources expand or shrink with changing demand. Answer = Scalability.",
+    }
+    assert validate_generated_item(generated,slot)["correct_answer"]=="A"
+
+
+@pytest.mark.parametrize(
+    "slot,question,options,answer,explanation",
+    [
+        (
+            {"category":"Computer Fundamentals","topic":"Database Basics","difficulty":"Easy"},
+            "Given an index on users.email, which database query is faster for an exact email lookup?",
+            {"A":"The indexed email lookup","B":"A full table scan","C":"A random update","D":"A table drop"},
+            "A", "The index narrows the exact lookup to matching records instead of scanning every row. Answer = The indexed email lookup.",
+        ),
+        (
+            {"category":"Logical Reasoning","topic":"Ranking & Ordering","difficulty":"Easy"},
+            "Alice is third and Bob is fifth; if Alice overtakes Bob without passing anyone else, what is Alice's new position?",
+            {"A":"Third","B":"Fourth","C":"Fifth","D":"Sixth"},
+            "C", "Alice moves into Bob's fifth position when she overtakes him without passing anyone else. Answer = Fifth.",
+        ),
+        (
+            {"category":"Technical Aptitude","topic":"Hashing","difficulty":"Medium","technical_language":"Python"},
+            "What is the average-case time complexity of searching in a hash table with a well-distributed hash function?",
+            {"A":"O(1)","B":"O(log n)","C":"O(n)","D":"O(n log n)"},
+            "A", "A well-distributed hash function usually locates a key in constant average time. Answer = O(1).",
+        ),
+        (
+            {"category":"Technical Aptitude","topic":"Graph Algorithms","difficulty":"Medium","technical_language":"Python"},
+            "How many edges does a complete undirected graph with four vertices have?",
+            {"A":"3","B":"4","C":"6","D":"12"},
+            "C", "Each pair of four vertices forms one edge, giving 4 times 3 divided by 2, or 6. Answer = 6.",
+        ),
+    ],
+)
+def test_accepts_clear_controls_for_context_sensitive_questions(slot,question,options,answer,explanation):
+    generated={**slot,"question":question,"options":options,"correct_answer":answer,"explanation":explanation}
+    assert validate_generated_item(generated,slot)["correct_answer"]==answer
+
+
+def test_rejects_sql_content_mapped_to_graph_topic():
+    slot={"category":"Technical Aptitude","topic":"Graph Algorithms","difficulty":"Medium","technical_language":"SQL"}
+    generated={
+        **slot,
+        "question":"Which SQL query retrieves rows from a customers table?",
+        "options":{"A":"SELECT * FROM customers","B":"BFS(customers)","C":"sort(customers)","D":"hash(customers)"},
+        "correct_answer":"A",
+        "explanation":"The SELECT statement retrieves rows from the named table. Answer = SELECT * FROM customers.",
+    }
+    with pytest.raises(ValueError,match="content does not match"):
+        validate_generated_item(generated,slot)
+
+
 def test_accepts_derived_answer_reused_across_math_steps():
     explanation="Step 1: Add the two parts: 12 + 8 = 20. Step 2: Carry the derived total of 20 into the final comparison. Step 3: Answer = 20."
     assert validate_generated_item(item(explanation),SLOT)["explanation"]==(
@@ -151,6 +343,7 @@ def test_generation_retries_invalid_explanation_and_accumulates_usage(monkeypatc
     assert len(calls)==2
     assert calls[0][2]==0
     assert "Do not think out loud" in calls[0][1]
+    assert "self-check every item in this same response" in calls[0][1]
     assert "Copy each slot's category, topic, and difficulty exactly" in calls[0][1]
     assert "Never mention" in calls[0][1]
     assert "recent typed number patterns" in calls[0][1]
@@ -327,6 +520,16 @@ def test_generation_prompt_asks_for_reason_on_numeric_analytical_items():
     prompt=test_generation._batch_prompt([],[],[],"batch")
     assert "including Analytical Reasoning caselets" in prompt
 
+@pytest.mark.parametrize("distractors", [["20", "19", "21"], ["20.0", "", "21"]])
+def test_batch_item_rejects_empty_or_normalized_duplicate_options(distractors):
+    generated={
+        "question":"What is 12 plus 8?","correct_option":"20","distractors":distractors,
+        "reason":"","calculation_step_1":"12 + 8 = 20","calculation_step_2":"The calculated value is 20",
+        "question_code":None,"correct_option_code":None,"distractor_codes":[None,None,None],
+    }
+    with pytest.raises(ValueError, match="distinct and non-empty"):
+        test_generation._canonicalize_batch_item(generated,SLOT)
+
 
 @pytest.mark.parametrize("field",["question","explanation","A"])
 def test_rejects_internal_prompt_tokens_in_all_public_fields(field):
@@ -476,3 +679,79 @@ def test_a_failed_rescue_leaves_the_original_failure(monkeypatch):
             avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
         ) is None
     assert 1 not in accepted
+
+@pytest.mark.parametrize("skill,topic,needle", [
+    ("Python", "Programming Fundamentals", "python"),
+    ("Machine Learning", "Machine Learning Fundamentals", "machine learning"),
+    ("SQL", "SQL Queries & Joins", "sql"),
+    ("Power BI", "Power BI & Data Visualization", "power bi"),
+])
+def test_saved_skill_fallback_is_topic_specific(skill, topic, needle):
+    slot = {
+        "category": "Technical Aptitude", "topic": topic, "difficulty": "Easy",
+        "technical_skill": skill, "technical_role_terms": (skill.casefold(),),
+    }
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert needle in " ".join((validated["question"], validated["explanation"])).casefold()
+
+
+def test_quantitative_fallback_is_arithmetically_validated():
+    slot = {"category": "Quantitative Aptitude", "topic": "Simplification", "difficulty": "Easy"}
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert validated["correct_answer"] == "A"
+    assert "Step 1:" in validated["explanation"]
+
+
+def test_decision_table_fallback_is_topic_specific():
+    slot = {"category": "Analytical Reasoning", "topic": "Decision Tables", "difficulty": "Easy"}
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert "decision table" in f"{validated['question']} {validated['explanation']}".casefold()
+
+
+def test_contextual_cloze_fallback_is_a_real_question():
+    slot = {"category": "Verbal Ability", "topic": "Contextual Cloze Tests", "difficulty": "Easy"}
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert validated["question"].endswith("?")
+    assert "completes the sentence" in validated["question"].casefold()
+
+
+@pytest.mark.parametrize("skill,topic,needle", [
+    ("React", "React Fundamentals", "react"),
+    ("Flask", "Flask Web Development", "flask"),
+])
+def test_saved_frontend_backend_skill_fallbacks_are_concrete(skill, topic, needle):
+    slot = {"category": "Technical Aptitude", "topic": topic, "difficulty": "Easy",
+            "technical_skill": skill}
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert needle in f"{validated['question']} {validated['explanation']}".casefold()
+
+
+def test_excel_skill_fallback_is_concrete():
+    slot = {"category": "Technical Aptitude", "topic": "Excel Data Analysis", "difficulty": "Easy",
+            "technical_skill": "Excel"}
+    question, options, answer, explanation = test_generation._meaningful_demo_item(slot)
+    validated = validate_generated_item(
+        {**slot, "question": question, "options": options,
+         "correct_answer": answer, "explanation": explanation}, slot,
+    )
+    assert "excel" in f"{validated['question']} {validated['explanation']}".casefold()

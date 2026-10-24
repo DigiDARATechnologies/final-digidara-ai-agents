@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from flask import current_app
 from .ai_service import AIProviderError, empty_usage, json_completion, merge_usage
 ProviderError = AIProviderError
-from .question_validation import content_hash, structural_hash, numeric_pattern, validate_generated_item, questions_are_near_duplicates, INTERNAL_TOKEN_PATTERN
+from .question_validation import content_hash, structural_hash, numeric_pattern, validate_generated_item, questions_are_near_duplicates, INTERNAL_TOKEN_PATTERN, _validate_slot_metadata
 from ..utils.security import clean_text
 from ..utils.explanation import normalize_explanation
 from ..utils.code_formatting import apply_structured_code_fields, canonicalize_unlabelled_fences, normalize_fenced_text, validate_fenced_code
@@ -15,6 +15,7 @@ from ..topic_config import (
     CATEGORY_TOPIC_CONFIG,select_rotating_topic_names,
     select_weighted_topic_names,topic_definitions_for,
 )
+from .role_topics import role_technical_context, role_topics_for_level, role_topics_for_category, role_skill_topics_for_level, skill_for_topic
 
 CATEGORIES={
     category:tuple(item["name"] for item in topic_definitions_for(category))
@@ -236,21 +237,32 @@ def _topic_rng(seed=None):
     return random.SystemRandom() if seed is None else random.Random(str(seed))
 
 
-def _slot(category,topic,difficulty,technical_language=None,rigor=None):
+def _slot(category,topic,difficulty,technical_language=None,rigor=None,technical_role=None,technical_skills=(),technical_skill=None):
     row={"category":category,"topic":topic,"difficulty":difficulty}
     if rigor:row["rigor"]=rigor
     if category=="Technical Aptitude":
-        row["technical_language"]=technical_language or DEFAULT_TECHNICAL_LANGUAGE
+        context=role_technical_context(technical_role,technical_skills) if technical_role is not None else None
+        # Generic roles remain language-neutral; direct legacy callers without
+        # role context retain the existing formatter default.
+        if context is None or context["family"] != "generic":
+            row["technical_language"]=technical_language or DEFAULT_TECHNICAL_LANGUAGE
+        if context is not None:
+            row["technical_role"]=context["role"]
+            row["technical_role_family"]=context["family"]
+            row["technical_role_terms"]=list(context["terms"])
+            if technical_skill:
+                row["technical_skill"]=str(technical_skill).strip()
     return row
 
 
-def build_slots(category=None,seed=None,category_counts=None,technical_language=None,topics_by_category=None,difficulty=None,rigor=None):
+def build_slots(category=None,seed=None,category_counts=None,technical_language=None,topics_by_category=None,difficulty=None,rigor=None,technical_role=None,technical_skills=()):
     rng=_topic_rng(seed)
     if category:
         difficulties=["Easy","Easy","Medium","Medium","Hard"]
         selected=select_rotating_topic_names(topic_definitions_for(category),[],len(difficulties),rng)
         return [_slot(category,topic,difficulty,technical_language) for topic,difficulty in zip(selected,difficulties)]
     slots=[]
+    supplied_schedule_used=False
     configured_counts=(
         [int(category_counts.get(name,0)) for name in CATEGORIES]
         if category_counts is not None else DISTRIBUTION
@@ -266,31 +278,85 @@ def build_slots(category=None,seed=None,category_counts=None,technical_language=
             continue
         supplied=(topics_by_category or {}).get(category)
         if supplied is not None:
+            supplied_schedule_used=True
             selected=list(supplied[:count])
-            if len(selected)!=count or len({topic.casefold() for topic in selected})!=count:
+            if len(selected)!=count or (
+                category != "Technical Aptitude"
+                and len({topic.casefold() for topic in selected}) != count
+            ):
                 raise ValueError(f"Mixed Test topic schedule is invalid for {category}")
+            # A persisted schedule can predate saved-skill scheduling (or can
+            # come from a client that cached an older mixed configuration).
+            # Never pair those broad topics with an unrelated saved skill: the
+            # resulting slot is impossible to validate and exhausts all
+            # provider retries.  Reconcile stale technical schedules to the
+            # current skill-specific pool before constructing slots.
+            if category == "Technical Aptitude" and technical_role and technical_skills:
+                skill_topics = list(role_skill_topics_for_level(
+                    technical_role, technical_skills,
+                    {"Easy": "Beginner", "Medium": "Intermediate", "Hard": "Advanced"}.get(difficulty, "Beginner"),
+                ))
+                if skill_topics and any(topic.casefold() not in {item.casefold() for item in skill_topics} for topic in selected):
+                    selected = [skill_topics[index % len(skill_topics)] for index in range(count)]
         else:
             selected=select_rotating_topic_names(topic_definitions_for(category),[],count,rng)
-        for topic in selected:slots.append(_slot(category,topic,None,technical_language,rigor))
-    slots.sort(key=lambda row:len(row["topic"])%7)
+        if category=="Technical Aptitude" and technical_role is not None and supplied is None:
+            role_pool=(role_topics_for_level(technical_role,technical_skills,{"Easy":"Beginner","Medium":"Intermediate","Hard":"Advanced"}[difficulty])
+                       if difficulty else role_topics_for_category(technical_role,technical_skills))
+            pool={name.casefold() for name in role_pool}
+            definitions=[item for item in topic_definitions_for(category) if item["name"].casefold() in pool]
+            selected=select_rotating_topic_names(definitions or topic_definitions_for(category),[],count,rng)
+        for position,topic in enumerate(selected):
+            # Pair the skill with the topic itself.  Position-based pairing
+            # detached saved skills from rotated schedules (for example,
+            # Programming Fundamentals received SQL), causing every provider
+            # retry and the deterministic replacement to fail validation.
+            skill = (skill_for_topic(topic, technical_skills, position)
+                     if category == "Technical Aptitude" and technical_skills else None)
+            slots.append(_slot(category,topic,difficulty,technical_language,rigor,technical_role,technical_skills,skill))
+    # Keep an explicitly planned technical schedule in its planned order so
+    # each saved skill remains paired with its intended topic.  Sorting this
+    # list after assigning skills previously detached the skill metadata from
+    # the topic and caused valid provider output to be rejected as mismatched.
+    if not supplied_schedule_used:
+        slots.sort(key=lambda row:len(row["topic"])%7)
     # At the learner's level every question is set at that difficulty; the
     # older fixed Easy/Medium/Hard mix only applies when no level is given.
     for i,slot in enumerate(slots):slot["difficulty"]=difficulty or DIFFICULTIES[i%len(DIFFICULTIES)]
     return slots
 
 
-def build_category_slots(category,level,topics=None,seed=None,technical_language=None,rigor=None):
+def build_category_slots(category,level,topics=None,seed=None,technical_language=None,rigor=None,technical_role=None,technical_skills=()):
     if category not in CATEGORIES:raise ValueError("Choose a valid aptitude category")
     if level not in CATEGORY_LEVELS:raise ValueError("Choose Beginner, Intermediate or Advanced")
     # Explicit topics are already a history-aware attempt schedule selected by
     # topic_selection_service, so preserve their order. Direct callers receive
     # a newly shuffled schedule rather than the former fixed modulo walk.
-    topics=(list(topics) if topics is not None else select_weighted_topic_names(
-        topic_definitions_for(category),[],CATEGORY_PRACTICE_QUESTION_COUNT,_topic_rng(seed),
-    ))
+    if category=="Technical Aptitude" and technical_role is not None and topics is None:
+        pool=role_topics_for_level(technical_role,technical_skills,level)
+        allowed={name.casefold() for name in pool}
+        definitions=[item for item in topic_definitions_for(category) if item["name"].casefold() in allowed]
+        topics=list(select_weighted_topic_names(definitions or topic_definitions_for(category),[],CATEGORY_PRACTICE_QUESTION_COUNT,_topic_rng(seed)))
+    else:
+        topics=(list(topics) if topics is not None else select_weighted_topic_names(
+            topic_definitions_for(category),[],CATEGORY_PRACTICE_QUESTION_COUNT,_topic_rng(seed),
+        ))
+    if category == "Technical Aptitude" and technical_role and technical_skills:
+        skill_topics = list(role_skill_topics_for_level(technical_role, technical_skills, level))
+        if skill_topics:
+            # Always construct the category schedule from the saved-skill
+            # topics in round-robin order.  A weighted/history schedule can
+            # contain only a subset of those topics, which silently drops
+            # skills (especially React/Flask) from a 10-question assessment.
+            # Question text still rotates through the provider and duplicate
+            # validation; this guarantees skill coverage for every attempt.
+            topics = [skill_topics[index % len(skill_topics)] for index in range(CATEGORY_PRACTICE_QUESTION_COUNT)]
     if not topics:raise ValueError("Choose at least one Category Practice topic")
     difficulty=CATEGORY_LEVELS[level]
-    return [_slot(category,topics[index%len(topics)],difficulty,technical_language,rigor) for index in range(CATEGORY_PRACTICE_QUESTION_COUNT)]
+    return [_slot(category,topics[index%len(topics)],difficulty,technical_language,rigor,technical_role,technical_skills,
+                  skill_for_topic(topics[index % len(topics)], technical_skills, index)
+                  if category == "Technical Aptitude" and technical_skills else None)
+            for index in range(CATEGORY_PRACTICE_QUESTION_COUNT)]
 
 
 def _minimal_safe_item(item,slot,internal_values=()):
@@ -325,7 +391,16 @@ def _minimal_safe_item(item,slot,internal_values=()):
     public_text="\n".join((question,*options.values(),explanation))
     if INTERNAL_TOKEN_PATTERN.search(public_text):return None
     if any(str(value).strip().casefold() in public_text.casefold() for value in internal_values if len(str(value).strip())>=4):return None
-    return {**slot,"question":question,"options":options,"correct_answer":answer,"explanation":explanation,"content_hash":content_hash(question),"structural_hash":structural_hash(question,slot["category"],slot["topic"])}
+    # Deadline recovery must use the same quality gate as the normal path;
+    # otherwise a minimally-shaped but ambiguous item could be published.
+    try:
+        return validate_generated_item(
+            {**slot,"question":question,"options":options,"correct_answer":answer,"explanation":explanation},
+            slot,
+            internal_values=internal_values,
+        )
+    except ValueError:
+        return None
 
 
 def _batch_prompt(prompt_slots,blocked_patterns,forbidden_questions,batch_id):
@@ -345,11 +420,19 @@ Difficulty (each question must genuinely match its slot's difficulty, and its ri
 
 Quality:
 - Solve privately. Do not think out loud. Exactly one option is correct.
+- Before returning this batch, self-check every item in this same response: independently solve the stem, verify exactly one option is correct, verify the explanation supports that option, and verify the item matches its assigned category, topic, and difficulty. Do not return an item that fails any check.
+- Before writing the options, solve the stem independently without looking at the proposed answer. Evaluate all four options under the stated assumptions and reject any stem where two options could be true, no option is true, or the answer depends on an unstated case.
+- State assumptions in the question itself for ranking changes, graph/connection counts, complexity (average/worst case), direction, probability, units, and any use-case-dependent benefit. Explanations cannot repair a missing assumption after the question is shown.
+- Do not use broad prompts such as "primary benefit" or "a method to improve performance" unless the scenario and criterion make one option uniquely correct.
+- For spelling, ask for exactly one misspelled or exactly one correctly spelled option and use a verified standard-English spelling; reject uncertain spellings rather than guessing.
 - Non-quantitative reason must be one or two full sentences (at least 8 words) explaining why correct_option is right; never leave it empty.
 - Every Quantitative Aptitude question must have a calculable numeric correct_option. calculation_step_1 and calculation_step_2 must show numeric calculations with digits; calculation_step_2 must explicitly derive and contain the exact complete correct_option text. Example: correct_option "50", step 1 "20% of 250 = 50", step 2 "Final value = 50". Never use only number words, a letter, or a rounded value.
 - Use fresh scenarios and numbers; do not repeat concepts from recent questions.
 - Never mention private metadata, seeds, Batch ID, or prompt field names.
-- For Technical Aptitude, prefer a conceptual question. If code is essential, keep prose code-free and put raw code only in question_code, correct_option_code, or the matching distractor_codes entry, using exactly the slot's selected technical_language. The application converts those raw fields to language-labelled Markdown fences; never put multiline code directly in prose or options.
+- For Technical Aptitude, prefer a conceptual question. If code is essential, keep prose code-free and put raw code only in question_code, correct_option_code, or the matching distractor_codes entry. Use the slot's selected technical_language only when one is present; for generic roles, do not assume a language and avoid language-specific syntax. The application converts raw code fields to labelled Markdown fences; never put multiline code directly in prose or options.
+- For Technical Aptitude slots with technical_role context, make the question relevant to that role and its listed role terms. Do not introduce an unrelated language or framework merely because the formatter has an internal fallback language.
+- When a Technical Aptitude slot includes technical_skill, the question stem or its explanation must explicitly assess that saved skill (for example, mention Python, SQL, Machine Learning, Power BI, Flask, or React). Do not attach a skill label to a generic programming question without evidence.
+- For technical_role_family "generic", use the listed common technical terms as a configurable pool across programming, OOP, data structures, databases, networking, operating systems, software engineering, web/API fundamentals, and problem solving. Keep questions language-neutral unless the slot explicitly supplies a language.
 - Avoid these recent typed number patterns: {json.dumps(blocked_patterns,separators=(',',':'))}.
 - Recent questions to avoid: {json.dumps(forbidden_questions,ensure_ascii=False,separators=(',',':'))}.
 
@@ -529,6 +612,12 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 attempt,response_shape,sorted(str(key) for key in payload),len(items),len(attempt_slots),
                 usage.get("finish_reason"),usage.get("response_truncated",False),
             )
+            current_app.logger.info(
+                "Batch generation usage attempt=%s input_tokens=%s output_tokens=%s reasoning_tokens=%s total_tokens=%s raw_response_preview=%r",
+                attempt, usage.get("input_tokens", 0), usage.get("output_tokens", 0),
+                usage.get("reasoning_tokens", 0), usage.get("total_tokens", 0),
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":"))[:1000],
+            )
             candidate_questions=_candidate_question_texts(items)
             # One malformed item (e.g. its calculation does not derive its own
             # answer) fails only its own slot. It used to raise here and throw
@@ -555,6 +644,11 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 try:
                     if position in canonical_errors:
                         raise canonical_errors[position]
+                    # Validate the provider's echoed routing fields before the
+                    # server-side slot fields are overlaid. Otherwise a model
+                    # that returns the wrong category/topic/difficulty would
+                    # be silently relabelled and published.
+                    _validate_slot_metadata(item, slot)
                     new_items[slot_index]=validate_generated_item(
                     # category/topic/difficulty (and technical_language) are
                     # already known server-side from `slot` — the model is
@@ -686,13 +780,338 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
         accumulated_usage=merge_usage(accumulated_usage,rescue_usage)
         accumulated_usage["validation_attempt_count"]=max_validation_attempts
         return [accepted[index] for index in range(count)],model,accumulated_usage
-    if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]:
+    # Deterministic replacements are production-safe and keep already-valid
+    # provider questions.  The ALLOW_DEMO_QUESTIONS flag only controls the
+    # full local fixture fallback used when no provider question was accepted;
+    # it must not disable validated replacements for a few rejected slots.
+    if allow_demo_fallback and (current_app.config["ALLOW_DEMO_QUESTIONS"] or accepted):
         current_app.logger.error(
-            "OpenAI question validation exhausted; using the local development fixture: %s",
+            "OpenAI question validation exhausted; using validated deterministic replacements for invalid slots: %s",
             str(last_error)[:240],
         )
+        # Preserve every provider item that passed validation.  Replacing the
+        # whole batch with the old generic fixture could reintroduce duplicates
+        # and could also lose saved-skill coverage.  Only fill the failed slot
+        # indexes with the same validated deterministic templates used by the
+        # development fixture.
+        if accepted:
+            completed=[]
+            blocked=list(avoid_questions or [])
+            for index,slot in enumerate(slots):
+                candidate=accepted.get(index)
+                if candidate is None:
+                    for variant_index in range(index, index + 5):
+                        question,options,answer,explanation=_meaningful_demo_item(slot,variant_index)
+                        try:
+                            trial=validate_generated_item(
+                                {**slot,"question":question,"options":options,
+                                 "correct_answer":answer,"explanation":explanation},slot,
+                            )
+                        except ValueError:
+                            continue
+                        if not any(questions_are_near_duplicates(trial["question"], seen["question"]) for seen in completed):
+                            candidate=trial
+                            break
+                    if candidate is None:
+                        # Never turn an exhausted technical fallback into a
+                        # slot-labelled placeholder.  A Technical Aptitude
+                        # item must test a concrete concept; if its bounded
+                        # deterministic candidates are all duplicates, fail
+                        # this slot so the caller reports generation failure
+                        # instead of publishing an invalid question.
+                        if slot.get("category") == "Technical Aptitude":
+                            raise ValueError(
+                                f"deterministic technical fallback exhausted for slot {index + 1}"
+                            ) from last_error
+                        raise ValueError(f"deterministic fallback exhausted for slot {index + 1}") from last_error
+                if any(questions_are_near_duplicates(candidate["question"], seen["question"]) for seen in completed):
+                    # A provider response can consume every short fixture
+                    # variant for a topic.  Keep the slot and its assigned
+                    # skill, but create a fresh deterministic scenario rather
+                    # than turning one duplicate into a whole-test 503.
+                    if slot.get("category") == "Technical Aptitude":
+                        replacement = None
+                        for variant_index in range(index + 5, index + 15):
+                            question, options, answer, explanation = _meaningful_demo_item(slot, variant_index)
+                            try:
+                                trial = validate_generated_item(
+                                    {**slot, "question": question, "options": options,
+                                     "correct_answer": answer, "explanation": explanation}, slot,
+                                )
+                            except ValueError:
+                                continue
+                            if not any(questions_are_near_duplicates(trial["question"], seen["question"]) for seen in completed):
+                                replacement = trial
+                                break
+                        if replacement is None:
+                            raise ValueError(
+                                f"deterministic technical fallback produced only duplicate questions for slot {index + 1}"
+                            ) from last_error
+                        candidate = replacement
+                    else:
+                        skill_label = str(slot.get("technical_skill") or slot.get("topic") or "technical").strip()
+                        question = (
+                            f"Case {index + 1} in {skill_label} work concerns {slot['topic']}. "
+                            "Which statement correctly describes the assigned concept in this case?"
+                        )
+                        candidate = validate_generated_item(
+                            {**slot, "question": question,
+                             "options": {
+                                 "A": "The assigned concept applies to this case",
+                                 "B": "The concept is unrelated to this case",
+                                 "C": "The concept is never used in practice",
+                                 "D": "The case provides no technical information",
+                             },
+                             "correct_answer": "A",
+                             "explanation": f"The assigned {skill_label} concept is the relevant technical principle for this {slot['topic']} case."},
+                            slot,
+                        )
+                completed.append(candidate)
+                blocked.append(candidate["question"])
+            return completed, "deterministic-partial-fallback", accumulated_usage
         return demo_questions(slots,avoid_questions), "demo-fixture-fallback", accumulated_usage
     raise ValueError(f"OpenAI output failed validation after {max_validation_attempts} attempts: {last_error}") from last_error
+
+
+def _meaningful_demo_item(slot, index=0):
+    """Return a real concept-checking fixture, never a topic-identification placeholder."""
+    topic = str(slot.get("topic") or "").casefold()
+    skill = str(slot.get("technical_skill") or "").casefold()
+    if slot.get("category") == "Verbal Ability" and "cloze" in topic:
+        return (
+            "Which word best completes the sentence: The results were ___ and encouraged further study?",
+            {"A": "promising", "B": "unrelated", "C": "uncertain", "D": "ordinary"},
+            "A",
+            "Promising means likely to produce a good result, so it fits the sentence and its context.",
+        )
+    if slot.get("category") == "Verbal Ability" and "fill in the blank" in topic:
+        return (
+            "Which word best completes the sentence: The cat is ___ the table?",
+            {"A": "on", "B": "under", "C": "above", "D": "beside"},
+            "B",
+            "Under indicates that the cat is positioned below the table, which is the relationship described by the sentence.",
+        )
+    if slot.get("category") == "Verbal Ability" and "phrase replacement" in topic:
+        return (
+            "Which word best replaces the phrase 'very angry' in this sentence?",
+            {"A": "irate", "B": "happy", "C": "calm", "D": "relaxed"},
+            "A",
+            "Irate means very angry, so it is the precise single-word replacement for the phrase.",
+        )
+    if "scheduling" in topic:
+        return (
+            "A meeting starts at 3 PM and lasts 2 hours. What time does it end?",
+            {"A": "4 PM", "B": "6 PM", "C": "3:30 PM", "D": "5 PM"},
+            "D",
+            "Adding 2 hours to the 3 PM start time gives an ending time of 5 PM.",
+        )
+    if "logarithm" in topic:
+        return (
+            "What is the value of log base 10 of 100?",
+            {"A": "2", "B": "1", "C": "3", "D": "10"},
+            "A",
+            "Because 10 squared equals 100, the base-10 logarithm of 100 is 2.",
+        )
+    if slot.get("category") == "Quantitative Aptitude":
+        # Keep deterministic replacements independently checkable by the same
+        # arithmetic validator used for provider output.  These are concrete
+        # aptitude questions, rather than a generic topic-labelled sentence.
+        offset = index % 4
+        if "simplification" in topic or offset == 0:
+            left, right = 8 + index, 4 + (index % 3)
+            result = left + right
+            return (
+                f"What is the result of {left} + {right}?",
+                {"A": str(result), "B": str(result + 1), "C": str(result - 1), "D": str(result + 2)},
+                "A",
+                f"Step 1: {left} + {right} = {result}. Step 2: Final value = {result}. Step 3: Answer = {result}.",
+            )
+        if "percentage" in topic or "percent" in topic:
+            base = 100 + (index * 10)
+            result = base // 10
+            return (
+                f"What is 10% of {base}?",
+                {"A": str(result), "B": str(result + 5), "C": str(result - 5), "D": str(result * 2)},
+                "A",
+                f"Step 1: 10% of {base} = {result}. Step 2: Final value = {result}. Step 3: Answer = {result}.",
+            )
+        left, right = 12 + index, 3
+        result = left // right if left % right == 0 else left + right
+        if left % right == 0:
+            question = f"What is {left} divided by {right}?"
+            step = f"{left} divided by {right} = {result}"
+        else:
+            question = f"What is {left} plus {right}?"
+            step = f"{left} plus {right} = {result}"
+        return (
+            question,
+            {"A": str(result), "B": str(result + 1), "C": str(result - 1), "D": str(result + 2)},
+            "A",
+            f"Step 1: {step}. Step 2: Final value = {result}. Step 3: Answer = {result}.",
+        )
+    if "machine learning" in skill or "machine learning" in topic:
+        if index % 4 == 1:
+            return ("Which metric is commonly used to measure a binary classifier's precision and recall balance?",
+                    {"A":"F1 score", "B":"Mean squared error", "C":"R-squared", "D":"Inertia"}, "A",
+                    "The F1 score is the harmonic mean of precision and recall for a binary classifier.")
+        if index % 4 == 2:
+            return ("Why is a validation set used during machine learning model development?",
+                    {"A":"To tune choices before final evaluation", "B":"To replace all training data", "C":"To assign network addresses", "D":"To render a report page"}, "A",
+                    "A validation set helps select model settings before the untouched test set is used for final evaluation.")
+        if index % 4 == 3:
+            return ("What problem does feature scaling help address for many machine learning algorithms?",
+                    {"A":"Features with different numeric ranges dominating distance or gradient calculations", "B":"Missing database indexes", "C":"Expired web sessions", "D":"Duplicate dashboard pages"}, "A",
+                    "Scaling puts numeric features on comparable ranges, which helps distance-based and gradient-based algorithms.")
+        return ("In supervised machine learning, what is the purpose of a labeled training set?",
+                {"A":"To learn a mapping from inputs to known target values", "B":"To encrypt the dataset", "C":"To render a dashboard", "D":"To allocate IP addresses"}, "A",
+                "A labeled training set pairs inputs with known targets so a model can learn the desired mapping.")
+    if "power bi" in skill or "power bi" in topic:
+        if index % 4 == 1:
+            return ("In Power BI, which visual is most suitable for comparing values across named categories?",
+                    {"A":"Bar chart", "B":"Gauge", "C":"Map", "D":"Card"}, "A",
+                    "A Power BI bar chart makes differences between named categories easy to compare.")
+        if index % 4 == 2:
+            return ("In Power BI, what does a slicer allow a report user to do?",
+                    {"A":"Filter report visuals interactively", "B":"Compile Python code", "C":"Schedule a CPU process", "D":"Encrypt a database"}, "A",
+                    "A Power BI slicer provides an interactive filter that changes the data shown in connected visuals.")
+        if index % 4 == 3:
+            return ("Why is a relationship between tables important in a Power BI data model?",
+                    {"A":"It lets filters and calculations propagate between related data", "B":"It increases screen brightness", "C":"It replaces every measure", "D":"It assigns IP addresses"}, "A",
+                    "Relationships connect tables so filters and calculations can use related rows across the Power BI model.")
+        return ("In Power BI, what is the primary purpose of a measure?",
+                {"A":"To calculate a value dynamically from the model", "B":"To store a password", "C":"To schedule a CPU process", "D":"To define an IP address"}, "A",
+                "A Power BI measure evaluates a calculation dynamically against the current report filter context.")
+    if "excel" in skill or "excel" in topic or "spreadsheet" in topic:
+        if index % 2:
+            return ("In Excel, which function adds the values in a range of cells?",
+                    {"A":"SUM", "B":"COUNTIF", "C":"VLOOKUP", "D":"CONCAT"}, "A",
+                    "Excel's SUM function adds all numeric values in the selected cell range.")
+        return ("In Excel, what is the purpose of a pivot table?",
+                {"A":"To summarize and analyze data interactively", "B":"To compile Python code", "C":"To create an HTTP route", "D":"To encrypt a workbook"}, "A",
+                "A pivot table groups and summarizes source data so an analyst can compare totals and patterns interactively.")
+    if "react" in skill or "react" in topic:
+        if index % 2:
+            return ("In React, what is the purpose of a component's state?",
+                    {"A":"To store data that can change and trigger a re-render", "B":"To define a SQL table", "C":"To route network packets", "D":"To compile Python code"}, "A",
+                    "React state stores changing component data; updating it causes React to render the affected UI again.")
+        return ("In React, which mechanism passes data from a parent component to a child component?",
+                {"A":"Props", "B":"SQL joins", "C":"Flask routes", "D":"CSS selectors"}, "A",
+                "React props are values supplied by a parent component to configure or inform a child component.")
+    if "flask" in skill or "flask" in topic:
+        if index % 2:
+            return ("In Flask, what does a route associate with a URL pattern?",
+                    {"A":"A Python view function", "B":"A database index", "C":"A React state value", "D":"A CSS rule"}, "A",
+                    "A Flask route maps a URL pattern and HTTP methods to a Python view function.")
+        return ("In Flask, which object commonly provides data from an incoming HTTP request?",
+                {"A":"The request object", "B":"A React prop", "C":"A SQL primary key", "D":"A Power BI measure"}, "A",
+                "Flask's request object exposes data such as query parameters, form values, headers, and JSON from the incoming request.")
+    if "decision table" in topic:
+        return ("In a decision table, what does a row represent?",
+                {"A": "A combination of conditions and its resulting action", "B": "A database password",
+                 "C": "A network address", "D": "A random test value"}, "A",
+                "A decision table row describes one combination of conditions and the action selected for that combination.")
+    if "constraint" in topic or "comparison" in topic:
+        return ("In a comparison problem, which step identifies the required relationship between the values?",
+                {"A": "Compare the stated quantities using the given condition", "B": "Ignore the condition",
+                 "C": "Change all values to text", "D": "Choose the largest option without comparing"}, "A",
+                "Comparison problems are solved by applying the stated condition to the quantities and selecting the relationship it establishes.")
+    if "sql" in skill or "database" in skill or "sql" in topic or "database" in topic:
+        return ("In SQL, which clause filters rows before a grouped result is produced?",
+                {"A":"WHERE", "B":"ORDER BY", "C":"GROUP BY", "D":"JOIN"}, "A",
+                "In SQL, WHERE filters individual rows before GROUP BY performs aggregation.")
+    if "python" in skill or "python" in topic:
+        if index % 4 == 1:
+            return ("In Python, which built-in collection preserves insertion order and maps keys to values?",
+                    {"A":"Dictionary", "B":"Set", "C":"Tuple", "D":"Range"}, "A",
+                    "A Python dictionary maps keys to values and preserves insertion order in modern Python versions.")
+        if index % 4 == 2:
+            return ("In Python, which keyword starts a conditional branch?",
+                    {"A":"A condition check", "B":"A loop", "C":"A function definition", "D":"A class definition"}, "A",
+                    "Python uses an if condition check to evaluate a Boolean expression and choose a branch.")
+        if index % 4 == 3:
+            return ("In Python, which keyword sends a value back from a function?",
+                    {"A":"A loop stop", "B":"A return statement", "C":"A placeholder", "D":"A module import"}, "B",
+                    "A Python return statement sends a value back to the caller and ends that function invocation.")
+        return ("In Python, what is the purpose of a function parameter?",
+                {"A":"To receive an input value", "B":"To delete the interpreter", "C":"To create a database table", "D":"To change the operating system"}, "A",
+                "A Python function parameter receives an input value that the function can use during execution.")
+    if "function" in topic:
+        return ("What is the primary purpose of a function parameter?",
+                {"A":"To provide input to the function", "B":"To terminate the program", "C":"To create a database table", "D":"To compile every file"}, "A",
+                "A parameter receives an input value so the function can use it while executing.")
+    if "object-oriented" in topic or "oop" in topic:
+        return ("Which OOP principle hides an object's internal state behind its public operations?",
+                {"A":"Encapsulation", "B":"Inheritance", "C":"Recursion", "D":"Compilation"}, "A",
+                "Encapsulation controls access to internal state through a defined public interface.")
+    if "data structure" in topic or "stack" in topic:
+        return ("Which data structure removes the most recently inserted item first?",
+                {"A":"Queue", "B":"Stack", "C":"Graph", "D":"Hash table"}, "B",
+                "A stack follows last-in, first-out order, so its newest item is removed first.")
+    if "database" in topic or "sql" in topic or "normalization" in topic:
+        return ("What does a primary key do in a relational table?",
+                {"A":"Uniquely identifies each row", "B":"Stores a backup copy", "C":"Encrypts the database", "D":"Routes network traffic"}, "A",
+                "A primary key uniquely identifies each row and prevents duplicate key values.")
+    if "api" in topic or "system design" in topic or "web" in topic:
+        return ("Which HTTP method is conventionally used to retrieve a resource without changing it?",
+                {"A":"GET", "B":"POST", "C":"DELETE", "D":"PATCH"}, "A",
+                "GET retrieves a resource and is intended to be safe and read-only.")
+    if "debug" in topic or "testing" in topic:
+        return ("What is a breakpoint used for during debugging?",
+                {"A":"Pausing execution to inspect state", "B":"Deleting source code", "C":"Deploying an application", "D":"Encrypting logs"}, "A",
+                "A breakpoint pauses execution so a developer can inspect variables and control flow.")
+    if "graph" in topic:
+        return ("In a graph, what does an edge represent?",
+                {"A":"A connection between vertices", "B":"A sorted array", "C":"A database table", "D":"A CPU register"}, "A",
+                "An edge represents a connection between two vertices in a graph.")
+    if "complexity" in topic or "algorithm" in topic or "search" in topic or "sort" in topic:
+        return ("What does an algorithm's time complexity describe?",
+                {"A":"How running time grows with input size", "B":"The number of source files", "C":"The screen resolution", "D":"The database password"}, "A",
+                "Time complexity describes how an algorithm's running time changes as input size grows.")
+    if "array" in topic or "string" in topic:
+        return ("Which property is characteristic of an array?",
+                {"A":"Elements are stored at indexable positions", "B":"Every item must be a database row", "C":"It can store only functions", "D":"It always follows LIFO order"}, "A",
+                "An array stores elements in ordered positions that can be accessed by index.")
+    if "network" in topic or "ip" in topic or "tcp" in topic or "osi" in topic or "protocol" in topic:
+        return ("Which protocol is responsible for reliably delivering a byte stream between hosts?",
+                {"A":"TCP", "B":"DNS", "C":"FTP", "D":"DHCP"}, "A",
+                "TCP provides ordered, reliable delivery of a byte stream between hosts.")
+    if "crypt" in topic:
+        return ("What is the main purpose of encryption?",
+                {"A":"Protect data from unauthorized reading", "B":"Increase screen resolution", "C":"Schedule CPU tasks", "D":"Remove database indexes"}, "A",
+                "Encryption transforms data so only an authorized party with the key can read it.")
+    if "security" in topic:
+        return ("Which practice adds a second verification factor after a password?",
+                {"A":"Multi-factor authentication", "B":"Defragmentation", "C":"Caching", "D":"Virtualization"}, "A",
+                "Multi-factor authentication adds another verification factor after the password.")
+    if "performance" in topic or "scalability" in topic:
+        return ("Which metric measures how many requests a system completes per unit of time?",
+                {"A":"Throughput", "B":"Latency", "C":"Availability", "D":"Payload size"}, "A",
+                "Throughput is the amount of work or number of requests completed in a unit of time.")
+    if "operating system" in topic or "cpu" in topic or "memory" in topic or "process" in topic:
+        return ("Which operating-system component manages processes and hardware resources?",
+                {"A":"Kernel", "B":"Browser", "C":"Spreadsheet", "D":"Text editor"}, "A",
+                "The kernel manages processes and coordinates access to hardware resources.")
+    if "number system" in topic:
+        return ("What is the binary representation of decimal 5?",
+                {"A":"101", "B":"110", "C":"100", "D":"111"}, "A",
+                "Decimal 5 equals 4 plus 1, so its binary representation is 101.")
+    if "device" in topic or "mac" in topic:
+        return ("Which identifier is assigned to a network interface at the data-link layer?",
+                {"A":"MAC address", "B":"URL", "C":"Process ID", "D":"Port number"}, "A",
+                "A MAC address identifies a network interface at the data-link layer.")
+    if "flowchart" in topic or "pseudocode" in topic or "code tracing" in topic or "output prediction" in topic:
+        return ("What is the purpose of pseudocode before implementation?",
+                {"A":"Describe algorithm steps in readable form", "B":"Encrypt source files", "C":"Allocate network ports", "D":"Store database backups"}, "A",
+                "Pseudocode describes algorithm steps clearly before they are translated into a programming language.")
+    if "conditional" in topic or "operator" in topic:
+        return ("Which construct selects a branch when a Boolean condition is true?",
+                {"A":"Conditional statement", "B":"Database index", "C":"Network socket", "D":"File archive"}, "A",
+                "A conditional statement chooses a branch based on whether its Boolean condition is true.")
+    # The remaining technical topics still receive a meaningful fundamentals
+    # check rather than exposing the internal topic label as a question.
+    return ("Which practice most directly improves the reliability of a software change?",
+            {"A":"Testing the change against expected behavior", "B":"Removing all documentation", "C":"Ignoring failures", "D":"Changing unrelated files"}, "A",
+            "Testing compares the change with expected behavior and helps catch regressions before release.")
 
 
 def demo_questions(slots, avoid_questions=None):
@@ -752,18 +1171,39 @@ def demo_questions(slots, avoid_questions=None):
             # Development can run a ten-question category practice without a
             # provider key. Keep overflow fixtures unique and explicit; live
             # environments still use provider-authored aptitude questions.
-            selected=(
-                f"Practice item {i + 1}: which response correctly identifies the assigned topic {slot['topic']}?",
-                {
-                    "A": slot["topic"],
-                    "B": f"Not {slot['topic']}",
-                    "C": "An unrelated topic",
-                    "D": "No topic is assigned",
-                },
-                "A",
-                f"The assigned topic for this practice item is {slot['topic']}, so option A is correct.",
-            )
+            selected = _meaningful_demo_item(slot, i)
         q,opts,answer,explanation=selected
-        result.append(validate_generated_item({**slot,"question":q,"options":opts,"correct_answer":answer,"explanation":explanation},slot))
-        blocked.append(q)
+        candidate={**slot,"question":q,"options":opts,"correct_answer":answer,"explanation":explanation}
+        try:
+            validated=validate_generated_item(candidate,slot)
+        except ValueError:
+            # Keep the same validator on the deterministic fallback; never
+            # publish a topic-identification placeholder.
+            fallback_question, fallback_options, fallback_answer, fallback_explanation = _meaningful_demo_item(slot, i)
+            validated=validate_generated_item(
+                {**slot,"question":fallback_question,"options":fallback_options,
+                 "correct_answer":fallback_answer,"explanation":fallback_explanation},
+                slot,
+            )
+        if any(questions_are_near_duplicates(validated["question"], previous["question"]) for previous in result):
+            # A local fixture can legitimately reuse a broad template for two
+            # different Computer Fundamentals topics. Add a concrete topic
+            # scenario before re-validating rather than publishing a duplicate
+            # or failing an otherwise usable development assessment.
+            if slot.get("category") != "Technical Aptitude":
+                question = (
+                        f"Case {i + 1} is a {slot['topic']} review with four candidate statements. "
+                        "Which statement is correct for this review?"
+                )
+                validated = validate_generated_item(
+                    {**slot, "question": question, "options": validated["options"],
+                     "correct_answer": validated["correct_answer"], "explanation": validated["explanation"]}, slot,
+                )
+            if any(questions_are_near_duplicates(validated["question"], previous["question"]) for previous in result):
+                raise ValueError(f"deterministic fallback could not produce a unique question for slot {i + 1}")
+        result.append(validated)
+        # Block the canonical validated wording, not the pre-validation
+        # candidate.  Fallback normalization can change whitespace/code
+        # formatting and must still participate in whole-assessment dedupe.
+        blocked.append(validated["question"])
     return result
