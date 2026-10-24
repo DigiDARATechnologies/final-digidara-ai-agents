@@ -148,7 +148,6 @@ def test_snapshots_are_checked_for_faces(api, database, monkeypatch):
         assert session.query(ProctorSnapshot).one().faces == 2
 
 
-
 def test_old_snapshots_are_deleted(api, database):
     sid = api.post("/proctoring/sessions", headers=auth(),
                    json={"agent_name": "mock_interview_agent", "ref": "3", "consent": True}).json()["id"]
