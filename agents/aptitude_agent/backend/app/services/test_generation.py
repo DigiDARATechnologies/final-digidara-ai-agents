@@ -1,5 +1,6 @@
 import json
 import random
+import re
 import secrets
 import time
 import uuid
@@ -237,6 +238,22 @@ def _topic_rng(seed=None):
     return random.SystemRandom() if seed is None else random.Random(str(seed))
 
 
+def _balanced_seeded_topics(definitions, count, seed):
+    """Take a cyclic slice so repeated seeded mixed attempts cover the pool evenly."""
+    names=[]
+    seen=set()
+    for item in definitions:
+        name=str(item.get("name") or "").strip()
+        if name and name.casefold() not in seen:
+            names.append(name); seen.add(name.casefold())
+    if not names:
+        return []
+    match=re.search(r"(?:^|[-:])(\d+)$", str(seed or ""))
+    start=int(match.group(1)) % len(names) if match else _topic_rng(seed).randrange(len(names))
+    ordered=names[start:]+names[:start]
+    return [ordered[index % len(ordered)] for index in range(count)]
+
+
 def _slot(category,topic,difficulty,technical_language=None,rigor=None,technical_role=None,technical_skills=(),technical_skill=None):
     row={"category":category,"topic":topic,"difficulty":difficulty}
     if rigor:row["rigor"]=rigor
@@ -299,13 +316,13 @@ def build_slots(category=None,seed=None,category_counts=None,technical_language=
                 if skill_topics and any(topic.casefold() not in {item.casefold() for item in skill_topics} for topic in selected):
                     selected = [skill_topics[index % len(skill_topics)] for index in range(count)]
         else:
-            selected=select_rotating_topic_names(topic_definitions_for(category),[],count,rng)
+            selected=_balanced_seeded_topics(topic_definitions_for(category),count,seed) if seed is not None else select_rotating_topic_names(topic_definitions_for(category),[],count,rng)
         if category=="Technical Aptitude" and technical_role is not None and supplied is None:
             role_pool=(role_topics_for_level(technical_role,technical_skills,{"Easy":"Beginner","Medium":"Intermediate","Hard":"Advanced"}[difficulty])
                        if difficulty else role_topics_for_category(technical_role,technical_skills))
             pool={name.casefold() for name in role_pool}
             definitions=[item for item in topic_definitions_for(category) if item["name"].casefold() in pool]
-            selected=select_rotating_topic_names(definitions or topic_definitions_for(category),[],count,rng)
+            selected=_balanced_seeded_topics(definitions or topic_definitions_for(category),count,seed) if seed is not None else select_rotating_topic_names(definitions or topic_definitions_for(category),[],count,rng)
         for position,topic in enumerate(selected):
             # Pair the skill with the topic itself.  Position-based pairing
             # detached saved skills from rotated schedules (for example,
@@ -431,6 +448,7 @@ Quality:
 - Never mention private metadata, seeds, Batch ID, or prompt field names.
 - For Technical Aptitude, prefer a conceptual question. If code is essential, keep prose code-free and put raw code only in question_code, correct_option_code, or the matching distractor_codes entry. Use the slot's selected technical_language only when one is present; for generic roles, do not assume a language and avoid language-specific syntax. The application converts raw code fields to labelled Markdown fences; never put multiline code directly in prose or options.
 - For Technical Aptitude slots with technical_role context, make the question relevant to that role and its listed role terms. Do not introduce an unrelated language or framework merely because the formatter has an internal fallback language.
+- For Technical Aptitude, the question must be written using exactly the slot's selected technical_language when one is provided; do not substitute another language.
 - When a Technical Aptitude slot includes technical_skill, the question stem or its explanation must explicitly assess that saved skill (for example, mention Python, SQL, Machine Learning, Power BI, Flask, or React). Do not attach a skill label to a generic programming question without evidence.
 - For technical_role_family "generic", use the listed common technical terms as a configurable pool across programming, OOP, data structures, databases, networking, operating systems, software engineering, web/API fundamentals, and problem solving. Keep questions language-neutral unless the slot explicitly supplies a language.
 - Avoid these recent typed number patterns: {json.dumps(blocked_patterns,separators=(',',':'))}.
@@ -784,7 +802,7 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
     # provider questions.  The ALLOW_DEMO_QUESTIONS flag only controls the
     # full local fixture fallback used when no provider question was accepted;
     # it must not disable validated replacements for a few rejected slots.
-    if allow_demo_fallback and (current_app.config["ALLOW_DEMO_QUESTIONS"] or accepted):
+    if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]:
         current_app.logger.error(
             "OpenAI question validation exhausted; using validated deterministic replacements for invalid slots: %s",
             str(last_error)[:240],
@@ -953,34 +971,34 @@ def _meaningful_demo_item(slot, index=0):
         if index % 4 == 1:
             return ("Which metric is commonly used to measure a binary classifier's precision and recall balance?",
                     {"A":"F1 score", "B":"Mean squared error", "C":"R-squared", "D":"Inertia"}, "A",
-                    "The F1 score is the harmonic mean of precision and recall for a binary classifier.")
+                    "The F1 score is the harmonic mean of precision and recall for a binary classifier. Answer = A.")
         if index % 4 == 2:
             return ("Why is a validation set used during machine learning model development?",
                     {"A":"To tune choices before final evaluation", "B":"To replace all training data", "C":"To assign network addresses", "D":"To render a report page"}, "A",
-                    "A validation set helps select model settings before the untouched test set is used for final evaluation.")
+                    "A validation set helps select model settings before the untouched test set is used for final evaluation. Answer = A.")
         if index % 4 == 3:
             return ("What problem does feature scaling help address for many machine learning algorithms?",
                     {"A":"Features with different numeric ranges dominating distance or gradient calculations", "B":"Missing database indexes", "C":"Expired web sessions", "D":"Duplicate dashboard pages"}, "A",
-                    "Scaling puts numeric features on comparable ranges, which helps distance-based and gradient-based algorithms.")
+                    "Scaling puts numeric features on comparable ranges, which helps distance-based and gradient-based algorithms. Answer = A.")
         return ("In supervised machine learning, what is the purpose of a labeled training set?",
                 {"A":"To learn a mapping from inputs to known target values", "B":"To encrypt the dataset", "C":"To render a dashboard", "D":"To allocate IP addresses"}, "A",
-                "A labeled training set pairs inputs with known targets so a model can learn the desired mapping.")
+                "A labeled training set pairs inputs with known targets so a model can learn the desired mapping. Answer = A.")
     if "power bi" in skill or "power bi" in topic:
         if index % 4 == 1:
             return ("In Power BI, which visual is most suitable for comparing values across named categories?",
                     {"A":"Bar chart", "B":"Gauge", "C":"Map", "D":"Card"}, "A",
-                    "A Power BI bar chart makes differences between named categories easy to compare.")
+                    "A Power BI bar chart makes differences between named categories easy to compare. Answer = A.")
         if index % 4 == 2:
             return ("In Power BI, what does a slicer allow a report user to do?",
                     {"A":"Filter report visuals interactively", "B":"Compile Python code", "C":"Schedule a CPU process", "D":"Encrypt a database"}, "A",
-                    "A Power BI slicer provides an interactive filter that changes the data shown in connected visuals.")
+                    "A Power BI slicer provides an interactive filter that changes the data shown in connected visuals. Answer = A.")
         if index % 4 == 3:
             return ("Why is a relationship between tables important in a Power BI data model?",
                     {"A":"It lets filters and calculations propagate between related data", "B":"It increases screen brightness", "C":"It replaces every measure", "D":"It assigns IP addresses"}, "A",
-                    "Relationships connect tables so filters and calculations can use related rows across the Power BI model.")
+                    "Relationships connect tables so filters and calculations can use related rows across the Power BI model. Answer = A.")
         return ("In Power BI, what is the primary purpose of a measure?",
                 {"A":"To calculate a value dynamically from the model", "B":"To store a password", "C":"To schedule a CPU process", "D":"To define an IP address"}, "A",
-                "A Power BI measure evaluates a calculation dynamically against the current report filter context.")
+                "A Power BI measure evaluates a calculation dynamically against the current report filter context. Answer = A.")
     if "excel" in skill or "excel" in topic or "spreadsheet" in topic:
         if index % 2:
             return ("In Excel, which function adds the values in a range of cells?",

@@ -302,6 +302,11 @@ def abandon(test_id):
     test=db.session.query(AptitudeTest).filter_by(id=test_id,student_id=g.student.id).with_for_update().first()
     if not test: raise APIError("Assessment not found",404,"test_not_found")
     if test.status=="abandoned":
+        # Keep the normal idempotent response for a repeated exit, but an
+        # attempt that was already expired is terminal and must not be treated
+        # as another successful exit action.
+        if overall_remaining_seconds(test) <= 0:
+            raise APIError("This assessment cannot be exited",409,"test_not_active")
         return {"test_id":test.id,"status":test.status,"abandoned":False}
     if test.status not in {"generating","ready","in_progress"}:
         raise APIError("This assessment cannot be exited",409,"test_not_active")
@@ -310,13 +315,23 @@ def abandon(test_id):
     # points balance).  Timeout handling for scoring is still performed by the
     # answer endpoint; abandoning here simply ends the attempt without adding
     # an answer or changing its score.
+    expired = overall_remaining_seconds(test) <= 0
     changed=abandon_attempt(test,"student_exit")
     if changed:
+        if expired:
+            # Once the overall clock has elapsed, finalize the attempt so the
+            # learner can still open its report. Keep the historical response
+            # shape (abandoned=true) for the explicit exit action.
+            test.status="completed"
+            test.completed_at=utcnow()
+            test.score=int(test.correct_count or 0)
+            test.percentage=(100.0 * test.score / test.total_questions) if test.total_questions else 0.0
+            record_event("test_completed",g.student.id,test.id,{"score":test.score,"reason":"overall_timeout"})
         db.session.commit()
     # Answers are graded when submitted, so an exit can report the score for
     # the questions attempted; unanswered ones are not scored.
     answered=AptitudeAnswer.query.filter_by(test_id=test.id).count()
-    return {"test_id":test.id,"status":test.status,"abandoned":changed,
+    return {"test_id":test.id,"status":"abandoned" if expired and changed else test.status,"abandoned":changed,
             "answered_count":answered,"correct_count":int(test.correct_count or 0),
             "total_questions":int(test.total_questions or 0)}
 

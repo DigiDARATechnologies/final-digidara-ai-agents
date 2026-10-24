@@ -308,7 +308,17 @@ def select_rotating_topic_names(definitions,previous_topics,count,rng):
     previous={str(topic).strip().casefold() for topic in previous_topics or ()}
     fresh=[name for key,name in unique.items() if key not in previous]
     recent=[name for key,name in unique.items() if key in previous]
-    rng.shuffle(fresh);rng.shuffle(recent)
+    # Rotate a deterministic permutation instead of drawing an independent
+    # random prefix. Independent prefixes can systematically starve the tail
+    # of a large topic pool across repeated seeded attempts; a cyclic slice
+    # gives every topic the same long-run opportunity while preserving the
+    # caller's seeded variation.
+    if fresh:
+        start=rng.randrange(len(fresh))
+        fresh=fresh[start:]+fresh[:start]
+    if recent:
+        start=rng.randrange(len(recent))
+        recent=recent[start:]+recent[:start]
     selected=(fresh+recent)[:count]
     while len(selected)<count:
         choices=list(unique.values())

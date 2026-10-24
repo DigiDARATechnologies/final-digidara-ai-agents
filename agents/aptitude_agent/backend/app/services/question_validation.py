@@ -55,14 +55,17 @@ _ASSUMPTION_WORDS = re.compile(
 
 def _option_key(value):
     """Normalize an option enough to catch equivalent distractors."""
-    normalized = _normalized_words(str(value or ""))
-    # Numeric options such as ``50`` and ``50.0`` are the same answer.
-    numeric = re.fullmatch(r"[-+]?\d+(?:\.\d+)?", normalized)
+    raw = str(value or "").strip().replace(",", "")
+    # Keep decimal punctuation while checking numeric options.  Converting
+    # ``20.0`` to word tokens first would turn it into ``20 0`` and miss the
+    # equivalence with ``20``.
+    numeric = re.fullmatch(r"[-+]?\d+(?:\.\d+)?", raw)
     if numeric:
         try:
             return f"number:{Decimal(numeric.group()).normalize():f}"
         except InvalidOperation:
             pass
+    normalized = _normalized_words(raw)
     return normalized
 
 
@@ -132,7 +135,10 @@ def _validate_assumptions_and_scope(question, options, category, topic):
         raise ValueError("database-performance question needs a specified mechanism")
     if re.search(r"\bwhich database query is faster\b", text) and not assumptions:
         raise ValueError("database-performance question needs a specified mechanism")
-    if re.search(r"\b(?:beats|overtakes|passes)\b", text) and not re.search(
+    if re.search(r"\b(?:beats|overtakes|passes)\b", text) and (
+        re.search(r"\b(?:position|rank|order|race|runner|finishes?)\b", text)
+        or re.search(r"\b(?:ranking|ordering)\b", topic_text)
+    ) and not re.search(
         r"\b(?:only|without|not\s+(?:also\s+)?\w+|all other|relative)\b", text
     ):
         raise ValueError("ranking question does not state which relative positions change")
@@ -157,7 +163,7 @@ def _validate_assumptions_and_scope(question, options, category, topic):
     # configured topic. This catches SQL retrieval questions mislabeled as
     # graph or array questions while leaving broad conceptual questions alone.
     sql_signal = re.search(
-        r"(?:\b(?:select|insert|update|delete|join|sql|query|table|database)\b|\bselect\b[\s\S]*\bfrom\b)",
+        r"(?:\b(?:select|insert|update|delete|join|sql|query|database)\b|\bselect\b[\s\S]*\bfrom\b)",
         text,
     )
     if sql_signal and not re.search(r"\b(?:sql|database|query|relational|join|normaliz|transaction|index)\b", topic_text):
