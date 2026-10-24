@@ -39,7 +39,9 @@ from app.models import (
     ProctorSnapshot,
     User,
 )
-from app.organizations.service import OrgError, _require_admin
+# A module, not names: organizations -> readiness -> gateway -> here is a cycle,
+# so its names are looked up when called, never at import.
+from app.organizations import service as org_service
 
 logger = logging.getLogger("orchestrator.proctoring")
 
@@ -582,8 +584,8 @@ def _assessment_dict(assessment: Assessment, attempts: int = 0) -> dict:
 
 def _admin(session, user_id: str, org_id: str) -> None:
     try:
-        _require_admin(session, user_id, org_id)
-    except OrgError as exc:
+        org_service._require_admin(session, user_id, org_id)
+    except org_service.OrgError as exc:
         raise ProctorError(exc.status_code, exc.message) from exc
 
 

@@ -235,3 +235,17 @@ def test_member_practice_sessions_need_consent(api, database):
     member_id = next(m["member_id"] for m in members if m.get("user_id") == "learner" or m.get("email") == "learner@example.test")
     rows = api.get(f"/organizations/{org_id}/members/{member_id}/proctoring", headers=auth("admin")).json()
     assert len(rows) == 1 and rows[0]["agent_name"] == "mock_interview_agent"
+
+
+@pytest.mark.parametrize("module", ["app.organizations.service", "app.proctoring.service", "app.gateway.routes"])
+def test_modules_import_in_any_order(module):
+    """organizations -> readiness -> gateway -> proctoring is an import cycle:
+    a script that imports any of them first must still work."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    result = subprocess.run([sys.executable, "-c", f"import {module}"], cwd=Path(__file__).resolve().parents[1],
+                            env={**os.environ}, capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr[-2000:]
