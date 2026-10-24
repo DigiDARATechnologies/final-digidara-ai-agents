@@ -138,8 +138,15 @@ def test_snapshots_are_checked_for_faces(api, database, monkeypatch):
                     json={"image": "data:image/jpeg;base64," + JPEG}).status_code == 200
     state = api.get(f"/proctoring/sessions/{sid}", headers=auth()).json()
     assert state["integrity"] == 90
+    # A photo checked after the test ended still counts.
+    with database() as session:
+        snapshot_id = session.query(ProctorSnapshot).one().id
+    api.post(f"/proctoring/sessions/{sid}/end", headers=auth())
+    service.check_snapshot(snapshot_id)
+    assert api.get(f"/proctoring/sessions/{sid}", headers=auth()).json()["integrity"] == 80
     with database() as session:
         assert session.query(ProctorSnapshot).one().faces == 2
+
 
 
 def test_old_snapshots_are_deleted(api, database):

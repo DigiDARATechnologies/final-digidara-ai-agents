@@ -347,7 +347,9 @@ def check_snapshot(snapshot_id: str) -> None:
         snapshot.faces = faces
         snapshot.note = note
         ps = session.get(ProctorSession, snapshot.session_id)
-        if ps is not None and ps.status == "active":
+        # Photos are only taken while the test runs, so a finding counts even
+        # when the check finishes after the test ended.
+        if ps is not None:
             if faces == 0:
                 _add_event(session, ps, "no_face", note or "No face in the camera.")
             elif faces > 1:
