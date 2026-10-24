@@ -85,3 +85,14 @@ test('opening a technology whose level is already finished moves straight to the
   expect(mocked.listLevelProblems).toHaveBeenLastCalledWith('t', 'python-full-stack', 'python', 'hard');
   expect(next.problems.map((p) => p.slug)).toEqual(['hard-1']);
 });
+
+test('the problem list opens on the course recommended for the learner goal', async () => {
+  const { problemListCourse } = await import('../../src/lib/codeforgeFlow');
+  setLearnerContext({ profile: { onboarding_completed: true, target_role: 'ai engineer', degree: 'm.sc', skills: ['python', 'llm'], experience: 'fresher' }, levels: [] } as never);
+  const courses = [
+    { slug: 'python-full-stack', name: 'Python Full Stack Development', description: 'Backend, database, and browser technologies.' },
+    { slug: 'ai-machine-learning', name: 'AI and Machine Learning', description: 'Python and numerical foundations used in machine learning.' },
+  ] as never;
+  expect(problemListCourse({ courses })).toBe('ai-machine-learning');
+  expect(problemListCourse({ courses, courseSlug: 'data-science' })).toBe('data-science');
+});

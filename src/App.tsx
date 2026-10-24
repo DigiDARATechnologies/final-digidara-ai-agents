@@ -19,6 +19,7 @@ import {
   handleCodeForgeText,
   openCodeForgeChat,
   openCodeForgeProblem,
+  problemListCourse,
   enterAssessment,
   runCodeForgeCode,
   submitCodeForgeCode,
@@ -1323,7 +1324,7 @@ export default function App() {
         setPlaygroundOpen(true);
       } else {
         const flow = codeforgeStates[chatId];
-        setProblemSetScope({ courseSlug: flow?.courseSlug, technologySlug: flow?.technologySlug });
+        setProblemSetScope({ courseSlug: flow ? problemListCourse(flow) : undefined, technologySlug: flow?.technologySlug });
         setProblemSetOpen(true);
       }
       return;

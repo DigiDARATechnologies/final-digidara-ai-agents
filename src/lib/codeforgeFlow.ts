@@ -91,10 +91,19 @@ function courseGreeting(courses: Course[], firstName?: string): string {
   return `${hello}Choose a course to practice:`;
 }
 
+/** The course the problem list opens on when none is chosen yet: the one
+ * recommended for the learner's goal, so an AI engineer is not shown HTML,
+ * CSS and JavaScript. Undefined without a goal (then every language). */
+export function problemListCourse(state: Pick<CodeForgeFlowState, "courseSlug" | "courses">): string | undefined {
+  return state.courseSlug ?? rankCourses(state.courses ?? []).recommended?.slug;
+}
+
 function courseOptions(courses: Course[]): ChatOption[] {
   const { ordered, recommended } = rankCourses(courses);
   return [
-    { label: "📋 Problem list", value: "__problemset__", description: "Every problem in every language, LeetCode style. Your level's problems are open." },
+    { label: "📋 Problem list", value: "__problemset__", description: recommended
+      ? `${recommended.name} problems, LeetCode style. Your level's problems are open.`
+      : "Every problem in every language, LeetCode style. Your level's problems are open." },
     ...ordered.map((c) => ({
       label: c === recommended ? `⭐ ${c.name} · recommended for you` : c.name,
       value: c.slug,
