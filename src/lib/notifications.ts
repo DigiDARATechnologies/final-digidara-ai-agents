@@ -57,7 +57,9 @@ function capstoneBody(state: CapstoneFlowState, now: number): string | null {
         : `Your project is pending submission — ${left} left.`;
     }
     case "awaiting_viva_answer":
-      return state.vivaRetryPending
+      return state.vivaRetryPending && state.vivaAttempt === 0
+        ? "Your project passed grading. Your viva is ready: start it when you are."
+        : state.vivaRetryPending
         ? `Viva attempt ${(state.vivaAttempt ?? 1) + 1} of ${state.vivaAttemptsTotal ?? 3} is waiting for you.`
         : `Your viva is in progress${state.vivaProgress ? ` — question ${state.vivaProgress}` : ""}. Continue.`;
     case "graded":

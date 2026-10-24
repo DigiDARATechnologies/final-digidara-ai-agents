@@ -7,6 +7,40 @@ function chatsKey(email: string) {
   return `digidara_chats_${email}`;
 }
 
+/** Set while the chats are too big for this browser's storage: then the
+ * browser keeps no copy and every load comes from the server. */
+function serverOnlyKey(email: string) {
+  return `digidara_chats_server_only_${email}`;
+}
+
+/** The browser keeps a copy of the chats so they open instantly; the server
+ * keeps the real history. A full storage quota (about 5 MB a site) used to
+ * throw out of every click that changed a chat ("QuotaExceededError ...
+ * exceeded the quota") and leave the agent stuck at "Connecting you now...".
+ * Now a copy that does not fit is dropped instead: never a partial copy, which
+ * could be uploaded over the full history. */
+function writeChatsCache(email: string, serialized: string): void {
+  try {
+    localStorage.setItem(chatsKey(email), serialized);
+    localStorage.removeItem(serverOnlyKey(email));
+  } catch {
+    try {
+      localStorage.removeItem(chatsKey(email));
+      localStorage.setItem(serverOnlyKey(email), "1");
+    } catch {
+      // Storage unavailable altogether: the server copy is still kept.
+    }
+  }
+}
+
+function serverOnly(email: string): boolean {
+  try {
+    return localStorage.getItem(serverOnlyKey(email)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function useChats(email: string | undefined) {
   const mutationVersion = useRef(0);
   const knownChatIds = useRef(new Set<string>());
@@ -21,11 +55,11 @@ export function useChats(email: string | undefined) {
   const loadChats = useCallback((): Chat[] => {
     if (!email) return [];
     try {
-      const chats = JSON.parse(localStorage.getItem(chatsKey(email)) || "[]") as Chat[];
+      const chats = serverOnly(email) ? [] : JSON.parse(localStorage.getItem(chatsKey(email)) || "[]") as Chat[];
       knownChatIds.current = new Set(chats.map((chat) => chat.id));
       return chats;
     } catch {
-      localStorage.removeItem(chatsKey(email));
+      try { localStorage.removeItem(chatsKey(email)); } catch { /* storage unavailable */ }
       knownChatIds.current = new Set();
       return [];
     }
@@ -35,7 +69,7 @@ export function useChats(email: string | undefined) {
     (chats: Chat[]) => {
       if (!email) return;
       const serialized = JSON.stringify(chats);
-      localStorage.setItem(chatsKey(email), serialized);
+      writeChatsCache(email, serialized);
       const snapshot = JSON.parse(serialized) as Chat[];
       const nextIds = new Set(snapshot.map((chat) => chat.id));
       const deletedIds = [...knownChatIds.current].filter((chatId) => !nextIds.has(chatId));
@@ -69,7 +103,7 @@ export function useChats(email: string | undefined) {
         : remote.chats;
       if (mutationVersion.current !== versionAtStart) return null;
 
-      localStorage.setItem(chatsKey(email), JSON.stringify(accountChats));
+      writeChatsCache(email, JSON.stringify(accountChats));
       knownChatIds.current = new Set(accountChats.map((chat) => chat.id));
       return accountChats;
     } catch (error) {

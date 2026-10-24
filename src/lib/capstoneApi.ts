@@ -187,6 +187,9 @@ export interface SubmissionResult {
   /** Seconds left to finish the current viva attempt (20 minutes each). */
   viva_seconds_left?: number | null;
   viva_time_limit_seconds?: number | null;
+  /** Grading passed and the viva is ready, its clock not started: the learner
+   * starts it (startVivaAttempt) when ready. */
+  viva_ready_to_start?: boolean | null;
   /** The attempt just ended because its time ran out. */
   viva_timed_out?: boolean | null;
 }

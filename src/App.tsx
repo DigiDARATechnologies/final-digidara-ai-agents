@@ -1778,6 +1778,10 @@ export default function App() {
           setCapstoneStates((prev) => ({ ...prev, [chatId]: finalState }));
           appendAgentMessages(chatId, finalMessages);
           setTyping(false);
+          // Grading can take a few minutes: say so even if they looked away.
+          if (finalState.vivaRetryPending && finalState.vivaAttempt === 0) {
+            showToast("✅ Project submitted and passed grading. Your viva is ready: press Start viva when you are.");
+          }
         });
       }
       return;

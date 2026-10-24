@@ -11,7 +11,7 @@ jest.mock('../../src/lib/learnerApi', () => ({
   fetchLearnerSummary: jest.fn(),
 }));
 
-import { submitCodeForgeCode, type CodeForgeFlowState } from '../../src/lib/codeforgeFlow';
+import { handleCodeForgeText, submitCodeForgeCode, type CodeForgeFlowState } from '../../src/lib/codeforgeFlow';
 import * as api from '../../src/lib/codeforgeApi';
 import * as learnerApi from '../../src/lib/learnerApi';
 import { learnerLevel, setLearnerContext } from '../../src/lib/learnerContext';
@@ -70,4 +70,18 @@ test('when the platform has not moved the learner up, nothing extra is said', as
 
   expect(learner.fetchReadiness).toHaveBeenCalled();
   expect(messages).toHaveLength(1);
+});
+
+test('opening a technology whose level is already finished moves straight to the next level', async () => {
+  learner.fetchLearnerSummary.mockResolvedValue(summaryAt('hard'));
+  mocked.listLevelProblems
+    .mockResolvedValueOnce({ problems: [problem('med-1', 'Medium', 'Solved')] } as never)
+    .mockResolvedValueOnce({ problems: [problem('hard-1', 'Hard', 'Not Started')] } as never);
+  const state = { ...solving([], ''), step: 'awaiting_problem' as const };
+
+  const { messages, state: next } = await handleCodeForgeText({ ...state, step: 'awaiting_problem' }, 'choose_another_problem');
+
+  expect(messages[0].text).toContain('Medium level complete! Hard problems are unlocked now.');
+  expect(mocked.listLevelProblems).toHaveBeenLastCalledWith('t', 'python-full-stack', 'python', 'hard');
+  expect(next.problems.map((p) => p.slug)).toEqual(['hard-1']);
 });

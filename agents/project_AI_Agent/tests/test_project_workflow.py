@@ -188,8 +188,12 @@ def age_attempt(database, submission_id, seconds):
 
 def test_each_viva_attempt_has_twenty_minutes(client, workflow, database, monkeypatch):
     body = upload(client).json()
-    assert body["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS == 20 * 60
+    # Grading passed: the viva waits for the learner, its clock not running yet.
+    assert body["viva_ready_to_start"] is True and body["viva_seconds_left"] is None
     submission_id = body["submission_id"]
+    started = start_attempt(client, submission_id).json()
+    assert started["viva_attempt"] == 1 and started["viva_progress"] == "1 of 10"
+    assert started["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS == 20 * 60
     assert time_up(client, submission_id).status_code == 409               # time remains
     monkeypatch.setattr(routes, "verify_viva_answer", Mock(return_value={"correct": True, "note": "ok"}))
     age_attempt(database, submission_id, 5 * 60)
@@ -236,7 +240,8 @@ def test_an_answer_just_inside_the_grace_period_is_graded(client, workflow, data
 def test_start_viva_attempt_guards(client, workflow, monkeypatch):
     assert start_attempt(client, "missing").status_code == 404
     submission_id = upload(client).json()["submission_id"]
-    assert start_attempt(client, submission_id).status_code == 409         # nothing finished yet
+    assert start_attempt(client, submission_id).status_code == 200         # starts the first attempt
+    assert start_attempt(client, submission_id).status_code == 409         # it is not finished yet
     assert client.post("/api/invoke", json={"action": "start_viva_attempt", "payload": {}}).status_code == 400
 
 
@@ -613,3 +618,13 @@ def test_topic_web_search_only_when_the_request_names_a_company_or_interview(sta
     monkeypatch.setattr(nodes, "call_json", provider)
     nodes.topic_generator_node({**state, "course_name": request_text, "free_topic_request": True})
     assert provider.call_args.kwargs["web_search"] is searches
+
+
+def test_answering_without_pressing_start_starts_the_clock(client, workflow, database, monkeypatch):
+    # An older page shows the first question right away and sends an answer.
+    submission_id = upload(client).json()["submission_id"]
+    monkeypatch.setattr(routes, "verify_viva_answer", Mock(return_value={"correct": True, "note": "ok"}))
+    progress = answer(client, submission_id, 0).json()
+    assert progress["viva_seconds_left"] >= viva.VIVA_TIME_LIMIT_SECONDS - 5
+    with database() as session:
+        assert session.get(Submission, submission_id).viva_started_at is not None

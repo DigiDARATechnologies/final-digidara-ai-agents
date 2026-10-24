@@ -571,6 +571,35 @@ describe('the viva: three attempts, new questions each time, a rating instead of
   });
 });
 
+describe('a passed project waits for Start viva', () => {
+  test('after upload the learner is told the project passed and starts the viva when ready', async () => {
+    jest.mocked(api.uploadSubmission).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', submission_id: 'sub-1', viva_question: { id: 0, question: 'First?' }, viva_progress: '1 of 10',
+      viva_attempt: 1, viva_attempts_total: 3, viva_seconds_left: null, viva_time_limit_seconds: 1200, viva_ready_to_start: true,
+    } as never);
+    const ready = { ...submissionState, docxFile: new File(['x'], 'r.docx'), zipFile: new File(['x'], 's.zip') };
+    const submitted = await submitCapstoneFiles(ready);
+
+    expect(submitted.messages[0].text).toContain('Project submitted');
+    expect(submitted.messages[0].text).toContain('The timer starts only when you press Start viva');
+    expect(submitted.messages[0].text).not.toContain('First?');
+    expect(submitted.messages[0].options?.[0]).toMatchObject({ label: 'Start viva', value: 'start_viva_attempt' });
+    expect(submitted.state).toMatchObject({ vivaRetryPending: true, vivaAttempt: 0, vivaQuestionText: null, vivaDeadlineAt: null });
+
+    jest.mocked(api.startVivaAttempt).mockResolvedValue({
+      thread_id: 'thread', status: 'pending_viva', submission_id: 'sub-1', viva_question: { id: 0, question: 'First?' },
+      viva_progress: '1 of 10', viva_attempt: 1, viva_attempts_total: 3, viva_seconds_left: 1200,
+    } as never);
+    const started = await handleCapstoneText(submitted.state, 'start_viva_attempt');
+
+    expect(api.startVivaAttempt).toHaveBeenCalledWith('sub-1');
+    expect(started.messages[0].text).toContain('Viva started: attempt 1 of 3. You have 20 minutes.');
+    expect(started.messages[0].text).toContain('First?');
+    expect(started.state).toMatchObject({ vivaRetryPending: false, vivaAttempt: 1, vivaQuestionText: 'First?' });
+    expect(started.state.vivaDeadlineAt).toBeGreaterThan(Date.now());
+  });
+});
+
 describe('example report and zip downloads', () => {
   const exampleHrefs = ['/capstone-examples/capstone-example-report.pdf', '/capstone-examples/capstone-example-project.zip'];
 

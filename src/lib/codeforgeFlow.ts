@@ -185,9 +185,20 @@ function mcqOptions(options: Record<string, string>): ChatOption[] {
 /** The chosen technology's problems open in the problem list (a table, like
  * LeetCode), not as chat buttons. The level's problems are kept here too, so
  * "Next problem" works after each one. The server serves only this level. */
-async function enterLevelProblems(state: CodeForgeFlowState): Promise<CodeForgeResult> {
+async function enterLevelProblems(state: CodeForgeFlowState, checkLevelUp = true): Promise<CodeForgeResult> {
   const { level, difficulty } = levelNames();
   const { problems } = await listLevelProblems(state.sessionToken!, state.courseSlug!, state.technologySlug!, difficulty.toLowerCase());
+  // Every problem of the level solved (e.g. the last one in another chat, or
+  // before levels moved up on their own): check now and open the next level
+  // instead of offering the finished one again.
+  if (checkLevelUp && problems.length && problems.every((p) => p.progress === "Solved")) {
+    const before = learnerLevel("codeforge_agent");
+    const after = await refreshLearnerLevels("codeforge_agent");
+    if (after !== before && after !== "professional") {
+      const opened = await enterLevelProblems(state, false);
+      return { ...opened, messages: [{ text: `🎉 ${LEVEL_LABELS[before]} level complete! ${LEVEL_LABELS[after]} problems are unlocked now.` }, ...opened.messages] };
+    }
+  }
   const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", problems, topics: [] };
   const solved = problems.filter((p) => p.progress === "Solved").length;
   const options: ChatOption[] = [
