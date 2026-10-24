@@ -9,9 +9,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.billing.invoice import LOGO, LOGO_WIDTH
+from app.billing.invoice import LOGO
+from app.billing.invoice import _logo as invoice_logo
 
 VERDICT = {"correct": "Correct", "partial": "Partly correct", "wrong": "Incorrect", "ungraded": "Not graded"}
 VERDICT_COLOR = {"correct": "#15803d", "partial": "#b45309", "wrong": "#b91c1c", "ungraded": "#475569"}
@@ -41,11 +42,7 @@ def build(report: dict) -> bytes:
                             bottomMargin=14 * mm, title=f"{report.get('title', 'Test')} report")
     story: list = []
     if LOGO.exists():
-        logo = Image(str(LOGO))
-        logo.drawWidth = LOGO_WIDTH
-        logo.drawHeight = LOGO_WIDTH * logo.imageHeight / logo.imageWidth
-        logo.hAlign = "LEFT"
-        story += [logo, Spacer(1, 6)]
+        story += [invoice_logo(), Spacer(1, 6)]
     story.append(_p(report.get("title", "Knowledge test"), h1))
     story.append(_p(" · ".join(x for x in (report.get("organization"), report.get("learner"), report.get("email"),
                                             _when(report.get("finished_at"))) if x), small))
