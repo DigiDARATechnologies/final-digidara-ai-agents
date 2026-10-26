@@ -17,7 +17,7 @@ from job_agent.db import get_db, init_job_tables
 
 
 TEST_BOARD_ID = "digidara-reconciliation-test-board"
-TEST_COMPANY_NAME = "DigiDARA Reconciliation Test Co"
+TEST_COMPANY_NAME = "SkillDARA Reconciliation Test Co"
 TEST_SOURCE_NAME = f"greenhouse:{TEST_BOARD_ID}"
 
 

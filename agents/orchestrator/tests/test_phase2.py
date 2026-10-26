@@ -64,8 +64,8 @@ def users(database):
         for user_id, name in (("learner", "Learner"), ("admin", "Org Admin"), ("other", "Other")):
             session.add(User(id=user_id, name=name, email=f"{user_id}@example.test", email_verified=True,
                              token_balance=1000, password_hash="x"))
-        # DigiDARA's own platform admin, who creates organizations.
-        session.add(User(id="platform", name="DigiDARA", email="platform@example.test", email_verified=True,
+        # SkillDARA's own platform admin, who creates organizations.
+        session.add(User(id="platform", name="SkillDARA", email="platform@example.test", email_verified=True,
                          token_balance=1000, password_hash="x", is_admin=True))
         session.commit()
 
@@ -468,7 +468,7 @@ def test_resume_facts_join_the_profile_and_what_agents_report(app_client, agents
     learner_service.save_profile("learner", "Data Analyst", "B.Sc Computer Science", ["SQL", "Excel"], "fresher")
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"resume": {
         "skills": ["Python", "sql"],
-        "achievements": [{"title": "Solved 20 Python coding problems", "description": "DigiDARA Coding Practice", "x": "dropped"}],
+        "achievements": [{"title": "Solved 20 Python coding problems", "description": "SkillDARA Coding Practice", "x": "dropped"}],
         "projects": [{"description": "no title, dropped"}],
     }})
     facts = app_client.get("/learner/resume-facts", headers=auth()).json()

@@ -23,7 +23,7 @@ INK = colors.HexColor("#24232E")
 MUTED = colors.HexColor("#626575")
 LINE = colors.HexColor("#DED9F2")
 SOFT = colors.HexColor("#F6F3FF")
-LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "digidara-logo.jpg"
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "skilldara-logo.jpg"
 LOGO_WIDTH = 38*mm
 LOGO_HEIGHT = 21.375*mm
 
@@ -113,7 +113,7 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     doc = SimpleDocTemplate(
         output, pagesize=A4, leftMargin=17*mm, rightMargin=17*mm,
         topMargin=30*mm, bottomMargin=20*mm,
-        title="Mock Interview Report", author="DigiDARA",
+        title="Mock Interview Report", author="SkillDARA",
     )
     style = _styles()
     title_block = [Paragraph("Mock Interview", style["title"]), Paragraph("Interview Report", style["subtitle"])]

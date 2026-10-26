@@ -76,7 +76,7 @@ def _security() -> dict:
         "securitySchemes": {
             "bearer": {
                 "type": "http", "scheme": "bearer", "bearerFormat": "JWT",
-                "description": "A DigiDARA login token. Agents calling on a learner's behalf sign the "
+                "description": "A SkillDARA login token. Agents calling on a learner's behalf sign the "
                                "request with the shared service secret instead (X-Agent-* headers).",
             },
         },
@@ -150,8 +150,8 @@ def hub_card(base_url: str, cards: list[dict]) -> dict:
     reachable agent, each pointing at that agent's own card."""
     return {
         "protocolVersion": PROTOCOL_VERSION,
-        "name": "DigiDARA Agent Hub",
-        "description": "Every DigiDARA agent, reachable over A2A. Each skill below is an agent with its own card.",
+        "name": "SkillDARA Agent Hub",
+        "description": "Every SkillDARA agent, reachable over A2A. Each skill below is an agent with its own card.",
         "url": f"{base_url}/a2a",
         "preferredTransport": "JSONRPC",
         "version": "2.0.0",

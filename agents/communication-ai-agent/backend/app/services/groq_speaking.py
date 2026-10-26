@@ -87,7 +87,7 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         raise ValueError("Audio file is too large for transcription")
 
     # Speech is always transcribed by OpenAI's GPT transcription model, the
-    # same one every other DigiDARA microphone uses; Groq only when there is
+    # same one every other SkillDARA microphone uses; Groq only when there is
     # no OpenAI key at all.
     openai_key = current_app.config.get("OPENAI_API_KEY")
     groq_key = current_app.config.get("GROQ_API_KEY")
@@ -116,7 +116,7 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         data={
             "model": model,
             # No forced language: Tamil or other speech comes back in its own
-            # script, and the DigiDARA app asks the learner to speak English,
+            # script, and the SkillDARA app asks the learner to speak English,
             # instead of an empty transcript ("I couldn't hear any words").
             "response_format": "json",
             "temperature": "0",

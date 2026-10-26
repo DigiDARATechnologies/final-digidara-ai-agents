@@ -1,4 +1,4 @@
-# DigiDARA CodeForge Agent (Flask, lms_api app factory)
+# SkillDARA CodeForge Agent (Flask, lms_api app factory)
 FROM python:3.12-slim
 
 WORKDIR /app

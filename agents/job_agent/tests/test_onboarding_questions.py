@@ -65,7 +65,7 @@ def test_untrusted_or_unsafe_model_output_is_not_presented_as_evidence(reply):
 
 
 @pytest.mark.parametrize("message,phrase", [
-    ("Who are you?", "DigiDARA Job Agent"),
+    ("Who are you?", "SkillDARA Job Agent"),
     ("What does fresher mean?", "little or no full-time"),
     ("Can I skip this?", "profile will remain incomplete"),
     ("What is the capital of India?", "career help"),
@@ -78,7 +78,7 @@ def test_common_questions_get_safe_answers_without_external_call(message, phrase
 
 def test_question_about_agent_name_does_not_report_candidate_name():
     result, model = run("What's your name?")
-    assert "DigiDARA Job Agent" in result["reply"]
+    assert "SkillDARA Job Agent" in result["reply"]
     assert "Dhanush" not in result["reply"]
     model.assert_not_called()
 

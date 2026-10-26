@@ -180,7 +180,7 @@ export default function Sidebar({
             <path d="M3.5 10.8L12 3.5l8.5 7.3V20a1 1 0 01-1 1H15v-6h-6v6H4.5a1 1 0 01-1-1v-9.2z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
           </svg>
         </span>
-        <span className="label">DigiDARA Agents</span>
+        <span className="label">SkillDARA Agents</span>
       </button>
 
       <nav className="nav-list">

@@ -6,7 +6,7 @@ export type VoiceLanguage = "en";
 
 export interface VoicePrefs {
   enabled: boolean;
-  /** Always "natural": every agent speaks with the one DigiDARA voice. */
+  /** Always "natural": every agent speaks with the one SkillDARA voice. */
   mode: "natural";
   persona: VoicePersona;
   language: VoiceLanguage;

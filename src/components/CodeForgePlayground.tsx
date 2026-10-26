@@ -8,11 +8,11 @@ interface Props {
 }
 
 const DEFAULT_SNIPPETS: Record<string, string> = {
-  python: 'print("Hello, DigiDARA!")',
-  c: '#include <stdio.h>\n\nint main() {\n    printf("Hello, DigiDARA!\\n");\n    return 0;\n}',
-  "c++": '#include <iostream>\n\nint main() {\n    std::cout << "Hello, DigiDARA!" << std::endl;\n    return 0;\n}',
-  java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, DigiDARA!");\n    }\n}',
-  javascript: 'console.log("Hello, DigiDARA!");',
+  python: 'print("Hello, SkillDARA!")',
+  c: '#include <stdio.h>\n\nint main() {\n    printf("Hello, SkillDARA!\\n");\n    return 0;\n}',
+  "c++": '#include <iostream>\n\nint main() {\n    std::cout << "Hello, SkillDARA!" << std::endl;\n    return 0;\n}',
+  java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, SkillDARA!");\n    }\n}',
+  javascript: 'console.log("Hello, SkillDARA!");',
 };
 
 function guessSnippet(name: string): string {

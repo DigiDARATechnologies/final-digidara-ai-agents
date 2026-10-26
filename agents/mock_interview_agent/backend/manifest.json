@@ -2,7 +2,7 @@
   "agent_name": "mock_interview_agent",
   "version": "v1.0.0",
   "description": "AI-driven mock technical and HR interviews: question generation, spoken/typed answer evaluation, focus tracking, history, and score dashboards.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "mock-interview-agent",
   "port": 5030,

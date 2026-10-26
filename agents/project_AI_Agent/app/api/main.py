@@ -42,7 +42,7 @@ async def lifespan(_app: FastAPI):
     await registry_client.stop()
 
 
-app = FastAPI(title="DigiDARA Capstone Project Agent", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="SkillDARA Capstone Project Agent", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

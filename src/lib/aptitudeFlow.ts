@@ -122,7 +122,7 @@ function questionMessage(question: AptitudeQuestion): AptitudeFlowMessage {
 async function startTest(state: AptitudeFlowState, user?: User) {
   // Refresh the agent session immediately before starting. This also
   // upgrades chats that still contain a token issued before the verified
-  // DigiDARA identity bridge was introduced.
+  // SkillDARA identity bridge was introduced.
   if (user) {
     const { sessionToken } = await ensureAptitudeSession(user);
     state = { ...state, sessionToken };

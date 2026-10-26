@@ -9,7 +9,7 @@ an unauthenticated caller from reading or erasing someone else's data by
 guessing an email address, these endpoints additionally require the
 gateway-verified `x-digidara-user-id` header (see app/request_context.py)
 to be present -- i.e. the request must have already passed through the
-DigiDARA orchestrator's own authentication before it reaches this agent.
+SkillDARA orchestrator's own authentication before it reaches this agent.
 """
 from __future__ import annotations
 

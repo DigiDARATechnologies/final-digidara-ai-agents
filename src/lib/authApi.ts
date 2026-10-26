@@ -23,13 +23,13 @@ const ORCHESTRATOR_BASE = getOrchestratorBase();
 export function normalizeAuthError(error: unknown): string {
   if (error instanceof Error) {
     const message = error.message.trim();
-    if (!message) return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+    if (!message) return "Unable to reach the SkillDARA server. Please make sure the backend is running and try again.";
     if (message === "Failed to fetch" || message.toLowerCase().includes("failed to fetch") || message.toLowerCase().includes("networkerror") || message.toLowerCase().includes("load failed")) {
-      return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+      return "Unable to reach the SkillDARA server. Please make sure the backend is running and try again.";
     }
     return message;
   }
-  return "Unable to reach the DigiDARA server. Please make sure the backend is running and try again.";
+  return "Unable to reach the SkillDARA server. Please make sure the backend is running and try again.";
 }
 
 async function parseAuthResponse<T>(response: Response): Promise<T> {

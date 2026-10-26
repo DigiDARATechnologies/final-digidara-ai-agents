@@ -49,7 +49,7 @@ export function bossGreeting(name?: string): string {
 }
 
 /**
- * Boss (the DigiDARA Assistant) as a spoken conversation: it greets the
+ * Boss (the SkillDARA Assistant) as a spoken conversation: it greets the
  * learner, then the logo in the middle listens, and a 5-second pause sends what was said (transcribed by OpenAI);
  * the reply is spoken, then it listens again -- until the learner ends it.
  * The chat carries on behind it, so every turn is still written down there.

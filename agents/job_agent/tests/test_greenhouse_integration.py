@@ -20,7 +20,7 @@ from job_agent.db import get_db, init_job_tables
 
 
 TEST_BOARD_ID = "digidara-integration-test-board"
-TEST_COMPANY_NAME = "DigiDARA Integration Test Co"
+TEST_COMPANY_NAME = "SkillDARA Integration Test Co"
 TEST_SOURCE_NAME = f"greenhouse:{TEST_BOARD_ID}"
 
 

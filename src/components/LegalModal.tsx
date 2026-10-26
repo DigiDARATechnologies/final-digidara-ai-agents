@@ -33,12 +33,12 @@ export default function LegalModal({ open, initialTab, onClose }: Props) {
 function TermsContent() {
   return (
     <article className="legal-doc">
-      <h2>DigiDARA Terms of Service</h2>
+      <h2>SkillDARA Terms of Service</h2>
       <p className="legal-meta">Effective date: {EFFECTIVE_DATE}</p>
 
       <h3>1. Acceptance of terms</h3>
       <p>
-        By creating an account or using any DigiDARA agent (Capstone Project,
+        By creating an account or using any SkillDARA agent (Capstone Project,
         CodeForge, Communication Coach, Aptitude Trainer, Resume Builder, or
         Certificate agent), you agree to these Terms of Service and the
         accompanying Privacy Policy. If you do not agree, do not use the
@@ -109,10 +109,10 @@ function TermsContent() {
 function PrivacyContent() {
   return (
     <article className="legal-doc">
-      <h2>DigiDARA Privacy Policy</h2>
+      <h2>SkillDARA Privacy Policy</h2>
       <p className="legal-meta">Effective date: {EFFECTIVE_DATE}</p>
       <p>
-        This policy explains how DigiDARA Technologies ("DigiDARA", "we")
+        This policy explains how DigiDARA Technologies ("SkillDARA", "we")
         collects, uses, stores, and protects your personal data as a Data
         Fiduciary under India's Digital Personal Data Protection Act, 2023
         ("DPDP Act"), and the rights you have as a Data Principal.
@@ -130,7 +130,7 @@ function PrivacyContent() {
       <h3>2. How we use it</h3>
       <ul>
         <li>To operate each agent's core functionality (eligibility checks, code execution, scoring, certificate/exam generation, resume export).</li>
-        <li>To bridge your DigiDARA identity into each agent's own session so your progress persists across visits.</li>
+        <li>To bridge your SkillDARA identity into each agent's own session so your progress persists across visits.</li>
         <li>To process payments and points top-ups via Razorpay.</li>
         <li>To improve reliability (error monitoring, health checks) and enforce rate limits / prevent abuse.</li>
       </ul>
@@ -164,7 +164,7 @@ function PrivacyContent() {
       <h3>5. Data storage &amp; retention</h3>
       <p>
         All account and platform data is stored in MySQL databases operated
-        by DigiDARA, hosted in the region configured for this deployment.
+        by SkillDARA, hosted in the region configured for this deployment.
         Uploaded submission files (Capstone) and resumes (Resume Builder)
         are retained only as long as needed to provide the related feature,
         or until you delete them. Payment records are retained for the
@@ -190,7 +190,7 @@ function PrivacyContent() {
       <p>
         The platform uses browser local storage to keep you signed in and
         keep a temporary chat-history cache on your device. Your account-linked
-        conversation history is stored in DigiDARA's MySQL database so it is
+        conversation history is stored in SkillDARA's MySQL database so it is
         available when you sign in on another browser or device. We don't use
         third-party advertising trackers or cookies for behavioural profiling.
       </p>
@@ -205,7 +205,7 @@ function PrivacyContent() {
 
       <h3>9. Grievance Officer</h3>
       <p>
-        In accordance with the DPDP Act, DigiDARA has appointed a Grievance
+        In accordance with the DPDP Act, SkillDARA has appointed a Grievance
         Officer to handle complaints about the processing of your personal
         data. Reach out at{" "}
         <a href="mailto:grievance@digidaraaiagents.com">grievance@digidaraaiagents.com</a>{" "}
@@ -227,7 +227,7 @@ function PrivacyContent() {
       <p>
         Under the DPDP Act, anyone under 18 is a "child" and processing
         their personal data requires verifiable consent from a parent or
-        lawful guardian. DigiDARA does not knowingly collect personal data
+        lawful guardian. SkillDARA does not knowingly collect personal data
         from, or create accounts for, anyone under 18 without such consent,
         and does not carry out behavioural monitoring, tracking, or
         targeted advertising directed at children. If you believe a child

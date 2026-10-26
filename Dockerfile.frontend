@@ -1,4 +1,4 @@
-# DigiDARA React/Vite frontend, built and served by nginx.
+# SkillDARA React/Vite frontend, built and served by nginx.
 FROM node:20-slim AS build
 WORKDIR /app
 

@@ -13,7 +13,7 @@ export default function App({ children }) {
     <div className="app-shell">
       <header className="topbar">
         <Link className="brand" onClick={closeMenu} to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-          <img className="brand-logo" src={logo} alt="DigiDARA AI Agents" style={{ height: "32px", width: "auto" }} />
+          <img className="brand-logo" src={logo} alt="SkillDARA" style={{ height: "32px", width: "auto" }} />
         </Link>
 
         <button
@@ -47,7 +47,7 @@ export default function App({ children }) {
 
       <footer className="app-footer">
         <div className="footer-content">
-          <p>&copy; {new Date().getFullYear()} Digidara AI Resume - secure resume dossiers, ATS review, and text-based PDF export.</p>
+          <p>&copy; {new Date().getFullYear()} SkillDARA AI Resume - secure resume dossiers, ATS review, and text-based PDF export.</p>
         </div>
       </footer>
     </div>

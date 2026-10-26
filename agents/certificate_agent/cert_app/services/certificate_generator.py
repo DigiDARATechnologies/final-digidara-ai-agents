@@ -44,7 +44,7 @@ _Y_WEBSITE        = 1824  # Website footer line
 # ── Layout & Colours ───────────────────────────────────────────────────────────
 _COL_BLUE   = (11,  40,  78)    # Deep Navy Blue
 _COL_GRAY   = (70,  70,  70)    # Soft Dark Gray
-_COL_GOLD   = (197, 160, 89)    # DigiDARA Gold
+_COL_GOLD   = (197, 160, 89)    # SkillDARA Gold
 _COL_LGRAY  = (210, 210, 210)   # Light Gray
 _COL_RED    = (200, 30,  30)    # ISO Stamp Red
 
@@ -174,7 +174,7 @@ def _ordinal_date(dt: datetime) -> str:
     )
     return f"{day}{sfx} {dt.strftime('%b %Y')}"
 
-# ── DigiDARA Layout Rendering Helpers ──────────────────────────────────────────
+# ── SkillDARA Layout Rendering Helpers ──────────────────────────────────────────
 
 def _draw_geometric_borders(draw: ImageDraw.Draw, w: int, h: int):
     # Outer borders
@@ -224,7 +224,7 @@ def _draw_logo(draw: ImageDraw.Draw, w: int, h: int):
     
     tx = w - 410
     f_brand = _load_font(38, bold=True, serif=True)
-    draw.text((tx, cy - 45), "DigiDARA", font=f_brand, fill=_COL_BLUE)
+    draw.text((tx, cy - 45), "SkillDARA", font=f_brand, fill=_COL_BLUE)
     
     f_sub1 = _load_font(12, bold=True, serif=False)
     draw.text((tx, cy + 2), "TECHNOLOGIES PVT LTD...", font=f_sub1, fill=_COL_BLUE)

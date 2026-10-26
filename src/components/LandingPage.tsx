@@ -34,9 +34,9 @@ const STEPS = [
 ];
 
 const FAQS = [
-  { q: "What is DigiDARA AI Agents?", a: "DigiDARA AI Agents is an AI agent workspace where businesses, teams and individuals use specialized AI agents for learning, careers, communication, hiring and industry workflows, all under one account." },
-  { q: "Who is DigiDARA AI Agents for?", a: "Anyone, anywhere in the world. Students and job seekers use it for practice and careers, while companies in travel, construction, education and other industries use it to automate repetitive work with custom AI agents." },
-  { q: "Can DigiDARA build a custom AI agent for my industry?", a: "Yes. DigiDARA designs and builds specialized AI agents for industries such as travel, construction, healthcare, finance and education, shaped around your own workflow." },
+  { q: "What is SkillDARA?", a: "SkillDARA is an AI agent workspace where businesses, teams and individuals use specialized AI agents for learning, careers, communication, hiring and industry workflows, all under one account." },
+  { q: "Who is SkillDARA for?", a: "Anyone, anywhere in the world. Students and job seekers use it for practice and careers, while companies in travel, construction, education and other industries use it to automate repetitive work with custom AI agents." },
+  { q: "Can SkillDARA build a custom AI agent for my industry?", a: "Yes. SkillDARA designs and builds specialized AI agents for industries such as travel, construction, healthcare, finance and education, shaped around your own workflow." },
   { q: "Is my data safe?", a: "Sessions are secured, agent requests are signed, and privacy controls follow data-protection principles including data export and account deletion." },
   { q: "How much does it cost?", a: "You can start free. Paid plans add more usage and are shown inside the app under Billing." },
 ];
@@ -278,8 +278,8 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
       <header className={`lp-nav ${scrolled ? "is-scrolled" : ""}`}>
         <div className="lp-progress" aria-hidden="true" />
         <div className="lp-wrap lp-nav-inner">
-          <a className="lp-brand" href="/" aria-label="DigiDARA AI Agents home">
-            <img src={logo} alt="DigiDARA AI Agents" height={68} />
+          <a className="lp-brand" href="/" aria-label="SkillDARA home">
+            <img src={logo} alt="SkillDARA" height={68} />
           </a>
           <nav className={`lp-links ${menuOpen ? "is-open" : ""}`} aria-label="Primary">
             <button type="button" onClick={() => go("industries")}>Industries</button>
@@ -311,7 +311,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                 <span className="lp-grad">for <Typewriter words={TYPE_WORDS} />.</span>
               </h1>
               <p className="lp-lead">
-                DigiDARA AI Agents gives people and businesses specialized AI agents for learning, careers,
+                SkillDARA gives people and businesses specialized AI agents for learning, careers,
                 communication, travel, construction and more. Open a ready-made agent today, or have us build
                 one around your workflow.
               </p>
@@ -332,9 +332,9 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                 <div className="lp-bot-ring lp-bot-ring-b" />
                 <div className="lp-bot-bubble">
                   <strong>Hi there! 👋</strong>
-                  <span>Welcome to DigiDARA AI Agents</span>
+                  <span>Welcome to SkillDARA</span>
                 </div>
-                <svg className="lp-bot" viewBox="0 0 400 440" role="img" aria-label="Friendly DigiDARA AI robot waving hello">
+                <svg className="lp-bot" viewBox="0 0 400 440" role="img" aria-label="Friendly SkillDARA AI robot waving hello">
                   <defs>
                     <linearGradient id="bot-body" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0" stopColor="#7fa0ff" /><stop offset="1" stopColor="#2851d8" />
@@ -419,7 +419,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
 
         <section id="industries" className="lp-section lp-bg-grid">
           <div className="lp-wrap">
-            <SectionHead eyebrow="Industries" title="One platform. Agents for" hl="every kind of work." text="We are not only for students. DigiDARA builds AI agents for the industries where repetitive work slows people down." />
+            <SectionHead eyebrow="Industries" title="One platform. Agents for" hl="every kind of work." text="We are not only for students. SkillDARA builds AI agents for the industries where repetitive work slows people down." />
             <div className="lp-grid lp-bento">
               {INDUSTRIES.map((item, i) => (
                 <Reveal key={item.name} delay={i * 70} className={`zoom ${i === 0 || i === 5 ? "lp-span-2" : ""}`}>
@@ -478,7 +478,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
         <section className="lp-section lp-section-alt">
           <div className="lp-wrap lp-split">
             <Reveal className="from-left">
-              <span className="lp-eyebrow"><i />Why DigiDARA<i /></span>
+              <span className="lp-eyebrow"><i />Why SkillDARA<i /></span>
               <h2>Built to be useful, trusted and <em>easy to adopt.</em></h2>
               <ul className="lp-checks">
                 <li>One account for every agent, with chat history across devices</li>
@@ -533,7 +533,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
       <footer className="lp-footer">
         <div className="lp-wrap lp-footer-grid">
           <div>
-            <img src={logo} alt="DigiDARA AI Agents" height={68} />
+            <img src={logo} alt="SkillDARA" height={68} />
             <p>AI agents for every industry, built for users around the world.</p>
           </div>
           <div>
@@ -554,7 +554,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
         </div>
         <div className="lp-wrap lp-footer-bottom">
           <span>© {new Date().getFullYear()} DigiDARA Technologies. All rights reserved.</span>
-          <span>DigiDARA AI Agents</span>
+          <span>SkillDARA</span>
         </div>
       </footer>
     </div>

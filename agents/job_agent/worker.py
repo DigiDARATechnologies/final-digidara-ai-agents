@@ -51,7 +51,7 @@ def run_once():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="DigiDARA jobs ingestion worker")
+    parser = argparse.ArgumentParser(description="SkillDARA jobs ingestion worker")
     parser.add_argument("--once", action="store_true", help="Process one queued run and exit")
     parser.add_argument(
         "--sync-providers",

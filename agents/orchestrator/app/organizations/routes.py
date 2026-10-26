@@ -1,4 +1,4 @@
-"""Organizations API: created by DigiDARA's platform admin; learners join
+"""Organizations API: created by SkillDARA's platform admin; learners join
 with a code; organization admins manage codes and members and see the
 analytics and each learner's details (insights.py)."""
 from __future__ import annotations
@@ -110,7 +110,7 @@ def _filters(department: str | None, year: str | None, section: str | None, code
 
 @router.post("", status_code=201)
 def create_organization(req: CreateIn, user_id: str = Depends(get_verified_user_id)) -> dict:
-    raise HTTPException(403, "Organizations are set up by DigiDARA. Contact us to register yours.")
+    raise HTTPException(403, "Organizations are set up by SkillDARA. Contact us to register yours.")
 
 
 @router.post("/platform", status_code=201)

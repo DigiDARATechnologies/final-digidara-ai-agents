@@ -1,4 +1,4 @@
-"""Resume facts: what DigiDARA already knows about a learner, for their resume.
+"""Resume facts: what SkillDARA already knows about a learner, for their resume.
 
 The Resume Builder starts from this instead of asking everything again:
   - the account: name, email and mobile number;
@@ -10,7 +10,7 @@ The Resume Builder starts from this instead of asking everything again:
   - checkable scores: an aptitude or interview average of 70 or more becomes
     an achievement line naming where it was earned.
 
-Only facts the learner earned on DigiDARA or typed into their profile are
+Only facts the learner earned on SkillDARA or typed into their profile are
 used -- nothing is invented -- and `missing` lists what the Resume Builder
 still has to ask (phone, location, education details, links, work history).
 """
@@ -25,8 +25,8 @@ from app.readiness import service as readiness_service
 SCORE_ACHIEVEMENT_MIN = 70
 
 SCORE_ACHIEVEMENTS = {
-    "aptitude_agent": ("Aptitude: {score:.0f}% average", "DigiDARA aptitude assessments ({count} tests)", "tests_completed"),
-    "mock_interview_agent": ("Mock interviews: {score:.0f}/100 average", "DigiDARA AI mock interviews ({count} completed)",
+    "aptitude_agent": ("Aptitude: {score:.0f}% average", "SkillDARA aptitude assessments ({count} tests)", "tests_completed"),
+    "mock_interview_agent": ("Mock interviews: {score:.0f}/100 average", "SkillDARA AI mock interviews ({count} completed)",
                              "interviews_completed"),
 }
 
@@ -50,7 +50,7 @@ def _completed_levels(area: dict) -> dict | None:
     names = " and ".join(level_rules.LEVEL_LABELS[level] for level in done)
     plural = "levels" if len(done) > 1 else "level"
     return {"title": f"{area.get('label')}: completed {names} {plural}",
-            "description": "DigiDARA leveled practice, measured on every problem or session at that level."}
+            "description": "SkillDARA leveled practice, measured on every problem or session at that level."}
 
 
 async def gather(user) -> dict[str, Any]:

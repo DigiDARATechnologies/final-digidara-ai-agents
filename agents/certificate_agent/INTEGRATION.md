@@ -1,6 +1,6 @@
 # certificate_agent Integration (Strategy F)
 
-This document describes how `certificate_agent` integrates with the DigiDARA multi-agent architecture via **Strategy F** (REST + Registry + Gateway).
+This document describes how `certificate_agent` integrates with the SkillDARA multi-agent architecture via **Strategy F** (REST + Registry + Gateway).
 
 ---
 
@@ -30,7 +30,7 @@ POST /gateway/agents/certificate_agent/invoke
 ### Canonical Identity Bridge (`ensure_profile`)
 - Action: `ensure_profile`
 - Payload: `{ "user_id": "...", "name": "...", "email": "..." }`
-- Behavior: Lazily registers or updates a user record in the MySQL `users` table for DigiDARA dev mode logins and returns a JWT `token` / `sessionToken`.
+- Behavior: Lazily registers or updates a user record in the MySQL `users` table for SkillDARA dev mode logins and returns a JWT `token` / `sessionToken`.
 
 ### Binary Response Handling (`download_certificate`)
 - When `action == "download_certificate"` or the internal response contains `media_type="application/pdf"`, `/api/invoke` returns a raw PDF stream with `Content-Disposition`, allowing the gateway to forward binary certificate files byte-for-byte to the frontend.

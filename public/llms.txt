@@ -1,6 +1,6 @@
-# DigiDARA AI Agents
+# SkillDARA
 
-> DigiDARA AI Agents (https://digidaraaiagents.com) is an AI agent platform by DigiDARA Technologies. It offers specialized AI agents for education, careers, communication, travel, construction and other industries, and builds custom AI agents for businesses worldwide.
+> SkillDARA (https://skilldara.com) is an AI agent platform by DigiDARA Technologies. It offers specialized AI agents for education, careers, communication, travel, construction and other industries, and builds custom AI agents for businesses worldwide.
 
 ## What it offers
 - Ready-made agents: Capstone Project, Coding Practice, Communication Coach, Aptitude Trainer, Mock Interview, Resume Builder, Job Agent, AI Certification.
@@ -11,6 +11,6 @@
 Individuals, students, job seekers, teams and companies anywhere in the world.
 
 ## Links
-- Home: https://digidaraaiagents.com/
-- Login / sign up: https://digidaraaiagents.com/login
+- Home: https://skilldara.com/
+- Login / sign up: https://skilldara.com/login
 - Contact: support@digidaraaiagents.com

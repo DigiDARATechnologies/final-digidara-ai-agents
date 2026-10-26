@@ -172,7 +172,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
             pass
 
     # Health polling carries no learner data and remains public. Every other
-    # action must be tied to a valid DigiDARA login.
+    # action must be tied to a valid SkillDARA login.
     is_health = isinstance(envelope, dict) and envelope.get("action") == "health"
     user = None
     if not is_health:

@@ -240,7 +240,7 @@ def persist_llm_usage(*, operation, model, usage, provider="Groq"):
 
 
 def get_usage_summary(user_id=None):
-    """Token usage for this agent, scoped to the verified DigiDARA identity
+    """Token usage for this agent, scoped to the verified SkillDARA identity
     (`X-DigiDARA-User-Id`) that made the calls — same shape as
     agents/project_AI_Agent's UsageSummaryResponse. Without a verified
     identity there is nothing safe to attribute the request to, so this

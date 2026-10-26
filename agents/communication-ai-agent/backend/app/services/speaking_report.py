@@ -25,7 +25,7 @@ LINE = colors.HexColor("#E2E8F0")
 SOFT = colors.HexColor("#F7FAFC")
 GREEN = colors.HexColor("#167A50")
 ACCENT = colors.HexColor("#4A37D0")
-LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "digidara-logo.jpg"
+LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "skilldara-logo.jpg"
 LOGO_WIDTH = 34 * mm
 LOGO_HEIGHT = 19 * mm
 
@@ -63,7 +63,7 @@ def _draw_logo_and_footer(canvas, doc):
 
     canvas.setFont("Helvetica", 8)
     canvas.setFillColor(MUTED)
-    footer_text = "DigiDARA AI Agents Platform  |  Communication Coach Speaking Practice Report"
+    footer_text = "SkillDARA Platform  |  Communication Coach Speaking Practice Report"
     canvas.drawString(doc.leftMargin, 12 * mm, footer_text)
     canvas.drawRightString(A4[0] - doc.rightMargin, 12 * mm, f"Page {canvas.getPageNumber()}")
     canvas.restoreState()

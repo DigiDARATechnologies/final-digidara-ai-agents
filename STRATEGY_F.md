@@ -1,7 +1,7 @@
 # Strategy F: Agent Integration Architecture
 
 This document explains **Strategy F** — the pattern this repository uses to
-plug an independently-deployed agent backend into the shared DigiDARA React
+plug an independently-deployed agent backend into the shared SkillDARA React
 chat UI. It is the canonical reference for the pattern itself; see each
 agent's own `agents/<name>/INTEGRATION.md` for agent-specific detail, and the
 root [README.md](README.md) for full setup/run instructions.
@@ -89,7 +89,7 @@ Content-Type: application/json (or multipart/form-data for file uploads)
   status/content-type/content-disposition/body as-is.
 - Every agent also implements an **identity-bridge action** (Capstone bridges
   identity through its normal signup flow; CodeForge uses `ensure_session`)
-  that turns DigiDARA's dev-mode login (name/email) into whatever identity
+  that turns SkillDARA's dev-mode login (name/email) into whatever identity
   concept the underlying backend already uses — usually with no explicit DB
   write, since the vendored "create user" path already lazily creates that
   row on first use.
@@ -110,7 +110,7 @@ Content-Type: application/json (or multipart/form-data for file uploads)
   "agent_name": "codeforge_agent",
   "version": "v1.0.0",
   "description": "...",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 4000,

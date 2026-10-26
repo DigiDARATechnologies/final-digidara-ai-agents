@@ -2,7 +2,7 @@
   "agent_name": "codeforge_agent",
   "version": "v1.0.0",
   "description": "CodeForge coding-practice agent: course/technology/topic/problem browsing, Judge0-sandboxed code execution (Run = public tests, Submit = public+hidden tests), and a OpenAI-backed AI Tutor with a deterministic offline fallback.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 4000,

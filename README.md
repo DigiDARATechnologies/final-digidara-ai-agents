@@ -1,6 +1,6 @@
-# DigiDARA AI Agents
+# SkillDARA
 
-DigiDARA is a multi-agent platform with a React chat interface, a FastAPI
+SkillDARA is a multi-agent platform with a React chat interface, a FastAPI
 orchestrator, a MySQL-backed runtime agent registry, and independently
 deployed agents. The platform agents are integrated through the
 **REST + Registry + Gateway (Strategy F)** architecture:
@@ -70,7 +70,7 @@ for its action map, startup settings, identity bridge, and verification.
   category, a short debugging workflow, and a next action — with a safe
   deterministic fallback when no LLM key is configured or the call fails.
   The tutor never reveals hidden tests or a complete solution.
-- `ensure_session` action bridging DigiDARA's login identity to an
+- `ensure_session` action bridging SkillDARA's login identity to an
   unguessable, revocable, expiring session token carried in the JSON
   payload — since the gateway forwards only `Content-Type` and the raw body
   and never signs anything, this agent's pre-existing HMAC-signed
@@ -84,7 +84,7 @@ for its action map, startup settings, identity bridge, and verification.
 
 - Chat-driven main menu: Daily Challenge, Speaking, Writing, Pronunciation,
   My Progress (dashboard), History.
-- `bridge_identity` action bridging DigiDARA's login identity into a real
+- `bridge_identity` action bridging SkillDARA's login identity into a real
   `users` row and a `flask_jwt_extended` JWT — since the gateway never
   forwards cookies or an `Authorization` header (which every pre-existing
   route reads via `@jwt_required()`), that JWT is instead carried as
@@ -308,12 +308,12 @@ LLM cannot return a valid profile, rather than exposing malformed model output.
 14. The agent parses every Python/JSON/TOML file for syntax errors, then has the LLM read all of the code and check it against each functional requirement.
 15. The same chat returns the exact syntax errors (file, line, offending code), or a score and feedback. A failed grade never blocks another upload — the learner can resubmit until they pass.
 16. After the project passes, a viva follows: 10 questions on the learner's own project, at least 50% correct to pass. There are up to three attempts, each with a fresh set of questions (never one already asked), and the result is shown as Good / Average / Bad — never as a mark.
-17. Once the score and the viva are both passed, the learner can download a final report PDF (score, requirements, viva results and feedback, with the DigiDARA Technologies logo on every page) and get a project certificate: a preview on the DigiDARA certificate template, the name as the only editable field, then OK, then a downloadable PDF that names the learner's own project.
+17. Once the score and the viva are both passed, the learner can download a final report PDF (score, requirements, viva results and feedback, with the DigiDARA Technologies logo on every page) and get a project certificate: a preview on the SkillDARA certificate template, the name as the only editable field, then OK, then a downloadable PDF that names the learner's own project.
 
 ### 5.2 Coding Practice
 
 1. The candidate opens the CodeForge Agent. The agent calls `ensure_session`
-   to bridge the DigiDARA login into a CodeForge session token.
+   to bridge the SkillDARA login into a CodeForge session token.
 2. The candidate picks a course, then a technology, then a topic — each a
    clickable chat option — narrowing down to a list of problems.
 3. The candidate picks a problem; the chat switches into code-editor mode
@@ -329,7 +329,7 @@ LLM cannot return a valid profile, rather than exposing malformed model output.
 ### 5.3 Communication Coach Agent
 
 1. The learner opens the Communication Coach Agent. The agent calls
-   `bridge_identity` to turn the DigiDARA login into a `users` row and a JWT.
+   `bridge_identity` to turn the SkillDARA login into a `users` row and a JWT.
 2. The main menu offers Daily Challenge, Speaking, Writing, Pronunciation,
    My Progress, and History as clickable chat options.
 3. For Speaking/Writing: pick a difficulty, type a topic (or "daily" for

@@ -60,7 +60,7 @@ function LinkCard({ link }: { link: BossLink }) {
   const url = `${window.location.origin}${link.path}`;
   const note = link.kind === "certificate"
     ? `Download link${link.expires_at ? `, works until ${new Date(link.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""} (5 minutes), only for your account`
-    : link.mode === "public" ? "Public link: anyone signed in to DigiDARA can open it" : "Private link: opens only for your account";
+    : link.mode === "public" ? "Public link: anyone signed in to SkillDARA can open it" : "Private link: opens only for your account";
   async function copy() {
     try {
       await navigator.clipboard.writeText(url);

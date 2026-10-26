@@ -138,7 +138,7 @@ async def _invoke(request: Request) -> Response:
         # Phase 2 readiness. The orchestrator gateway overwrites payload.email
         # with the verified account's own address for this action.
         if not str(request.headers.get("x-digidara-user-id") or "").strip():
-            raise HTTPException(status_code=401, detail="Verified DigiDARA identity is required")
+            raise HTTPException(status_code=401, detail="Verified SkillDARA identity is required")
         from cert_app.services.readiness import student_summary
         email = str(payload.get("email") or "").strip().lower()
         return JSONResponse(await run_in_threadpool(student_summary, email, payload.get("periods")))

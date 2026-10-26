@@ -1,4 +1,4 @@
-# DigiDARA Job Agent (Flask API and ingestion worker)
+# SkillDARA Job Agent (Flask API and ingestion worker)
 FROM python:3.12-slim
 
 WORKDIR /app

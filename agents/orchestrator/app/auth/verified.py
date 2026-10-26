@@ -10,7 +10,7 @@ from app.auth import email_verification
 from app.auth import service as auth_service
 from app.auth.security import get_current_user_id
 
-NOT_VERIFIED_DETAIL = "Please verify your email to use DigiDARA's agents."
+NOT_VERIFIED_DETAIL = "Please verify your email to use SkillDARA's agents."
 
 
 def ensure_verified(user) -> None:

@@ -96,7 +96,7 @@ function CreateForm({ orgId, presetTestId, onCreated, onToast }: {
   return (
     <section className="org-card">
       <h3>Create an assessment link</h3>
-      <p className="rd-muted">Learners open the link, sign in, agree to proctoring and take the interview here on DigiDARA.
+      <p className="rd-muted">Learners open the link, sign in, agree to proctoring and take the interview here on SkillDARA.
         You see each learner&apos;s score, integrity score, warnings and camera photos.</p>
       <form className="assess-form" onSubmit={submit}>
         <label>Title

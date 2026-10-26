@@ -1,6 +1,6 @@
-name: DigiDARA Staging
+name: SkillDARA Staging
 
-# Deploys the `phase2` branch to staging.digidaraaiagents.com. Kept separate
+# Deploys the `phase2` branch to staging.skilldara.com. Kept separate
 # from ci.yml on purpose: ci.yml (and its production deploy on `main`) is not
 # changed by staging work. When phase2 is approved, a pull request into main
 # runs the full ci.yml suite and production deploys exactly as before.
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://staging.digidaraaiagents.com
+      url: ${{ vars.STAGING_SITE_URL || 'https://staging.digidaraaiagents.com' }}
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -150,5 +150,5 @@ jobs:
             git fetch origin phase2
             git reset --hard "${{ github.sha }}"
             PREVIOUS_COMMIT="$previous_commit" DEPLOY_COMMIT="${{ github.sha }}" DEPLOY_BRANCH=phase2 \
-              SITE_URL=https://staging.digidaraaiagents.com GHCR_PULL_TOKEN="${{ secrets.GHCR_PULL_TOKEN }}" \
+              SITE_URL="${{ vars.STAGING_SITE_URL || 'https://staging.digidaraaiagents.com' }}" GHCR_PULL_TOKEN="${{ secrets.GHCR_PULL_TOKEN }}" \
               bash scripts/deploy-staging.sh

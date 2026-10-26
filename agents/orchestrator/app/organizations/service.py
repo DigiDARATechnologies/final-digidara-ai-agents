@@ -87,7 +87,7 @@ def my_organization(user_id: str) -> dict | None:
 
 
 def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str, member_limit: int, created_by: str) -> dict:
-    """Only DigiDARA's platform admin creates organizations, each with its
+    """Only SkillDARA's platform admin creates organizations, each with its
     first admin login (the owner). A new owner account gets a one-time
     password, returned here once; an existing account is made the owner."""
     name = " ".join(name.split())[:255]
@@ -226,7 +226,7 @@ def leave(user_id: str) -> None:
 
 
 def _require_admin(session, user_id: str, org_id: str) -> OrganizationMember:
-    """This organization's owner or admin -- or DigiDARA's platform admin,
+    """This organization's owner or admin -- or SkillDARA's platform admin,
     who acts as an owner of every organization."""
     member = _membership(session, user_id)
     org = session.get(Organization, org_id)
@@ -234,7 +234,7 @@ def _require_admin(session, user_id: str, org_id: str) -> OrganizationMember:
         raise OrgError(404, "No such organization.")
     if member is not None and member.organization_id == org_id and member.role in ADMIN_ROLES:
         if (org.status or "active") != "active":
-            raise OrgError(403, "This organization is suspended. Contact DigiDARA.")
+            raise OrgError(403, "This organization is suspended. Contact SkillDARA.")
         return member
     user = session.get(User, user_id)
     if user is not None and user.is_admin:

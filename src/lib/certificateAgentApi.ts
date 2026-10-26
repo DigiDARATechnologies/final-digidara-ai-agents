@@ -130,7 +130,7 @@ export async function verifyCertificateEmail(token: string, certId: number, emai
 
 export async function downloadCertificatePdf(token: string, certId: number) {
   // Binary downloads bypass invokeAgent's JSON parser, so carry the same
-  // DigiDARA gateway authorization header explicitly. The certificate
+  // SkillDARA gateway authorization header explicitly. The certificate
   // service still receives its own sessionToken in the action payload.
   const platformToken = sessionToken();
   const response = await fetch(INVOKE_URL, {

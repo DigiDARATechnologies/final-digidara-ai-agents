@@ -61,11 +61,11 @@ test('Boss greets, then listens; a 1.5 second pause (or the live transcript) sen
   expect(mockStart).toHaveBeenCalledTimes(1);
   expect(mockStart.mock.calls[0][1]).toEqual(expect.objectContaining({ autoStopOnSilence: true, silenceMs: CONVERSATION_PAUSE_MS, finalFromPreview: true }));
   expect(CONVERSATION_PAUSE_MS).toBe(1500);
-  act(() => { mockStart.mock.calls[0][0]('What is DigiDARA', false); });
+  act(() => { mockStart.mock.calls[0][0]('What is SkillDARA', false); });
   // No words on screen, only the logo.
-  expect(screen.queryByText(/What is DigiDARA/)).not.toBeInTheDocument();
-  act(() => { mockStart.mock.calls[0][0]('What is DigiDARA?', true); });
-  expect(onSend).toHaveBeenCalledWith('What is DigiDARA?');
+  expect(screen.queryByText(/What is SkillDARA/)).not.toBeInTheDocument();
+  act(() => { mockStart.mock.calls[0][0]('What is SkillDARA?', true); });
+  expect(onSend).toHaveBeenCalledWith('What is SkillDARA?');
   expect(screen.getByText('Thinking...')).toHaveClass('visually-hidden');
   unmount();
   expect(isVoiceConversationOpen()).toBe(false);

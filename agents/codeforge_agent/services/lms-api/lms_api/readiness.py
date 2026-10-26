@@ -40,12 +40,12 @@ def _resume_block(solved, passed_assessments=()):
         if total >= RESUME_MIN_SOLVED:
             split = ", ".join(f"{n} {level}" for level, n in counts.items() if n)
             achievements.append({"title": f"Solved {total} {tech} coding problems",
-                                 "description": f"DigiDARA Coding Practice, tested against hidden test cases ({split})."})
+                                 "description": f"SkillDARA Coding Practice, tested against hidden test cases ({split})."})
     by_language = {}
     for row in passed_assessments:
         by_language[row["technology"]] = by_language.get(row["technology"], 0) + 1
     professional = [{"title": f"Passed {count} Professional coding assessment{'s' if count > 1 else ''} in {tech}",
-                     "description": "DigiDARA Coding Practice: timed, no AI help, two hard problems and one real-world task each."}
+                     "description": "SkillDARA Coding Practice: timed, no AI help, two hard problems and one real-world task each."}
                     for tech, count in by_language.items()]
     return {"skills": [tech for tech, _ in ranked], "achievements": (professional + achievements)[:3]}
 

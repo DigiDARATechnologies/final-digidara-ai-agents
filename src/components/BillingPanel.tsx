@@ -81,7 +81,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
       await loadRazorpay();
       const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
       const checkout = new Razorpay({
-        key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: description(order), order_id: order.order_id,
+        key: order.key_id, amount: order.amount, currency: order.currency, name: "SkillDARA", description: description(order), order_id: order.order_id,
         // The server sends this account's own details; the email is locked so
         // the payment is always made as this account.
         prefill: order.prefill ?? { name: user.name, email: user.email, contact: user.mobile },
@@ -104,7 +104,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
 
   const buyPlan = (plan: PlanOffer) => {
     if (plan.payment_page_url) {
-      // Paid on DigiDARA's Razorpay page; the server credits the account whose
+      // Paid on SkillDARA's Razorpay page; the server credits the account whose
       // email is entered there, once Razorpay confirms the payment.
       window.open(paymentPageUrl(plan.payment_page_url, user.email, user.mobile), "_blank", "noopener,noreferrer");
       setPagePlan(plan);
@@ -128,7 +128,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
       <div className="current-plan">
         <div>
           <small>Current Plan</small>
-          <strong>{hasPlan ? `DigiDARA ${billing?.plan_name}` : "DigiDARA Free"}</strong>
+          <strong>{hasPlan ? `SkillDARA ${billing?.plan_name}` : "SkillDARA Free"}</strong>
           <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more points."}</span>
         </div>
         <span className="plan-badge">{hasPlan ? "Active" : "Free"}</span>
@@ -180,7 +180,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
           </div>
         )) : <p>No transactions yet.</p>}
       </div>
-      <p className="secure-payment">Payments are securely processed by Razorpay. Card or UPI details never pass through DigiDARA servers.</p>
+      <p className="secure-payment">Payments are securely processed by Razorpay. Card or UPI details never pass through SkillDARA servers.</p>
     </>
   );
 }

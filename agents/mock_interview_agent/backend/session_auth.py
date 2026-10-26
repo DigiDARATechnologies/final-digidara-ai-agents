@@ -4,7 +4,7 @@ This module's original REST API has no login system of its own -- every
 route takes a plain integer `student_id` wherever it needs one, straight
 from the request body or URL, with nothing to stop one caller from acting
 as another student. That's fine for the module in isolation, but not once
-it's reachable through the shared DigiDARA gateway.
+it's reachable through the shared SkillDARA gateway.
 
 `ensure_session` mints a short-lived JWT the moment the gateway hands us a
 gateway-verified caller identity (`X-DigiDARA-User-ID`) plus that learner's

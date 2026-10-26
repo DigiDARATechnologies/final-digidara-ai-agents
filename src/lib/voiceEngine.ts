@@ -413,6 +413,6 @@ export async function speakNatural(text: string, handlers: SpeakHandlers = {}, f
 
 /** For the voice settings' Preview button. */
 export function previewVoice(handlers: SpeakHandlers = {}): Promise<boolean> {
-  const sample = "Hi! I'm your DigiDARA coach. Shall we get you interview-ready today?";
+  const sample = "Hi! I'm your SkillDARA coach. Shall we get you interview-ready today?";
   return speakNatural(sample, handlers, true);
 }

@@ -1,4 +1,4 @@
-# DigiDARA AI Agents Platform — local/dev container stack.
+# SkillDARA Platform — local/dev container stack.
 # See README-docker.md for usage (bring the whole stack up, rebuild one
 # service, view logs, health-check everything).
 #

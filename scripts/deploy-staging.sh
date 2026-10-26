@@ -1,5 +1,5 @@
 #!/bin/bash
-# Staging deploy for staging.digidaraaiagents.com, run on the staging server by
+# Staging deploy for staging.skilldara.com, run on the staging server by
 # .github/workflows/staging.yml on every push to the `phase2` branch.
 #
 # Production never runs this file: production deploys with ../deploy.sh from
@@ -17,6 +17,9 @@ set -euo pipefail
 cd /opt/digidara-agents
 
 BRANCH=${DEPLOY_BRANCH:-phase2}
+# Defaults to the staging domain that works today; the workflow passes
+# vars.STAGING_SITE_URL (set it to https://staging.skilldara.com once that
+# domain's DNS, nginx and SSL are live).
 SITE_URL=${SITE_URL:-https://staging.digidaraaiagents.com}
 
 PREVIOUS_COMMIT=${PREVIOUS_COMMIT:-$(git rev-parse HEAD)}

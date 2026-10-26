@@ -2,7 +2,7 @@
   "agent_name": "aptitude_agent",
   "version": "v1.0.0",
   "description": "Batch-generated aptitude assessments, category practice, mixed tests, hints, analytics, history, and PDF reports.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 5000,

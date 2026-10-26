@@ -30,7 +30,7 @@ _store = Mem0Store(
     os.getenv("MEM0_BOSS_COLLECTION", "boss_memory"),
     "boss_history.db",
     (
-        "Remember what a learner tells Boss, DigiDARA's assistant, and what they ask: their goals, target "
+        "Remember what a learner tells Boss, SkillDARA's assistant, and what they ask: their goals, target "
         "role, interests and plans, the questions they asked and the gist of each answer, which agents they "
         "were interested in, and how they like answers (for example short, in English). A correction "
         "replaces the earlier fact. Never store passwords, OTPs, phone numbers, payment or card details."

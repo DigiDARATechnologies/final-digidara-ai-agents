@@ -116,11 +116,11 @@ docker compose up -d --force-recreate --wait --wait-timeout 240 || echo "!! some
 
 echo "=== 4. Health"
 sleep 10
-printf "auth/me (expect 401): "; curl -s -o /dev/null -w "%{http_code}\n" https://digidaraaiagents.com/auth/me
+printf "auth/me (expect 401): "; curl -s -o /dev/null -w "%{http_code}\n" https://skilldara.com/auth/me
 for a in aptitude_agent mock_interview_agent capstone_project_agent communication_agent resume_builder_agent certificate_agent job_agent codeforge_agent; do
   printf "%-24s " "$a"
   curl -s -m 20 -X POST -H "Content-Type: application/json" -d '{"action":"health"}' \
-    "https://digidaraaiagents.com/gateway/agents/$a/invoke" | tr -d '\n ' | cut -c1-60
+    "https://skilldara.com/gateway/agents/$a/invoke" | tr -d '\n ' | cut -c1-60
   echo
 done
 echo

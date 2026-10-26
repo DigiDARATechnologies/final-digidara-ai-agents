@@ -70,7 +70,7 @@ def _ensure_session(payload: dict):
     verified_user_id = str(request.headers.get("X-DigiDARA-User-ID") or "").strip()
     requested_user_id = str(payload.get("user_id") or "").strip()
     if not verified_user_id or requested_user_id != verified_user_id:
-        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+        return _error("Verified SkillDARA identity is required", "unverified_identity", 401)
     email = str(payload.get("email") or "").strip().lower()
     name = str(payload.get("name") or "Learner").strip()[:100] or "Learner"
     if not email or "@" not in email or len(email) > 150:
@@ -93,7 +93,7 @@ def _personal_data(action: str, payload: dict):
     # Gateway-verified identity only; the email is the orchestrator's own
     # account record, so this never trusts a browser-supplied identity.
     if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
-        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+        return _error("Verified SkillDARA identity is required", "unverified_identity", 401)
     email = str(payload.get("email") or "").strip().lower()
     if not email or "@" not in email:
         return _error("A valid email is required", "invalid_email", 400)
@@ -144,7 +144,7 @@ def _student_summary(payload: dict):
     puts the verified account's own email in the payload for this action.
     Score: the latest completed interviews' overall score, out of 10 -> 100."""
     if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
-        return _error("Verified DigiDARA identity is required", "unverified_identity", 401)
+        return _error("Verified SkillDARA identity is required", "unverified_identity", 401)
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,
              "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {}}
     email = str(payload.get("email") or "").strip().lower()

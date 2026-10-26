@@ -413,7 +413,7 @@ function AccessLog({ entries }: { entries: AccessEntry[] }) {
   );
 }
 
-/** The organization admin's dashboard; DigiDARA's platform admin opens the same one for any organization. */
+/** The organization admin's dashboard; SkillDARA's platform admin opens the same one for any organization. */
 export default function OrgDashboard({ org, onToast, extraTabs = [], headerAction }: Props) {
   const tabs = useMemo(() => ["Overview", "Students", "Assessments", "Knowledge tests", "Join codes", ...extraTabs.map((t) => t.name), "Access log"], [extraTabs]);
   const [tab, setTab] = useState("Overview");

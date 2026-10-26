@@ -50,8 +50,8 @@ def frontend_ready():
             "or start npm run dev and set BASE_URL=http://127.0.0.1:5173.",
             pytrace=False,
         )
-    if "DigiDARA" not in html:
-        pytest.fail(f"BASE_URL={BASE_URL} is not serving the DigiDARA frontend.", pytrace=False)
+    if "SkillDARA" not in html:
+        pytest.fail(f"BASE_URL={BASE_URL} is not serving the SkillDARA frontend.", pytrace=False)
 
 
 @pytest.fixture()
@@ -142,7 +142,7 @@ def test_landing_page_loads(driver):
     driver.get(BASE_URL)
     wait = WebDriverWait(driver, 20)
 
-    wait.until(EC.title_contains("DigiDARA"))
+    wait.until(EC.title_contains("SkillDARA"))
     h1 = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".lp h1")))
     assert "AI agents" in h1.text
     assert driver.find_element(By.CSS_SELECTOR, ".lp-nav-actions .lp-btn-ghost").text.strip() == "Login"
@@ -154,7 +154,7 @@ def test_digidara_login_page_loads(driver):
     wait = WebDriverWait(driver, 20)
     open_login(driver, wait)
 
-    wait.until(EC.title_contains("DigiDARA"))
+    wait.until(EC.title_contains("SkillDARA"))
     overlay = wait.until(EC.visibility_of_element_located((By.ID, "loginOverlay")))
     assert overlay.is_displayed()
 

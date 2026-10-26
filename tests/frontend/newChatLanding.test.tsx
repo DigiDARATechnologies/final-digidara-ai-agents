@@ -42,8 +42,8 @@ test('the mic opens a voice conversation; its first question starts the chat', (
   fireEvent.click(screen.getByTitle('Talk with Boss'));
   expect(screen.getByRole('dialog', { name: 'Voice conversation with Boss' })).toBeInTheDocument();
   expect(mockStart).toHaveBeenCalledTimes(1);
-  mockStart.mock.calls[0][0]('What can DigiDARA do?', true);
-  expect(onSend).toHaveBeenCalledWith('What can DigiDARA do?');
+  mockStart.mock.calls[0][0]('What can SkillDARA do?', true);
+  expect(onSend).toHaveBeenCalledWith('What can SkillDARA do?');
 });
 
 test('the mic button is hidden when the browser cannot record audio', () => {
