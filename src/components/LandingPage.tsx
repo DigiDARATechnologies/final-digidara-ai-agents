@@ -358,7 +358,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                     </g>
                     <rect x="132" y="262" width="136" height="124" rx="38" fill="url(#bot-body)" />
                     <rect x="158" y="288" width="84" height="56" rx="20" fill="#0b1740" opacity=".55" />
-                    <text x="200" y="326" textAnchor="middle" fontSize="34" fontWeight="900" fill="#fff" fontFamily="Inter, sans-serif">D</text>
+                    <text x="200" y="326" textAnchor="middle" fontSize="34" fontWeight="900" fill="#fff" fontFamily="Inter, sans-serif">S</text>
                     <circle className="lp-bot-led" cx="200" cy="362" r="6" fill="#4ade80" />
                     <g className="lp-bot-arm lp-bot-arm-right">
                       <rect x="268" y="268" width="24" height="86" rx="12" fill="url(#bot-body)" />

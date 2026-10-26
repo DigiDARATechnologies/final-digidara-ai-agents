@@ -83,8 +83,8 @@ fi
 
 
 # Address the health checks use. Defaults to the domain that serves the site
-# today; switch to https://skilldara.com once its DNS, nginx and SSL are live.
-SITE_URL=${SITE_URL:-https://digidaraaiagents.com}
+# today.
+SITE_URL=${SITE_URL:-https://skilldara.com}
 SITE_OK=false
 for _ in $(seq 1 12); do
   if curl -fsS -o /dev/null "$SITE_URL/"; then
