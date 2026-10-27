@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import CareerPlanPanel from "./CareerPlanPanel";
+import Leaderboard from "./Leaderboard";
 import LearnerProfileForm, { cleanProfileText, type ProfileInput } from "./LearnerProfileForm";
 import MemoryPanel from "./MemoryPanel";
 import SkillsInput, { uniqueSkills } from "./SkillsInput";
@@ -400,6 +401,8 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
         </section>
 
         {error && <p className="form-error" role="alert">{error}</p>}
+
+        <Leaderboard onToast={onToast} compact />
 
         <CareerPlanPanel onToast={onToast} />
 

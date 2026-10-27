@@ -202,6 +202,24 @@ export const setMyLevel = (agentName: string, level: LevelId) =>
 export const acceptConsent = (shareProgress: boolean | null) =>
   request<LearnerSummary>("/learner/consent", json("POST", { consent: true, share_progress: shareProgress }));
 export const fetchReadiness = (refresh = false) => request<Readiness>(`/learner/readiness${refresh ? "?refresh=true" : ""}`);
+
+/** Job-readiness leaderboards: students or staff, platform-wide or in the viewer's organization. */
+export type LeaderboardGroup = "students" | "staff";
+export type LeaderboardScope = "platform" | "organization";
+export interface LeaderboardEntry {
+  rank: number; user_id: string; name: string; score: number; band: Band; organization: string | null; is_me: boolean;
+  new_in_top?: boolean; entered_top_at?: string;
+}
+export interface Leaderboard {
+  scope: LeaderboardScope; group: LeaderboardGroup; allowed_groups: LeaderboardGroup[];
+  organization: { id: string; name: string } | null;
+  top: LeaderboardEntry[]; entries: LeaderboardEntry[]; total: number;
+  me: { rank: number; score: number } | null; hidden: boolean;
+}
+export const fetchLeaderboard = (scope: LeaderboardScope, group?: LeaderboardGroup) =>
+  request<Leaderboard>(`/learner/leaderboard?scope=${scope}${group ? `&group=${group}` : ""}`);
+export const setLeaderboardHidden = (hidden: boolean) =>
+  request<{ hidden: boolean }>("/learner/leaderboard/visibility", json("PUT", { hidden }));
 export const fetchReadinessHistory = () =>
   request<{ overall: number | null; band: Band; computed_at: string }[]>("/learner/readiness/history");
 

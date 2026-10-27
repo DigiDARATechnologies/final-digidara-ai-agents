@@ -954,3 +954,85 @@ def test_a_csv_without_a_header_is_read_by_its_columns():
                     {"name": "Ravi", "mobile": "9123456780", "email": "ravi@x.io"}]
     with pytest.raises(roster.OrgError):
         roster.parse_upload("old.xls", b"\xd0\xcf\x11\xe0")
+
+
+# --- leaderboards ---------------------------------------------------------------
+
+def _score(database, user_id, overall, minutes_ago=0):
+    from app.readiness import leaderboard
+
+    session = database()
+    session.add(ReadinessSnapshot(user_id=user_id, overall=overall, band="developing", areas={}, role_key="",
+                                  computed_at=datetime.utcnow() - timedelta(minutes=minutes_ago)))
+    session.commit()
+    session.close()
+    leaderboard.clear_cache()
+
+
+def _add_user(database, user_id, name):
+    session = database()
+    session.add(User(id=user_id, name=name, email=f"{user_id}@example.test", email_verified=True, token_balance=10, password_hash="x"))
+    session.commit()
+    session.close()
+
+
+def test_students_see_the_platform_student_board_by_readiness(app_client, users, database):
+    _make_org(app_client)                                    # "admin" owns an organization: staff, not a student
+    _add_user(database, "third", "Third Person")
+    _score(database, "learner", 40)
+    _score(database, "other", 70)
+    _score(database, "third", 70, minutes_ago=5)            # same score, reached earlier: ranks first
+    _score(database, "admin", 90)
+    _score(database, "platform", 99)                         # SkillDARA staff never rank
+    body = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert body["group"] == "students" and body["allowed_groups"] == ["students"]
+    assert [(e["user_id"], e["rank"]) for e in body["entries"]] == [("third", 1), ("other", 2), ("learner", 3)]
+    assert body["top"][0]["name"] == "Third P." and body["me"] == {"rank": 3, "score": 40.0}
+    assert body["top"][2]["is_me"] is True
+    # The staff board is not for students.
+    assert app_client.get("/learner/leaderboard?group=staff", headers=auth()).status_code == 403
+
+
+def test_admins_see_both_boards_and_the_organization_board_only_has_sharing_members(app_client, users, database):
+    org = _make_org(app_client)
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    _score(database, "learner", 40)
+    _score(database, "other", 70)                            # not in the organization
+    _score(database, "admin", 55)
+    admin_view = app_client.get("/learner/leaderboard?scope=organization", headers=auth("admin")).json()
+    assert admin_view["allowed_groups"] == ["students", "staff"] and admin_view["organization"]["name"] == "Anna University"
+    assert [e["user_id"] for e in admin_view["entries"]] == ["learner"]
+    staff_board = app_client.get("/learner/leaderboard?scope=organization&group=staff", headers=auth("admin")).json()
+    assert [e["user_id"] for e in staff_board["entries"]] == ["admin"]
+    # A member who stops sharing leaves the organization board.
+    app_client.put("/organizations/me/sharing", headers=auth(), json={"share": False})
+    assert app_client.get("/learner/leaderboard?scope=organization", headers=auth("admin")).json()["entries"] == []
+    # No organization, no organization board.
+    assert app_client.get("/learner/leaderboard?scope=organization", headers=auth("other")).status_code == 404
+
+
+def test_staff_see_the_staff_board(app_client, users, database):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post(f"/organizations/{org_id}/staff", headers=auth("admin"), json={"email": "other@example.test"})
+    _score(database, "other", 60)
+    _score(database, "admin", 80)
+    body = app_client.get("/learner/leaderboard?scope=organization", headers=auth("other")).json()
+    assert body["group"] == "staff" and body["allowed_groups"] == ["staff"]
+    assert [e["user_id"] for e in body["entries"]] == ["admin", "other"]
+
+
+def test_someone_breaking_into_the_top_3_is_new_and_learners_can_hide(app_client, users, database):
+    for user_id, name in (("s1", "Asha One"), ("s2", "Ravi Two"), ("s3", "Kavi Three"), ("s4", "Nila Four")):
+        _add_user(database, user_id, name)
+    for user_id, score in (("s1", 90), ("s2", 80), ("s3", 70), ("s4", 10)):
+        _score(database, user_id, score)
+    first = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert [e["user_id"] for e in first["top"]] == ["s1", "s2", "s3"]
+    assert not any(e["new_in_top"] for e in first["top"])    # the first top 3 ever seen broke into nothing
+    _score(database, "s4", 85)
+    second = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert [(e["user_id"], e["new_in_top"]) for e in second["top"]] == [("s1", False), ("s4", True), ("s2", False)]
+    app_client.put("/learner/leaderboard/visibility", headers=auth("s4"), json={"hidden": True})
+    third = app_client.get("/learner/leaderboard", headers=auth("s4")).json()
+    assert "s4" not in [e["user_id"] for e in third["entries"]] and third["hidden"] is True and third["me"] is None

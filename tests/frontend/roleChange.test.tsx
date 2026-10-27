@@ -11,6 +11,7 @@ jest.mock('../../src/lib/learnerApi', () => ({
 }));
 jest.mock('../../src/lib/jobFetchFlow', () => ({ syncJobProfileWithGoal: jest.fn() }));
 jest.mock('../../src/components/CareerPlanPanel', () => () => null);
+jest.mock('../../src/components/Leaderboard', () => () => null);
 jest.mock('../../src/components/MemoryPanel', () => () => null);
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';

@@ -126,6 +126,30 @@ def accept_consent(req: ConsentIn, user_id: str = Depends(get_current_user_id)) 
     return _summary(user_id)
 
 
+class LeaderboardVisibilityIn(BaseModel):
+    hidden: bool
+
+
+@router.get("/leaderboard")
+def leaderboard(scope: str = "platform", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Top learners by job readiness: students or staff, platform-wide or in
+    the viewer's organization (see app/readiness/leaderboard.py for who sees what)."""
+    from app.readiness import leaderboard as boards
+
+    try:
+        return boards.board(user_id, scope, group)
+    except boards.LeaderboardError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+
+
+@router.put("/leaderboard/visibility")
+def leaderboard_visibility(req: LeaderboardVisibilityIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Hide (or show again) yourself on every leaderboard."""
+    from app.readiness import leaderboard as boards
+
+    return boards.set_hidden(user_id, req.hidden)
+
+
 @router.get("/readiness")
 async def readiness(refresh: bool = False, user_id: str = Depends(get_verified_user_id)) -> dict:
     user = auth_service.get_by_id(user_id)

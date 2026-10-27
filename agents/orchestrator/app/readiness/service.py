@@ -416,6 +416,10 @@ def _store(user_id: str, result: dict) -> None:
         session.commit()
     finally:
         session.close()
+    # A new score: leaderboards show it on their next load.
+    from app.readiness import leaderboard
+
+    leaderboard.clear_cache()
 
 
 def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:

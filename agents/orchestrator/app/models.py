@@ -383,6 +383,49 @@ class OrganizationMember(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class LeaderboardTop(Base):
+    """Who is in a leaderboard's top 3, and since when, so someone who has
+    just broken in can be shown as new."""
+
+    __tablename__ = "leaderboard_top"
+
+    # "platform:students", "org:<organization id>:staff", ...
+    board: Mapped[str] = mapped_column(String(80))
+    user_id: Mapped[str] = mapped_column(String(32))
+    entered_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("board", "user_id"),)
+
+
+class LeaderboardOptOut(Base):
+    """A learner who chose not to appear on leaderboards."""
+
+    __tablename__ = "leaderboard_opt_out"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class EnterpriseEnquiry(Base):
+    """An organization asking about the Enterprise plan from the billing page.
+    Kept here as well as emailed to support, so a failed email loses nothing."""
+
+    __tablename__ = "enterprise_enquiries"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    organization: Mapped[str] = mapped_column(String(255))
+    organization_type: Mapped[str] = mapped_column(String(40), default="")
+    contact_name: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    learners: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    city: Mapped[str] = mapped_column(String(120), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    emailed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class OrgRosterEntry(Base):
     """A student on an organization's uploaded list (name, mobile, email).
     A learner whose verified email is on the list joins automatically; anyone
