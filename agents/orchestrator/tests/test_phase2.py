@@ -259,8 +259,9 @@ def test_agent_to_agent_call_needs_a_registered_caller(app_client, agents):
 
 def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # Only completed levels score: 80%, 60% and 70% of Beginner complete none.
-    assert body["overall"] == 0
+    # Progress inside a level counts: 80%, 60% and 70% of Beginner are worth
+    # 20 + 15 + 17.5 points, over the seven areas = 7.5.
+    assert body["overall"] == 7.5
     assert body["band"] == "not_ready"
     assert body["coverage"] == {"assessed": 3, "total": 7}
     statuses = {a["agent_name"]: a["status"] for a in body["areas"]}
@@ -273,7 +274,7 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
     assert aptitude["can_level_up"] is True and aptitude["suggested_level"] == "medium" and aptitude["unlock_at"] == 50
     assert coding["gaps"] == ["Dynamic programming"]
-    assert coding["score"] == 0 and coding["quality_score"] == 80 and coding["levels_completed"] == []
+    assert coding["score"] == 20 and coding["quality_score"] == 80 and coding["levels_completed"] == []
     assert body["next_steps"]
 
 
@@ -350,7 +351,7 @@ def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
     reply = _signed(app_client, "/a2a/readiness", send("get_readiness"), {
         "x-digidara-caller-agent": "job_agent", "x-digidara-on-behalf-of": "learner",
     }).json()
-    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 0
+    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 7.5
 
 
 # --- organizations ----------------------------------------------------------
@@ -392,11 +393,12 @@ def test_org_sees_progress_only_with_the_members_consent(app_client, agents, dat
     app_client.put("/organizations/me/sharing", headers=auth(), json={"share": True})
     assert app_client.put(level_url, headers=auth("admin"), json={"level": "hard"}).json()["source"] == "organization"
     refreshed = app_client.post(f"/organizations/{org_id}/members/{member_id}/readiness", headers=auth("admin")).json()
-    # Aptitude set to Hard: Beginner and Medium count as done (50); 70% of Hard is not.
-    # 50 over the seven areas = 7.1.
-    assert refreshed["overall"] == 7.1
+    # Aptitude set to Hard: Beginner and Medium count as done (50) plus 70% of
+    # Hard (17.5); Coding 80% (20) and Communication 60% (15) of Beginner.
+    # 102.5 over the seven areas = 14.6.
+    assert refreshed["overall"] == 14.6
     member = next(m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json() if m["user_id"] == "learner")
-    assert member["readiness"]["overall"] == 7.1 and member["levels"]["aptitude_agent"] == "hard"
+    assert member["readiness"]["overall"] == 14.6 and member["levels"]["aptitude_agent"] == "hard"
     summary = app_client.get(f"/organizations/{org_id}/summary", headers=auth("admin")).json()
     assert summary["sharing"] == 1 and summary["levels"]["aptitude_agent"]["hard"] == 1
 
@@ -525,7 +527,7 @@ def test_a_new_target_role_starts_from_zero_and_switching_back_restores_it(app_c
     assert periods[0]["start"] is None and periods[0]["end"] and periods[1]["end"] is None
 
 
-def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
+def test_each_level_adds_up_to_25_points_as_it_is_done(app_client, agents, monkeypatch):
     # Coding measures each level: Beginner done, nothing at Medium yet.
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setitem(SUMMARY_SCORES, "mock_interview_agent", None)
@@ -541,19 +543,20 @@ def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
     monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
     coding = next(a for a in app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["areas"]
                   if a["agent_name"] == "codeforge_agent")
-    # 40% of Medium is not a completed level yet.
-    assert coding["score"] == 25
+    # 40% of Medium adds 40% of its 25 points: 25 + 10.
+    assert coding["score"] == 35 and coding["levels_completed"] == ["beginner"]
 
 
-def test_overall_is_25_only_when_every_agent_completed_beginner(app_client, agents, monkeypatch):
+def test_overall_grows_with_each_agents_progress(app_client, agents, monkeypatch):
     for name, _, _ in readiness_service.AREAS:
         monkeypatch.setitem(SUMMARY_SCORES, name, 90)
         monkeypatch.setitem(SUMMARY_EXTRA, name, {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 60, "medium": 0, "hard": 0}})
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # Five of the six leveled agents finished Beginner (25 each); the Resume
-    # Builder has no levels and scores its own result, 90: (125 + 90) / 7.
-    assert body["overall"] == 30.7
+    # Five of the six leveled agents finished Beginner (25 each), Certification
+    # is 60% through it (15); the Resume Builder has no levels and scores its
+    # own result, 90: (125 + 15 + 90) / 7.
+    assert body["overall"] == 32.9
     resume = next(a for a in body["areas"] if a["agent_name"] == "resume_builder_agent")
     assert resume["leveled"] is False and resume["score"] == 90 and resume["level"] is None
     assert resume["levels_completed"] == [] and resume["can_level_up"] is False
@@ -766,7 +769,8 @@ def test_coding_professional_progress_comes_from_passed_assessments(app_client, 
     coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
     # Professional is not Hard's 100% again: one of three assessments is passed.
     assert coding["level"] == "professional" and coding["level_progress"] == 33.3
-    assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 75
+    # Three levels done (75) plus a third of Professional (8.3).
+    assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 83.3
 
 
 def test_an_agents_dated_recent_activity_is_kept_cleaned_and_capped():
@@ -776,3 +780,41 @@ def test_an_agents_dated_recent_activity_is_kept_cleaned_and_capped():
     assert recent[0] == {"date": "2026-09-28T06:51:28", "title": "Aptitude test", "level": "easy", "score": 100.0}
     assert len(recent) <= readiness_service.RECENT_LIMIT
     assert readiness_service.summarize_reply({"score": 50})["recent"] == []
+
+
+def _area(agent_name, level, progress, scores=None, basis="level"):
+    return {"agent_name": agent_name, "label": agent_name, "weight": 10, "status": "assessed", "leveled": True,
+            "level": level, "level_progress": progress, "level_progress_basis": basis,
+            "level_scores": scores or {}, "quality_score": progress, "gaps": []}
+
+
+def test_area_scores_follow_progress_in_every_level():
+    # The screenshots that were wrong: Interview at Medium with 96% of Beginner,
+    # Aptitude 34% into Beginner, Projects done with Medium and half of Hard.
+    interview = _area("mock_interview_agent", "medium", 0, {"beginner": 96, "medium": 0, "hard": 0, "professional": 0})
+    aptitude = _area("aptitude_agent", "beginner", 34, {"beginner": 34, "medium": 0, "hard": 0, "professional": 0})
+    projects = _area("capstone_project_agent", "hard", 50, {"beginner": 100, "medium": 100, "hard": 50, "professional": 50})
+    assert readiness_service.level_score(interview) == 24.0
+    assert readiness_service.level_score(aptitude) == 8.5
+    assert readiness_service.level_score(projects) == 62.5
+    # An agent that does not measure each level: the levels moved past count in full.
+    assert readiness_service.level_score(_area("certificate_agent", "medium", 40, basis="score")) == 35.0
+    # A Professional score that copies Hard's is not counted twice below Professional.
+    assert readiness_service.level_score(_area("aptitude_agent", "hard", 0, {"beginner": 100, "medium": 100, "hard": 0, "professional": 0})) == 50.0
+
+
+def test_a_snapshot_saved_under_the_old_rules_is_shown_with_the_new_scores(app_client, agents, database):
+    from app.models import ReadinessSnapshot
+    old = _area("aptitude_agent", "beginner", 34, {"beginner": 34, "medium": 0, "hard": 0, "professional": 0})
+    old.update({"score": 0, "levels_completed": []})                     # what the old rules stored
+    session = database()
+    session.add(ReadinessSnapshot(user_id="learner", overall=0, band="not_ready", role_key="",
+                                  areas={"areas": [old], "next_steps": ["Improve Aptitude (0/100)."]}))
+    session.commit()
+    snapshot = session.query(ReadinessSnapshot).filter_by(user_id="learner").one()
+    session.close()
+    result = readiness_service.scored(snapshot)
+    assert result["areas"][0]["score"] == 8.5 and result["overall"] == round(8.5 / 7, 1)
+    assert result["next_steps"] == ["Improve aptitude_agent (8/100)."]     # rewritten with the new score
+    assert readiness_service.area_scores(snapshot)["aptitude_agent"]["score"] == 8.5
+    assert readiness_service.history("learner")[-1]["overall"] == 1.2

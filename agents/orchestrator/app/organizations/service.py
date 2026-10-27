@@ -357,11 +357,11 @@ def members(admin_id: str, org_id: str) -> list[dict]:
         }
         if member.progress_shared_at is not None:
             snapshot = snapshots.get(user.id)
-            entry["readiness"] = None if snapshot is None else {
-                "overall": snapshot.overall, "band": snapshot.band,
-                "band_label": readiness_service.BAND_LABELS.get(snapshot.band, snapshot.band),
-                "computed_at": snapshot.computed_at.isoformat(),
-                "areas": readiness_service.area_scores(snapshot),
+            current = None if snapshot is None else readiness_service.scored(snapshot)
+            entry["readiness"] = None if current is None else {
+                "overall": current["overall"], "band": current["band"], "band_label": current["band_label"],
+                "computed_at": current["computed_at"],
+                "areas": readiness_service.area_map(current["areas"]),
             }
             entry["levels"] = {name: data["level"] for name, data in learner_service.get_levels(user.id).items()}
             entry["profile"] = learner_service.get_profile(user.id)

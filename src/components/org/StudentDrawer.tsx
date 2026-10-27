@@ -22,6 +22,7 @@ import {
   updateMemberClass,
   type ClassFields,
   type ClassOptions,
+  type MemberArea,
   type MemberDetail,
   type Transcript,
 } from "../../lib/orgApi";
@@ -40,6 +41,12 @@ interface Props {
 
 const TABS = ["Overview", "Chats", "Activity", "Proctoring", "Manage"] as const;
 type Tab = (typeof TABS)[number];
+
+/** The level the readiness check measured progress at: the learner's level
+ * when it was taken, which can differ from their level now. */
+function measuredAt(area: MemberArea, current: LevelId): LevelId {
+  return area.level ?? current;
+}
 
 function when(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -158,11 +165,14 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
                           <>
                             <div className="org-level-steps">
                               {LEVEL_IDS.map((id) => (
-                                <i key={id} className={area.levels_completed?.includes(id) ? "done" : id === level.level ? "now" : ""}
-                                  title={`${LEVEL_LABELS[id]}: ${Math.round(area.level_scores?.[id] ?? (id === level.level ? area.level_progress ?? 0 : 0))}%`} />
+                                <i key={id} className={area.levels_completed?.includes(id) ? "done" : id === measuredAt(area, level.level) ? "now" : ""}
+                                  title={`${LEVEL_LABELS[id]}: ${Math.round(id === measuredAt(area, level.level) ? area.level_progress ?? 0 : area.level_scores?.[id] ?? 0)}%`} />
                               ))}
                             </div>
-                            <small>{area.levels_completed?.length ?? 0} of 4 levels · {area.level_progress != null ? `${Math.round(area.level_progress)}% of ${LEVEL_LABELS[level.level]}` : "not started"}</small>
+                            <small>
+                              {area.status === "assessed" && area.score != null ? `Score ${Math.round(area.score)}/100 · ` : ""}
+                              {area.levels_completed?.length ?? 0} of 4 levels · {area.level_progress != null ? `${Math.round(area.level_progress)}% of ${LEVEL_LABELS[measuredAt(area, level.level)]}` : "not started"}
+                            </small>
                           </>
                         ) : <small className="rd-muted">{level.source === "derived" ? "Follows the other agents" : "No activity yet"}</small>}
                       </div>
