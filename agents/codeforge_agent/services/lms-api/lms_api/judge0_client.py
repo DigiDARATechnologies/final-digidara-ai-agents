@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from urllib.error import HTTPError, URLError
@@ -8,17 +9,45 @@ from flask import current_app
 
 from .errors import ApiError
 
+# JavaScript (Node.js 12.14.0) and Bash, judge0 v1.13.1 db/languages/active.rb.
+NODE_LANGUAGE_ID = 63
+BASH_LANGUAGE_ID = 46
+NODE_BINARY = "/usr/local/node-12.14.0/bin/node"
+# Judge0's largest allowed memory limit (judge0.conf MAX_MEMORY_LIMIT).
+NODE_MEMORY_LIMIT_KB = 512000
+
+
+def node_wrapper(source_code):
+    """A Bash script that runs the JavaScript with Node.js tuned for the sandbox.
+
+    Judge0 limits memory per process here (address space, not real use), and
+    Node.js reserves far more address space than it uses: its default V8
+    worker threads alone push it past 512 MB, so every program -- even
+    console.log("Hello") -- crashed or hung as "Time Limit Exceeded". One V8
+    worker and one libuv thread keep it to ~30 MB of real memory. The code
+    goes in as base64, so nothing in it can change the script around it.
+    """
+    encoded = base64.b64encode(source_code.encode("utf-8")).decode("ascii")
+    return (
+        f"printf '%s' '{encoded}' | base64 -d > main.js && "
+        f"UV_THREADPOOL_SIZE=1 exec {NODE_BINARY} --v8-pool-size=1 --max-old-space-size=256 main.js\n"
+    )
+
 
 class Judge0Client:
     def execute(self, source_code, language_id, stdin_text, expected_output):
+        language_id = int(language_id)
+        memory_limit = 128000
+        if language_id == NODE_LANGUAGE_ID:
+            source_code, language_id, memory_limit = node_wrapper(source_code), BASH_LANGUAGE_ID, NODE_MEMORY_LIMIT_KB
         payload = {
             "source_code": source_code,
-            "language_id": int(language_id),
+            "language_id": language_id,
             "stdin": stdin_text,
             "expected_output": expected_output,
             "cpu_time_limit": 2,
             "wall_time_limit": 5,
-            "memory_limit": 128000,
+            "memory_limit": memory_limit,
             "max_processes_and_or_threads": 32,
             "enable_network": False,
             "enable_per_process_and_thread_time_limit": True,

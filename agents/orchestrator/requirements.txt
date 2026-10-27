@@ -37,3 +37,5 @@ pypdf==6.21.2
 python-docx==1.1.2
 python-pptx==1.0.2
 python-multipart==0.0.31
+# Organization student lists (app/organizations/roster.py): staff upload .xlsx files.
+openpyxl==3.1.5

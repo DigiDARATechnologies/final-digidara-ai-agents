@@ -46,6 +46,10 @@ def _summary(user_id: str) -> dict:
     user = auth_service.get_by_id(user_id)
     if user is None:
         raise HTTPException(401, "This account no longer exists.")
+    # A learner on an organization's student list joins it once their email is verified.
+    from app.organizations import roster
+
+    roster.auto_join(user)
     return {
         "profile": service.get_profile(user_id),
         "levels": list(service.get_levels(user_id).values()),

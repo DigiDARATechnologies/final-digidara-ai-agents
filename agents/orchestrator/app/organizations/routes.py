@@ -3,7 +3,7 @@ with a code; organization admins manage codes and members and see the
 analytics and each learner's details (insights.py)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.english_only import require_english
@@ -11,7 +11,7 @@ from app.admin.routes import require_admin
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
-from app.organizations import assistant, classes, insights, service
+from app.organizations import assistant, classes, insights, roster, service
 from app.organizations.service import OrgError
 from app.rate_limit import limiter
 from app.readiness import service as readiness_service
@@ -93,6 +93,15 @@ class LevelIn(BaseModel):
     level: str
 
 
+class StaffIn(BaseModel):
+    name: str = Field(default="", max_length=255)
+    email: str = Field(min_length=3, max_length=255)
+
+
+class DecisionIn(BaseModel):
+    approve: bool
+
+
 def _run(fn, *args):
     try:
         return fn(*args)
@@ -146,7 +155,23 @@ def preview_join_code(code: str, request: Request, user_id: str = Depends(get_ve
 @router.post("/join")
 @limiter.limit("10/minute")
 def join_organization(req: JoinIn, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
-    return _run(service.join, user_id, req.join_code, True, req.department, req.year, req.section)
+    """Joins at once for a learner on the organization's student list;
+    anyone else gets a request that staff approve ({"pending": ...})."""
+    membership = _run(service.join, user_id, req.join_code, True, req.department, req.year, req.section)
+    if membership is None:
+        return {"membership": None, "pending": roster.pending_for(user_id)}
+    return membership
+
+
+@router.get("/me/request")
+def my_join_request(user_id: str = Depends(get_verified_user_id)) -> dict:
+    return {"pending": roster.pending_for(user_id)}
+
+
+@router.delete("/me/request", status_code=204)
+def cancel_join_request(user_id: str = Depends(get_verified_user_id)) -> Response:
+    roster.cancel_request(user_id)
+    return Response(status_code=204)
 
 
 @router.put("/me/sharing")
@@ -299,3 +324,49 @@ async def refresh_member_readiness(org_id: str, member_id: str, user_id: str = D
 @router.post("/{org_id}/join-code")
 def rotate_join_code(org_id: str, user_id: str = Depends(get_verified_user_id)) -> dict:
     return _run(service.rotate_join_code, user_id, org_id)
+
+
+# --- staff logins (owner or admin) -------------------------------------------
+
+@router.get("/{org_id}/staff")
+def list_staff(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return _run(service.list_staff, user_id, org_id)
+
+
+@router.post("/{org_id}/staff", status_code=201)
+def add_staff(org_id: str, req: StaffIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    return _run(service.add_staff, user_id, org_id, req.name, req.email)
+
+
+# --- student list and join requests (staff) -----------------------------------
+
+@router.post("/{org_id}/roster/upload")
+@limiter.limit("20/minute")
+async def upload_roster(org_id: str, request: Request, file: UploadFile = File(...), user_id: str = Depends(get_verified_user_id)) -> dict:
+    """An Excel (.xlsx) or CSV file with name, mobile and email columns."""
+    _run(service.require_admin, user_id, org_id)
+    data = await file.read(roster.MAX_UPLOAD_BYTES + 1)
+    rows = _run(roster.parse_upload, file.filename or "", data)
+    return _run(roster.upload, user_id, org_id, rows)
+
+
+@router.get("/{org_id}/roster")
+def list_roster(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return _run(roster.entries, user_id, org_id)
+
+
+@router.delete("/{org_id}/roster/{entry_id}", status_code=204)
+def remove_roster_entry(org_id: str, entry_id: str, user_id: str = Depends(get_verified_user_id)) -> Response:
+    _run(roster.remove_entry, user_id, org_id, entry_id)
+    return Response(status_code=204)
+
+
+@router.get("/{org_id}/requests")
+def list_requests(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return _run(roster.requests, user_id, org_id)
+
+
+@router.post("/{org_id}/requests/{request_id}", status_code=204)
+def decide_request(org_id: str, request_id: str, req: DecisionIn, user_id: str = Depends(get_verified_user_id)) -> Response:
+    _run(roster.decide, user_id, org_id, request_id, req.approve)
+    return Response(status_code=204)

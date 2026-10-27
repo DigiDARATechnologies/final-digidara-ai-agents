@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -172,6 +173,19 @@ class StandaloneWorkflowTests(unittest.TestCase):
         with self.app.app_context(), self.assertRaises(ApiError) as raised:
             unhealthy_client.execute("print(11)", 71, "", "11\n")
         self.assertEqual((raised.exception.status, raised.exception.code), (503, "evaluator_worker_error"))
+    def test_javascript_runs_through_a_node_wrapper_the_sandbox_can_start(self):
+        # Plain Node.js 12 could not start under the per-process memory limit
+        # ("Time Limit Exceeded" for console.log), so JS goes through Bash with Node tuned down.
+        client = RecordingJudge0Client({"token": "job-2", "status": {"id": 3, "description": "Accepted"}, "stdout": "Hello\n"})
+        code = "console.log('it\\'s \"ok\" EOF $HOME `x`')"
+        with self.app.app_context():
+            client.execute(code, 63, "1 2\n", "Hello\n")
+        payload = client.calls[0][2]
+        self.assertEqual((payload["language_id"], payload["memory_limit"], payload["stdin"]), (46, 512000, "1 2\n"))
+        self.assertIn("--v8-pool-size=1", payload["source_code"])
+        encoded = payload["source_code"].split("'")[3]
+        self.assertEqual(base64.b64decode(encoded).decode(), code)      # the code reaches Node exactly, untouched by the shell
+        self.assertTrue(payload["enable_per_process_and_thread_memory_limit"])
     def test_replay_and_bad_signature_are_rejected(self):
         request_id = str(uuid.uuid4())
         self.assertEqual(self.request("GET", "/api/coding/courses", token="valid-session", request_id=request_id).status_code, 200)

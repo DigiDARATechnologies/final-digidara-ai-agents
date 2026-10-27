@@ -14,7 +14,7 @@ import {
 } from "../lib/agentStateStore";
 import { sessionToken } from "../lib/session";
 
-export type SaveStatus = "idle" | "loading" | "saving" | "offline" | "rejected";
+export type SaveStatus = "idle" | "loading" | "saving" | "offline" | "rejected" | "signed_out";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- each agent has its own state type; the store only moves JSON */
 export interface AgentStateBinding {
@@ -29,6 +29,11 @@ export interface AgentStateBinding {
 const SAVE_DELAY_MS = 800;
 const RETRY_BASE_MS = 5000;
 const RETRY_MAX_MS = 30000;
+// A single failed save (a deploy restarting the server for a few seconds) is
+// retried quietly first; "Offline" shows only when that retry fails too.
+const QUIET_RETRY_MS = 2000;
+
+const isSignedOut = (error: unknown) => (error as { status?: number })?.status === 401;
 
 const isPermanentRejection = (error: unknown) => {
   const status = (error as { status?: number })?.status;
@@ -124,11 +129,17 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
         retryCount.current = 0;
         clearMigratedLegacy();
         setStatus(sawRejection ? "rejected" : "idle");
-      } catch {
+      } catch (error) {
         if (gen !== generation.current) return;
-        setStatus("offline");
         window.clearTimeout(retryTimer.current);
-        const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** retryCount.current);
+        if (isSignedOut(error)) {
+          // The login expired: retrying cannot help until the learner signs in again.
+          setStatus("signed_out");
+          return;
+        }
+        const quiet = retryCount.current === 0;
+        setStatus(quiet ? "saving" : "offline");
+        const delay = quiet ? QUIET_RETRY_MS : Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** (retryCount.current - 1));
         retryCount.current += 1;
         retryTimer.current = window.setTimeout(() => void flush(), delay);
       }
@@ -194,8 +205,12 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
         hydrated.current = true;
         setStatus("idle");
         scheduleFlush();
-      } catch {
+      } catch (error) {
         if (gen !== generation.current) return;
+        if (isSignedOut(error)) {
+          setStatus("signed_out");
+          return;
+        }
         setStatus("offline");
         retryTimer.current = window.setTimeout(() => void hydrate(attempt + 1), Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempt));
       }
@@ -235,11 +250,20 @@ export function useAgentStatePersistence(email: string | undefined, bindings: Ag
       event.preventDefault();
       event.returnValue = "";
     };
+    // Back online: save now instead of waiting for the next retry.
+    const onOnline = () => {
+      if (hasUnsaved()) {
+        window.clearTimeout(retryTimer.current);
+        void flush();
+      }
+    };
     document.addEventListener("visibilitychange", onHidden);
     window.addEventListener("beforeunload", onUnload);
+    window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", onHidden);
       window.removeEventListener("beforeunload", onUnload);
+      window.removeEventListener("online", onOnline);
     };
   }, [currentMaps, flush, serializeFor]);
 

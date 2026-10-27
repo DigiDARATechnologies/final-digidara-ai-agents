@@ -44,7 +44,8 @@ export interface Organization {
 
 export interface Membership {
   organization: Organization;
-  role: "owner" | "admin" | "member";
+  /** staff: looks after the students (lists, approvals, levels, codes), not other staff or admins. */
+  role: "owner" | "admin" | "staff" | "member";
   member_id: string;
   external_id: string | null;
   progress_shared: boolean;
