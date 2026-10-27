@@ -167,8 +167,9 @@ def _log(session, org_id: str, viewer_id: str, subject_user_id: str, action: str
 
 
 def _shared_member(session, admin_id: str, org_id: str, member_id: str) -> OrganizationMember:
-    _require_admin(session, admin_id, org_id)
+    viewer = _require_admin(session, admin_id, org_id)
     member = _member_in_org(session, org_id, member_id)
+    org_service._require_visible(session, viewer, org_id, member)
     if member.progress_shared_at is None:
         raise OrgError(403, "This member has not agreed to share their progress.")
     return member
@@ -271,8 +272,13 @@ def _log_rows(session, query) -> list[dict]:
 def access_log(admin_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
-        return _log_rows(session, session.query(OrgAccessLog).filter_by(organization_id=org_id))
+        viewer = _require_admin(session, admin_id, org_id)
+        query = session.query(OrgAccessLog).filter_by(organization_id=org_id)
+        visible = org_service.visible_user_ids(session, viewer, org_id)
+        if visible is not None:
+            # Staff: what was opened about their own students.
+            query = query.filter(OrgAccessLog.subject_user_id.in_(visible or {""}))
+        return _log_rows(session, query)
     finally:
         session.close()
 

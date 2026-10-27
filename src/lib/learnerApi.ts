@@ -209,14 +209,17 @@ export type LeaderboardScope = "platform" | "organization";
 export interface LeaderboardEntry {
   rank: number; user_id: string; name: string; score: number; band: Band; organization: string | null; is_me: boolean;
   new_in_top?: boolean; entered_top_at?: string;
+  /** Staff boards: what the staff member is ranked on (their students). */
+  staff?: { students: number; average_readiness: number; active_percent: number };
 }
 export interface Leaderboard {
-  scope: LeaderboardScope; group: LeaderboardGroup; allowed_groups: LeaderboardGroup[];
+  scope: LeaderboardScope; group: LeaderboardGroup; allowed_groups: LeaderboardGroup[]; allowed_scopes: LeaderboardScope[];
   organization: { id: string; name: string } | null;
   top: LeaderboardEntry[]; entries: LeaderboardEntry[]; total: number;
   me: { rank: number; score: number } | null; hidden: boolean;
 }
-export const fetchLeaderboard = (scope: LeaderboardScope, group?: LeaderboardGroup) =>
+/** "auto": the viewer's organization when they are in one, else the whole platform. */
+export const fetchLeaderboard = (scope: LeaderboardScope | "auto", group?: LeaderboardGroup) =>
   request<Leaderboard>(`/learner/leaderboard?scope=${scope}${group ? `&group=${group}` : ""}`);
 export const setLeaderboardHidden = (hidden: boolean) =>
   request<{ hidden: boolean }>("/learner/leaderboard/visibility", json("PUT", { hidden }));

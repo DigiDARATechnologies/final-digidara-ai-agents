@@ -51,6 +51,7 @@ import BossAssistant from "./components/BossAssistant";
 // Screens most visits never open load on first use, so the first page load is smaller.
 const ReadinessView = lazy(() => import("./components/ReadinessView"));
 const OrganizationView = lazy(() => import("./components/OrganizationView"));
+const Leaderboard = lazy(() => import("./components/Leaderboard"));
 const HelpPage = lazy(() => import("./components/HelpPage"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
 const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
@@ -1839,7 +1840,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1857,7 +1858,7 @@ export default function App() {
       switchView("admin");
       return;
     }
-    if (action === "readiness" || action === "organization") {
+    if (action === "readiness" || action === "organization" || action === "leaderboard") {
       switchView(action);
       return;
     }
@@ -2197,12 +2198,22 @@ export default function App() {
             <Suspense fallback={<ScreenLoading />}><OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} /></Suspense>
           )}
 
+          {view === "leaderboard" && (
+            <Suspense fallback={<ScreenLoading />}>
+              <div className="pv-page rd-page"><div className="pv-inner">
+                <button className="hp-back" onClick={startNewChatLanding}>← Back</button>
+                <Leaderboard onToast={showToast} />
+              </div></div>
+            </Suspense>
+          )}
+
           {(view === "readiness" || view === "organization") && !learnerSummary && (
             <div className="pv-page"><div className="pv-inner"><p className="rd-muted">{learnerLoaded ? "This page could not be loaded. Please try again shortly." : "Loading…"}</p></div></div>
           )}
 
           {view === "chat" && newChatPending && (
             <NewChatLanding
+              onOpenLeaderboard={() => switchView("leaderboard")}
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
               onStartVoice={startVoiceChat}

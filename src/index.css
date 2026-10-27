@@ -483,6 +483,10 @@ body.glow-off .send-btn:hover{
 
 .sidebar-top{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 2px 18px;}
 .brand{ display:flex; align-items:center; gap:9px; overflow:hidden; }
+/* The full logo is wide: let it shrink to the space next to the collapse
+   button instead of being cut off by .brand's overflow:hidden. */
+.sidebar:not(.collapsed) .brand{ flex:1 1 auto; min-width:0; }
+.sidebar:not(.collapsed) .brand .brand-logo-img{ max-width:100%; height:auto !important; max-height:66px !important; object-fit:contain; object-position:left center; }
 
 .new-chat-btn{margin-bottom:12px;border:0;color:#fff;padding:11px 14px;background:var(--accent-grad);box-shadow:0 8px 20px rgba(40,81,216,.3), inset 0 1px 0 rgba(255,255,255,.25);}
 .new-chat-btn:hover{color:#fff;background:var(--accent-grad);box-shadow:0 10px 26px rgba(40,81,216,.45), inset 0 1px 0 rgba(255,255,255,.3);transform:translateY(-1px);}

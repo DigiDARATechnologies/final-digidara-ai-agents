@@ -15,12 +15,13 @@ const SPOTLIGHT_MS = 4000;
 
 /** The top 3 by job readiness, a spotlight that rotates through them (whoever
  * just broke into the top 3 first), and the full ranking with the viewer's own
- * rank. Students see students, staff see staff, admins can switch between both;
- * platform-wide or inside the viewer's organization. */
-export default function Leaderboard({ defaultScope = "platform", onToast, compact = false }: {
-  defaultScope?: LeaderboardScope; onToast?: (message: string) => void; compact?: boolean;
+ * rank. Students: their organization's board and the whole platform. Staff:
+ * their organization's staff board, ranked on their students. Owners and
+ * admins: their organization's students and staff boards. */
+export default function Leaderboard({ defaultScope = "auto", onToast, compact = false }: {
+  defaultScope?: LeaderboardScope | "auto"; onToast?: (message: string) => void; compact?: boolean;
 }) {
-  const [scope, setScope] = useState<LeaderboardScope>(defaultScope);
+  const [scope, setScope] = useState<LeaderboardScope | "auto">(defaultScope);
   const [group, setGroup] = useState<LeaderboardGroup | undefined>(undefined);
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState("");
@@ -35,8 +36,8 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
       setError("");
     } catch (err) {
       const message = (err as Error).message;
-      // No organization: fall back to the platform board.
-      if (scope === "organization") setScope("platform");
+      // Not allowed this scope (e.g. no organization): fall back to the viewer's own.
+      if (scope !== "auto") setScope("auto");
       else setError(message);
     } finally {
       setLoading(false);
@@ -81,10 +82,10 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
           <h2>{board?.group === "staff" ? "Top staff" : "Top learners"}{board?.scope === "organization" && board.organization ? ` at ${board.organization.name}` : " on SkillDARA"}</h2>
         </div>
         <div className="lb-controls">
-          {board?.organization && (
+          {board && board.allowed_scopes.length > 1 && (
             <div className="lb-switch" role="tablist" aria-label="Leaderboard scope">
-              {(["platform", "organization"] as LeaderboardScope[]).map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={scope === value} className={scope === value ? "on" : ""}
+              {board.allowed_scopes.map((value) => (
+                <button key={value} type="button" role="tab" aria-selected={board.scope === value} className={board.scope === value ? "on" : ""}
                   onClick={() => setScope(value)}>{value === "platform" ? "Whole platform" : "My organization"}</button>
               ))}
             </div>
@@ -104,7 +105,11 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
       {loading && !board && <div className="lb-skeleton" />}
 
       {board && board.top.length === 0 && (
-        <p className="rd-muted lb-empty">No scores yet. Check your job readiness to get on the board.</p>
+        <p className="rd-muted lb-empty">{board.group === "staff" ? "No staff yet. Staff are ranked on the students who join with their join codes."
+          : "No scores yet. Check your job readiness to get on the board."}</p>
+      )}
+      {board?.group === "staff" && board.top.length > 0 && (
+        <p className="rd-muted lb-note">Staff score: 70% their students' average job readiness + 30% the share of their students active in the last 14 days.</p>
       )}
 
       {board && board.top.length > 0 && (
@@ -115,7 +120,8 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
               <div>
                 {featured.new_in_top && <span className="lb-new">New in Top 3</span>}
                 <b>{featured.name}{featured.is_me ? " (you)" : ""}</b>
-                <small>#{featured.rank} · {Math.round(featured.score)} readiness{featured.organization ? ` · ${featured.organization}` : ""}</small>
+                <small>#{featured.rank} · {Math.round(featured.score)} {featured.staff ? "staff score" : "readiness"}{featured.organization ? ` · ${featured.organization}` : ""}</small>
+                {featured.staff && <small>{staffLine(featured.staff)}</small>}
               </div>
               {spotlight.length > 1 && (
                 <div className="lb-dots" aria-hidden="true">{spotlight.map((e, i) => <i key={e.user_id} className={i === spot ? "on" : ""} />)}</div>
@@ -134,7 +140,8 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
               {shown.map((entry) => (
                 <li key={entry.user_id} className={entry.is_me ? "me" : ""}>
                   <span className="lb-rank">#{entry.rank}</span>
-                  <span className="lb-name">{entry.name}{entry.is_me ? " (you)" : ""}{entry.organization && <small>{entry.organization}</small>}</span>
+                  <span className="lb-name">{entry.name}{entry.is_me ? " (you)" : ""}{entry.organization && <small>{entry.organization}</small>}
+                    {entry.staff && <small>{staffLine(entry.staff)}</small>}</span>
                   <span className="lb-score">{Math.round(entry.score)}</span>
                 </li>
               ))}
@@ -162,6 +169,10 @@ export default function Leaderboard({ defaultScope = "platform", onToast, compac
   );
 }
 
+function staffLine(staff: NonNullable<LeaderboardEntry["staff"]>): string {
+  return `${staff.students} student${staff.students === 1 ? "" : "s"} · avg readiness ${Math.round(staff.average_readiness)} · ${staff.active_percent}% active`;
+}
+
 function PodiumPlace({ entry }: { entry: LeaderboardEntry }) {
   return (
     <li className={`lb-place place-${entry.rank}${entry.is_me ? " me" : ""}${entry.new_in_top ? " new" : ""}`}>
@@ -173,5 +184,33 @@ function PodiumPlace({ entry }: { entry: LeaderboardEntry }) {
       <strong>{Math.round(entry.score)}</strong>
       <div className="lb-step"><span>{entry.rank}</span></div>
     </li>
+  );
+}
+
+const MINI_MEDALS = ["🥇", "🥈", "🥉"];
+
+/** The top 3 on the chat home page: the learner's organization when they are
+ * in one, else the whole platform. Clicking opens the full leaderboard. */
+export function TopPerformers({ onOpen }: { onOpen?: () => void }) {
+  const [board, setBoard] = useState<Board | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchLeaderboard("auto").then((result) => { if (active) setBoard(result); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  if (!board || board.top.length === 0) return null;
+  const where = board.scope === "organization" && board.organization ? board.organization.name : "SkillDARA";
+  return (
+    <div className="lb-mini" aria-label={`Top 3 at ${where}`}>
+      <span className="lb-mini-title">Top {board.group === "staff" ? "staff" : "performers"} · {where}</span>
+      {board.top.map((entry) => (
+        <button key={entry.user_id} type="button" className={entry.is_me ? "me" : ""} onClick={onOpen} title="Open the leaderboard">
+          <span aria-hidden="true">{MINI_MEDALS[entry.rank - 1]}</span>
+          <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
+          <small>{Math.round(entry.score)}</small>
+          {entry.new_in_top && <span className="lb-new">New</span>}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 jest.mock('../../src/lib/learnerApi', () => ({ fetchLeaderboard: jest.fn(), setLeaderboardHidden: jest.fn() }));
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import Leaderboard from '../../src/components/Leaderboard';
+import Leaderboard, { TopPerformers } from '../../src/components/Leaderboard';
 import * as learnerApi from '../../src/lib/learnerApi';
 
 const api = jest.mocked(learnerApi);
@@ -9,7 +9,8 @@ const entry = (rank: number, name: string, score: number, extra: object = {}) =>
   rank, user_id: `u${rank}`, name, score, band: 'developing' as const, organization: null, is_me: false, ...extra,
 });
 const board = (extra: object = {}) => ({
-  scope: 'platform' as const, group: 'students' as const, allowed_groups: ['students' as const],
+  scope: 'organization' as const, group: 'students' as const, allowed_groups: ['students' as const],
+  allowed_scopes: ['organization' as const, 'platform' as const],
   organization: { id: 'o1', name: 'Anna University' },
   top: [entry(1, 'Asha R.', 92), entry(2, 'Nila F.', 85, { new_in_top: true }), entry(3, 'Ravi T.', 80)],
   entries: [entry(1, 'Asha R.', 92), entry(2, 'Nila F.', 85, { new_in_top: true }), entry(3, 'Ravi T.', 80),
@@ -38,17 +39,39 @@ test('shows the top 3 podium, the newcomer in the spotlight first, and my rank',
   expect(screen.getByText('#4', { selector: 'b' })).toBeInTheDocument();
 });
 
-test('switches between the whole platform and my organization', async () => {
+test('a student switches between my organization and the whole platform', async () => {
   render(<Leaderboard />);
-  fireEvent.click(await screen.findByRole('tab', { name: 'My organization' }));
-  await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenLastCalledWith('organization', undefined));
+  expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto', undefined);
+  fireEvent.click(await screen.findByRole('tab', { name: 'Whole platform' }));
+  await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenLastCalledWith('platform', undefined));
+});
+
+test('staff see only their organization staff board, with what they are ranked on', async () => {
+  const staff = { students: 12, average_readiness: 48.2, active_percent: 75 };
+  api.fetchLeaderboard.mockResolvedValue(board({
+    group: 'staff', allowed_groups: ['staff'], allowed_scopes: ['organization'],
+    top: [entry(1, 'Priya K.', 56.3, { staff })], entries: [entry(1, 'Priya K.', 56.3, { staff })], me: { rank: 1, score: 56.3 },
+  }));
+  render(<Leaderboard />);
+  expect(await screen.findByText('Top staff at Anna University')).toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: 'Whole platform' })).not.toBeInTheDocument();
+  expect(screen.getAllByText('12 students · avg readiness 48 · 75% active').length).toBeGreaterThan(0);
+});
+
+test('the chat home shows the top 3 of my organization, and opens the leaderboard', async () => {
+  const onOpen = jest.fn();
+  render(<TopPerformers onOpen={onOpen} />);
+  expect(await screen.findByText('Top performers · Anna University')).toBeInTheDocument();
+  expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto');
+  fireEvent.click(screen.getByRole('button', { name: /Asha R\./ }));
+  expect(onOpen).toHaveBeenCalled();
 });
 
 test('admins can switch between the students and staff boards', async () => {
   api.fetchLeaderboard.mockResolvedValue(board({ allowed_groups: ['students', 'staff'] }));
   render(<Leaderboard />);
   fireEvent.click(await screen.findByRole('tab', { name: 'Staff' }));
-  await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenLastCalledWith('platform', 'staff'));
+  await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenLastCalledWith('auto', 'staff'));
 });
 
 test('a learner can hide themselves', async () => {

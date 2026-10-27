@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   decideJoinRequest,
+  downloadRosterTemplate,
   fetchJoinRequests,
   fetchRoster,
   removeRosterEntry,
@@ -121,15 +122,20 @@ export default function StudentListPanel({ orgId, orgName, onChanged, onToast }:
       <section className="org-card">
         <h3>Upload the student list</h3>
         <p className="rd-muted">
-          An Excel (.xlsx) or CSV file with <b>Name</b>, <b>Mobile</b> and <b>Email</b> columns. Students whose email is on the list
-          join {orgName} automatically when they sign in with that email; anyone else who uses a join code waits for your approval.
-          Uploading again adds new students and updates names and mobiles.
+          An Excel (.xlsx) or CSV file with <b>Name</b>, <b>Mobile</b> and <b>Email</b> columns (download the template to see the
+          format). Share your join code with these students: when one signs in with an email on your list and enters your code, they
+          join {orgName} at once. Anyone else who uses your code waits for your approval. Uploading again adds new students and
+          updates names and mobiles.
         </p>
         <div className="org-actions">
           <input ref={input} type="file" hidden accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
             onChange={(e) => void upload(e.target.files?.[0])} />
           <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => input.current?.click()}>
             {busy ? "Uploading…" : "Choose file"}
+          </button>
+          <button type="button" className="btn btn-outline btn-sm"
+            onClick={() => void downloadRosterTemplate(orgId).catch((err) => onToast((err as Error).message))}>
+            Download template
           </button>
           <span className="rd-muted">Up to 5,000 students, 5 MB.</span>
         </div>

@@ -350,6 +350,14 @@ async def upload_roster(org_id: str, request: Request, file: UploadFile = File(.
     return _run(roster.upload, user_id, org_id, rows)
 
 
+@router.get("/{org_id}/roster/template")
+def roster_template(org_id: str, user_id: str = Depends(get_verified_user_id)) -> Response:
+    """An example Excel file to fill in: Name, Mobile, Email."""
+    _run(service.require_admin, user_id, org_id)
+    return Response(roster.template_xlsx(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="skilldara-student-list-template.xlsx"'})
+
+
 @router.get("/{org_id}/roster")
 def list_roster(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
     return _run(roster.entries, user_id, org_id)

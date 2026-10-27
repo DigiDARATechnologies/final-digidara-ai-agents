@@ -1,11 +1,14 @@
 """Job-readiness leaderboards: the top learners by readiness score.
 
-Two groups: students (learners, members of an organization or not) and staff
-(an organization's staff, admins and owners). Two scopes: the whole platform,
-or one organization. Who sees what:
-  - a student sees the students board,
-  - staff see the staff board,
-  - an organization's owner or admin, and SkillDARA's platform admin, see both.
+Two groups. Students: learners, ranked by their own job readiness. Staff:
+an organization's staff, ranked on their students (those who joined with
+their join codes or are on their uploaded list): 70% the students' average
+job readiness, 30% the share of them active in the last two weeks.
+Who sees what:
+  - a student: the students board of their organization and of the platform,
+  - staff: their organization's staff board,
+  - an owner or admin: their organization's students and staff boards,
+  - SkillDARA's platform admin: everything.
 
 Scores are each learner's latest readiness for their current target role,
 scored by today's rules (readiness_service.scored). Inside an organization a
@@ -43,6 +46,9 @@ TOP = 3
 LIST_LIMIT = 50
 # How long someone who broke into the top 3 is shown as new.
 NEW_FOR = timedelta(days=3)
+# Staff are ranked on their students: readiness weight, the rest is activity.
+STAFF_READINESS_WEIGHT = 0.7
+ACTIVE_WINDOW = timedelta(days=14)
 # Every learner's score, reused for this long across requests.
 CACHE_SECONDS = 60
 _cache: dict = {"at": 0.0, "scores": {}}
@@ -115,6 +121,42 @@ def allowed_groups(user: User, member: OrganizationMember | None) -> list[str]:
     return ["students"]
 
 
+def allowed_scopes(user: User, member: OrganizationMember | None) -> list[str]:
+    """Students: their organization and the whole platform. Staff, owners and
+    admins: their own organization only. SkillDARA admins: everything."""
+    if user.is_admin:
+        return ["platform", "organization"] if member is not None else ["platform"]
+    if member is not None and member.role in STAFF_ROLES:
+        return ["organization"]
+    return ["organization", "platform"] if member is not None else ["platform"]
+
+
+def _staff_scores(session, org_id: str, hidden: set[str], scores: dict) -> list[tuple[str, float, datetime, dict]]:
+    """Each staff member of the organization, scored on their students: 70%
+    their students' average job readiness (no score yet counts as 0) and 30%
+    the share of their students active in the last 14 days."""
+    from app.organizations import service as org_service
+
+    staff = session.query(OrganizationMember).filter_by(organization_id=org_id, role="staff").all()
+    students = {m.user_id: m for m in session.query(OrganizationMember)
+                .filter_by(organization_id=org_id, role="member").all() if m.progress_shared_at is not None}
+    since = datetime.utcnow() - ACTIVE_WINDOW
+    last_active = org_service._last_active(session, list(students))
+    rows = []
+    for person in staff:
+        if person.user_id in hidden:
+            continue
+        mine = [uid for uid in org_service.staff_students(session, person.user_id, org_id) if uid in students]
+        readiness = [scores[uid][0] if uid in scores else 0.0 for uid in mine]
+        average = sum(readiness) / len(readiness) if readiness else 0.0
+        active = sum(1 for uid in mine if last_active.get(uid) and last_active[uid] >= since)
+        active_percent = 100.0 * active / len(mine) if mine else 0.0
+        score = round(STAFF_READINESS_WEIGHT * average + (1 - STAFF_READINESS_WEIGHT) * active_percent, 1)
+        rows.append((person.user_id, score, person.created_at or datetime.utcnow(),
+                     {"students": len(mine), "average_readiness": round(average, 1), "active_percent": round(active_percent)}))
+    return rows
+
+
 def _sync_top(session, board: str, top_ids: list[str]) -> dict[str, datetime]:
     """Remembers this board's top 3 and returns when each entered it. The
     first time a board is seen, its top 3 is not new (nobody broke in)."""
@@ -132,23 +174,31 @@ def _sync_top(session, board: str, top_ids: list[str]) -> dict[str, datetime]:
     return {user_id: rows[user_id].entered_at for user_id in top_ids}
 
 
-def board(viewer_id: str, scope: str = "platform", group: str | None = None) -> dict:
-    if scope not in SCOPES:
+def board(viewer_id: str, scope: str = "auto", group: str | None = None) -> dict:
+    """scope "auto": the viewer's organization when they are in one, else the platform."""
+    if scope not in SCOPES + ("auto",):
         raise LeaderboardError(400, "Scope must be platform or organization.")
     scores = _all_scores()
     session = db.get_session()
     try:
         user, member = _viewer(session, viewer_id)
         groups = allowed_groups(user, member)
+        scopes = allowed_scopes(user, member)
         group = group or groups[0]
         if group not in GROUPS:
             raise LeaderboardError(400, "Group must be students or staff.")
         if group not in groups:
             raise LeaderboardError(403, "This leaderboard is for organization admins and staff." if group == "staff"
                                    else "This leaderboard is for students and organization admins.")
+        if scope == "auto":
+            scope = scopes[0]
+        if scope not in scopes:
+            if scope == "organization":
+                raise LeaderboardError(404, "Join an organization to see its leaderboard.")
+            raise LeaderboardError(403, "Your leaderboard is your organization's.")
+        if group == "staff" and scope != "organization":
+            raise LeaderboardError(400, "The staff leaderboard is per organization.")
         org = session.get(Organization, member.organization_id) if member is not None else None
-        if scope == "organization" and org is None:
-            raise LeaderboardError(404, "Join an organization to see its leaderboard.")
 
         members = session.query(OrganizationMember)
         if scope == "organization":
@@ -157,22 +207,22 @@ def board(viewer_id: str, scope: str = "platform", group: str | None = None) -> 
         hidden = {row.user_id for row in session.query(LeaderboardOptOut.user_id).all()}
         platform_admins = {row.id for row in session.query(User.id).filter(User.is_admin.is_(True)).all()}
 
+        details: dict[str, dict] = {}
         candidates = []
-        for user_id, (score, reached_at) in scores.items():
-            if user_id in hidden or user_id in platform_admins:
-                continue
-            m = membership.get(user_id)
-            is_staff = m is not None and m.role in STAFF_ROLES
-            if group == "staff" and not is_staff:
-                continue
-            if group == "students" and is_staff:
-                continue
-            if scope == "organization":
-                if m is None:
+        if group == "staff":
+            for user_id, score, since, detail in _staff_scores(session, org.id, hidden, scores):
+                candidates.append((user_id, score, since))
+                details[user_id] = detail
+        else:
+            for user_id, (score, reached_at) in scores.items():
+                if user_id in hidden or user_id in platform_admins:
                     continue
-                if group == "students" and m.progress_shared_at is None:
+                m = membership.get(user_id)
+                if m is not None and m.role in STAFF_ROLES:
+                    continue
+                if scope == "organization" and (m is None or m.progress_shared_at is None):
                     continue       # inside an organization, only learners who share their progress
-            candidates.append((user_id, score, reached_at))
+                candidates.append((user_id, score, reached_at))
         # Higher score first; on a tie, whoever reached it first.
         candidates.sort(key=lambda c: (-c[1], c[2]))
 
@@ -183,7 +233,7 @@ def board(viewer_id: str, scope: str = "platform", group: str | None = None) -> 
         org_names = {o.id: o.name for o in session.query(Organization).filter(Organization.id.in_(set(org_of.values()))).all()} if org_of else {}
         viewer_org = {"id": org.id, "name": org.name} if org else None
         board_key = f"platform:{group}" if scope == "platform" else f"org:{org.id}:{group}"
-        entered = _sync_top(session, board_key, ranked_ids[:TOP])
+        entered = _sync_top(session, board_key, [uid for uid, score, _ in candidates[:TOP] if score > 0])
     finally:
         session.close()
 
@@ -196,6 +246,8 @@ def board(viewer_id: str, scope: str = "platform", group: str | None = None) -> 
             "organization": org_names.get(org_of.get(user_id, "")) if scope == "platform" else None,
             "is_me": user_id == viewer_id,
         }
+        if user_id in details:
+            item["staff"] = details[user_id]
         if user_id in entered:
             item["entered_top_at"] = entered[user_id].isoformat()
             item["new_in_top"] = now - entered[user_id] < NEW_FOR
@@ -204,7 +256,7 @@ def board(viewer_id: str, scope: str = "platform", group: str | None = None) -> 
     entries = [entry(i + 1, uid, score) for i, (uid, score, _) in enumerate(candidates[:LIST_LIMIT])]
     me = next(({"rank": i + 1, "score": round(score, 1)} for i, (uid, score, _) in enumerate(candidates) if uid == viewer_id), None)
     return {
-        "scope": scope, "group": group, "allowed_groups": groups,
+        "scope": scope, "group": group, "allowed_groups": groups, "allowed_scopes": scopes,
         "organization": viewer_org,
         "top": entries[:TOP], "entries": entries, "total": len(candidates),
         "me": me, "hidden": viewer_id in hidden,

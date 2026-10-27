@@ -1,15 +1,15 @@
 """An organization's student list, and who may join.
 
 Staff upload a list of students (an Excel .xlsx or a .csv with name, mobile
-and email columns). A learner whose email is on the list joins on their own:
-automatically once they sign in with that email verified, or straight away
-with a join code. Anyone else who uses a join code becomes a join request,
-with no access and nothing shared, until staff approve or decline it.
+and email columns) and make join codes. A learner signs in and enters a join
+code: if their verified email is on the list of the staff member who made
+that code, they join at once; anyone else becomes a join request, with no
+access and nothing shared, until staff approve or decline it. An owner's or
+admin's code matches any list in the organization.
 
-A learner added from the list did not see the join screen, so the
-organization sees only their name until they agree to share (the same rule
-as for members who joined before joining meant consent). Approving a request
-counts as consent: the learner agreed on the join screen when they asked.
+Joining with a code is the learner's consent: they saw on the join screen
+what the organization can see. Approving a request counts too: they agreed
+when they asked. Staff see only their own lists, codes and requests.
 """
 from __future__ import annotations
 
@@ -171,22 +171,26 @@ def upload(staff_id: str, org_id: str, rows: list[dict]) -> dict:
             else:
                 entry.name = name or entry.name
                 entry.mobile = mobile or entry.mobile
+                # A student is on one list: the latest staff member to upload them.
+                entry.uploaded_by = staff_id
                 updated += 1
         session.commit()
     finally:
         session.close()
-    joined = _join_listed_accounts(org_id, seen)
     approved = _approve_listed_requests(org_id, seen)
     return {"added": added, "updated": updated, "invalid": invalid[:200], "invalid_count": len(invalid),
-            "joined": joined, "approved": approved}
+            "joined": 0, "approved": approved}
 
 
 def entries(staff_id: str, org_id: str) -> list[dict]:
     """The list, with where each student stands."""
     session = db.get_session()
     try:
-        _require_admin(session, staff_id, org_id)
-        rows = session.query(OrgRosterEntry).filter_by(organization_id=org_id).order_by(OrgRosterEntry.name).all()
+        viewer = _require_admin(session, staff_id, org_id)
+        rows = session.query(OrgRosterEntry).filter_by(organization_id=org_id)
+        if viewer.role == "staff":
+            rows = rows.filter_by(uploaded_by=staff_id)        # staff see the lists they uploaded
+        rows = rows.order_by(OrgRosterEntry.name).all()
         emails = [r.email for r in rows]
         users = {u.email: u for u in session.query(User).filter(User.email.in_(emails)).all()} if emails else {}
         user_ids = [u.id for u in users.values()]
@@ -208,9 +212,9 @@ def remove_entry(staff_id: str, org_id: str, entry_id: str) -> None:
     """Takes an email off the list. A student who already joined stays."""
     session = db.get_session()
     try:
-        _require_admin(session, staff_id, org_id)
+        viewer = _require_admin(session, staff_id, org_id)
         entry = session.get(OrgRosterEntry, entry_id)
-        if entry is None or entry.organization_id != org_id:
+        if entry is None or entry.organization_id != org_id or (viewer.role == "staff" and entry.uploaded_by != staff_id):
             raise OrgError(404, "That student is not on the list.")
         session.delete(entry)
         session.commit()
@@ -218,18 +222,29 @@ def remove_entry(staff_id: str, org_id: str, entry_id: str) -> None:
         session.close()
 
 
-def is_listed(session, org_id: str, user: User) -> bool:
-    """On the organization's list, with an email the learner has proved."""
+def _code_owner(session, org_id: str, code: OrgJoinCode | None) -> str | None:
+    """The staff member whose list a join code checks: its creator when they
+    are staff; None (any list in the organization) for an owner's or admin's
+    code, or the organization's general code."""
+    if code is None or not code.created_by:
+        return None
+    creator = session.query(OrganizationMember).filter_by(user_id=code.created_by, organization_id=org_id).first()
+    return code.created_by if creator is not None and creator.role == "staff" else None
+
+
+def is_listed(session, org_id: str, user: User, code: OrgJoinCode | None = None) -> bool:
+    """On the student list behind this join code, with an email the learner
+    has proved. A staff member's code matches only the list they uploaded."""
     if not user.email_verified and not user.google_id:
         return False
-    return session.query(OrgRosterEntry).filter_by(organization_id=org_id, email=(user.email or "").lower()).first() is not None
+    query = session.query(OrgRosterEntry).filter_by(organization_id=org_id, email=(user.email or "").lower())
+    owner = _code_owner(session, org_id, code)
+    if owner is not None:
+        query = query.filter_by(uploaded_by=owner)
+    return query.first() is not None
 
 
 # --- joining -----------------------------------------------------------------
-
-def _active(org: Organization | None) -> bool:
-    return org is not None and (org.status or "active") == "active"
-
 
 def _add_member(session, org: Organization, user_id: str, shared: bool, fields: dict | None = None, code_id: str | None = None) -> bool:
     if _membership(session, user_id) is not None or _count(session, org.id) >= org.member_limit:
@@ -241,52 +256,17 @@ def _add_member(session, org: Organization, user_id: str, shared: bool, fields: 
     return True
 
 
-def auto_join(user: User) -> bool:
-    """A signed-in learner whose verified email is on an organization's list
-    joins it (the first such organization). Their progress stays private
-    until they agree to share it. False when nothing changed."""
-    if not user or not user.email or (not user.email_verified and not user.google_id):
-        return False
-    session = db.get_session()
-    try:
-        if _membership(session, user.id) is not None:
-            return False
-        for entry in session.query(OrgRosterEntry).filter_by(email=user.email.lower()).order_by(OrgRosterEntry.created_at).all():
-            org = session.get(Organization, entry.organization_id)
-            if _active(org) and _add_member(session, org, user.id, shared=False):
-                session.commit()
-                return True
-        return False
-    finally:
-        session.close()
-
-
-def _join_listed_accounts(org_id: str, emails: set[str]) -> int:
-    """Listed learners who already have a verified account join now."""
-    if not emails:
-        return 0
-    session = db.get_session()
-    try:
-        org = session.get(Organization, org_id)
-        if not _active(org):
-            return 0
-        joined = 0
-        for user in session.query(User).filter(User.email.in_(list(emails))).all():
-            if (user.email_verified or user.google_id) and session.query(OrgJoinRequest).filter_by(user_id=user.id).first() is None:
-                if _add_member(session, org, user.id, shared=False):
-                    joined += 1
-        session.commit()
-        return joined
-    finally:
-        session.close()
-
-
 def _approve_listed_requests(org_id: str, emails: set[str]) -> int:
     """A waiting request from someone now on the list is approved."""
     session = db.get_session()
     try:
-        ids = [r.id for r, u in session.query(OrgJoinRequest, User).join(User, User.id == OrgJoinRequest.user_id)
-               .filter(OrgJoinRequest.organization_id == org_id).all() if (u.email or "").lower() in emails]
+        ids = []
+        for request, user in (session.query(OrgJoinRequest, User).join(User, User.id == OrgJoinRequest.user_id)
+                              .filter(OrgJoinRequest.organization_id == org_id).all()):
+            code = session.get(OrgJoinCode, request.join_code_id) if request.join_code_id else None
+            # Only a request whose own join code now finds the learner on its list.
+            if (user.email or "").lower() in emails and is_listed(session, org_id, user, code):
+                ids.append(request.id)
     finally:
         session.close()
     approved = 0
@@ -339,9 +319,14 @@ def cancel_request(user_id: str) -> None:
 def requests(staff_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, staff_id, org_id)
-        rows = (session.query(OrgJoinRequest, User).join(User, User.id == OrgJoinRequest.user_id)
-                .filter(OrgJoinRequest.organization_id == org_id).order_by(OrgJoinRequest.created_at).all())
+        viewer = _require_admin(session, staff_id, org_id)
+        query = (session.query(OrgJoinRequest, User).join(User, User.id == OrgJoinRequest.user_id)
+                 .filter(OrgJoinRequest.organization_id == org_id))
+        if viewer.role == "staff":
+            # Staff decide on requests made with their own join codes.
+            mine = [c.id for c in session.query(OrgJoinCode.id).filter_by(organization_id=org_id, created_by=staff_id).all()]
+            query = query.filter(OrgJoinRequest.join_code_id.in_(mine or [""]))
+        rows = query.order_by(OrgJoinRequest.created_at).all()
         codes = {c.id: c.code for c in session.query(OrgJoinCode).filter_by(organization_id=org_id).all()}
         return [{"id": r.id, "name": u.name, "email": u.email, "department": r.department, "year": r.year,
                  "section": r.section, "join_code": codes.get(r.join_code_id or ""),
@@ -359,11 +344,14 @@ def _decide(staff_id: str | None, org_id: str, request_id: str, approve: bool) -
 
     session = db.get_session()
     try:
-        if staff_id is not None:
-            _require_admin(session, staff_id, org_id)
+        viewer = _require_admin(session, staff_id, org_id) if staff_id is not None else None
         request = session.get(OrgJoinRequest, request_id)
         if request is None or request.organization_id != org_id:
             raise OrgError(404, "That request is no longer waiting.")
+        if viewer is not None and viewer.role == "staff":
+            code = session.get(OrgJoinCode, request.join_code_id) if request.join_code_id else None
+            if code is None or code.created_by != staff_id:
+                raise OrgError(404, "That request was made with another staff member's join code.")
         if approve:
             org = session.get(Organization, org_id)
             fields = {"department": clean_class_value(request.department, 120), "year": clean_class_value(request.year, 40),
@@ -379,3 +367,28 @@ def _decide(staff_id: str | None, org_id: str, request_id: str, approve: bool) -
         session.commit()
     finally:
         session.close()
+
+
+def template_xlsx() -> bytes:
+    """The student list template: the three columns with two example rows."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Students"
+    sheet.append(["Name", "Mobile", "Email"])
+    sheet.append(["Priya Kumar", "9876543210", "priya.kumar@example.com"])
+    sheet.append(["Arun S", "9123456780", "arun.s@example.com"])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="2851D8")
+    for column, width in (("A", 28), ("B", 18), ("C", 36)):
+        sheet.column_dimensions[column].width = width
+    # Mobile numbers as text, so Excel keeps leading zeros and does not show 9.87E+09.
+    for row in sheet.iter_rows(min_row=2, min_col=2, max_col=2):
+        for cell in row:
+            cell.number_format = "@"
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()

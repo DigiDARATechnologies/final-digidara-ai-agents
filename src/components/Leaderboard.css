@@ -41,8 +41,20 @@
 .lb-list li:nth-child(odd) { background: rgb(127 127 127 / .06); }
 .lb-list li.me { background: rgb(40 81 216 / .12); font-weight: 700; }
 .lb-rank { color: var(--tx-2); font-weight: 700; }
-.lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tx-1); }
-.lb-name small { margin-left: 6px; color: var(--tx-2); font-weight: 400; }
+.lb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--tx-1); }
+.lb-name small { display: block; margin-top: 1px; color: var(--tx-2); font-weight: 400; font-size: 11.5px; }
+.lb-note { margin: 10px 0 0; font-size: 12px; }
 .lb-score { font-weight: 800; color: var(--tx-1); }
 .lb-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; color: var(--tx-2); font-size: 13px; }
 @media (max-width: 560px) { .lb-podium { gap: 6px; } .lb-place b { font-size: 12px; } }
+
+/* Top 3 strip on the chat home page */
+.lb-mini { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; margin: 14px auto 0; max-width: 680px; }
+.lb-mini-title { width: 100%; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--tx-2); }
+.lb-mini button { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line-1); border-radius: 999px;
+  background: var(--surf-1); color: var(--tx-1); font: inherit; font-size: 13px; cursor: pointer; }
+.lb-mini button:hover { border-color: var(--accent1, #2851d8); }
+.lb-mini button.me { border-color: var(--accent1, #2851d8); background: rgb(40 81 216 / .08); }
+.lb-mini b { font-weight: 700; }
+.lb-mini small { color: var(--tx-2); }
+.lb-mini .lb-new { align-self: center; }

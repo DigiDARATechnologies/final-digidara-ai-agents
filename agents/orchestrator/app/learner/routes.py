@@ -46,10 +46,6 @@ def _summary(user_id: str) -> dict:
     user = auth_service.get_by_id(user_id)
     if user is None:
         raise HTTPException(401, "This account no longer exists.")
-    # A learner on an organization's student list joins it once their email is verified.
-    from app.organizations import roster
-
-    roster.auto_join(user)
     return {
         "profile": service.get_profile(user_id),
         "levels": list(service.get_levels(user_id).values()),
@@ -131,7 +127,7 @@ class LeaderboardVisibilityIn(BaseModel):
 
 
 @router.get("/leaderboard")
-def leaderboard(scope: str = "platform", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
+def leaderboard(scope: str = "auto", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
     """Top learners by job readiness: students or staff, platform-wide or in
     the viewer's organization (see app/readiness/leaderboard.py for who sees what)."""
     from app.readiness import leaderboard as boards

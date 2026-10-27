@@ -16,6 +16,8 @@ import re
 import secrets
 from datetime import datetime
 
+from sqlalchemy import func
+
 from app import db
 from app.auth.security import hash_password
 from app.learner import levels as level_rules
@@ -43,6 +45,15 @@ class OrgError(Exception):
 
 def _new_join_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+
+
+def unique_join_code(session) -> str:
+    """A code no join code or organization anywhere has ever used."""
+    while True:
+        code = _new_join_code()
+        if (session.query(OrgJoinCode.id).filter_by(code=code).first() is None
+                and session.query(Organization.id).filter_by(join_code=code).first() is None):
+            return code
 
 
 def _temporary_password() -> str:
@@ -111,7 +122,7 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
             session.flush()
         elif _membership(session, user.id) is not None:
             raise OrgError(409, f"{email} already belongs to an organization.")
-        org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=_new_join_code(),
+        org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=unique_join_code(session),
                            created_by=created_by, member_limit=max(1, min(int(member_limit or 1000), 100000)))
         session.add(org)
         session.flush()
@@ -189,7 +200,7 @@ def join(user_id: str, join_code: str, share_progress: bool = True, department: 
             "section": entry.section if entry and entry.section else clean_class_value(section, 40),
         }
         user = session.get(User, user_id)
-        if user is None or not roster.is_listed(session, org.id, user):
+        if user is None or not roster.is_listed(session, org.id, user, entry):
             # Not on the organization's student list: staff decide.
             roster.request_to_join(session, org, user_id, entry, chosen)
             session.commit()
@@ -255,6 +266,36 @@ def _require_admin(session, user_id: str, org_id: str, managers_only: bool = Fal
     if member is not None and member.organization_id == org_id and member.role in STAFF_ROLES:
         raise OrgError(403, "Only this organization's admins can do that; ask an admin.")
     raise OrgError(403, "Only this organization's admins can do that.")
+
+
+def staff_students(session, staff_user_id: str, org_id: str) -> set[str]:
+    """The learners a staff member looks after: those who joined with one of
+    their join codes, or who are on the student list they uploaded."""
+    from app.models import OrgRosterEntry
+
+    code_ids = [row.id for row in session.query(OrgJoinCode.id).filter_by(organization_id=org_id, created_by=staff_user_id).all()]
+    users = set()
+    if code_ids:
+        users |= {row.user_id for row in session.query(OrganizationMember.user_id)
+                  .filter(OrganizationMember.organization_id == org_id, OrganizationMember.join_code_id.in_(code_ids)).all()}
+    emails = [row.email for row in session.query(OrgRosterEntry.email).filter_by(organization_id=org_id, uploaded_by=staff_user_id).all()]
+    if emails:
+        users |= {row.user_id for row in session.query(OrganizationMember.user_id)
+                  .join(User, User.id == OrganizationMember.user_id)
+                  .filter(OrganizationMember.organization_id == org_id, func.lower(User.email).in_(emails)).all()}
+    return users
+
+
+def visible_user_ids(session, viewer: OrganizationMember, org_id: str) -> set[str] | None:
+    """Whose details this viewer may see: None for everyone (owner, admin,
+    SkillDARA), or a staff member's own students."""
+    return staff_students(session, viewer.user_id, org_id) if viewer.role == "staff" else None
+
+
+def _require_visible(session, viewer: OrganizationMember, org_id: str, member: OrganizationMember) -> None:
+    visible = visible_user_ids(session, viewer, org_id)
+    if visible is not None and member.user_id not in visible:
+        raise OrgError(404, "No such student among yours. Staff see the students who joined with their join codes.")
 
 
 def require_admin(user_id: str, org_id: str, managers_only: bool = False) -> str:
@@ -396,13 +437,17 @@ def _last_active(session, user_ids: list[str]) -> dict[str, datetime]:
 def members(admin_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
+        viewer = _require_admin(session, admin_id, org_id)
         rows = (
             session.query(OrganizationMember, User)
             .join(User, User.id == OrganizationMember.user_id)
             .filter(OrganizationMember.organization_id == org_id)
             .order_by(User.name).all()
         )
+        visible = visible_user_ids(session, viewer, org_id)
+        if visible is not None:
+            # Staff see their own students only.
+            rows = [(m, u) for m, u in rows if m.user_id in visible and m.role == "member"]
         codes = {c.id: c for c in session.query(OrgJoinCode).filter_by(organization_id=org_id).all()}
         shared_ids = [m.user_id for m, _ in rows if m.progress_shared_at is not None]
         last_active = _last_active(session, shared_ids)
@@ -472,6 +517,7 @@ def update_member(admin_id: str, org_id: str, member_id: str, role: str | None, 
         member = _member_in_org(session, org_id, member_id)
         if admin.role == "staff" and member.role != "member":
             raise OrgError(403, "Staff can change students only.")
+        _require_visible(session, admin, org_id, member)
         if class_fields:
             for field, limit in (("department", 120), ("year", 40), ("section", 40)):
                 if field in class_fields:
@@ -512,8 +558,9 @@ def shared_member_user_id(admin_id: str, org_id: str, member_id: str) -> str:
     """The member's user id, only if they share their progress with the org."""
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
+        viewer = _require_admin(session, admin_id, org_id)
         member = _member_in_org(session, org_id, member_id)
+        _require_visible(session, viewer, org_id, member)
         if member.progress_shared_at is None:
             raise OrgError(403, "This member has not agreed to share their progress.")
         return member.user_id
@@ -528,7 +575,7 @@ def rotate_join_code(admin_id: str, org_id: str) -> dict:
         if admin.role != "owner":
             raise OrgError(403, "Only an owner can change the join code.")
         org = session.get(Organization, org_id)
-        org.join_code = _new_join_code()
+        org.join_code = unique_join_code(session)
         session.commit()
     finally:
         session.close()

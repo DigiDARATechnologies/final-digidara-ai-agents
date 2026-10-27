@@ -4,6 +4,8 @@ import { cancelVoiceConversation, continueVoiceConversation, setBossVoiceOpener 
 import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
 import { LIVE_AGENTS } from "../data/agents";
+import { TopPerformers } from "./Leaderboard";
+
 
 interface NewChatLandingProps {
   onSend: (text: string) => void;
@@ -14,6 +16,8 @@ interface NewChatLandingProps {
   onAttachClick: () => void;
   /** Starts a chat with the chosen agent. */
   onOpenAgent: (agentId: string) => void;
+  /** Opens the full leaderboard (from the top 3 shown here). */
+  onOpenLeaderboard?: () => void;
   /** The learner's name, for Boss's spoken greeting. */
   userName?: string;
   /** Opens the chat for a voice conversation right away, so the conversation
@@ -44,7 +48,7 @@ function AgentIcon({ kind, size = 16 }: { kind?: string; size?: number }) {
 
 const agentLabel = (name: string) => name.replace(/ Agent$/, "");
 
-export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice }: NewChatLandingProps) {
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice, onOpenLeaderboard }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The microphone opens a spoken conversation with the SkillDARA Assistant;
@@ -102,6 +106,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
         </div>
         <h1 className="landing-title">What can I help you with?</h1>
         <p className="home-subtitle">One conversation. The right AI agent for every goal.</p>
+        <TopPerformers onOpen={onOpenLeaderboard} />
 
         <form className="home-composer" onSubmit={handleSubmit}>
           <textarea
