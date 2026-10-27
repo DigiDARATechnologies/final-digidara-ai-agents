@@ -47,12 +47,12 @@ const agentLabel = (name: string) => name.replace(/ Agent$/, "");
 export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // The microphone opens a spoken conversation with the DigiDARA Assistant;
+  // The microphone opens a spoken conversation with the SkillDARA Assistant;
   // its first question starts the chat, where the conversation carries on.
   const [talking, setTalking] = useState(false);
   const [firstQuestion, setFirstQuestion] = useState("");
   const voiceSupported = audioRecordingSupported();
-  // "Auto-select agent": a typed message goes to DigiDARA, which picks the
+  // "Auto-select agent": a typed message goes to SkillDARA, which picks the
   // agent. Choosing an agent in the menu opens that agent's chat.
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -139,7 +139,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
               </button>
               {menuOpen && (
                 <div className="home-agent-menu" role="menu">
-                  <div className="home-agent-menu-note">Type a message and DigiDARA picks the agent, or open one:</div>
+                  <div className="home-agent-menu-note">Type a message and SkillDARA picks the agent, or open one:</div>
                   {LIVE_AGENTS.map((agent) => (
                     <button key={agent.id} type="button" role="menuitem" className="home-agent-option"
                       style={{ ["--agent-color" as string]: agent.color }}
@@ -179,7 +179,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
             </button>
           ))}
         </div>
-        <p className="home-hint">Choose an agent or let DigiDARA pick the right one.</p>
+        <p className="home-hint">Choose an agent or let SkillDARA pick the right one.</p>
       </div>
       <p className="home-disclaimer">AI can make mistakes. Please verify important information.</p>
       {talking && (

@@ -1,4 +1,4 @@
-"""Job Authenticity, Trust & Scam Verification Engine for DigiDARA Job Agent.
+"""Job Authenticity, Trust & Scam Verification Engine for SkillDARA Job Agent.
 
 Analyzes job listings for college students to ensure postings are genuine, verified,
 and free of fraudulent schemes (e.g. upfront training fees, security deposits,

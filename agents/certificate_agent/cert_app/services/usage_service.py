@@ -9,7 +9,7 @@ from cert_app.db.database import get_connection
 
 logger = logging.getLogger(__name__)
 
-# The gateway-verified DigiDARA user behind the current request. Set once per
+# The gateway-verified SkillDARA user behind the current request. Set once per
 # /api/invoke call so every usage event -- including the LLM calls made deep
 # inside the exam and chat services -- is recorded against that user.
 _usage_user: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("certificate_usage_user", default=None)

@@ -2,7 +2,7 @@
   "agent_name": "job_agent",
   "version": "v1.0.0",
   "description": "Collects public job postings (Greenhouse, plus Apify-backed LinkedIn; Naukri/Indeed/Glassdoor/Foundit/Hirist/Instahyre/Internshala normalizers scaffolded but unverified against live actor output), scores them against a learner's profile with an explainable match score, and serves a save/apply-tracked job feed plus an admin moderation, source-health, and daily-automation surface.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 5020,

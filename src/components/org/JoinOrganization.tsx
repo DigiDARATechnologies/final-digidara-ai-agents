@@ -98,7 +98,7 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
           </div>
         )}
       </div>
-      <p className="org-join-foot rd-muted">Is your college not on DigiDARA yet? Ask them to contact DigiDARA to set it up.</p>
+      <p className="org-join-foot rd-muted">Is your college not on SkillDARA yet? Ask them to contact SkillDARA to set it up.</p>
     </div>
   );
 }

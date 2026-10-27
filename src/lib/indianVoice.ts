@@ -1,5 +1,5 @@
 /**
- * The device voice used only when the DigiDARA voice cannot be reached: an
+ * The device voice used only when the SkillDARA voice cannot be reached: an
  * Indian English voice (every agent speaks English only), preferring a
  * woman's voice so it stays as close as possible to Nila on every device.
  */

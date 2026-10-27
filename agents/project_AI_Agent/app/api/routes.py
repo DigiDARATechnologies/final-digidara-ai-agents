@@ -95,7 +95,7 @@ def get_config() -> ConfigOut:
 
 
 def usage_summary(user_id: str | None) -> UsageSummaryResponse:
-    """Token usage for this agent, scoped to the verified DigiDARA identity
+    """Token usage for this agent, scoped to the verified SkillDARA identity
     (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that made
     the calls. Without a verified identity there is nothing safe to
     attribute the request to, so this returns all-zero totals rather than
@@ -1322,7 +1322,7 @@ async def invoke(request: Request) -> JSONResponse:
         # Phase 2 readiness. The orchestrator gateway overwrites payload.email
         # with the verified account's own address for this action.
         if not str(request.headers.get("x-digidara-user-id") or "").strip():
-            raise HTTPException(401, "Verified DigiDARA identity is required.")
+            raise HTTPException(401, "Verified SkillDARA identity is required.")
         from app.api.readiness import student_summary
         result = await run_in_threadpool(student_summary, str(payload.get("email") or "").strip().lower(), payload.get("periods"))
     else:

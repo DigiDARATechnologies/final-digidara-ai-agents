@@ -1,6 +1,6 @@
 # Strategy F integration
 
-The shared React application at the repository root is the DigiDARA UI. This
+The shared React application at the repository root is the SkillDARA UI. This
 service exposes the common agent contract at `POST /api/invoke`, the same
 contract `agents/project_AI_Agent` and `agents/codeforge_agent` use.
 
@@ -37,7 +37,7 @@ of the re-entered request.
 
 ## Identity bridge: `bridge_identity`
 
-DigiDARA's dev-mode login only collects name + email — no password — but
+SkillDARA's dev-mode login only collects name + email — no password — but
 every other route here needs a real JWT. `/api/auth/register` and
 `/api/auth/login` both require a password, so the bridge doesn't call
 either of them. Instead `bridge_identity` gets-or-creates a `users` row by

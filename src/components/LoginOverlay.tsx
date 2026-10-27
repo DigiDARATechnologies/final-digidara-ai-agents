@@ -147,8 +147,8 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
             <p className="login-sub">
               {mode === "signup"
-                ? "Set up your DigiDARA account to start using every specialized agent."
-                : "Sign in to continue to your DigiDARA workspace."}
+                ? "Set up your SkillDARA account to start using every specialized agent."
+                : "Sign in to continue to your SkillDARA workspace."}
             </p>
 
             <button type="button" className="btn btn-outline btn-full google-btn" onClick={handleGoogleClick}>
@@ -247,7 +247,7 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
                     onChange={(e) => setConsent(e.target.checked)}
                   />
                   <span>
-                    I have read and agree to the DigiDARA{" "}
+                    I have read and agree to the SkillDARA{" "}
                     <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
                     {" "}and{" "}
                     <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>,
@@ -272,7 +272,7 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
 
             {mode === "login" && (
               <p className="login-foot">
-                By continuing you agree to the DigiDARA{" "}
+                By continuing you agree to the SkillDARA{" "}
                 <button type="button" className="link-btn" onClick={() => setLegalTab("terms")}>Terms of Service</button>
                 {" "}&amp;{" "}
                 <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.

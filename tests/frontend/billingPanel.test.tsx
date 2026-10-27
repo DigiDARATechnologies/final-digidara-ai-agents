@@ -151,11 +151,11 @@ test('a failed invoice download is reported, not swallowed', async () => {
 test('the current plan card reflects a paid plan, and a top-up alone is still Free', async () => {
   const soon = new Date(Date.now() + 10 * 864e5).toISOString();
   setup({ plan: 'premium', plan_name: 'Premium', plan_expires_at: soon, payments });
-  expect(await screen.findByText('DigiDARA Premium')).toBeInTheDocument();
+  expect(await screen.findByText('SkillDARA Premium')).toBeInTheDocument();
   expect(screen.getByText('Active')).toBeInTheDocument();
 });
 
 test('with no paid plan the account shows as Free', async () => {
   setup();
-  expect(await screen.findByText('DigiDARA Free')).toBeInTheDocument();
+  expect(await screen.findByText('SkillDARA Free')).toBeInTheDocument();
 });

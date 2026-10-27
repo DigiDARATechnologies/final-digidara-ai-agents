@@ -1,4 +1,4 @@
-# Running DigiDARA AI Agents Locally
+# Running SkillDARA Locally
 
 For the current Windows-friendly environment map and automated setup, start
 with [ENV_WORKFLOW.md](ENV_WORKFLOW.md).

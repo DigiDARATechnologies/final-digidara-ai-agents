@@ -117,7 +117,7 @@ def invoke():
         return jsonify({"student": student, "sessionToken": token, "expiresAt": expires_at})
 
     if action == "usage_summary":
-        # Scoped to the verified DigiDARA identity the orchestrator gateway
+        # Scoped to the verified SkillDARA identity the orchestrator gateway
         # forwards via X-DigiDARA-User-Id — no session required, same as
         # health/ensure_session above.
         return jsonify(repo().get_llm_usage_summary(request.headers.get("X-DigiDARA-User-Id")))
@@ -128,7 +128,7 @@ def invoke():
         # the verified identity header; without that header there is no one
         # to report on.
         if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
-            raise ApiError("Verified DigiDARA identity is required.", 401, "unverified_identity")
+            raise ApiError("Verified SkillDARA identity is required.", 401, "unverified_identity")
         email = str(payload.get("email", "")).strip().lower()
         rows = repo().student_problem_rows(email) if email else []
         # After a target-role change, only problems worked on for this role count.

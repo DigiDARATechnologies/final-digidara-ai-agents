@@ -4,7 +4,7 @@ const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
 
 export interface PaymentRecord { id: string; plan_id: string; label: string; amount: number; currency: string; status: string; payment_id: string | null; points?: number | null; created_at: string; invoice_available: boolean; }
 export interface BillingSummary { plan: string; plan_name: string; plan_expires_at: string | null; payments: PaymentRecord[]; }
-/** `payment_page_url`: the plan is paid on DigiDARA's Razorpay payment page
+/** `payment_page_url`: the plan is paid on SkillDARA's Razorpay payment page
  * (points are added by the server once Razorpay confirms), not in-app.
  * `tokens` is what the plan really credits; learners are only shown `points`. */
 export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; amount_with_gst?: number; gst_percent?: number; payment_page_url?: string | null; }

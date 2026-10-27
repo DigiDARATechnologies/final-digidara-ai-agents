@@ -27,7 +27,7 @@ export default function StoreView({ activeTab, searchTerm, onTabChange, onSearch
     <section className="view view-store active" id="view-store">
       <div className="store-hero">
         <h1>
-          DigiDARA <span className="grad-text">Agents</span>
+          SkillDARA <span className="grad-text">Agents</span>
         </h1>
         <p>Discover and run specialized AI agents that combine instructions, live data and skills to get real work done.</p>
 

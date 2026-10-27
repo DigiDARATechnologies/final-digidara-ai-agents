@@ -1,4 +1,4 @@
-"""A knowledge test report as a PDF, headed by the DigiDARA AI Agents logo."""
+"""A knowledge test report as a PDF, headed by the SkillDARA logo."""
 from __future__ import annotations
 
 import io

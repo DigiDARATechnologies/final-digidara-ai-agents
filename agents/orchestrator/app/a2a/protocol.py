@@ -100,7 +100,7 @@ def parse_invocation(params: Any) -> tuple[str, dict, dict]:
     """(action, payload, message) from `message/send` params.
 
     The agent action travels as a data part `{"action": ..., "payload": {...}}`
-    -- the same {action, payload} contract every DigiDARA agent already
+    -- the same {action, payload} contract every SkillDARA agent already
     serves. A text-only message may name the action in `metadata.action`;
     its text then becomes `payload.message`.
     """

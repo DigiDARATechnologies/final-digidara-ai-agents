@@ -1,4 +1,4 @@
-"""Verify the DigiDARA gateway's signature on incoming requests (Flask).
+"""Verify the SkillDARA gateway's signature on incoming requests (Flask).
 
 The orchestrator signs every request it sends to an agent (see
 orchestrator/app/auth/agent_signing.py). Verifying that signature is what makes

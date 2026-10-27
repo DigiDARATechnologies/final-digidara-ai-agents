@@ -1,4 +1,4 @@
-# DigiDARA jobs providers — configuration-driven company/source lists.
+# SkillDARA jobs providers — configuration-driven company/source lists.
 #
 # Do not put secrets here. Provider credentials (e.g. Apify's API token)
 # come from environment variables and are never committed to this file.

@@ -75,12 +75,12 @@ def test_streamed_route_sends_the_answer_in_pieces(monkeypatch):
 
     def fake_stream(system, user, tools, history, max_tokens, usage=None):
         seen.update(system=system, max_tokens=max_tokens)
-        yield from [("text", "Hello everyone! I am Boss, "), ("text", "your DigiDARA AI assistant.")]
+        yield from [("text", "Hello everyone! I am Boss, "), ("text", "your SkillDARA AI assistant.")]
 
     monkeypatch.setattr(graph, "stream_with_tools", fake_stream)
     events = list(graph.route_message_stream("introduce yourself", [], None, voice=True))
-    assert "".join(e.get("delta", "") for e in events) == "Hello everyone! I am Boss, your DigiDARA AI assistant."
-    assert events[-1] == {"done": True, "agent_name": None, "reply": "Hello everyone! I am Boss, your DigiDARA AI assistant."}
+    assert "".join(e.get("delta", "") for e in events) == "Hello everyone! I am Boss, your SkillDARA AI assistant."
+    assert events[-1] == {"done": True, "agent_name": None, "reply": "Hello everyone! I am Boss, your SkillDARA AI assistant."}
     assert prompts.VOICE_REPLY_RULES in seen["system"] and seen["max_tokens"] == 260
 
 
@@ -293,4 +293,4 @@ def test_a_slow_voice_request_is_raced_by_a_second_one_instead_of_waited_out(api
 
 def test_a_spoken_greeting_or_small_talk_gets_a_conversational_answer():
     rules = prompts.VOICE_REPLY_RULES
-    assert "small talk" in rules and "not a description of DigiDARA" in rules
+    assert "small talk" in rules and "not a description of SkillDARA" in rules

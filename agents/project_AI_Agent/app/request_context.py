@@ -22,7 +22,7 @@ class TokenCounter:
         self.total = 0
 
 
-# Verified DigiDARA user id (`X-DigiDARA-User-Id`, set by the orchestrator
+# Verified SkillDARA user id (`X-DigiDARA-User-Id`, set by the orchestrator
 # gateway from a validated JWT — see gateway/routes.py).
 current_user_id: ContextVar[str | None] = ContextVar("current_user_id", default=None)
 

@@ -140,7 +140,7 @@ function ScreenLoading() {
 }
 
 export default function App() {
-  // DigiDARA has one theme: light (white). There is no dark mode to switch to.
+  // SkillDARA has one theme: light (white). There is no dark mode to switch to.
   const theme: Theme = "light";
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -1926,7 +1926,7 @@ export default function App() {
           const verifiedUser = toUser(authUser);
           localStorage.setItem("digidara_user", JSON.stringify(verifiedUser));
           setUser(verifiedUser);
-          showToast("Email verified. Welcome to DigiDARA!");
+          showToast("Email verified. Welcome to SkillDARA!");
         }}
       />
     );
@@ -1961,7 +1961,7 @@ export default function App() {
   const isCertificateChat = currentAgent.kind === "certificate";
   const isJobFetchChat = currentAgent.kind === "job-fetch";
   const isMockInterviewChat = currentAgent.kind === "mock-interview";
-  // The DigiDARA Assistant (general chat): voice goes to OpenAI transcription.
+  // The SkillDARA Assistant (general chat): voice goes to OpenAI transcription.
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
   // A viva question is waiting: answered in the viva panel (voice or typing).
   const capstoneVivaLive = isCapstoneChat && capstoneState?.step === "awaiting_viva_answer"

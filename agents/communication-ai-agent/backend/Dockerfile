@@ -1,4 +1,4 @@
-# DigiDARA Communication Coach Agent (Flask)
+# SkillDARA Communication Coach Agent (Flask)
 FROM python:3.12-slim
 
 WORKDIR /app

@@ -257,7 +257,7 @@ function saveBase64Pdf(data: string, filename: string) {
 export async function downloadCertificate(submission_id: string): Promise<void> {
   const certificate = await invoke<{ content_type: string; filename: string; data: string }>("download_certificate", { submission_id });
   if (certificate.content_type !== "application/pdf" || !certificate.data) throw new Error("The certificate is unavailable.");
-  saveBase64Pdf(certificate.data, certificate.filename || "DigiDARA_Capstone_Certificate.pdf");
+  saveBase64Pdf(certificate.data, certificate.filename || "SkillDARA_Capstone_Certificate.pdf");
 }
 
 export async function uploadSubmission(thread_id: string, docxFile: File, zipFile: File) {

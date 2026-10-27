@@ -45,7 +45,7 @@ AUDIO_EXTENSIONS = {
 # return its prompt as the "transcript", and an instruction would then appear
 # in the learner's message box. _is_prompt_echo() removes any echo that remains.
 VOCABULARY_HINT = (
-    "DigiDARA AI Agents, Boss, Capstone Project Agent, Coding Practice, CodeForge, Aptitude Trainer, "
+    "SkillDARA, Boss, Capstone Project Agent, Coding Practice, CodeForge, Aptitude Trainer, "
     "Mock Interview, Communication Coach, Resume Builder, AI Certification Agent, Job Agent, points, viva, ATS."
 )
 LANGUAGES = {"auto": None, "en": "en", "ta": "ta"}
@@ -125,6 +125,7 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
 _ECHO_MARKERS = (
     "transcribe only the main speaker", "ignore background voices", "the learner may speak english",
     "a learner asking the digidara", "context: ###", "digidara ai agents, boss, capstone",
+    "a learner asking the skilldara", "skilldara, boss, capstone",
 )
 
 

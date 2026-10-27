@@ -1,6 +1,6 @@
 #!/bin/bash
 # One-time (and safe to re-run) hardening of the production server for
-# digidaraaiagents.com. Run as root on the server:
+# skilldara.com. Run as root on the server:
 #
 #     bash /opt/digidara-agents/scripts/server/harden.sh
 #
@@ -14,7 +14,7 @@
 #   5. Daily MySQL backup at 02:30, kept 14 days, in /opt/backups.
 #   6. Every .env readable by root only; judge0.conf by the Judge0 user only.
 #   7. Lists old backups that contain secrets, for you to delete.
-#   8. Confirms the digidaraaiagents.com certificate renews automatically.
+#   8. Confirms the skilldara.com certificate renews automatically.
 #
 # It never touches other websites' configs or certificates.
 set -uo pipefail
@@ -79,7 +79,7 @@ step "5. Daily database backup (02:30, keeps 14 days)"
 mkdir -p /opt/backups && chmod 700 /opt/backups
 cat > /usr/local/bin/digidara-db-backup <<'BACKUP'
 #!/bin/bash
-# All MySQL databases of the DigiDARA stack, gzipped, root-only, 14 days kept.
+# All MySQL databases of the SkillDARA stack, gzipped, root-only, 14 days kept.
 set -euo pipefail
 cd /opt/digidara-agents
 OUT="/opt/backups/db-$(date +%F).sql.gz"
@@ -107,10 +107,10 @@ find "$APP" -maxdepth 6 -name "judge0.conf" -type f -exec chown 1000:999 {} \; -
 step "7. Old backups that contain secrets (delete once the site works)"
 find /opt /root -maxdepth 3 \( -name "*.tar.gz" -o -name ".env.bak-*" \) -type f 2>/dev/null | grep -v '^/opt/backups/' || echo "none found"
 
-step "8. digidaraaiagents.com certificate auto-renewal"
+step "8. skilldara.com certificate auto-renewal"
 systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 systemctl list-timers 2>/dev/null | grep -i certbot || echo "certbot timer not found"
-certbot certificates --cert-name digidaraaiagents.com 2>/dev/null | grep -E "Expiry" || echo "certificate not managed by certbot"
+certbot certificates --cert-name skilldara.com 2>/dev/null | grep -E "Expiry" || echo "certificate not managed by certbot"
 
 step "Done"
 [ -f /var/run/reboot-required ] && echo "A reboot is pending for installed updates: run 'reboot' at a quiet time."

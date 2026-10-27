@@ -84,7 +84,7 @@ def _is_true(value):
 
 
 def normalize_job(raw_job):
-    """One PR Labs job -> the canonical DigiDARA job dictionary (None if unusable)."""
+    """One PR Labs job -> the canonical SkillDARA job dictionary (None if unusable)."""
     if not isinstance(raw_job, dict):
         return None
     job_id = _text(raw_job.get("id"))

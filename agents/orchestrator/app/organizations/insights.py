@@ -1,6 +1,6 @@
 """The organization admin's dashboard: analytics, filters and drill-down.
 
-Everything here is for one organization's owners/admins (or DigiDARA's
+Everything here is for one organization's owners/admins (or SkillDARA's
 platform admin) and only ever covers members who share their progress --
 joining is that consent. Opening a learner's details or one of their chats
 is written to the access log, which the organization and the learner can
@@ -263,7 +263,7 @@ def _log_rows(session, query) -> list[dict]:
     names = dict(session.query(User.id, User.name).filter(
         User.id.in_({r.viewer_id for r in rows} | {r.subject_user_id for r in rows})).all()) if rows else {}
     return [{
-        "viewer": names.get(r.viewer_id, "DigiDARA admin"), "subject": names.get(r.subject_user_id, ""),
+        "viewer": names.get(r.viewer_id, "SkillDARA admin"), "subject": names.get(r.subject_user_id, ""),
         "action": r.action, "target": r.target, "at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
 

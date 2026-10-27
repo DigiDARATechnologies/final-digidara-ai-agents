@@ -41,7 +41,7 @@ internal `test_client()` calls into `routes.py`.
 |---|---|---|
 | `health` | n/a | Unauthenticated, mandatory |
 | `ensure_profile` | n/a (inline in `invoke.py`) | Identity-bridge: lazily creates a `user_job_profiles` row for the platform user id on first contact |
-| `get_profile` / `update_profile` | `GET`/`PUT /api/jobs/me/profile` | Includes `full_name` (collected once, separately from the DigiDARA login name) |
+| `get_profile` / `update_profile` | `GET`/`PUT /api/jobs/me/profile` | Includes `full_name` (collected once, separately from the SkillDARA login name) |
 | `upload_resume` | `POST /api/jobs/me/resume` (multipart) | Stores the file under `config.UPLOAD_DIR/<user_id>/`; never parsed — see `config.py`'s `ALLOWED_RESUME_EXTENSIONS`/`RESUME_MAX_BYTES` |
 | `get_categories` | `GET /api/jobs/me/categories` | |
 | `get_feed` | `GET /api/jobs/me/feed` | Scored, free-tier capped at `JOBS_FREE_TIER_FEED_LIMIT` |
@@ -60,13 +60,13 @@ different, FastAPI-based service with an unrelated schema). That coupling
 has been removed:
 
 - `eligibility.py` — deleted. There is no certificate-issuance gate; any
-  authenticated DigiDARA user can use this agent once their identity is
+  authenticated SkillDARA user can use this agent once their identity is
   bridged via `ensure_profile`.
 - `auth.py` — rewritten around the gateway's verified headers (above)
   instead of a foreign JWT secret.
 - `db.py` — `student_job_profiles`/`student_job_actions` (FK'd to
   `cert_students`) became `user_job_profiles`/`user_job_actions`, keyed
-  directly on the DigiDARA platform user id string — no duplicate local
+  directly on the SkillDARA platform user id string — no duplicate local
   users table, no dependency on any other agent's schema. Own database
   (`DB_NAME=job_agent`), never the shared `digidara_db` the original
   design assumed.

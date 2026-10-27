@@ -50,7 +50,7 @@ def _ensure_session(payload: dict):
     verified_user_id = str(request.headers.get("X-DigiDARA-User-ID") or "").strip()
     requested_user_id = str(payload.get("user_id") or "").strip()
     if not verified_user_id or requested_user_id != verified_user_id:
-        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+        return jsonify(error="Verified SkillDARA identity is required", code="unverified_identity"), 401
     email = str(payload.get("email") or "").strip().lower()
     name = str(payload.get("name") or "Learner").strip()[:160] or "Learner"
     mobile = str(payload.get("mobile") or "").strip()[:24] or None
@@ -77,7 +77,7 @@ def _personal_data(action: str, payload: dict):
     the learner's normal privacy routes under a token for that one student.
     """
     if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
-        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+        return jsonify(error="Verified SkillDARA identity is required", code="unverified_identity"), 401
     email = str(payload.get("email") or "").strip().lower()
     if not email or "@" not in email:
         return jsonify(error="A valid email is required", code="invalid_email"), 400
@@ -147,7 +147,7 @@ def _student_summary(payload: dict):
     own progress. Score: average percentage of the latest completed tests.
     """
     if not str(request.headers.get("X-DigiDARA-User-ID") or "").strip():
-        return jsonify(error="Verified DigiDARA identity is required", code="unverified_identity"), 401
+        return jsonify(error="Verified SkillDARA identity is required", code="unverified_identity"), 401
     email = str(payload.get("email") or "").strip().lower()
     student = Student.query.filter_by(email=email).first() if email else None
     empty = {"schema": "digidara.student_summary.v1", "score": None, "activity_count": 0,

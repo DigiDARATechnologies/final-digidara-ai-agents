@@ -42,7 +42,7 @@ def build_student_summary(exams: Iterable[dict], certificates: Iterable[dict]) -
         "gaps": [f"Not certified yet: {topic} (best {best[topic]:.0f}%)" for topic in uncertified[:3]],
         "metrics": {"certificates": len(certificates), "exams_finished": len(exams), "topics": len(best)},
         "resume": {"certifications": [
-            {"name": f"{topic} Certification", "issuer": "DigiDARA AI Certification",
+            {"name": f"{topic} Certification", "issuer": "SkillDARA AI Certification",
              "date": _date(next((c.get("issued_at") for c in certificates if str(c.get("topic") or "General") == topic), None)),
              "score": round(best[topic])}
             for topic in certified[:6]

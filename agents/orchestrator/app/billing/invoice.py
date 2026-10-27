@@ -2,7 +2,7 @@
 
 Seller details come from the environment so nothing legal is invented here:
 
-    INVOICE_COMPANY_NAME      default "DigiDARA"
+    INVOICE_COMPANY_NAME      default "SkillDARA"
     INVOICE_COMPANY_ADDRESS   optional, lines separated by "|"
     INVOICE_GSTIN             optional, printed when set
     INVOICE_GST_RATE          optional, e.g. "18". When set, the invoice shows
@@ -11,8 +11,8 @@ Seller details come from the environment so nothing legal is invented here:
 
 A plan payment of its price plus GST is split into the price and the GST
 (plans.gst_breakdown) without any setting. The buyer's GSTIN, when they gave
-one at checkout, is printed under "Billed to". The DigiDARA AI Agents logo
-(assets/digidara-logo.png) heads the page.
+one at checkout, is printed under "Billed to". The SkillDARA logo
+(assets/skilldara-logo.png) heads the page.
 
 The invoice number is derived from the payment, so it is stable and unique but
 not a gapless sequence; if statutory serial numbering is required it must be
@@ -30,7 +30,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-LOGO = Path(__file__).resolve().parent / "assets" / "digidara-logo.png"
+LOGO = Path(__file__).resolve().parent / "assets" / "skilldara-logo.png"
 LOGO_WIDTH = 62 * mm
 
 
@@ -54,7 +54,7 @@ def _gst_rate() -> float | None:
 
 def company_details() -> dict:
     return {
-        "name": os.environ.get("INVOICE_COMPANY_NAME", "").strip() or "DigiDARA",
+        "name": os.environ.get("INVOICE_COMPANY_NAME", "").strip() or "SkillDARA",
         "address": [line.strip() for line in os.environ.get("INVOICE_COMPANY_ADDRESS", "").split("|") if line.strip()],
         "gstin": os.environ.get("INVOICE_GSTIN", "").strip(),
     }
@@ -86,13 +86,13 @@ def build_invoice_pdf(*, payment, description: str, customer: dict, gst: tuple[i
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm, bottomMargin=18 * mm,
                             title=f"Invoice {number}", author=company["name"])
     story = [_logo(), Spacer(1, 6 * mm), p("TAX INVOICE" if gst else "INVOICE", title),
-             p("Payment receipt for your DigiDARA purchase", small), Spacer(1, 8 * mm)]
+             p("Payment receipt for your SkillDARA purchase", small), Spacer(1, 8 * mm)]
 
     seller = [p(company["name"], ParagraphStyle("seller", parent=body, fontName="Helvetica-Bold", fontSize=12))]
     seller += [p(line, body) for line in company["address"]]
     if company["gstin"]:
         seller.append(p(f"GSTIN: {company['gstin']}", body))
-    buyer = [p("BILLED TO", label), p(customer.get("name") or "DigiDARA user")]
+    buyer = [p("BILLED TO", label), p(customer.get("name") or "SkillDARA user")]
     for key in ("email", "mobile"):
         if customer.get(key):
             buyer.append(p(customer[key]))

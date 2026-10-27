@@ -115,7 +115,7 @@ test('payments: shows every payment and filters by status on the server', async 
 });
 
 test('agents: online and offline are clear, usage is joined to the chat agent, unconnected ones are listed', async () => {
-  const base = { version: 'v1', endpoint: 'http://capstone:8000/api/invoke', owner: 'DigiDARA', plan_tier: 'free', status: 'healthy', last_heartbeat: null };
+  const base = { version: 'v1', endpoint: 'http://capstone:8000/api/invoke', owner: 'SkillDARA', plan_tier: 'free', status: 'healthy', last_heartbeat: null };
   mockAgents.mockResolvedValue({
     agents: [
       { ...base, agent_name: 'capstone_project_agent', description: 'Runs projects', heartbeat_age_seconds: 12, online: true, actions: ['health', 'status'] },

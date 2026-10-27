@@ -30,7 +30,7 @@ from app.links.routes import router as links_router  # noqa: E402
 from app.proctoring.routes import router as proctoring_router  # noqa: E402
 from app.knowledge.routes import router as knowledge_router  # noqa: E402
 
-app = FastAPI(title="DigiDARA Orchestrator", version="1.0.0")
+app = FastAPI(title="SkillDARA Orchestrator", version="1.0.0")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)

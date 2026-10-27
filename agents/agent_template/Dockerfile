@@ -1,4 +1,4 @@
-# DigiDARA agent template (FastAPI via agent_wrapper.py) — copy this
+# SkillDARA agent template (FastAPI via agent_wrapper.py) — copy this
 # Dockerfile as-is into any new agent folder cloned from this template.
 FROM python:3.12-slim
 

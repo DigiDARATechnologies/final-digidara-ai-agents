@@ -1,4 +1,4 @@
-/** Resume Builder: "Build from my DigiDARA profile" fills the draft from what
+/** Resume Builder: "Build from my SkillDARA profile" fills the draft from what
  * the other agents know and asks only what is missing. */
 jest.mock("../../src/lib/resumeBuilderApi", () => ({
   checkResumeAnswer: jest.fn().mockResolvedValue({ verdict: "ok", concern: "" }),
@@ -20,8 +20,8 @@ const FACTS = {
   name: "Prem Kumar", email: "prem@example.com", phone: "", target_role: "data analyst", degree: "B.Sc Computer Science",
   experience_level: "fresher" as const, skills: ["SQL", "Python"],
   projects: [{ title: "Sales Dashboard", description: "Tracks monthly sales.", skills: ["Power BI", "sql"], score: 82 }],
-  certifications: [{ name: "Python Certification", issuer: "DigiDARA AI Certification", date: "2026-09-05", score: 85 }],
-  achievements: [{ title: "Solved 20 Python coding problems", description: "DigiDARA Coding Practice" }],
+  certifications: [{ name: "Python Certification", issuer: "SkillDARA AI Certification", date: "2026-09-05", score: 85 }],
+  achievements: [{ title: "Solved 20 Python coding problems", description: "SkillDARA Coding Practice" }],
   sources: ["Coding", "Projects", "Certification"],
   missing: ["phone", "location", "education", "linkedin", "github"],
 };
@@ -42,7 +42,7 @@ test("the draft holds only facts the agents reported", () => {
   expect(draft.skills).toEqual(["SQL", "Python", "Power BI"]);
   expect(draft.projects).toEqual([{ title: "Sales Dashboard", description: "Tracks monthly sales. Technologies: Power BI, sql." }]);
   expect(draft.certifications?.[0]).toMatchObject({ name: "Python Certification", issue_date: "2026-09-05" });
-  expect(draft.achievements?.[0]).toMatchObject({ title: "Solved 20 Python coding problems", organization: "DigiDARA" });
+  expect(draft.achievements?.[0]).toMatchObject({ title: "Solved 20 Python coding problems", organization: "SkillDARA" });
 });
 
 test("the opening offers the profile build first", async () => {

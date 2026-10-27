@@ -2,7 +2,7 @@
   "agent_name": "communication_agent",
   "version": "v1.0.0",
   "description": "Coaches English communication skills through Pronunciation, Speaking and Writing practice loops, daily challenges, and a progress dashboard, all scored by an LLM.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 5001,

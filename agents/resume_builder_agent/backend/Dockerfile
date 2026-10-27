@@ -1,4 +1,4 @@
-# DigiDARA Resume Builder Agent (Flask)
+# SkillDARA Resume Builder Agent (Flask)
 FROM python:3.12-slim
 
 WORKDIR /app

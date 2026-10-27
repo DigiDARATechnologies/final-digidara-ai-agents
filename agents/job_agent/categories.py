@@ -195,7 +195,7 @@ def categorize_course_name(course_name, categories=None):
 
     Uses each category's `course_keywords` (broader/shorter than the
     `keywords` used for noisy job text) since a course name is short,
-    curated text from DigiDARA's own catalog, e.g. "Python" or "AI/ML" —
+    curated text from SkillDARA's own catalog, e.g. "Python" or "AI/ML" —
     not a scraped job title where a bare "python" could just be one of
     many tools listed for an unrelated role.
     """

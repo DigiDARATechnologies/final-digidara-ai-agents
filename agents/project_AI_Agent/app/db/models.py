@@ -180,7 +180,7 @@ class Submission(Base):
 
 
 class LlmUsage(Base):
-    """One row per LLM call, attributed to the verified DigiDARA user id
+    """One row per LLM call, attributed to the verified SkillDARA user id
     (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that
     triggered it — lets usage_summary report per-user totals instead of a
     platform-wide aggregate. `user_id` is nullable so rows written before

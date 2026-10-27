@@ -6,7 +6,7 @@ then shares the test as an assessment link (app/proctoring). Learners take
 it in an interview-style screen; multiple choice is marked here, other
 answers are graded by the model, and the report is kept on the attempt.
 
-Only the organization's admins (and DigiDARA's platform admin) can see or
+Only the organization's admins (and SkillDARA's platform admin) can see or
 change a test and its answers; learners only ever receive the questions.
 """
 from __future__ import annotations

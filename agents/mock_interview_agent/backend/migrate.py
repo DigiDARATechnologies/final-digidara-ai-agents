@@ -389,7 +389,7 @@ def bootstrap_base_schema():
     exists -- schema.sql's tail (RENAME TABLE ai_usage ...) is not safe to
     replay. A fresh database (a new docker-compose service, a CI test
     database) has nothing, so this makes the base schema part of the same
-    startup path other DigiDARA agents have (see app/db/database.py's
+    startup path other SkillDARA agents have (see app/db/database.py's
     init_db() in agents/project_AI_Agent).
     """
     if not SCHEMA_FILE.exists():

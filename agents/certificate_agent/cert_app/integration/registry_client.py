@@ -1,4 +1,4 @@
-"""Self-register the certificate_agent service with the DigiDARA orchestrator."""
+"""Self-register the certificate_agent service with the SkillDARA orchestrator."""
 from __future__ import annotations
 
 import asyncio

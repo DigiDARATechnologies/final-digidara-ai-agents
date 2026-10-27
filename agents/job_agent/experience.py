@@ -1,5 +1,5 @@
 """
-Experience Extraction and Seniority Classification Engine for DigiDARA Job Agent.
+Experience Extraction and Seniority Classification Engine for SkillDARA Job Agent.
 
 This module guarantees that college students and freshers receive ONLY genuine
 entry-level opportunities (0-1 yrs / internships / trainee roles) and are strictly

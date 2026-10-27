@@ -1,5 +1,5 @@
 """Code-level guards around the general chat. The router prompt tells the model
-to stay on DigiDARA topics and resist prompt injection; these checks don't
+to stay on SkillDARA topics and resist prompt injection; these checks don't
 rely on the model obeying:
 
 - an obvious injection attempt gets a fixed reply without reaching the model;
@@ -18,7 +18,7 @@ CANARY = "DD-GUARD-7f3a91"
 MAX_HISTORY_TURNS = 12
 
 OFF_LIMITS_REPLY = (
-    "I can only help with the **DigiDARA platform and its agents**. "
+    "I can only help with the **SkillDARA platform and its agents**. "
     "Ask me what an agent does, how to use it, or tell me what you want to practise and I'll connect you."
 )
 

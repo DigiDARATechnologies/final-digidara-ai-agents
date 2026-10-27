@@ -56,7 +56,7 @@ export interface ResumeBuilderFlowState { step: ResumeBuilderStep; draft?: Resum
    * candidate's next message changes. `question` is where the chat was (while
    * building the draft), shown again once the change is applied. */
   editTopic?: { key: EditTopicKey; label: string; question?: ResumeBuilderMessage };
-  /** "Build from my DigiDARA profile": the questions still to ask, in order --
+  /** "Build from my SkillDARA profile": the questions still to ask, in order --
    * only what the profile and the other agents could not fill in. */
   profileQueue?: ProfileQuestion[];
   /** The learner's degree from their profile, shown in the education question. */
@@ -76,7 +76,7 @@ const choices: ChatOption[] = [
 ];
 const FROM_PROFILE = "from_profile";
 const fromProfileChoice: ChatOption = {
-  label: "⭐ Build from my DigiDARA profile",
+  label: "⭐ Build from my SkillDARA profile",
   value: FROM_PROFILE,
   description: "Uses your profile, capstone projects, certificates and coding results, and asks only what is missing.",
 };
@@ -1032,7 +1032,7 @@ async function generateVerifiedResume(state: ResumeBuilderFlowState, user: User)
 
 
 /** A question with the learner's saved answer from onboarding as a one-tap
- * option, so they never retype what DigiDARA already knows. */
+ * option, so they never retype what SkillDARA already knows. */
 function roleQuestion(text: string): ResumeBuilderMessage {
   const goal = learnerGoal();
   return goal ? { text, options: [{ label: `${displayRole(goal.targetRole)} (from your profile)`, value: displayRole(goal.targetRole) }] } : { text };
@@ -1060,7 +1060,7 @@ export async function openResumeBuilderChat(user: User): Promise<ResumeBuilderFl
     await ensureResumeProfile(user.id, user.name, user.email);
     const goal = learnerGoal();
     const text = goal
-      ? `Hi ${user.name.split(" ")[0]}! I can build your ${displayRole(goal.targetRole)} resume from what DigiDARA already knows about you, and ask only for what is missing. Or start another way:`
+      ? `Hi ${user.name.split(" ")[0]}! I can build your ${displayRole(goal.targetRole)} resume from what SkillDARA already knows about you, and ask only for what is missing. Or start another way:`
       : `Hi ${user.name.split(" ")[0]}! Would you like to create a new resume or upload one to improve?`;
     return { state, messages: [{ text, options: goal ? [fromProfileChoice, ...choices] : choices }] };
   }
@@ -1148,7 +1148,7 @@ function profileQuestionMessage(question: ProfileQuestion, state: ResumeBuilderF
   return { text: prompt, options: /Skip/.test(prompt) ? skipOption : undefined };
 }
 
-/** The draft, filled from what DigiDARA knows -- nothing invented. */
+/** The draft, filled from what SkillDARA knows -- nothing invented. */
 export function draftFromResumeFacts(facts: ResumeFacts): ResumeDraft {
   const role = displayRole(facts.target_role || "");
   const projectSkills = (facts.projects || []).flatMap((p) => p.skills || []);
@@ -1166,7 +1166,7 @@ export function draftFromResumeFacts(facts: ResumeFacts): ResumeDraft {
       name: c.name, issuer: c.issuer, issue_date: c.date,
       description: typeof c.score === "number" ? `Scored ${Math.round(c.score)}% in the certification exam.` : undefined,
     })),
-    achievements: (facts.achievements || []).map((a) => ({ title: a.title, description: a.description, organization: "DigiDARA" })),
+    achievements: (facts.achievements || []).map((a) => ({ title: a.title, description: a.description, organization: "SkillDARA" })),
   };
 }
 
@@ -1205,7 +1205,7 @@ async function startFromProfile(state: ResumeBuilderFlowState, user: User): Prom
   };
 }
 
-/** In "Build from my DigiDARA profile", once a question is answered, go to
+/** In "Build from my SkillDARA profile", once a question is answered, go to
  * the next missing detail instead of the question that normally follows --
  * the rest is already filled in. With none left, show the review. */
 function continueProfileQueue(previous: ResumeBuilderFlowState, value: string, result: ResumeBuilderFlowResult): ResumeBuilderFlowResult {

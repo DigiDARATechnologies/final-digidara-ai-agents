@@ -1,4 +1,4 @@
-# DigiDARA Aptitude Trainer Agent (Flask)
+# SkillDARA Aptitude Trainer Agent (Flask)
 FROM python:3.12-slim
 
 WORKDIR /app

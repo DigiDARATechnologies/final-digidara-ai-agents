@@ -1,4 +1,4 @@
-# DigiDARA Capstone Project Agent (FastAPI)
+# SkillDARA Capstone Project Agent (FastAPI)
 FROM python:3.12-slim
 
 WORKDIR /app

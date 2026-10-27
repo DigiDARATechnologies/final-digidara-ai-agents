@@ -35,7 +35,7 @@ def api(database, monkeypatch):
         for user_id in ("learner", "admin", "other"):
             session.add(User(id=user_id, name=user_id.title(), email=f"{user_id}@example.test", email_verified=True,
                              token_balance=1000, password_hash="x"))
-        session.add(User(id="platform", name="DigiDARA", email="platform@example.test", email_verified=True,
+        session.add(User(id="platform", name="SkillDARA", email="platform@example.test", email_verified=True,
                          token_balance=1000, password_hash="x", is_admin=True))
         session.commit()
     app = FastAPI()

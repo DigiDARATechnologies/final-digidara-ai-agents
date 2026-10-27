@@ -1,4 +1,4 @@
-"""Tests for automated active approval and 30-day retention pruning in DigiDARA Job Agent."""
+"""Tests for automated active approval and 30-day retention pruning in SkillDARA Job Agent."""
 from __future__ import annotations
 
 import unittest

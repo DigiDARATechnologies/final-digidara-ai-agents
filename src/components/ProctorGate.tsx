@@ -265,7 +265,7 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
         <p className="proctor-lead">This test is proctored. Before you start, please read how it works.</p>
         <ul className="proctor-rules">{lines.map((line) => <li key={line}>{line}</li>)}</ul>
         <p className="proctor-privacy">
-          Your camera photos and the warnings are kept for 30 days and are seen only by you, DigiDARA and,
+          Your camera photos and the warnings are kept for 30 days and are seen only by you, SkillDARA and,
           if you belong to an organization, its admins. Nothing is recorded until you agree below.
         </p>
         {error && <p className="proctor-error" role="alert">{error}</p>}

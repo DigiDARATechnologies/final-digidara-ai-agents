@@ -1,4 +1,4 @@
-"""Self-register the Flask Aptitude service with the DigiDARA orchestrator."""
+"""Self-register the Flask Aptitude service with the SkillDARA orchestrator."""
 from __future__ import annotations
 
 import atexit

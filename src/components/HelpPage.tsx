@@ -17,7 +17,7 @@ interface Props {
 
 const TITLES: Record<HelpPageKind, { title: string; sub: string }> = {
   "help-center": { title: "Help center", sub: "Find quick answers, or reach out to our team." },
-  "release-notes": { title: "Release notes", sub: "See what's new and improved in DigiDARA Agents." },
+  "release-notes": { title: "Release notes", sub: "See what's new and improved in SkillDARA Agents." },
   contact: { title: "Contact support", sub: "Tell us what you need and our team will get back to you." },
   "bug-report": { title: "Report a bug", sub: "Something not working? Give us the details and we'll look into it." },
 };
@@ -142,7 +142,7 @@ function HelpCenter({ onNavigate }: { onNavigate: (p: HelpPageKind) => void }) {
       <section className="hp-group">
         <h3>Meet the Agents</h3>
         <p className="hp-lead">
-          Each DigiDARA agent is built for a specific job. Pick one to see how it works, step by step.
+          Each SkillDARA agent is built for a specific job. Pick one to see how it works, step by step.
         </p>
         <div className="hp-chips" role="tablist" aria-label="Filter agents by category">
           {["All", ...categories].map((c) => (

@@ -66,7 +66,7 @@ class StudentSummaryScoringTests(unittest.TestCase):
         self.assertEqual(resume["skills"], ["Python", "SQL"])
         # SQL has fewer than five solves, so only Python earns a line.
         self.assertEqual(resume["achievements"], [{"title": "Solved 5 Python coding problems",
-            "description": "DigiDARA Coding Practice, tested against hidden test cases (4 Easy, 1 Medium)."}])
+            "description": "SkillDARA Coding Practice, tested against hidden test cases (4 Easy, 1 Medium)."}])
 
     def test_twenty_solves_give_full_breadth(self):
         body = build_student_summary([row("Medium", 100, "Solved") for _ in range(20)])

@@ -2,7 +2,7 @@
   "agent_name": "resume_builder_agent",
   "version": "v1.0.0",
   "description": "AI-powered resume creation, import review, ATS scoring, templates, preview, and PDF export",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 5010,

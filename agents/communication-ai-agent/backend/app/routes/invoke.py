@@ -17,10 +17,10 @@ a normal `Authorization: Bearer` header on the re-entered request, so
 `@jwt_required()` sees exactly what it would from a real browser call.
 
 `bridge_identity` is this agent's identity-bridge action (see
-`agents/communication-ai-agent/INTEGRATION.md`): it turns DigiDARA's
+`agents/communication-ai-agent/INTEGRATION.md`): it turns SkillDARA's
 dev-mode login (name/email) into a `users` row and a real JWT, without going
 through `/api/auth/register` or `/api/auth/login` — both require a password
-DigiDARA's dev-mode login never collects.
+SkillDARA's dev-mode login never collects.
 """
 
 import base64
@@ -241,7 +241,7 @@ def _invoke():
     if action == "bridge_identity":
         return _bridge_identity(payload)
     if action == "usage_summary":
-        # Scoped to the verified DigiDARA identity the orchestrator gateway
+        # Scoped to the verified SkillDARA identity the orchestrator gateway
         # forwards via X-DigiDARA-User-Id — no session required, matching
         # capstone_project_agent/codeforge_agent's own usage_summary actions.
         from ..services.groq_usage import get_usage_summary
@@ -250,7 +250,7 @@ def _invoke():
         # Phase 2 readiness. The orchestrator gateway overwrites payload.email
         # with the verified account's own address for this action.
         if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
-            return _error("Verified DigiDARA identity is required.", "unverified_identity", 401)
+            return _error("Verified SkillDARA identity is required.", "unverified_identity", 401)
         from ..services.readiness import student_summary
         return jsonify(student_summary(str(payload.get("email") or "").strip().lower(), payload.get("periods")))
     if action == "speaking_transcribe":

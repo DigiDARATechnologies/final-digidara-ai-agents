@@ -40,7 +40,7 @@ export default function AgentDetailsModal({ agent, onClose, onStartChat }: Agent
           <header className="agent-detail-hero">
             <span className="agent-detail-icon" style={{ background: `linear-gradient(145deg, ${agent.color}, #365f91)` }}><AgentIcon name={agent.icon} /></span>
             <h2 id="agent-detail-title">{agent.name}</h2>
-            <p className="agent-detail-author">By {agent.author ?? "DigiDARA"}</p>
+            <p className="agent-detail-author">By {agent.author ?? "SkillDARA"}</p>
             <p className="agent-detail-description">{agent.desc}</p>
 
             <div className="agent-detail-stats">

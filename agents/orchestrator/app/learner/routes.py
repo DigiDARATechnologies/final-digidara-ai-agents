@@ -130,7 +130,7 @@ async def readiness(refresh: bool = False, user_id: str = Depends(get_verified_u
 
 @router.get("/resume-facts")
 async def resume_facts(user_id: str = Depends(get_verified_user_id)) -> dict:
-    """What DigiDARA already knows for this learner's resume (see resume_facts)."""
+    """What SkillDARA already knows for this learner's resume (see resume_facts)."""
     return await resume_facts_service.gather(auth_service.get_by_id(user_id))
 
 

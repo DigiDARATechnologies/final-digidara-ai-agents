@@ -1,6 +1,6 @@
-# DigiDARA Agent Template — plug-and-run
+# SkillDARA Agent Template — plug-and-run
 
-This is the whole thing an agent developer needs to join the DigiDARA fleet
+This is the whole thing an agent developer needs to join the SkillDARA fleet
 and be reachable from the orchestrator's `/chat` — no changes to the
 orchestrator, no changes to any other agent.
 

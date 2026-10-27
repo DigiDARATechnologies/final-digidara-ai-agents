@@ -1,5 +1,5 @@
 /**
- * A screenshot of the DigiDARA page the learner is on, taken in the browser by
+ * A screenshot of the SkillDARA page the learner is on, taken in the browser by
  * drawing the page itself (html2canvas-pro), so it works on every device: a
  * phone cannot share its screen with getDisplayMedia, but it can draw its page.
  * Only this app's page is captured, never other tabs or windows. Anything

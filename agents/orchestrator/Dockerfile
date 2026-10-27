@@ -1,4 +1,4 @@
-# DigiDARA Orchestrator (FastAPI registry + gateway)
+# SkillDARA Orchestrator (FastAPI registry + gateway)
 FROM python:3.12-slim
 
 WORKDIR /app

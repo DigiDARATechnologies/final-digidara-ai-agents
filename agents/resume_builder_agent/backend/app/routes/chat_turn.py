@@ -106,7 +106,7 @@ def build_prompt(message, step, asked, draft, history, memories):
     history_block = "\n".join(
         f"{turn.get('role', 'user').upper()}: {str(turn.get('text', ''))[:600]}" for turn in history[-MAX_HISTORY:]
     ) or "(none)"
-    return f"""You are the Resume Builder assistant for DigiDARA. A candidate is building their resume in a chat.
+    return f"""You are the Resume Builder assistant for SkillDARA. A candidate is building their resume in a chat.
 Understand their NEW MESSAGE and return the resume draft fields it adds or changes.
 
 WHAT THE CHAT LAST ASKED (step "{step}"): {asked or "nothing specific"}

@@ -84,25 +84,25 @@ def _send(to_address: str, name: str, code: str) -> None:
     if settings is None:
         raise VerificationError(503, "Email verification is not available right now. Please try again later.")
     message = EmailMessage()
-    message["Subject"] = f"{code} is your DigiDARA verification code"
-    message["From"] = f"DigiDARA AI Agents <{settings['sender']}>"
+    message["Subject"] = f"{code} is your SkillDARA verification code"
+    message["From"] = f"SkillDARA <{settings['sender']}>"
     message["To"] = to_address
     first_name = (name or "there").split()[0]
     message.set_content(
         f"Hi {first_name},\n\n"
-        f"Your DigiDARA verification code is: {code}\n\n"
+        f"Your SkillDARA verification code is: {code}\n\n"
         f"It expires in {int(CODE_TTL.total_seconds() // 60)} minutes. Enter it in the app to verify your email.\n\n"
-        "If you didn't create a DigiDARA account, you can ignore this email.\n\n"
-        "- DigiDARA AI Agents"
+        "If you didn't create a SkillDARA account, you can ignore this email.\n\n"
+        "- SkillDARA"
     )
     message.add_alternative(
         f"""<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1c2434">
 <h2 style="color:#2851d8">Verify your email</h2>
 <p>Hi {first_name},</p>
-<p>Your DigiDARA verification code is:</p>
+<p>Your SkillDARA verification code is:</p>
 <p style="font-size:30px;font-weight:bold;letter-spacing:6px;background:#f4f5f8;padding:14px;text-align:center;border-radius:8px">{code}</p>
 <p>It expires in {int(CODE_TTL.total_seconds() // 60)} minutes.</p>
-<p style="color:#667085;font-size:13px">If you didn't create a DigiDARA account, you can ignore this email.</p>
+<p style="color:#667085;font-size:13px">If you didn't create a SkillDARA account, you can ignore this email.</p>
 </div>""",
         subtype="html",
     )
@@ -151,7 +151,7 @@ def send_code(user_id: str, now: datetime | None = None) -> None:
 
 def send_code_if_none_pending(user: User, now: datetime | None = None) -> None:
     """At sign-in: email a code to an unverified account that has none it
-    can still use -- e.g. an account an organization or DigiDARA's admin
+    can still use -- e.g. an account an organization or SkillDARA's admin
     created, which never went through sign-up. Best effort, like sign-up."""
     now = now or datetime.utcnow()
     if is_verified(user):

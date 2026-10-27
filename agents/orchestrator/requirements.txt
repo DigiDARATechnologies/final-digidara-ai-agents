@@ -1,4 +1,4 @@
-# Runtime dependencies for the DigiDARA FastAPI orchestrator.
+# Runtime dependencies for the SkillDARA FastAPI orchestrator.
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 pydantic>=2.8,<3

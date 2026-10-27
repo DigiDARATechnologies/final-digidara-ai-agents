@@ -3,7 +3,7 @@ short-lived link to download one of their certificates.
 
 A chat link is a random token stored in chat_share_links. "private" opens only
 for the account that made it (the viewer must sign in as that account);
-"public" opens for any signed-in DigiDARA account. Either way the chat is
+"public" opens for any signed-in SkillDARA account. Either way the chat is
 shown read-only, as it is when the link is opened.
 
 A certificate link is a signed token (the platform's JWT secret) naming the

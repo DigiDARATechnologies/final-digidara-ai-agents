@@ -1,4 +1,4 @@
-"""Unit tests for SaaS Token Economy & Dynamic Quota in DigiDARA Job Agent."""
+"""Unit tests for SaaS Token Economy & Dynamic Quota in SkillDARA Job Agent."""
 from __future__ import annotations
 
 import unittest

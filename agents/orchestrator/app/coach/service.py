@@ -31,7 +31,7 @@ WEEKS = 4
 # Every agent works in English only; "ta" from an older client gets English.
 LANGUAGES = {"en": "English"}
 
-_SYSTEM = """You are DigiDARA's friendly career coach for students in India.
+_SYSTEM = """You are SkillDARA's friendly career coach for students in India.
 Write a practical, encouraging job-readiness plan from the data given.
 Return JSON only:
 {"headline": str, "summary": str, "weeks": [{"week": int, "focus": str,

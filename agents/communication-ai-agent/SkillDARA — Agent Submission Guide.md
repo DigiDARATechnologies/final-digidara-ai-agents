@@ -1,8 +1,8 @@
-# DigiDARA AI Agents — Agent Submission Guide
+# SkillDARA — Agent Submission Guide
 
 ## 🚀 Purpose
 
-This repository is the central repository for all DigiDARA AI Agents.
+This repository is the central repository for all SkillDARA.
 
 Each team member is currently developing their own AI agent independently using tools such as:
 
@@ -16,7 +16,7 @@ The goal is to bring all these independently developed agents into one centraliz
 ### Current Architecture
 
 ```text
-                    DigiDARA AI Agents
+                    SkillDARA
                            │
                            │
               Central GitHub Repository
@@ -40,7 +40,7 @@ The goal is to bring all these independently developed agents into one centraliz
                  ChatGPT-like Interface
 ```
 
-The final objective is to provide a **single ChatGPT-like UI** where users can interact with the different DigiDARA AI agents from one platform.
+The final objective is to provide a **single ChatGPT-like UI** where users can interact with the different SkillDARA AI agents from one platform.
 
 ---
 
@@ -48,7 +48,7 @@ The final objective is to provide a **single ChatGPT-like UI** where users can i
 
 Central repository:
 
-**DigiDARA AI Agents**
+**SkillDARA**
 
 ```text
 https://github.com/DigiDARATechnologies/DigiDARA-AI-Agents
@@ -71,7 +71,7 @@ Create a New Branch
         ↓
 Copy/Commit Your Agent Code
         ↓
-Push Branch to DigiDARA Repository
+Push Branch to SkillDARA Repository
         ↓
 Verify Branch on GitHub
         ↓
@@ -549,7 +549,7 @@ If everything has been reviewed and committed, give the AI agent:
 ```text
 The agent code has been reviewed and committed.
 
-Now I need to push my branch to the central DigiDARA repository.
+Now I need to push my branch to the central SkillDARA repository.
 
 Repository:
 
@@ -676,7 +676,7 @@ The bigger goal is to build a common AI platform.
 Eventually:
 
 ```text
-                         DigiDARA AI Platform
+                         SkillDARA AI Platform
                                   │
                                   ▼
                        ┌─────────────────────┐
@@ -701,7 +701,7 @@ Eventually:
                          Common Agent Runtime
                                   │
                                   ▼
-                         DigiDARA Backend
+                         SkillDARA Backend
 ```
 
 The GitHub branches are therefore the **first step toward integrating all independently developed agents into one unified platform**.
@@ -725,7 +725,7 @@ agent/voice-agent
 Example:
 
 ```text
-DigiDARA Voice Agent
+SkillDARA Voice Agent
 ```
 
 ### 3. Short Description
@@ -978,7 +978,7 @@ Your Agent
     ↓
 Your Branch
     ↓
-Central DigiDARA Repository
+Central SkillDARA Repository
     ↓
 Review & Standardization
     ↓
@@ -986,11 +986,11 @@ Agent Integration
     ↓
 Common Agent Runtime
     ↓
-ChatGPT-like DigiDARA UI
+ChatGPT-like SkillDARA UI
     ↓
 Multiple AI Agents from One Platform
 ```
 
 **Your job is to push your working agent as a clean, documented branch.**
 
-**The integration team will handle bringing the agents together into the final DigiDARA AI platform.**
+**The integration team will handle bringing the agents together into the final SkillDARA AI platform.**

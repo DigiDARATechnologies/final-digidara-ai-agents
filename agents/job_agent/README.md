@@ -3,7 +3,7 @@
 A standalone Strategy F agent (see [STRATEGY_F.md](../../STRATEGY_F.md))
 that collects public job postings, scores them against a user's declared
 profile, and serves a save/apply-tracked job feed through the shared
-DigiDARA chat UI — plus an admin surface for moderation and source health,
+SkillDARA chat UI — plus an admin surface for moderation and source health,
 reached through the same gateway under a verified admin flag rather than a
 separate login. See [INTEGRATION.md](INTEGRATION.md) for the Strategy F
 wiring detail (dispatcher shape, identity, action map).
@@ -11,7 +11,7 @@ wiring detail (dispatcher shape, identity, action map).
 ## Flow
 
 1. The user opens the Job Agent card in chat; `ensure_profile`
-   bridges their DigiDARA login into a `user_job_profiles` row.
+   bridges their SkillDARA login into a `user_job_profiles` row.
 2. If the profile isn't complete yet, the chat collects skills, preferred
    titles, preferred locations, work mode, and experience.
 3. `get_feed` returns jobs scored against that profile (see

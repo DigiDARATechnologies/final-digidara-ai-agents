@@ -1,7 +1,7 @@
-# DigiDARA Agent Integration Guide
+# SkillDARA Agent Integration Guide
 
 A complete, repeatable, step-by-step runbook for adding a new agent to the
-live DigiDARA fleet: scaffold → local run → Docker → Compose → CI/CD →
+live SkillDARA fleet: scaffold → local run → Docker → Compose → CI/CD →
 tests → security → (optional) frontend card → PR → merge → verify.
 
 Every path, command, field name, and line reference below was read directly
@@ -13,7 +13,7 @@ document and update this guide to match.
 
 If you only want to push an early/experimental agent's code into the repo
 as a branch for later review — no runtime wiring yet — use
-[`DigiDARA AI Agents — Agent Submission Guide.md`](<DigiDARA AI Agents — Agent Submission Guide.md>)
+[`SkillDARA — Agent Submission Guide.md`](<SkillDARA — Agent Submission Guide.md>)
 instead. This guide is the next step: actually plugging an agent into the
 running platform.
 
@@ -728,7 +728,7 @@ Open [`src/data/agents.ts`](src/data/agents.ts). Add an object to the
 ```ts
 {
   id: "<short-kebab-id>", name: "<Display Name>", icon: "🔧", color: "#22c55e",
-  author: "DigiDARA", rating: 4.8,
+  author: "SkillDARA", rating: 4.8,
   category: ["<one or more from CATEGORIES at the top of this file>"], featured: false,
   backendAgentName: "<your_agent_name>",   // must exactly match manifest.json's agent_name
   desc: "<one-sentence card description>",
@@ -796,7 +796,7 @@ cd agents/faq_agent
 {
   "agent_name": "faq_agent",
   "version": "v1.0.0",
-  "description": "Answers frequently asked questions about DigiDARA's platform, pricing and agents.",
+  "description": "Answers frequently asked questions about SkillDARA's platform, pricing and agents.",
   "owner": "digidara-team",
   "plan_tier": "free",
   "host": "127.0.0.1",
@@ -820,8 +820,8 @@ from pathlib import Path
 from agent_wrapper import create_agent_app
 
 _FAQ = {
-    "pricing": "DigiDARA Free includes a starting token balance; DigiDARA Pro adds higher limits — see Settings > Billing.",
-    "agents": "DigiDARA hosts specialized agents for coding practice, communication coaching, aptitude training, resumes and certificates.",
+    "pricing": "SkillDARA Free includes a starting token balance; SkillDARA Pro adds higher limits — see Settings > Billing.",
+    "agents": "SkillDARA hosts specialized agents for coding practice, communication coaching, aptitude training, resumes and certificates.",
 }
 
 def invoke(payload: dict) -> dict:

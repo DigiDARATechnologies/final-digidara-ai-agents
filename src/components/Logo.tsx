@@ -17,7 +17,7 @@ export const Logo: React.FC<LogoProps> = ({
   theme = "light",
   size = "md",
   className = "",
-  alt = "DigiDARA AI Agents",
+  alt = "SkillDARA",
   src: srcOverride,
 }) => {
   // The icon crop has no separate dark-background treatment -- every current
