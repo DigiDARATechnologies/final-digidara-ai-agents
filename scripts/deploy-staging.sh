@@ -17,10 +17,8 @@ set -euo pipefail
 cd /opt/digidara-agents
 
 BRANCH=${DEPLOY_BRANCH:-phase2}
-# Defaults to the staging domain that works today; the workflow passes
-# vars.STAGING_SITE_URL (set it to https://staging.skilldara.com once that
-# domain's DNS, nginx and SSL are live).
-SITE_URL=${SITE_URL:-https://staging.digidaraaiagents.com}
+# The workflow can override this with vars.STAGING_SITE_URL.
+SITE_URL=${SITE_URL:-https://staging.skilldara.com}
 
 PREVIOUS_COMMIT=${PREVIOUS_COMMIT:-$(git rev-parse HEAD)}
 echo "Current commit: $PREVIOUS_COMMIT"
