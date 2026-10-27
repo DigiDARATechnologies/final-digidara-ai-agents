@@ -302,13 +302,22 @@ def list_payments(
         total = query.count()
         rows = query.order_by(Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
         summary_rows = session.query(Payment.status, func.count(), func.sum(Payment.amount)).group_by(Payment.status).all()
+        # A paid row with no Razorpay payment id was recorded by hand (cash,
+        # bank transfer...), so the admin sees the two kinds of money apart.
+        manual = func.coalesce(Payment.razorpay_payment_id, "") == ""
+        paid_rows = session.query(manual, func.count(), func.sum(Payment.amount)).filter(Payment.status == "paid").group_by(manual).all()
+        paid_by_method = {"razorpay": {"count": 0, "amount": 0.0}, "manual": {"count": 0, "amount": 0.0}}
+        for is_manual, c, a in paid_rows:
+            paid_by_method["manual" if is_manual else "razorpay"] = {"count": int(c), "amount": _rupees(a)}
         return {
             "total": total, "page": page, "limit": limit,
             "summary": {s: {"count": int(c), "amount": _rupees(a)} for s, c, a in summary_rows},
+            "paid_by_method": paid_by_method,
             "payments": [{
                 "id": p.id, "user_id": p.user_id, "email": email or "(deleted account)", "name": name or "", "label": payment_label(p.plan_id),
                 "amount": _rupees(p.amount), "currency": p.currency, "status": p.status, "razorpay_order_id": p.razorpay_order_id,
                 "razorpay_payment_id": p.razorpay_payment_id, "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at),
+                "method": "manual" if p.status == "paid" and not p.razorpay_payment_id else "razorpay",
                 "tokens": credited_tokens(p),
                 "points": credited_points(p),
             } for p, email, name in rows],
