@@ -46,7 +46,7 @@ test('the dashboard shows money, users, points, agents online and usage per agen
   expect(screen.getByText('7 / 8')).toBeInTheDocument();
   expect(screen.getByText('1,250')).toBeInTheDocument();              // points sold, not tokens
   expect(screen.getByText('500')).toBeInTheDocument();                // points left with users
-  expect(screen.getByText('2 users out of points')).toBeInTheDocument();
+  expect(screen.getByText('2 users out of coins')).toBeInTheDocument();
   expect(screen.getAllByText('Basic plan', { selector: 'td' })).toHaveLength(2);      // the by-plan table and the latest payments
   expect(screen.getByText(/Capstone Project Agent/)).toBeInTheDocument();
   expect(screen.getByRole('img', { name: /Daily revenue/ })).toBeInTheDocument();

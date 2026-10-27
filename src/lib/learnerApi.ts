@@ -202,6 +202,33 @@ export const setMyLevel = (agentName: string, level: LevelId) =>
 export const acceptConsent = (shareProgress: boolean | null) =>
   request<LearnerSummary>("/learner/consent", json("POST", { consent: true, share_progress: shareProgress }));
 export const fetchReadiness = (refresh = false) => request<Readiness>(`/learner/readiness${refresh ? "?refresh=true" : ""}`);
+
+/** Job-readiness leaderboards: students or staff, platform-wide or in the viewer's organization. */
+export type LeaderboardGroup = "students" | "staff";
+export type LeaderboardScope = "platform" | "organization";
+export interface LeaderboardEntry {
+  rank: number; user_id: string; name: string; score: number; band: Band; organization: string | null; is_me: boolean;
+  /** A 64px profile picture (data URL), when the person has one. */
+  avatar?: string | null;
+  new_in_top?: boolean; entered_top_at?: string;
+  /** Staff boards: what the staff member is ranked on (their students). */
+  staff?: { students: number; average_readiness: number; active_percent: number };
+}
+export interface Leaderboard {
+  scope: LeaderboardScope; group: LeaderboardGroup; allowed_groups: LeaderboardGroup[]; allowed_scopes: LeaderboardScope[];
+  organization: { id: string; name: string } | null;
+  top: LeaderboardEntry[]; entries: LeaderboardEntry[]; total: number;
+  me: { rank: number; score: number } | null; hidden: boolean;
+}
+/** "auto": the viewer's organization when they are in one, else the whole platform. */
+export const fetchLeaderboard = (scope: LeaderboardScope | "auto", group?: LeaderboardGroup) =>
+  request<Leaderboard>(`/learner/leaderboard?scope=${scope}${group ? `&group=${group}` : ""}`);
+/** The profile picture kept on the server, so others see it on leaderboards. */
+export const fetchMyAvatar = () => request<{ image: string | null }>("/learner/avatar");
+export const saveMyAvatar = (image: string, thumb: string) => request<{ saved: boolean }>("/learner/avatar", json("PUT", { image, thumb }));
+export const deleteMyAvatar = () => request<void>("/learner/avatar", json("DELETE"));
+export const setLeaderboardHidden = (hidden: boolean) =>
+  request<{ hidden: boolean }>("/learner/leaderboard/visibility", json("PUT", { hidden }));
 export const fetchReadinessHistory = () =>
   request<{ overall: number | null; band: Band; computed_at: string }[]>("/learner/readiness/history");
 

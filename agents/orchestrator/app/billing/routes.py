@@ -7,11 +7,12 @@ from datetime import datetime, timedelta
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, update
 
 from app.auth import service as auth_service
 from app.auth.security import get_current_user_id
+from app.billing import enterprise
 from app.billing import invoice as invoice_pdf
 from app.billing.plans import (
     PLANS,
@@ -124,7 +125,29 @@ def _exact_credit(payment: Payment) -> tuple[int, int] | None:
 @router.get("/plans")
 def plans() -> dict:
     """The plans on sale, so prices live in one place (app/billing/plans.py)."""
-    return {"plans": offered_plans()}
+    return {"plans": offered_plans(), "enterprise": {"contact_email": enterprise.SUPPORT_EMAIL}}
+
+
+class EnterpriseEnquiryIn(BaseModel):
+    organization: str = Field(min_length=2, max_length=255)
+    organization_type: str = "college"
+    contact_name: str = Field(min_length=2, max_length=255)
+    email: str = Field(min_length=5, max_length=255)
+    phone: str = Field(min_length=8, max_length=32)
+    learners: int | None = Field(default=None, ge=1, le=1_000_000)
+    city: str = Field(default="", max_length=120)
+    message: str = Field(default="", max_length=2000)
+
+
+@router.post("/enterprise-enquiry", status_code=201)
+@limiter.limit("5/hour")
+def enterprise_enquiry(req: EnterpriseEnquiryIn, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+    """The Enterprise plan: an organization's details, emailed to SkillDARA support."""
+    user = auth_service.get_by_id(user_id)
+    try:
+        return enterprise.submit(user_id, user.email if user else "", req.model_dump())
+    except enterprise.EnquiryError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
 
 
 @router.get("/summary")

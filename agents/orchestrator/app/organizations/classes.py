@@ -15,10 +15,10 @@ from app import db
 from app.models import Organization, OrganizationMember, OrgJoinCode, OrgOption
 from app.organizations.service import (
     OrgError,
-    _new_join_code,
     _require_admin,
     clean_class_value,
     find_code,
+    unique_join_code,
 )
 
 KINDS = ("department", "year", "section")
@@ -97,14 +97,17 @@ def _code_dict(entry: OrgJoinCode, members: int) -> dict:
 def list_codes(user_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, user_id, org_id)
+        viewer = _require_admin(session, user_id, org_id)
         _ensure_general_code(session, session.get(Organization, org_id))
         session.commit()
         counts = dict(
             session.query(OrganizationMember.join_code_id, func.count(OrganizationMember.id))
             .filter(OrganizationMember.organization_id == org_id).group_by(OrganizationMember.join_code_id).all()
         )
-        codes = session.query(OrgJoinCode).filter_by(organization_id=org_id).order_by(OrgJoinCode.created_at).all()
+        codes = session.query(OrgJoinCode).filter_by(organization_id=org_id)
+        if viewer.role == "staff":
+            codes = codes.filter_by(created_by=user_id)        # staff see the codes they made
+        codes = codes.order_by(OrgJoinCode.created_at).all()
         return [_code_dict(entry, counts.get(entry.id, 0)) for entry in codes]
     finally:
         session.close()
@@ -121,9 +124,8 @@ def create_code(user_id: str, org_id: str, label: str, department: str | None, y
         _require_admin(session, user_id, org_id)
         if session.query(OrgJoinCode).filter_by(organization_id=org_id).count() >= MAX_CODES:
             raise OrgError(409, f"An organization can have at most {MAX_CODES} join codes.")
-        code = _new_join_code()
-        while session.query(OrgJoinCode).filter_by(code=code).first() is not None:
-            code = _new_join_code()
+        # Every code is new: never one any join code or organization has used.
+        code = unique_join_code(session)
         default_label = " · ".join(v for v in values.values() if v) or "General"
         entry = OrgJoinCode(organization_id=org_id, code=code, label=clean_class_value(label, 120) or default_label,
                             created_by=user_id, **values)
@@ -138,9 +140,9 @@ def create_code(user_id: str, org_id: str, label: str, department: str | None, y
 def set_code_active(user_id: str, org_id: str, code_id: str, active: bool) -> dict:
     session = db.get_session()
     try:
-        _require_admin(session, user_id, org_id)
+        viewer = _require_admin(session, user_id, org_id)
         entry = session.get(OrgJoinCode, code_id)
-        if entry is None or entry.organization_id != org_id:
+        if entry is None or entry.organization_id != org_id or (viewer.role == "staff" and entry.created_by != user_id):
             raise OrgError(404, "No such join code in this organization.")
         entry.active = active
         session.commit()

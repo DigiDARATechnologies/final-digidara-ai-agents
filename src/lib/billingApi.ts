@@ -8,17 +8,28 @@ export interface BillingSummary { plan: string; plan_name: string; plan_expires_
  * (points are added by the server once Razorpay confirms), not in-app.
  * `tokens` is what the plan really credits; learners are only shown `points`. */
 export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; amount_with_gst?: number; gst_percent?: number; payment_page_url?: string | null; }
-export interface BillingPlans { plans: PlanOffer[]; }
+export interface BillingPlans { plans: PlanOffer[]; enterprise?: { contact_email: string }; }
+/** The Enterprise plan: an organization's details, emailed to SkillDARA support. */
+export interface EnterpriseEnquiry {
+  organization: string; organization_type: "college" | "training_institute" | "company" | "other";
+  contact_name: string; email: string; phone: string; learners?: number | null; city?: string; message?: string;
+}
 /** `prefill` / `readonly`: the account's own details, with the email locked in the checkout. */
 export interface RazorpayOrder { key_id: string; order_id: string; amount: number; currency: string; name: string; prefill?: { name: string; email: string; contact: string }; readonly?: { email?: boolean }; }
 
 function token() { return sessionToken() || ""; }
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, { ...init, headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}`, ...init?.headers } });
-  if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.detail || "Billing request failed."); }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const detail = typeof body.detail === "string" ? body.detail : Array.isArray(body.detail) ? body.detail[0]?.msg : null;
+    throw new Error(detail || "Billing request failed.");
+  }
   return response.json();
 }
 export const fetchBillingSummary = () => request<BillingSummary>("/billing/summary");
+export const sendEnterpriseEnquiry = (body: EnterpriseEnquiry) =>
+  request<{ id: string; sent_to: string }>("/billing/enterprise-enquiry", { method: "POST", body: JSON.stringify(body) });
 export const fetchBillingPlans = () => request<BillingPlans>("/billing/plans");
 export const createBillingOrder = (plan_id: string, gstin?: string) => request<RazorpayOrder>("/billing/orders", { method: "POST", body: JSON.stringify(gstin ? { plan_id, gstin } : { plan_id }) });
 export const verifyBillingPayment = (body: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => request<{ verified: boolean; plan: string }>("/billing/verify", { method: "POST", body: JSON.stringify(body) });

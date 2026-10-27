@@ -380,7 +380,7 @@ async def ask(admin_id: str, org_id: str, message: str, filters: dict | None = N
     if user is None:
         raise AssistantError(401, "This account no longer exists.")
     if user.token_balance <= 0 and not user.is_admin:
-        raise AssistantError(402, "Not enough points. Please top up to continue.")
+        raise AssistantError(402, "Not enough coins. Please top up to continue.")
     session = db.get_session()
     try:
         org = session.get(Organization, org_id)

@@ -1,3 +1,4 @@
+jest.mock('../../src/components/Leaderboard', () => ({ TopPerformers: () => null }));
 jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest.fn(), warmBoss: jest.fn() }));
 jest.mock('../../src/lib/voiceEngine', () => ({ speakNatural: jest.fn((_t: string, h?: { onEnd?: () => void }) => { h?.onEnd?.(); return Promise.resolve(true); }), stopSpeaking: jest.fn() }));
 let mockRecordingSupported = true;

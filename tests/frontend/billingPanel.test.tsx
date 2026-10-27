@@ -27,7 +27,7 @@ const catalog = {
 };
 const payments = [
   { id: 'paid-1', plan_id: 'standard', label: 'Standard plan', amount: 99900, currency: 'INR', status: 'paid', payment_id: 'pay_1', created_at: '2026-09-14T10:00:00Z', invoice_available: true },
-  { id: 'paid-2', plan_id: 'topup_10000', label: 'Points top-up', amount: 1000, currency: 'INR', status: 'paid', payment_id: 'pay_2', created_at: '2026-09-10T10:00:00Z', invoice_available: true },
+  { id: 'paid-2', plan_id: 'topup_10000', label: 'Coins top-up', amount: 1000, currency: 'INR', status: 'paid', payment_id: 'pay_2', created_at: '2026-09-10T10:00:00Z', invoice_available: true },
   { id: 'open-1', plan_id: 'premium', label: 'Premium plan', amount: 199900, currency: 'INR', status: 'created', payment_id: null, created_at: '2026-09-07T10:00:00Z', invoice_available: false },
 ];
 
@@ -128,7 +128,7 @@ test('a plan switched back to a payment page still opens that page', async () =>
 
 test('history uses real labels and offers an invoice only for paid payments', async () => {
   setup();
-  expect(await screen.findByText('Points top-up')).toBeInTheDocument();
+  expect(await screen.findByText('Coins top-up')).toBeInTheDocument();
   expect(screen.getByText('Standard plan', { selector: 'b' })).toBeInTheDocument();
   expect(screen.getAllByRole('button', { name: /Download invoice/ })).toHaveLength(2);
   expect(screen.queryByRole('button', { name: 'Download invoice for Premium plan' })).not.toBeInTheDocument();
@@ -137,7 +137,7 @@ test('history uses real labels and offers an invoice only for paid payments', as
 test('clicking Invoice downloads that payment\'s invoice', async () => {
   mocked.downloadInvoice.mockResolvedValue('DD-202609-ABCDEF12.pdf');
   setup();
-  fireEvent.click(await screen.findByRole('button', { name: 'Download invoice for Points top-up' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Download invoice for Coins top-up' }));
   await waitFor(() => expect(mocked.downloadInvoice).toHaveBeenCalledWith('paid-2'));
 });
 

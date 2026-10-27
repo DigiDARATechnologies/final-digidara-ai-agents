@@ -227,6 +227,19 @@ export async function uploadRoster(orgId: string, file: File): Promise<RosterUpl
   }
   return response.json();
 }
+/** Downloads the example student list (Name, Mobile, Email) as an Excel file. */
+export async function downloadRosterTemplate(orgId: string): Promise<void> {
+  const response = await fetch(`${BASE}/organizations/${orgId}/roster/template`, { headers: { Authorization: `Bearer ${sessionToken() || ""}` } });
+  if (!response.ok) throw new Error("The template could not be downloaded. Please try again.");
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "skilldara-student-list-template.xlsx";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 export const fetchJoinRequests = (orgId: string) => request<JoinRequest[]>(`/organizations/${orgId}/requests`);
 export const decideJoinRequest = (orgId: string, requestId: string, approve: boolean) =>
   request<void>(`/organizations/${orgId}/requests/${requestId}`, json("POST", { approve }));

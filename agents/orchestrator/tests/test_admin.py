@@ -79,7 +79,7 @@ def test_overview_totals_money_users_tokens_and_agents(api, seeded):
     assert revenue["total"] == 599.0 and revenue["paid_count"] == 2 and revenue["paying_customers"] == 1
     assert revenue["last_30d"] == 499.0 and revenue["last_7d"] == 499.0          # the 45-day-old top-up is outside
     assert revenue["by_status"] == {"paid": 2, "created": 1}
-    assert {e["label"]: e["amount"] for e in revenue["by_plan"]} == {"Basic plan": 499.0, "Points top-up": 100.0}
+    assert {e["label"]: e["amount"] for e in revenue["by_plan"]} == {"Basic plan": 499.0, "Coins top-up": 100.0}
     assert len(revenue["daily"]) == 30 and sum(d["amount"] for d in revenue["daily"]) == 499.0
     # Points at each account's rate (seeded accounts get the new-account rate, 2,000
     # tokens a point: 120,000 + 10 tokens). The old-price Basic plan and the top-up

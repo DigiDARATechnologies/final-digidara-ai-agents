@@ -205,8 +205,8 @@ def offered_plans() -> list[dict]:
         bonus = bonus_percent(plan)
         page = plan.get("payment_page_url")
         features = [
-            f"{plan['points']:,} points" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
-            "Points never expire",
+            f"{plan['points']:,} coins" + (" added after Razorpay confirms the payment" if page else " credited instantly"),
+            "Coins never expire",
             "Works across every agent",
         ]
         result.append({
@@ -264,7 +264,7 @@ def tokens_for_plan_id(plan_id: str) -> int | None:
 def payment_label(plan_id: str) -> str:
     """Human-readable name for a payment row, whatever kind of payment it was."""
     if plan_id.startswith("topup_"):
-        return "Points top-up"
+        return "Coins top-up"
     if plan_id in PLANS:
         return f"{PLANS[plan_id]['name']} plan"
     if plan_id in LEGACY_PLANS:

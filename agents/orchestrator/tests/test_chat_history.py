@@ -131,6 +131,42 @@ def test_a_mysql_deadlock_during_sync_is_retried_transparently(history_client, m
     assert [chat["id"] for chat in response.json()["chats"]] == ["c_1"]
 
 
+def test_two_overlapping_syncs_creating_the_same_chat_do_not_500(history_client, monkeypatch):
+    """Two tabs (or a save firing twice) both insert a brand-new chat; the slower
+    one hits the duplicate key. It is retried and updates the row instead."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.chat_history import service
+
+    client, _current_user, user_a_id, _user_b_id = history_client
+    real_get_session = service.get_session
+    calls = {"n": 0}
+
+    def racing_get_session():
+        session = real_get_session()
+        calls["n"] += 1
+        if calls["n"] == 1:
+
+            def commit_after_the_other_sync():
+                # The other request commits the same chat first.
+                session.rollback()
+                other = real_get_session()
+                other.add(service.Conversation(id="c_1", user_id=user_a_id, agent_id="capstone-project", title="Other tab",
+                                               pinned=False, updated_at_ms=1))
+                other.commit()
+                other.close()
+                raise IntegrityError("INSERT INTO conversations ...", {}, Exception("Duplicate entry 'c_1'"))
+
+            session.commit = commit_after_the_other_sync
+        return session
+
+    monkeypatch.setattr(service, "get_session", racing_get_session)
+    response = client.put("/chats/sync", json={"chats": [sample_chat()], "deleted_ids": []})
+    assert response.status_code == 200
+    chats = response.json()["chats"]
+    assert [chat["id"] for chat in chats] == ["c_1"] and chats[0]["title"] == sample_chat()["title"]
+
+
 def test_a_non_deadlock_database_error_during_sync_is_not_retried(history_client, monkeypatch):
     from unittest.mock import MagicMock
 

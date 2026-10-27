@@ -36,7 +36,7 @@ export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: 
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const title = outOfPoints ? "You're out of points" : "You're running low on points";
+  const title = outOfPoints ? "You're out of coins" : "You're running low on coins";
   return (
     <div className="modal-overlay open" onClick={(event) => event.target === event.currentTarget && onClose()}>
       <div className="modal-card low-points-card" role="dialog" aria-modal="true" aria-label={title}>
@@ -46,13 +46,13 @@ export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: 
         </div>
         <div className="modal-body">
           <div className={`low-points-balance${outOfPoints ? " out" : ""}`}>
-            <span>Points left</span>
+            <span>Coins left</span>
             <strong>{points === null ? "0" : formatPoints(points)}</strong>
           </div>
           <p className="low-points-message">
             {outOfPoints
-              ? "Agents can't answer until you top up. Pick a plan to keep going; points never expire."
-              : "Top up now so your next test, interview or resume isn't interrupted. Points never expire."}
+              ? "Agents can't answer until you top up. Pick a plan to keep going; coins never expire."
+              : "Top up now so your next test, interview or resume isn't interrupted. Coins never expire."}
           </p>
           {plans === null ? <p className="low-points-message">Loading plans…</p> : plans.length > 0 && (
             <div className="low-points-plans" role="radiogroup" aria-label="Choose a plan">
@@ -63,14 +63,14 @@ export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: 
                   onClick={() => setSelected(plan.id)}
                 >
                   <span><b>{plan.name}</b>{plan.popular && <em>Most popular</em>}</span>
-                  <span><strong>{formatPoints(plan.points)} points</strong><small>{rupees(plan.amount, plan.currency)}</small></span>
+                  <span><strong>{formatPoints(plan.points)} coins</strong><small>{rupees(plan.amount, plan.currency)}</small></span>
                 </button>
               ))}
             </div>
           )}
           <div className="low-points-actions">
             <button type="button" className="btn btn-outline" onClick={onClose}>Later</button>
-            <button type="button" className="btn low-points-buy" autoFocus onClick={() => onBuy(selected)}>Buy points</button>
+            <button type="button" className="btn low-points-buy" autoFocus onClick={() => onBuy(selected)}>Buy coins</button>
           </div>
         </div>
       </div>

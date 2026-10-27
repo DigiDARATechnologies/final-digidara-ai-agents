@@ -76,7 +76,7 @@ describe('pending notifications', () => {
   });
 
   test('a paused aptitude test says why', () => {
-    expect(bodies(sources({ chats: [chat('a', 'aptitude')], aptitude: { a: { step: 'awaiting_next_question', testId: 't', tokenInterrupted: true } } }))[0]).toContain('top up points');
+    expect(bodies(sources({ chats: [chat('a', 'aptitude')], aptitude: { a: { step: 'awaiting_next_question', testId: 't', tokenInterrupted: true } } }))[0]).toContain('top up coins');
   });
 
   test('chats of a general agent, or with no saved progress, are ignored', () => {

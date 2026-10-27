@@ -5,6 +5,7 @@ import StudentDrawer from "./StudentDrawer";
 import OrgAssessments from "./OrgAssessments";
 import OrgKnowledgeTests from "./OrgKnowledgeTests";
 import StaffPanel from "./StaffPanel";
+import Leaderboard from "../Leaderboard";
 import StudentListPanel from "./StudentListPanel";
 import { ScoreRing } from "../ReadinessView";
 import { parseMemberLines } from "../../lib/memberImport";
@@ -420,7 +421,7 @@ function AccessLog({ entries }: { entries: AccessEntry[] }) {
 
 /** The organization admin's dashboard; SkillDARA's platform admin opens the same one for any organization. */
 export default function OrgDashboard({ org, onToast, extraTabs = [], headerAction }: Props) {
-  const tabs = useMemo(() => ["Overview", "Students", "Student list", "Assessments", "Knowledge tests", "Join codes",
+  const tabs = useMemo(() => ["Overview", "Students", "Leaderboard", "Student list", "Assessments", "Knowledge tests", "Join codes",
     ...(org.role === "staff" ? [] : ["Staff"]), ...extraTabs.map((t) => t.name), "Access log"], [extraTabs, org.role]);
   const [tab, setTab] = useState("Overview");
   // A knowledge test the admin chose to share: preselected on the Assessments tab.
@@ -506,7 +507,8 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
       )}
       {tab === "Assessments" && <OrgAssessments orgId={org.id} onToast={onToast} presetTestId={linkTestId} />}
       {tab === "Knowledge tests" && <OrgKnowledgeTests orgId={org.id} onToast={onToast} onCreateLink={(testId) => { setLinkTestId(testId); setTab("Assessments"); }} />}
-      {tab === "Student list" && <StudentListPanel orgId={org.id} orgName={org.name} onChanged={() => void loadData()} onToast={onToast} />}
+      {tab === "Leaderboard" && <Leaderboard defaultScope="organization" onToast={onToast} />}
+      {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} onChanged={() => void loadData()} onToast={onToast} />}
       {tab === "Join codes" && <Codes org={org} codes={codes} options={options} onReload={() => void loadSetup()} onToast={onToast} />}
       {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} onToast={onToast} />}
       {tab === "Access log" && <AccessLog entries={log} />}

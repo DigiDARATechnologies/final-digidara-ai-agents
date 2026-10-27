@@ -46,10 +46,6 @@ def _summary(user_id: str) -> dict:
     user = auth_service.get_by_id(user_id)
     if user is None:
         raise HTTPException(401, "This account no longer exists.")
-    # A learner on an organization's student list joins it once their email is verified.
-    from app.organizations import roster
-
-    roster.auto_join(user)
     return {
         "profile": service.get_profile(user_id),
         "levels": list(service.get_levels(user_id).values()),
@@ -124,6 +120,62 @@ def accept_consent(req: ConsentIn, user_id: str = Depends(get_current_user_id)) 
     if org_service.my_organization(user_id) is not None:
         org_service.set_sharing(user_id, True)
     return _summary(user_id)
+
+
+class LeaderboardVisibilityIn(BaseModel):
+    hidden: bool
+
+
+class AvatarIn(BaseModel):
+    image: str = Field(max_length=300_000)
+    thumb: str = Field(max_length=30_000)
+
+
+@router.get("/avatar")
+def get_avatar(user_id: str = Depends(get_current_user_id)) -> dict:
+    """The learner's own profile picture, so it follows them to another browser."""
+    from app.learner import avatar
+
+    return {"image": avatar.get(user_id)}
+
+
+@router.put("/avatar")
+def put_avatar(req: AvatarIn, user_id: str = Depends(get_current_user_id)) -> dict:
+    """Save the profile picture, so others see it on leaderboards."""
+    from app.learner import avatar
+
+    try:
+        return avatar.save(user_id, req.image, req.thumb)
+    except avatar.AvatarError as exc:
+        raise HTTPException(400, exc.message) from exc
+
+
+@router.delete("/avatar", status_code=204)
+def delete_avatar(user_id: str = Depends(get_current_user_id)) -> Response:
+    from app.learner import avatar
+
+    avatar.remove(user_id)
+    return Response(status_code=204)
+
+
+@router.get("/leaderboard")
+def leaderboard(scope: str = "auto", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Top learners by job readiness: students or staff, platform-wide or in
+    the viewer's organization (see app/readiness/leaderboard.py for who sees what)."""
+    from app.readiness import leaderboard as boards
+
+    try:
+        return boards.board(user_id, scope, group)
+    except boards.LeaderboardError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+
+
+@router.put("/leaderboard/visibility")
+def leaderboard_visibility(req: LeaderboardVisibilityIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Hide (or show again) yourself on every leaderboard."""
+    from app.readiness import leaderboard as boards
+
+    return boards.set_hidden(user_id, req.hidden)
 
 
 @router.get("/readiness")

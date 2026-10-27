@@ -27,7 +27,7 @@ export interface SidebarProps {
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
   onOpenHelpPage: (page: "help-center" | "release-notes" | "contact" | "bug-report") => void;
-  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization") => void;
+  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
   onUserMenuAction: (action: "profile" | "settings" | "upgrade" | "logout") => void;
   onToggleChatMenu: (chatId: string, e: React.MouseEvent) => void;
@@ -204,6 +204,15 @@ export default function Sidebar({
             </svg>
           </span>
           <span className="label">Job Readiness</span>
+        </button>
+        <button className="nav-item" onClick={() => onNavAction("leaderboard")}>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+              <path d="M7 6H4.5a2.5 2.5 0 002.9 3.3M17 6h2.5a2.5 2.5 0 01-2.9 3.3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="label">Leaderboard</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("organization")}>
           <span className="nav-icon">

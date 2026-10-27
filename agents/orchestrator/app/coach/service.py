@@ -127,7 +127,7 @@ async def generate(user, language: str = "en") -> dict:
     if current and current.get("language") == language and             datetime.utcnow() - datetime.fromisoformat(current["created_at"]) < PLAN_COOLDOWN:
         return current
     if PLAN_TOKEN_COST and user.token_balance <= 0:
-        raise NoPoints("Not enough points. Please top up to continue.")
+        raise NoPoints("Not enough coins. Please top up to continue.")
     readiness = await readiness_service.get(user)
     memories = memory_service.list_for(user.id)
     system = _SYSTEM.replace("{weeks}", str(WEEKS)).replace("{language}", LANGUAGES[language])
