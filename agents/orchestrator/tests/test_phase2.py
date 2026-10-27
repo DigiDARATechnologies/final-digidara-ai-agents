@@ -1102,7 +1102,7 @@ def test_someone_breaking_into_the_top_3_is_new_and_learners_can_hide(app_client
     first = app_client.get("/learner/leaderboard", headers=auth()).json()
     assert [e["user_id"] for e in first["top"]] == ["s1", "s2", "s3"]
     assert not any(e["new_in_top"] for e in first["top"])    # the first top 3 ever seen broke into nothing
-    _score(database, "s4", 85)
+    _score(database, "s4", 85, minutes_ago=-1)          # later than the first (MySQL keeps whole seconds)
     second = app_client.get("/learner/leaderboard", headers=auth()).json()
     assert [(e["user_id"], e["new_in_top"]) for e in second["top"]] == [("s1", False), ("s4", True), ("s2", False)]
     app_client.put("/learner/leaderboard/visibility", headers=auth("s4"), json={"hidden": True})
