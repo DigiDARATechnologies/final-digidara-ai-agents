@@ -31,14 +31,14 @@ beforeEach(() => {
   });
 });
 
-test('a low balance pops up the plans with their points and prices', async () => {
+test('a low balance pops up the plans with their coins and prices', async () => {
   balance(12.5);
   render(<Harness />);
-  expect(await screen.findByRole('dialog', { name: "You're running low on points" })).toBeInTheDocument();
+  expect(await screen.findByRole('dialog', { name: "You're running low on coins" })).toBeInTheDocument();
   expect(screen.getByText('12.5')).toBeInTheDocument();
-  expect(await screen.findByText('250 points')).toBeInTheDocument();
-  expect(screen.getByText('500 points')).toBeInTheDocument();
-  expect(screen.getByText('750 points')).toBeInTheDocument();
+  expect(await screen.findByText('250 coins')).toBeInTheDocument();
+  expect(screen.getByText('500 coins')).toBeInTheDocument();
+  expect(screen.getByText('750 coins')).toBeInTheDocument();
   expect(screen.getByText('Most popular')).toBeInTheDocument();
 });
 
@@ -53,7 +53,7 @@ test('Buy points goes to checkout', async () => {
   balance(3);
   const onBuy = jest.fn();
   render(<Harness onBuy={onBuy} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Buy points' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Buy coins' }));
   expect(onBuy).toHaveBeenCalled();
 });
 
@@ -65,7 +65,7 @@ test('the popular plan starts selected and any other plan can be chosen before b
   expect(screen.getByRole('radio', { name: /Standard/ })).toHaveAttribute('aria-checked', 'true');
   fireEvent.click(premium);
   expect(premium).toHaveAttribute('aria-checked', 'true');
-  fireEvent.click(screen.getByRole('button', { name: 'Buy points' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Buy coins' }));
   expect(onBuy).toHaveBeenCalledWith('premium');
 });
 
@@ -77,7 +77,7 @@ test('the gateway saying "not enough points" pops it up as out of points, even a
 
   balance(0);
   act(() => reportPointsActivity(402));
-  expect(await screen.findByRole('dialog', { name: "You're out of points" })).toBeInTheDocument();
+  expect(await screen.findByRole('dialog', { name: "You're out of coins" })).toBeInTheDocument();
 });
 
 test('Later on a low balance is remembered for the session', async () => {

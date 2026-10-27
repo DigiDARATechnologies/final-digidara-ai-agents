@@ -32,12 +32,12 @@ test('shows this month only, in points, against the dynamic limit (used + balanc
     agents: [{ agent_name: 'certificate_agent', tokens: 30000, points: 10, requests: 12 }],
   });
   openUsage();
-  expect(await screen.findByText('10 of 40 points used this month')).toBeInTheDocument();
+  expect(await screen.findByText('10 of 40 coins used this month')).toBeInTheDocument();
   expect(screen.getByText('75% remaining')).toBeInTheDocument();
-  expect(screen.getByText('10 points')).toBeInTheDocument();
+  expect(screen.getByText('10 coins')).toBeInTheDocument();
   // Per agent: this month's numbers, not the agents' all-time totals.
-  expect(await screen.findByText('10 points · 12 requests')).toBeInTheDocument();
-  expect(screen.getByText('0 points · 0 requests')).toBeInTheDocument();
+  expect(await screen.findByText('10 coins · 12 requests')).toBeInTheDocument();
+  expect(screen.getByText('0 coins · 0 requests')).toBeInTheDocument();
   expect(screen.queryByText(/tokens/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/2937/)).not.toBeInTheDocument();
   expect(screen.queryByText(/1\.0M/)).not.toBeInTheDocument();
@@ -49,6 +49,6 @@ test('a new user starts the month at zero with their whole balance remaining', a
     points_used: 0, points_balance: 60, points_limit: 60, tokens_per_point: 3000, agents: [],
   });
   openUsage();
-  expect(await screen.findByText('0 of 60 points used this month')).toBeInTheDocument();
+  expect(await screen.findByText('0 of 60 coins used this month')).toBeInTheDocument();
   expect(screen.getByText('100% remaining')).toBeInTheDocument();
 });

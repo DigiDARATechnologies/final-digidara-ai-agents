@@ -36,7 +36,7 @@ export default function PaymentsPanel() {
       {error && <div className="admin-error">{error} <button className="btn btn-outline btn-sm" onClick={reload}>Retry</button></div>}
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Points</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
+          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Coins</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
           <tbody>
             {data?.payments.map((p) => (
               <tr key={p.id}>

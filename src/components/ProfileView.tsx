@@ -181,7 +181,7 @@ export default function ProfileView({ user, chats, planName, onBack, onUpgrade, 
         <div className="pv-stats">
           <div>
             <b>{lifetimePoints === null ? "—" : formatPoints(lifetimePoints)}</b>
-            <span>Lifetime Points</span>
+            <span>Lifetime Coins</span>
           </div>
           <div>
             <b>{stats.totalChats}</b>

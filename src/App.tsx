@@ -1007,7 +1007,7 @@ export default function App() {
       setTyping(false);
     } catch (error) {
       if (error instanceof OutOfPointsError) {
-        appendAgentMessages(chatId, [{ text: "You have run out of points, so I cannot answer right now. Top up in **Settings > Billing** to keep talking to Boss." }]);
+        appendAgentMessages(chatId, [{ text: "You have run out of coins, so I cannot answer right now. Top up in **Settings > Billing** to keep talking to Boss." }]);
         setTyping(false);
         return;
       }

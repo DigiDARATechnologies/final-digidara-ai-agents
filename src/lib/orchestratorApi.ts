@@ -17,7 +17,7 @@ export interface RouteTurn {
  * because the balance has run out (402). */
 export class OutOfPointsError extends Error {
   constructor() {
-    super("Not enough points. Please top up to continue.");
+    super("Not enough coins. Please top up to continue.");
     this.name = "OutOfPointsError";
   }
 }
