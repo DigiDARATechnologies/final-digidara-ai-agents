@@ -114,6 +114,26 @@ test('payments: shows every payment and filters by status on the server', async 
   await waitFor(() => expect(mockPayments).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'failed', page: 1 })));
 });
 
+test('payments: paid money is split into Razorpay and manual cards', async () => {
+  const base = { user_id: 'asha', email: 'asha@x.io', name: 'Asha Rao', label: 'Basic plan', currency: 'INR', status: 'paid', created_at: '2026-09-24T08:00:00', paid_at: '2026-09-24T08:01:00', tokens: 500000, points: 166.67 };
+  mockPayments.mockResolvedValue({
+    total: 2, page: 1, limit: 25,
+    summary: { created: { count: 1, amount: 999 }, paid: { count: 2, amount: 1498 } },
+    paid_by_method: { razorpay: { count: 1, amount: 499 }, manual: { count: 1, amount: 999 } },
+    payments: [
+      { ...base, id: 'p1', amount: 499, razorpay_order_id: 'order_1', razorpay_payment_id: 'pay_1', method: 'razorpay' },
+      { ...base, id: 'p2', amount: 999, razorpay_order_id: 'manual_1', razorpay_payment_id: null, method: 'manual' },
+    ],
+  });
+  render(<PaymentsPanel />);
+  const table = within(await screen.findByRole('table'));
+  expect(screen.getByText('Paid · Razorpay')).toBeInTheDocument();
+  expect(screen.getByText('Paid · Manual')).toBeInTheDocument();
+  expect(screen.getByText('created')).toBeInTheDocument();
+  expect(screen.queryByText('paid', { selector: '.admin-kpi span' })).not.toBeInTheDocument();     // no combined Paid card
+  expect(table.getByText('Manual')).toBeInTheDocument();
+});
+
 test('agents: online and offline are clear, usage is joined to the chat agent, unconnected ones are listed', async () => {
   const base = { version: 'v1', endpoint: 'http://capstone:8000/api/invoke', owner: 'SkillDARA', plan_tier: 'free', status: 'healthy', last_heartbeat: null };
   mockAgents.mockResolvedValue({

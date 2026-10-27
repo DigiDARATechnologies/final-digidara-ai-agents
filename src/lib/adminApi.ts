@@ -40,8 +40,15 @@ export interface ConversationView { id: string; agent_id: string; title: string;
 export interface PaymentRow {
   id: string; user_id: string; email: string; name: string; label: string; amount: number; currency: string; status: string;
   razorpay_order_id: string; razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number; points: number;
+  method?: "razorpay" | "manual";
 }
-export interface PaymentList { total: number; page: number; limit: number; summary: Record<string, { count: number; amount: number }>; payments: PaymentRow[] }
+export type PaymentTotal = { count: number; amount: number };
+export interface PaymentList {
+  total: number; page: number; limit: number; summary: Record<string, PaymentTotal>;
+  /** Paid money split by how it arrived: Razorpay checkout, or recorded by hand (no Razorpay payment id). */
+  paid_by_method?: { razorpay: PaymentTotal; manual: PaymentTotal };
+  payments: PaymentRow[];
+}
 export interface RegistryAgent {
   agent_name: string; version: string; endpoint: string; description: string; owner: string; plan_tier: string; status: string;
   last_heartbeat: string | null; heartbeat_age_seconds: number | null; online: boolean; actions: string[];
