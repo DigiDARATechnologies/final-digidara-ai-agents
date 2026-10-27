@@ -189,8 +189,8 @@ function PodiumPlace({ entry }: { entry: LeaderboardEntry }) {
 
 const MINI_MEDALS = ["🥇", "🥈", "🥉"];
 
-/** The top 3 on the chat home page: the learner's organization when they are
- * in one, else the whole platform. Clicking opens the full leaderboard. */
+/** The top 3, in a card on the right of the chat home page: the learner's
+ * organization when they are in one, else the whole platform. */
 export function TopPerformers({ onOpen }: { onOpen?: () => void }) {
   const [board, setBoard] = useState<Board | null>(null);
   useEffect(() => {
@@ -201,16 +201,29 @@ export function TopPerformers({ onOpen }: { onOpen?: () => void }) {
   if (!board || board.top.length === 0) return null;
   const where = board.scope === "organization" && board.organization ? board.organization.name : "SkillDARA";
   return (
-    <div className="lb-mini" aria-label={`Top 3 at ${where}`}>
-      <span className="lb-mini-title">Top {board.group === "staff" ? "staff" : "performers"} · {where}</span>
-      {board.top.map((entry) => (
-        <button key={entry.user_id} type="button" className={entry.is_me ? "me" : ""} onClick={onOpen} title="Open the leaderboard">
-          <span aria-hidden="true">{MINI_MEDALS[entry.rank - 1]}</span>
-          <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
-          <small>{Math.round(entry.score)}</small>
-          {entry.new_in_top && <span className="lb-new">New</span>}
-        </button>
-      ))}
-    </div>
+    <aside className="lb-side" aria-label={`Top 3 at ${where}`}>
+      <header>
+        <span className="lb-side-icon" aria-hidden="true">🏆</span>
+        <div>
+          <b>Top {board.group === "staff" ? "staff" : "performers"}</b>
+          <small>{where}</small>
+        </div>
+      </header>
+      <ol>
+        {board.top.map((entry) => (
+          <li key={entry.user_id} className={entry.is_me ? "me" : ""}>
+            <span className="lb-side-medal" aria-hidden="true">{MINI_MEDALS[entry.rank - 1]}</span>
+            <span className="lb-side-name">
+              <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
+              {entry.new_in_top ? <span className="lb-new">New in Top 3</span>
+                : <small>{entry.staff ? `${entry.staff.students} students` : entry.organization ?? `#${entry.rank}`}</small>}
+            </span>
+            <strong>{Math.round(entry.score)}</strong>
+          </li>
+        ))}
+      </ol>
+      {board.me && board.me.rank > 3 && <p className="lb-side-me">Your rank: <b>#{board.me.rank}</b> of {board.total}</p>}
+      {onOpen && <button type="button" className="lb-side-open" onClick={onOpen}>View leaderboard →</button>}
+    </aside>
   );
 }

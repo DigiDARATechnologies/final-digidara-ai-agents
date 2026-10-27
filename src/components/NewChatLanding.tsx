@@ -100,13 +100,13 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
 
   return (
     <section className="view view-chat new-chat-landing home-landing active">
+      <TopPerformers onOpen={onOpenLeaderboard} />
       <div className="landing-center">
         <div className="home-logo">
           <Logo variant="icon" size={72} />
         </div>
         <h1 className="landing-title">What can I help you with?</h1>
         <p className="home-subtitle">One conversation. The right AI agent for every goal.</p>
-        <TopPerformers onOpen={onOpenLeaderboard} />
 
         <form className="home-composer" onSubmit={handleSubmit}>
           <textarea

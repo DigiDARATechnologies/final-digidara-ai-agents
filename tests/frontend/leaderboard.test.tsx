@@ -61,9 +61,13 @@ test('staff see only their organization staff board, with what they are ranked o
 test('the chat home shows the top 3 of my organization, and opens the leaderboard', async () => {
   const onOpen = jest.fn();
   render(<TopPerformers onOpen={onOpen} />);
-  expect(await screen.findByText('Top performers · Anna University')).toBeInTheDocument();
+  const card = await screen.findByRole('complementary', { name: 'Top 3 at Anna University' });
+  expect(within(card).getByText('Top performers')).toBeInTheDocument();
+  expect(within(card).getByText('Asha R.')).toBeInTheDocument();
+  expect(within(card).getByText('New in Top 3')).toBeInTheDocument();
+  expect(within(card).getByText('#4', { selector: 'b' })).toBeInTheDocument();
   expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto');
-  fireEvent.click(screen.getByRole('button', { name: /Asha R\./ }));
+  fireEvent.click(within(card).getByRole('button', { name: 'View leaderboard →' }));
   expect(onOpen).toHaveBeenCalled();
 });
 
