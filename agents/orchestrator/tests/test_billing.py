@@ -158,7 +158,7 @@ def test_history_labels_distinguish_plans_topups_and_legacy_plans(env):
     add_payment(env, "standard", order="o2")
     add_payment(env, "pro_monthly", order="o3")
     labels = {p["plan_id"]: p["label"] for p in env.client.get("/billing/summary").json()["payments"]}
-    assert labels == {"topup_10000": "Points top-up", "standard": "Standard plan", "pro_monthly": "Pro Monthly"}
+    assert labels == {"topup_10000": "Coins top-up", "standard": "Standard plan", "pro_monthly": "Pro Monthly"}
 
 
 def test_a_token_topup_does_not_make_you_a_plan_holder(env):
@@ -347,7 +347,7 @@ def test_the_invoice_number_is_stable_and_derived_from_the_payment():
 
 
 def test_catalog_helpers():
-    assert plan_catalog.payment_label("topup_bad") == "Points top-up"
+    assert plan_catalog.payment_label("topup_bad") == "Coins top-up"
     assert plan_catalog.payment_label("mystery") == "mystery"
     assert plan_catalog.tokens_for_plan_id("pro_monthly") is None
     assert plan_catalog.tokens_for_plan_id("topup_1234") == 1234
@@ -569,7 +569,7 @@ def test_monthly_usage_reports_points(env, monkeypatch):
 def test_the_catalog_and_history_show_points(env):
     offered = {plan["id"]: plan for plan in env.client.get("/billing/plans").json()["plans"]}
     assert [offered[i]["points"] for i in ("basic", "standard", "premium")] == [250, 500, 750]
-    assert offered["basic"]["features"][0] == "250 points credited instantly"
+    assert offered["basic"]["features"][0] == "250 coins credited instantly"
     assert not any("token" in feature.lower() for plan in offered.values() for feature in plan["features"])
     add_payment(env, "premium", order="o1")
     assert env.client.get("/billing/summary").json()["payments"][0]["points"] == 750
@@ -656,3 +656,76 @@ def test_a_gstin_typed_on_an_old_payment_page_reaches_the_invoice(env):
         assert session.query(Payment).filter_by(razorpay_payment_id="pay_page_gst").one().customer_gstin == "33ABCDE1234F1Z5"
     finally:
         session.close()
+
+
+ENQUIRY = {"organization": "Anna University", "organization_type": "college", "contact_name": "Dr. Priya",
+           "email": "Placement@Anna.edu", "phone": "+91 98765 43210", "learners": 1200, "city": "Chennai",
+           "message": "We want SkillDARA for our final-year students."}
+
+
+def test_an_enterprise_enquiry_is_saved_and_emailed_to_support(env, monkeypatch):
+    from app.billing import enterprise
+    from app.models import EnterpriseEnquiry
+
+    sent = []
+    monkeypatch.setattr(enterprise, "_email", lambda enquiry, account: sent.append((enquiry.organization, enquiry.email, account)) or True)
+    assert env.client.get("/billing/plans").json()["enterprise"]["contact_email"] == "support@digidaratechnologies.com"
+    reply = env.client.post("/billing/enterprise-enquiry", json=ENQUIRY)
+    assert reply.status_code == 201 and reply.json()["sent_to"] == "support@digidaratechnologies.com"
+    assert sent == [("Anna University", "placement@anna.edu", "asha@example.com")]
+    session = env.database()
+    row = session.query(EnterpriseEnquiry).one()
+    assert (row.learners, row.city, row.emailed, row.user_id) == (1200, "Chennai", True, env.user.id)
+    session.close()
+
+
+def test_an_enterprise_enquiry_that_cannot_be_emailed_is_kept_and_says_so(env, monkeypatch):
+    from app.billing import enterprise
+    from app.models import EnterpriseEnquiry
+
+    monkeypatch.setattr(enterprise, "_email", lambda enquiry, account: False)
+    reply = env.client.post("/billing/enterprise-enquiry", json=ENQUIRY)
+    assert reply.status_code == 502 and "support@digidaratechnologies.com" in reply.json()["detail"]
+    session = env.database()
+    assert session.query(EnterpriseEnquiry).one().emailed is False
+    session.close()
+    assert env.client.post("/billing/enterprise-enquiry", json={**ENQUIRY, "phone": "12"}).status_code == 422
+
+
+def test_the_enquiry_email_reaches_support_with_reply_to_the_contact(monkeypatch):
+    from app.billing import enterprise
+    from app.models import EnterpriseEnquiry
+
+    messages = []
+
+    class FakeSMTP:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def starttls(self, **kwargs):
+            pass
+
+        def login(self, *args):
+            pass
+
+        def send_message(self, message):
+            messages.append(message)
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "noreply@skilldara.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "x")
+    monkeypatch.setattr(enterprise.smtplib, "SMTP", FakeSMTP)
+    enquiry = EnterpriseEnquiry(organization="Anna <University>", organization_type="college", contact_name="Priya",
+                                email="placement@anna.edu", phone="9876543210", learners=None, city="", message="Hi")
+    assert enterprise._email(enquiry, "asha@example.com") is True
+    message = messages[0]
+    assert message["To"] == "support@digidaratechnologies.com" and message["Reply-To"] == "placement@anna.edu"
+    assert "Enterprise enquiry: Anna <University>" == message["Subject"]
+    html_part = message.get_body(("html",)).get_content()
+    assert "Anna &lt;University&gt;" in html_part           # nothing from the form is rendered as HTML
