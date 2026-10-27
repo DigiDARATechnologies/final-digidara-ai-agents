@@ -37,7 +37,7 @@
 .lb-place.place-3 .lb-step { height: 44px; background: linear-gradient(180deg, #d98b4f, #b06a33); }
 
 .lb-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.lb-list li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; }
+.lb-list li { display: grid; grid-template-columns: 40px 30px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; }
 .lb-list li:nth-child(odd) { background: rgb(127 127 127 / .06); }
 .lb-list li.me { background: rgb(40 81 216 / .12); font-weight: 700; }
 .lb-rank { color: var(--tx-2); font-weight: 700; }
@@ -56,9 +56,10 @@
 .lb-side header small { color: var(--tx-2); font-size: 12px; }
 .lb-side-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: rgb(245 179 1 / .16); font-size: 18px; }
 .lb-side ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.lb-side li { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgb(127 127 127 / .06); }
+.lb-side li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; background: rgb(127 127 127 / .06); }
 .lb-side li.me { background: rgb(40 81 216 / .10); }
-.lb-side-medal { font-size: 18px; }
+.lb-side-pic { position: relative; width: 36px; height: 36px; }
+.lb-side-medal { position: absolute; right: -6px; bottom: -6px; font-size: 15px; line-height: 1; }
 .lb-side-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .lb-side-name b { font-size: 13px; color: var(--tx-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-side-name small { color: var(--tx-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -71,3 +72,11 @@
 @media (max-width: 1280px) {
   .lb-side { position: static; width: auto; max-width: 660px; margin: 22px auto 0; }
 }
+
+/* Profile pictures */
+.lb-avatar { overflow: hidden; flex: 0 0 auto; }
+.lb-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lb-avatar.small { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; font-size: 14px; }
+.lb-avatar.tiny { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-size: 12px;
+  background: var(--canvas-accent-soft, rgb(40 81 216 / .12)); color: var(--accent3, #2851d8); font-weight: 800; }
+.lb-side .lb-avatar.small, .lb-spotlight .lb-avatar.small { background: var(--canvas-accent-soft, rgb(40 81 216 / .12)); color: var(--accent3, #2851d8); font-weight: 800; }

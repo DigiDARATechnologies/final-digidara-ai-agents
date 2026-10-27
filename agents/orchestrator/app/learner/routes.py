@@ -126,6 +126,38 @@ class LeaderboardVisibilityIn(BaseModel):
     hidden: bool
 
 
+class AvatarIn(BaseModel):
+    image: str = Field(max_length=300_000)
+    thumb: str = Field(max_length=30_000)
+
+
+@router.get("/avatar")
+def get_avatar(user_id: str = Depends(get_current_user_id)) -> dict:
+    """The learner's own profile picture, so it follows them to another browser."""
+    from app.learner import avatar
+
+    return {"image": avatar.get(user_id)}
+
+
+@router.put("/avatar")
+def put_avatar(req: AvatarIn, user_id: str = Depends(get_current_user_id)) -> dict:
+    """Save the profile picture, so others see it on leaderboards."""
+    from app.learner import avatar
+
+    try:
+        return avatar.save(user_id, req.image, req.thumb)
+    except avatar.AvatarError as exc:
+        raise HTTPException(400, exc.message) from exc
+
+
+@router.delete("/avatar", status_code=204)
+def delete_avatar(user_id: str = Depends(get_current_user_id)) -> Response:
+    from app.learner import avatar
+
+    avatar.remove(user_id)
+    return Response(status_code=204)
+
+
 @router.get("/leaderboard")
 def leaderboard(scope: str = "auto", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
     """Top learners by job readiness: students or staff, platform-wide or in

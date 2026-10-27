@@ -83,3 +83,15 @@ test('a learner can hide themselves', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Hide me' }));
   await waitFor(() => expect(api.setLeaderboardHidden).toHaveBeenCalledWith(true));
 });
+
+test('profile pictures show, and the initial when there is none', async () => {
+  api.fetchLeaderboard.mockResolvedValue(board({
+    top: [entry(1, 'Asha R.', 92, { avatar: 'data:image/jpeg;base64,AAAA' }), entry(2, 'Nila F.', 85), entry(3, 'Ravi T.', 80)],
+  }));
+  const { container } = render(<TopPerformers />);
+  await screen.findByText('Asha R.');
+  const pictures = container.querySelectorAll('.lb-avatar img');
+  expect(pictures).toHaveLength(1);
+  expect(pictures[0].getAttribute('src')).toBe('data:image/jpeg;base64,AAAA');
+  expect(within(container).getByText('N')).toBeInTheDocument();
+});

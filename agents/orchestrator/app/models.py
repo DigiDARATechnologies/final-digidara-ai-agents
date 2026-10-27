@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
-from sqlalchemy.dialects.mysql import LONGTEXT
+from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.billing.plans import FREE_TOKENS_PER_POINT, free_signup_tokens
@@ -381,6 +381,19 @@ class OrganizationMember(Base):
     section: Mapped[str | None] = mapped_column(String(40), nullable=True)
     join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class UserAvatar(Base):
+    """A learner's profile picture, so others see it (leaderboards). `image`
+    is the 256px picture and `thumb` a 64px copy for lists, both as JPEG/PNG
+    data URLs the browser made."""
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    image: Mapped[str] = mapped_column(Text().with_variant(MEDIUMTEXT, "mysql"))
+    thumb: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
 
 
 class LeaderboardTop(Base):

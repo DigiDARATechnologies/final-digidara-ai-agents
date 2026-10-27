@@ -63,3 +63,25 @@ export function fileToAvatar(file: File, size = 256): Promise<string> {
     img.src = url;
   });
 }
+
+/** A small square copy of a profile picture (data URL), for lists such as leaderboards. */
+export function avatarThumb(dataUrl: string, size = 64): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not process the image."));
+        return;
+      }
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = () => reject(new Error("Could not read that image."));
+    img.src = dataUrl;
+  });
+}

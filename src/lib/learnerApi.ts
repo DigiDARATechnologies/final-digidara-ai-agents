@@ -208,6 +208,8 @@ export type LeaderboardGroup = "students" | "staff";
 export type LeaderboardScope = "platform" | "organization";
 export interface LeaderboardEntry {
   rank: number; user_id: string; name: string; score: number; band: Band; organization: string | null; is_me: boolean;
+  /** A 64px profile picture (data URL), when the person has one. */
+  avatar?: string | null;
   new_in_top?: boolean; entered_top_at?: string;
   /** Staff boards: what the staff member is ranked on (their students). */
   staff?: { students: number; average_readiness: number; active_percent: number };
@@ -221,6 +223,10 @@ export interface Leaderboard {
 /** "auto": the viewer's organization when they are in one, else the whole platform. */
 export const fetchLeaderboard = (scope: LeaderboardScope | "auto", group?: LeaderboardGroup) =>
   request<Leaderboard>(`/learner/leaderboard?scope=${scope}${group ? `&group=${group}` : ""}`);
+/** The profile picture kept on the server, so others see it on leaderboards. */
+export const fetchMyAvatar = () => request<{ image: string | null }>("/learner/avatar");
+export const saveMyAvatar = (image: string, thumb: string) => request<{ saved: boolean }>("/learner/avatar", json("PUT", { image, thumb }));
+export const deleteMyAvatar = () => request<void>("/learner/avatar", json("DELETE"));
 export const setLeaderboardHidden = (hidden: boolean) =>
   request<{ hidden: boolean }>("/learner/leaderboard/visibility", json("PUT", { hidden }));
 export const fetchReadinessHistory = () =>

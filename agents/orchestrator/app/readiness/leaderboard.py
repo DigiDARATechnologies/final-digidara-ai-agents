@@ -238,10 +238,14 @@ def board(viewer_id: str, scope: str = "auto", group: str | None = None) -> dict
         session.close()
 
     now = datetime.utcnow()
+    from app.learner import avatar
+
+    pictures = avatar.thumbs(ranked_ids)
 
     def entry(rank: int, user_id: str, score: float) -> dict:
         item = {
             "rank": rank, "user_id": user_id, "name": _short_name(names.get(user_id, "")),
+            "avatar": pictures.get(user_id),
             "score": round(score, 1), "band": readiness_service.band_for(score, 1),
             "organization": org_names.get(org_of.get(user_id, "")) if scope == "platform" else None,
             "is_me": user_id == viewer_id,

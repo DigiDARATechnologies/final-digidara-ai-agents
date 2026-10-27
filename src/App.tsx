@@ -36,7 +36,7 @@ import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
 import OnboardingScreen from "./components/OnboardingScreen";
-import { fetchLearnerSummary, fetchReadiness, type LearnerSummary } from "./lib/learnerApi";
+import { deleteMyAvatar, fetchLearnerSummary, fetchMyAvatar, fetchReadiness, saveMyAvatar, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
 import { onLearnerContextRefreshed, setLearnerContext } from "./lib/learnerContext";
 import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
@@ -70,7 +70,16 @@ import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
 import { applyAppearance, loadAppearance, saveAppearance } from "./lib/appearance";
-import { loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
+import { avatarThumb, loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
+
+/** Sends the profile picture (and a 64px copy for lists) to the server. */
+async function uploadAvatar(image: string): Promise<void> {
+  try {
+    await saveMyAvatar(image, await avatarThumb(image));
+  } catch {
+    // Kept in this browser; the next sign-in tries again.
+  }
+}
 import Toast from "./components/Toast";
 import SaveIndicator from "./components/SaveIndicator";
 import AptitudePracticePanel from "./components/AptitudePracticePanel";
@@ -759,7 +768,23 @@ export default function App() {
   }, [user, settingsOpen]);
 
   useEffect(() => {
-    setProfilePrefs(user ? loadProfilePrefs(user.id) : {});
+    const local = user ? loadProfilePrefs(user.id) : {};
+    setProfilePrefs(local);
+    if (!user) return;
+    let active = true;
+    // The profile picture lives on the server too, so others see it on
+    // leaderboards and it follows the learner to another browser.
+    fetchMyAvatar().then(({ image }) => {
+      if (!active) return;
+      if (image && image !== local.avatar) {
+        const next = { ...local, avatar: image };
+        setProfilePrefs(next);
+        saveProfilePrefs(user.id, next);
+      } else if (!image && local.avatar) {
+        void uploadAvatar(local.avatar);
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
   }, [user?.id]);
 
   const displayUser: User | null = user
@@ -774,6 +799,10 @@ export default function App() {
 
   function handleSaveProfile(next: ProfilePrefs) {
     if (!user) return;
+    if (next.avatar !== profilePrefs.avatar) {
+      if (next.avatar) void uploadAvatar(next.avatar);
+      else void deleteMyAvatar().catch(() => undefined);
+    }
     setProfilePrefs(next);
     showToast(saveProfilePrefs(user.id, next) ? "Profile updated." : "Profile updated for this session, but it could not be saved on this device.");
   }

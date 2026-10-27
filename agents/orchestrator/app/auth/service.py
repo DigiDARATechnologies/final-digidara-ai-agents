@@ -113,7 +113,10 @@ def _purge_phase2(user_id: str) -> None:
     from app.memory import service as memory_service
     from app.orchestrator import boss_memory
 
+    from app.learner import avatar
+
     learner_service.purge(user_id)
+    avatar.remove(user_id)
     readiness_service.purge(user_id)
     org_service.purge(user_id)
     memory_service.clear(user_id)

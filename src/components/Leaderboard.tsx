@@ -117,6 +117,7 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
           {featured && (
             <div className={`lb-spotlight${featured.new_in_top ? " new" : ""}`} aria-live="polite" key={featured.user_id}>
               <span className="lb-spot-medal" aria-hidden="true">{MEDALS[featured.rank - 1]}</span>
+              <Avatar entry={featured} className="lb-avatar small" />
               <div>
                 {featured.new_in_top && <span className="lb-new">New in Top 3</span>}
                 <b>{featured.name}{featured.is_me ? " (you)" : ""}</b>
@@ -140,6 +141,7 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
               {shown.map((entry) => (
                 <li key={entry.user_id} className={entry.is_me ? "me" : ""}>
                   <span className="lb-rank">#{entry.rank}</span>
+                  <Avatar entry={entry} className="lb-avatar tiny" />
                   <span className="lb-name">{entry.name}{entry.is_me ? " (you)" : ""}{entry.organization && <small>{entry.organization}</small>}
                     {entry.staff && <small>{staffLine(entry.staff)}</small>}</span>
                   <span className="lb-score">{Math.round(entry.score)}</span>
@@ -169,6 +171,15 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
   );
 }
 
+/** The person's profile picture, or their initial when they have none. */
+function Avatar({ entry, className }: { entry: LeaderboardEntry; className: string }) {
+  return (
+    <span className={className} aria-hidden="true">
+      {entry.avatar ? <img src={entry.avatar} alt="" /> : entry.name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 function staffLine(staff: NonNullable<LeaderboardEntry["staff"]>): string {
   return `${staff.students} student${staff.students === 1 ? "" : "s"} · avg readiness ${Math.round(staff.average_readiness)} · ${staff.active_percent}% active`;
 }
@@ -177,7 +188,7 @@ function PodiumPlace({ entry }: { entry: LeaderboardEntry }) {
   return (
     <li className={`lb-place place-${entry.rank}${entry.is_me ? " me" : ""}${entry.new_in_top ? " new" : ""}`}>
       <span className="lb-medal" aria-hidden="true">{MEDALS[entry.rank - 1]}</span>
-      <span className="lb-avatar" aria-hidden="true">{entry.name.slice(0, 1).toUpperCase()}</span>
+      <Avatar entry={entry} className="lb-avatar" />
       <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
       {entry.organization && <small>{entry.organization}</small>}
       {entry.new_in_top && <span className="lb-new">New</span>}
@@ -212,7 +223,10 @@ export function TopPerformers({ onOpen }: { onOpen?: () => void }) {
       <ol>
         {board.top.map((entry) => (
           <li key={entry.user_id} className={entry.is_me ? "me" : ""}>
-            <span className="lb-side-medal" aria-hidden="true">{MINI_MEDALS[entry.rank - 1]}</span>
+            <span className="lb-side-pic">
+              <Avatar entry={entry} className="lb-avatar small" />
+              <span className="lb-side-medal" aria-hidden="true">{MINI_MEDALS[entry.rank - 1]}</span>
+            </span>
             <span className="lb-side-name">
               <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
               {entry.new_in_top ? <span className="lb-new">New in Top 3</span>
