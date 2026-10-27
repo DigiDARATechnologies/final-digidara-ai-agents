@@ -215,18 +215,18 @@ def member_detail(admin_id: str, org_id: str, member_id: str, action: str = "pro
     finally:
         session.close()
     snapshot = readiness_service.latest(user_id)
+    current = None if snapshot is None else readiness_service.scored(snapshot)
     plan = coach_service.get(user_id)
     return {
         "member": identity,
         "profile": learner_service.get_profile(user_id),
         "levels": list(learner_service.get_levels(user_id).values()),
         "role_history": learner_service.role_history(user_id),
-        "readiness": None if snapshot is None else {
-            "overall": snapshot.overall, "band": snapshot.band,
-            "band_label": readiness_service.BAND_LABELS.get(snapshot.band, snapshot.band),
-            "computed_at": snapshot.computed_at.isoformat(),
-            "areas": readiness_service.area_scores(snapshot),
-            "next_steps": (snapshot.areas or {}).get("next_steps") or [],
+        "readiness": None if current is None else {
+            "overall": current["overall"], "band": current["band"], "band_label": current["band_label"],
+            "computed_at": current["computed_at"],
+            "areas": readiness_service.area_map(current["areas"]),
+            "next_steps": current["next_steps"],
         },
         "readiness_history": readiness_service.history(user_id),
         "activity": sorted(activity, key=lambda a: -a["requests"]),

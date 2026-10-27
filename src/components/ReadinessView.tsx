@@ -144,11 +144,10 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
   const scored = area.status === "assessed" && area.score !== null;
   // An area without levels (Resume) shows its own score, out of 100.
   const leveled = area.leveled !== false;
-  // The card shows how much of the current level is done (it starts from 0
-  // at every new level). The area score -- 25 points for each level -- is
-  // what counts toward job readiness.
-  const perLevel = scored && leveled && typeof area.level_progress === "number";
-  const shown = perLevel ? area.level_progress as number : area.score as number;
+  // The card's number is the area score (0-100) that counts toward job
+  // readiness: up to 25 points per level, earned as the level is done. Progress
+  // inside the current level is shown below it.
+  const shown = area.score as number;
   return (
     <div className={`rd-area status-${area.status}`}>
       <div className="rd-area-head">
@@ -157,12 +156,12 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
           <span className="rd-weight">{leveled ? `${area.levels_completed?.length ?? 0} of 4 levels completed` : "No levels"}</span>
         </div>
         <div className="rd-area-score">
-          {scored ? <><b>{Math.round(shown)}</b><span>{perLevel ? `% ${LEVEL_LABELS[area.level]}` : "/100"}</span></> : <span className="rd-muted">
+          {scored ? <><b>{Math.round(shown)}</b><span>{leveled ? `/100 · ${LEVEL_LABELS[area.level]}` : "/100"}</span></> : <span className="rd-muted">
             {area.status === "unavailable" ? "Unavailable" : "Not started"}</span>}
         </div>
       </div>
       <div className="rd-bar"><span style={{ width: `${scored ? Math.min(100, shown) : 0}%` }} /></div>
-      {scored && leveled && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · 25 points for each completed level</p>}
+      {scored && leveled && <p className="rd-metrics">Area score {Math.round(area.score as number)}/100 · each level adds up to 25 points as you complete it</p>}
       {metricLine(area.metrics) && <p className="rd-metrics">{metricLine(area.metrics)}</p>}
       {leveled && area.promoted_from && (
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
@@ -188,7 +187,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         <details className="rd-how">
           <summary>How this score works</summary>
           {leveled
-            ? <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level you complete adds 25 points to this area's score (Beginner 25, Medium 50, Hard 75, Professional 100); a level counts once it is 100% done. Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "finish your level (100%) to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
+            ? <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level is worth 25 points and earns them as you progress: 40% of a level adds 10 points, a finished level adds 25 (all four finished = 100). Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "finish your level (100%) to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
             : <p>{AREA_EXPLANATION[area.agent_name]}</p>}
         </details>
       )}
@@ -377,10 +376,10 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
               <details className="rd-how">
                 <summary>How is this calculated?</summary>
                 <p>
-                  Only completed levels count. Each agent earns 25 points for every level it has completed (Beginner 25,
-                  Medium 50, Hard 75, Professional 100), and your job readiness is the average over all {readiness.areas.length}{" "}
-                  agents. So it shows 25 when every agent's Beginner level is complete, 50 when every Medium level is, and
-                  so on. Progress inside a level is shown on each card and counts once the level is complete.{" "}
+                  Every bit of progress counts. Each agent's area score is out of 100: each of its four levels is worth
+                  25 points, earned as you progress (34% of Beginner = 8.5, Beginner done and 40% of Medium = 35). Your job
+                  readiness is the average of all {readiness.areas.length} agents' scores, so it rises whenever any agent's
+                  progress does.{" "}
                   {readiness.overall !== null && `Yours: (${readiness.areas
                     .map((a) => `${a.label} ${Math.round(a.status === "assessed" ? a.score ?? 0 : 0)}`).join(" + ")}) ÷ ${readiness.areas.length} = ${Math.round(readiness.overall)}.`}
                 </p>

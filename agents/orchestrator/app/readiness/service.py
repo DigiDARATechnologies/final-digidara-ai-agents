@@ -1,12 +1,11 @@
 """Job readiness: one score per learner, combined from every agent over A2A.
 
-Scores count completed levels only (the Resume Builder has no levels: its
-area score is its best ATS score). Each of the four levels is worth
-LEVEL_POINTS (25), so an area with Beginner completed scores 25, Medium 50,
-Hard 75 and Professional 100; progress inside a level is shown on its own
-(level_progress) and adds nothing until the level is complete. The overall
-score is the average over all seven areas, so it reaches 25 only when every
-agent's Beginner is complete, 50 when every Medium is, and so on. The
+Each of the four levels is worth LEVEL_POINTS (25) and earns them in
+proportion to how much of it is done, so every bit of progress raises the
+score: 34% of Beginner scores 8.5, Beginner done and 40% of Medium scores 35,
+all four levels done scores 100. Levels up to the learner's current one count
+(see level_credits). The Resume Builder has no levels: its area score is its
+best ATS score. The overall score is the average over all seven areas. The
 agent's own result is kept as `quality_score`.
 
 Each scored agent answers the `get_student_summary` skill with the shared
@@ -272,14 +271,62 @@ def completed_levels(area: dict) -> list[str]:
     return done
 
 
+def level_credits(area: dict) -> dict[str, float]:
+    """How much (0-1) of each level up to the current one is done. The current
+    level counts its progress; a level below it counts what the agent measured
+    there, or all of it when the agent does not measure each level (the
+    learner moved past it). Levels above the current one count nothing yet."""
+    if area.get("status") != "assessed" or area.get("leveled") is False:
+        return {}
+    current = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
+    measured = area.get("level_progress_basis") == "level"
+    scores = area.get("level_scores") or {}
+    credits = {}
+    for index, name in enumerate(level_rules.LEVELS[:current + 1]):
+        value = area.get("level_progress") if index == current else scores.get(name) if measured else 100
+        number = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+        credits[name] = min(1.0, max(0.0, number / 100))
+    return credits
+
+
 def level_score(area: dict) -> float | None:
-    """The area's 0-100 score: LEVEL_POINTS for each completed level; an
-    area without levels scores its own result."""
+    """The area's 0-100 score: LEVEL_POINTS times how much of each level is
+    done (level_credits); an area without levels scores its own result."""
     if area.get("status") != "assessed":
         return None
     if area.get("leveled") is False:
         return area.get("quality_score")
-    return round(LEVEL_POINTS * len(completed_levels(area)), 1)
+    return round(LEVEL_POINTS * sum(level_credits(area).values()), 1)
+
+
+def rescore(stored_areas: list) -> list[dict]:
+    """Stored areas with their scores worked out again by the current rules,
+    so a snapshot saved under older rules shows the same numbers as a fresh
+    check (the agents' own measurements in it are kept as they were)."""
+    areas = []
+    for stored in stored_areas:
+        if not isinstance(stored, dict) or not stored.get("agent_name"):
+            continue
+        area = dict(stored)
+        if "quality_score" in area:
+            area["levels_completed"] = completed_levels(area)
+            area["score"] = level_score(area)
+        areas.append(area)
+    return areas
+
+
+def scored(snapshot: ReadinessSnapshot) -> dict:
+    """A stored snapshot as a readiness result, scored by the current rules."""
+    areas = rescore((snapshot.areas or {}).get("areas") or [])
+    assessed = sum(1 for a in areas if a.get("status") == "assessed")
+    overall = overall_score(areas) if assessed else None
+    band = band_for(overall, assessed)
+    return {
+        "overall": overall, "band": band, "band_label": BAND_LABELS.get(band, band),
+        "coverage": {"assessed": assessed, "total": len(AREAS)},
+        "areas": areas, "next_steps": _next_steps(areas) if areas else [],
+        "computed_at": snapshot.computed_at.isoformat(),
+    }
 
 
 def overall_score(areas: list[dict]) -> float:
@@ -374,7 +421,11 @@ def _store(user_id: str, result: dict) -> None:
 def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
     """agent_name -> {score, status, level, level_progress, level_scores} from
     a stored snapshot (level_progress is at the level the snapshot was taken)."""
-    stored = (snapshot.areas or {}).get("areas") or []
+    return area_map(rescore((snapshot.areas or {}).get("areas") or []))
+
+
+def area_map(areas: list[dict]) -> dict[str, dict]:
+    """agent_name -> the area fields the organization screens show."""
     return {
         a["agent_name"]: {
             "score": a.get("score"), "status": a.get("status"), "level": a.get("level"),
@@ -382,7 +433,7 @@ def area_scores(snapshot: ReadinessSnapshot) -> dict[str, dict]:
             "levels_completed": a.get("levels_completed") or [], "quality_score": a.get("quality_score"),
             "leveled": a.get("leveled", True),
         }
-        for a in stored if isinstance(a, dict) and a.get("agent_name")
+        for a in areas if isinstance(a, dict) and a.get("agent_name")
     }
 
 
@@ -417,9 +468,12 @@ def latest_for(user_ids: list[str]) -> dict[str, ReadinessSnapshot]:
         )
     finally:
         session.close()
+    # Only the snapshot of each learner's current target role (like latest()).
+    roles = {user_id: learner_service.role_key(user_id) for user_id in set(user_ids)}
     result: dict[str, ReadinessSnapshot] = {}
     for row in rows:
-        result.setdefault(row.user_id, row)
+        if row.role_key in (roles.get(row.user_id), ""):
+            result.setdefault(row.user_id, row)
     return result
 
 
@@ -432,10 +486,11 @@ def history(user_id: str) -> list[dict]:
         )
     finally:
         session.close()
-    return [
-        {"overall": row.overall, "band": row.band, "computed_at": row.computed_at.isoformat()}
-        for row in reversed(rows)
-    ]
+    result = []
+    for row in reversed(rows):
+        current = scored(row) if isinstance((row.areas or {}).get("areas"), list) else {"overall": row.overall, "band": row.band}
+        result.append({"overall": current["overall"], "band": current["band"], "computed_at": row.computed_at.isoformat()})
+    return result
 
 
 async def get(user, refresh: bool = False) -> dict:
@@ -463,14 +518,7 @@ async def get(user, refresh: bool = False) -> dict:
             # the area scores and the overall have to be worked out again.
             return await compute(user)
         areas.append(area)
-    return {
-        "overall": snapshot.overall, "band": snapshot.band,
-        "band_label": BAND_LABELS.get(snapshot.band, snapshot.band),
-        "coverage": {"assessed": sum(1 for a in areas if a.get("status") == "assessed"), "total": len(AREAS)},
-        "areas": areas, "next_steps": stored.get("next_steps") or [],
-        "profile": learner_service.get_profile(user.id),
-        "computed_at": snapshot.computed_at.isoformat(), "cached": True,
-    }
+    return {**scored(snapshot), "profile": learner_service.get_profile(user.id), "cached": True}
 
 
 async def skill(action: str, user) -> dict:

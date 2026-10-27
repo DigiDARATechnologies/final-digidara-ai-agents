@@ -157,4 +157,6 @@ test('the Resume card has no levels and shows its own ATS score', async () => {
   const projects = screen.getByRole('heading', { name: 'Projects' }).closest('.rd-area') as HTMLElement;
   expect(projects).toHaveTextContent('1 of 4 levels completed');
   expect(projects).toHaveTextContent('Area score 25/100');
+  // The card's headline is the area score that counts toward readiness, with the level beside it.
+  expect(projects.querySelector('.rd-area-score')).toHaveTextContent('25/100 · Beginner');
 });
