@@ -125,11 +125,11 @@ test('legacy browser state is uploaded once and the local copy is removed only a
   const { result } = await loggedIn();
   expect(result.current.capstone.old1).toEqual({ step: 'awaiting_submission', token: 'T' }); // visible immediately
   await advance(900);
-  expect(result.current.status).toBe('offline');
+  expect(result.current.status).toBe('saving'); // one failure is retried quietly first
   expect(localStorage.getItem(legacyKey('capstone', EMAIL))).not.toBeNull(); // nothing confirmed yet: keep the local copy
   expect(localStorage.getItem(legacyKey('aptitude', EMAIL))).not.toBeNull();
 
-  await advance(6000); // retry
+  await advance(2100); // retry
   await flushPromises();
   expect(mocked.saveAgentState).toHaveBeenCalledWith('platform-token', 'capstone', 'old1', { step: 'awaiting_submission' }, false);
   expect(mocked.saveAgentState).toHaveBeenCalledWith('platform-token', 'aptitude', 'old2', { step: 'completed' }, false);
@@ -163,17 +163,43 @@ test('a failed load shows offline, keeps retrying, and never uploads an empty st
   expect(mocked.deleteAgentState).not.toHaveBeenCalled();
 });
 
-test('shows saving, then offline with a retry, when the server is unreachable', async () => {
+test('a single failed save (a server restart) is retried quietly, without showing offline', async () => {
   const { result } = await loggedIn();
   await advance(900);
   mocked.saveAgentState.mockRejectedValueOnce(new TypeError('offline'));
   act(() => result.current.setAptitude({ a1: { step: 'awaiting_question' } }));
   await advance(900);
-  expect(result.current.status).toBe('offline');
-  await advance(5100);
+  expect(result.current.status).toBe('saving');
+  await advance(2100);
   await flushPromises();
   expect(mocked.saveAgentState).toHaveBeenCalledTimes(2);
   expect(result.current.status).toBe('idle');
+});
+
+test('shows offline only when the quiet retry fails too, then keeps retrying', async () => {
+  const { result } = await loggedIn();
+  await advance(900);
+  mocked.saveAgentState.mockRejectedValueOnce(new TypeError('offline')).mockRejectedValueOnce(new TypeError('offline'));
+  act(() => result.current.setAptitude({ a1: { step: 'awaiting_question' } }));
+  await advance(900);
+  await advance(2100);
+  await flushPromises();
+  expect(result.current.status).toBe('offline');
+  await advance(5100);
+  await flushPromises();
+  expect(mocked.saveAgentState).toHaveBeenCalledTimes(3);
+  expect(result.current.status).toBe('idle');
+});
+
+test('an expired sign-in says so and stops retrying', async () => {
+  const { result } = await loggedIn();
+  await advance(900);
+  mocked.saveAgentState.mockRejectedValueOnce(Object.assign(new Error('Invalid token'), { status: 401 }));
+  act(() => result.current.setAptitude({ a1: { step: 'awaiting_question' } }));
+  await advance(900);
+  expect(result.current.status).toBe('signed_out');
+  await advance(60000);
+  expect(mocked.saveAgentState).toHaveBeenCalledTimes(1);
 });
 
 test('a state the server rejects as too large is not retried forever', async () => {
