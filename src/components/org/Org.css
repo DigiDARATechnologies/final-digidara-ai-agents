@@ -20,6 +20,14 @@
 .org-card-head h3 { margin: 0; }
 .org-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 .org-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.org-grid-1 { display: grid; gap: 16px; margin-top: 16px; }
+/* Student list and join requests */
+.og-search { min-width: 0; width: min(280px, 100%); padding: 8px 12px; border: 1px solid var(--line-1); border-radius: 10px; background: var(--surf-1); color: var(--tx-1); font: inherit; }
+.org-chip.status-joined { background: rgb(34 197 94 / .14); color: #15803d; }
+.org-chip.status-waiting, .org-chip.status-not_signed_up { background: rgb(234 179 8 / .16); color: #a16207; }
+.org-chip.status-other_organization { background: rgb(239 68 68 / .12); color: #b91c1c; }
+.org-pending h3 { margin: 0 0 8px; }
+.og-results { margin-top: 12px; overflow-wrap: anywhere; }
 .org-avatar { display: inline-grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 10px; background: var(--canvas-accent-soft); color: var(--accent3); font-weight: 800; font-size: 14px; }
 .org-avatar.lg { width: 48px; height: 48px; border-radius: 14px; font-size: 20px; }
 .org-avatar.xl { width: 56px; height: 56px; border-radius: 16px; font-size: 24px; background: linear-gradient(135deg, #2851d8, #6cc3e8); color: #fff; }

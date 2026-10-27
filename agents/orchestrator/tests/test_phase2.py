@@ -356,13 +356,27 @@ def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
 
 # --- organizations ----------------------------------------------------------
 
-def _make_org(client):
+def _list_students(org_id, *emails):
+    """Puts emails on the organization's student list (without auto-joining
+    anyone), so a join code lets those learners straight in."""
+    from app import db
+    from app.models import OrgRosterEntry
+
+    session = db.get_session()
+    session.add_all([OrgRosterEntry(organization_id=org_id, email=email) for email in emails])
+    session.commit()
+    session.close()
+
+
+def _make_org(client, listed=("learner@example.test", "other@example.test")):
     """The platform admin creates the organization with "admin" as its owner;
-    returns the owner's membership."""
+    returns the owner's membership. The test learners are on its student list."""
     created = client.post("/organizations/platform", headers=auth("platform"), json={
         "name": "Anna University", "kind": "college", "admin_email": "admin@example.test"})
     assert created.status_code == 201, created.text
-    return client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    membership = client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    _list_students(membership["organization"]["id"], *listed)
+    return membership
 
 
 def test_register_join_and_share(app_client, users):
@@ -818,3 +832,125 @@ def test_a_snapshot_saved_under_the_old_rules_is_shown_with_the_new_scores(app_c
     assert result["next_steps"] == ["Improve aptitude_agent (8/100)."]     # rewritten with the new score
     assert readiness_service.area_scores(snapshot)["aptitude_agent"]["score"] == 8.5
     assert readiness_service.history("learner")[-1]["overall"] == 1.2
+
+
+# --- staff logins, student lists and join requests ---------------------------
+
+def _xlsx(rows):
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    for row in rows:
+        book.active.append(row)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+def test_a_code_from_someone_not_on_the_list_waits_for_staff_approval(app_client, users):
+    org = _make_org(app_client, listed=())
+    org_id, code = org["organization"]["id"], org["organization"]["join_code"]
+    reply = app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).json()
+    assert reply["membership"] is None and reply["pending"]["organization"]["name"] == "Anna University"
+    # No access and nothing shared while waiting.
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"] is None
+    assert app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).status_code == 409
+    waiting = app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json()
+    assert [r["email"] for r in waiting] == ["learner@example.test"]
+    # A learner cannot approve themselves.
+    assert app_client.post(f"/organizations/{org_id}/requests/{waiting[0]['id']}", headers=auth(), json={"approve": True}).status_code == 403
+    assert app_client.post(f"/organizations/{org_id}/requests/{waiting[0]['id']}", headers=auth("admin"), json={"approve": True}).status_code == 204
+    membership = app_client.get("/organizations/me", headers=auth()).json()["membership"]
+    # They agreed to share on the join screen when they asked.
+    assert membership["role"] == "member" and membership["progress_shared"] is True
+    assert app_client.get("/organizations/me/request", headers=auth()).json()["pending"] is None
+
+
+def test_a_declined_or_cancelled_request_gives_no_access(app_client, users):
+    org = _make_org(app_client, listed=())
+    org_id, code = org["organization"]["id"], org["organization"]["join_code"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": code})
+    request_id = app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json()[0]["id"]
+    app_client.post(f"/organizations/{org_id}/requests/{request_id}", headers=auth("admin"), json={"approve": False})
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"] is None
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": code})
+    assert app_client.delete("/organizations/me/request", headers=auth("other")).status_code == 204
+    assert app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json() == []
+
+
+def test_staff_upload_an_excel_list_and_listed_learners_join(app_client, users, database):
+    org = _make_org(app_client, listed=())
+    org_id = org["organization"]["id"]
+    staff = app_client.post(f"/organizations/{org_id}/staff", headers=auth("admin"),
+                            json={"name": "Priya", "email": "Priya@College.edu"}).json()
+    assert staff["status"] == "created" and staff["temporary_password"]
+    session = database()
+    staff_user = session.query(User).filter_by(email="priya@college.edu").one()
+    staff_user.email_verified = True
+    session.add(User(id="newbie", name="Newbie", email="newbie@example.test", email_verified=False, token_balance=10, password_hash="x"))
+    session.commit()
+    staff_id = staff_user.id
+    session.close()
+    assert app_client.get("/organizations/me", headers=auth(staff_id)).json()["membership"]["role"] == "staff"
+
+    # A request waiting before the list arrives is approved by the upload.
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["organization"]["join_code"]})
+    data = _xlsx([["S.No", "Student Name", "Mobile Number", "Email ID"],
+                  [1, "Learner One", 9876543210, "Learner@Example.test"],
+                  [2, "Other", "98765 43211", "other@example.test"],
+                  [3, "Newbie", "", "newbie@example.test"],
+                  [4, "Bad row", "", "not-an-email"]])
+    result = app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+                             files={"file": ("students.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert result["added"] == 3 and result["invalid_count"] == 1 and result["invalid"][0]["row"] == 5
+    # The verified learner joins now, and the waiting request is approved.
+    assert result["joined"] == 1 and result["approved"] == 1
+    roster = {e["email"]: e for e in app_client.get(f"/organizations/{org_id}/roster", headers=auth(staff_id)).json()}
+    assert roster["learner@example.test"]["mobile"] == "9876543210" and roster["learner@example.test"]["status"] == "joined"
+    assert roster["newbie@example.test"]["status"] == "waiting"
+    # Added from the list, the learner shares nothing until they agree; the requester agreed when asking.
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"]["progress_shared"] is False
+    assert app_client.get("/organizations/me", headers=auth("other")).json()["membership"]["progress_shared"] is True
+    # An unverified email does not join; once verified, signing in joins.
+    app_client.get("/learner/profile", headers=auth("newbie"))
+    assert app_client.get("/organizations/me", headers=auth("newbie")).json()["membership"] is None
+    session = database()
+    session.query(User).filter_by(id="newbie").update({"email_verified": True})
+    session.commit()
+    session.close()
+    assert app_client.get("/learner/profile", headers=auth("newbie")).json()["membership"]["organization"]["id"] == org_id
+
+
+def test_staff_look_after_students_but_cannot_manage_staff_or_members(app_client, users):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    staff = app_client.post(f"/organizations/{org_id}/staff", headers=auth("admin"), json={"email": "other@example.test"}).json()
+    assert staff["status"] == "attached" and staff["temporary_password"] is None
+    members = {m["user_id"]: m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("other")).json()}
+    assert members["learner"]["role"] == "member"
+    learner_member = members["learner"]["member_id"]
+    assert app_client.put(f"/organizations/{org_id}/members/{learner_member}/levels/aptitude_agent", headers=auth("other"),
+                          json={"level": "medium"}).status_code == 200
+    assert app_client.post(f"/organizations/{org_id}/codes", headers=auth("other"), json={"label": "CSE"}).status_code == 201
+    assert app_client.get(f"/organizations/{org_id}/roster", headers=auth("other")).status_code == 200
+    # Not theirs to do:
+    assert app_client.post(f"/organizations/{org_id}/staff", headers=auth("other"), json={"email": "x@example.test"}).status_code == 403
+    assert app_client.delete(f"/organizations/{org_id}/members/{learner_member}", headers=auth("other")).status_code == 403
+    assert app_client.post(f"/organizations/{org_id}/members", headers=auth("other"),
+                           json={"members": [{"email": "y@example.test"}]}).status_code == 403
+    assert app_client.patch(f"/organizations/{org_id}/members/{learner_member}", headers=auth("other"), json={"role": "admin"}).status_code == 403
+    assert {s["role"] for s in app_client.get(f"/organizations/{org_id}/staff", headers=auth("admin")).json()} == {"owner", "staff"}
+
+
+def test_a_csv_without_a_header_is_read_by_its_columns():
+    from app.organizations import roster
+
+    # A gmail address contains "mail", but the row is still a student, not a header.
+    rows = roster.parse_upload("list.csv", "Asha,asha@gmail.com,9876543210\nRavi,ravi@x.io,9123456780\n".encode())
+    assert rows == [{"name": "Asha", "mobile": "9876543210", "email": "asha@gmail.com"},
+                    {"name": "Ravi", "mobile": "9123456780", "email": "ravi@x.io"}]
+    with pytest.raises(roster.OrgError):
+        roster.parse_upload("old.xls", b"\xd0\xcf\x11\xe0")

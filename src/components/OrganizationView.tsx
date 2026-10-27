@@ -56,7 +56,8 @@ function MemberCard({ membership, onMembership, onToast }: {
             <p className="rd-muted">{orgSharingNotice(org.name)}</p>
           ) : (
             <>
-              <p className="rd-muted">You joined before membership meant sharing, so only your name is visible. {orgSharingNotice(org.name)}</p>
+              <p className="rd-muted">{org.name} added you (from its student list, or before joining meant sharing), so only your
+                name is visible to it until you agree. {orgSharingNotice(org.name)}</p>
               <button type="button" className="btn btn-outline btn-sm" onClick={() => void agree()}>Agree and share</button>
             </>
           )}
@@ -92,7 +93,7 @@ export default function OrganizationView({ summary, onSummaryChange, onBack, onT
         {!membership && <JoinOrganization onJoined={setMembership} onToast={onToast} />}
         {membership && isAdmin && (
           <OrgDashboard org={{ id: membership.organization.id, name: membership.organization.name, kind: membership.organization.kind,
-            role: membership.role === "owner" ? "owner" : "admin" }} onToast={onToast}
+            role: membership.role === "owner" ? "owner" : membership.role === "staff" ? "staff" : "admin" }} onToast={onToast}
             extraTabs={[{ name: "Assistant", render: (filters) => (
               <OrgAssistant orgId={membership.organization.id} orgName={membership.organization.name} filters={filters} onToast={onToast} />
             ) }]} />

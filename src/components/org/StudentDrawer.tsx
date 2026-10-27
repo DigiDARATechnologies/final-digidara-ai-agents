@@ -32,6 +32,8 @@ interface Props {
   orgId: string;
   member: OrgMember;
   isOwner: boolean;
+  /** Owner or admin: may remove members. Staff may not. */
+  canManage?: boolean;
   options: ClassOptions;
   agentLabels: Record<string, string>;
   onClose: () => void;
@@ -56,7 +58,7 @@ function when(iso: string | null | undefined): string {
 
 /** Everything about one learner, opened from the students table. Opening it
  * and every chat is recorded in the organization's access log. */
-export default function StudentDrawer({ orgId, member, isOwner, options, agentLabels, onClose, onChanged, onToast }: Props) {
+export default function StudentDrawer({ orgId, member, isOwner, canManage = true, options, agentLabels, onClose, onChanged, onToast }: Props) {
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("Overview");
@@ -293,7 +295,7 @@ export default function StudentDrawer({ orgId, member, isOwner, options, agentLa
                       {member.role === "admin" ? "Make learner" : "Make admin"}
                     </button>
                   )}
-                  {member.role !== "owner" && (
+                  {canManage && member.role !== "owner" && (
                     <button className="btn btn-outline btn-sm btn-danger" disabled={busy}
                       onClick={() => window.confirm(`Remove ${member.name} from the organization? Their account stays.`)
                         && void run(() => removeOrgMember(orgId, member.member_id), `${member.name} was removed.`, false).then(onClose)}>

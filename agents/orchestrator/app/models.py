@@ -369,7 +369,8 @@ class OrganizationMember(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    # "owner", "admin" or "member".
+    # "owner", "admin", "staff" or "member". Staff look after the students
+    # (lists, approvals, levels, codes) but not other staff, admins or the organization.
     role: Mapped[str] = mapped_column(String(16), default="member")
     # The organization's own id for this person: roll number, employee id.
     external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -379,6 +380,40 @@ class OrganizationMember(Base):
     year: Mapped[str | None] = mapped_column(String(40), nullable=True)
     section: Mapped[str | None] = mapped_column(String(40), nullable=True)
     join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class OrgRosterEntry(Base):
+    """A student on an organization's uploaded list (name, mobile, email).
+    A learner whose verified email is on the list joins automatically; anyone
+    else who uses a join code waits for staff approval (OrgJoinRequest)."""
+
+    __tablename__ = "org_roster"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    mobile: Mapped[str] = mapped_column(String(32), default="")
+    uploaded_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_org_roster_email"),)
+
+
+class OrgJoinRequest(Base):
+    """A learner who used a join code but is not on the organization's list:
+    they get no access, and share nothing, until staff approve them."""
+
+    __tablename__ = "org_join_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    year: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    section: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 

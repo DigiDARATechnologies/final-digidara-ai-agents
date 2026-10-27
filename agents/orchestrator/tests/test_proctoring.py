@@ -86,6 +86,14 @@ def _make_org(client):
         "name": "Anna University", "kind": "college", "admin_email": "admin@example.test"})
     assert created.status_code == 201, created.text
     org = client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    # The learner is on the student list, so the join code lets them straight in.
+    from app import db
+    from app.models import OrgRosterEntry
+
+    session = db.get_session()
+    session.add(OrgRosterEntry(organization_id=org["organization"]["id"], email="learner@example.test"))
+    session.commit()
+    session.close()
     return org["organization"]["id"], org["organization"]["join_code"]
 
 
