@@ -289,7 +289,9 @@ FALLBACK_PRONUNCIATION_ITEMS = {
 
 
 def _extract_json(text):
-    """Groq sometimes wraps JSON in ```json fences - strip them and parse safely."""
+    """Extract and parse JSON from LLM output, handling markdown fences, unescaped quotes, and malformed syntax."""
+    if not text or not isinstance(text, str):
+        return {}
     cleaned = text.strip()
     cleaned = re.sub(r"^```json\s*|^```\s*|```$", "", cleaned, flags=re.MULTILINE).strip()
     try:
@@ -299,13 +301,49 @@ def _extract_json(text):
 
     object_match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
     if object_match:
-        return json.loads(object_match.group(0))
+        obj_str = object_match.group(0)
+        try:
+            return json.loads(obj_str)
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt to clean trailing commas before } or ]
+        fixed = re.sub(r",\s*([}\]])", r"\1", obj_str)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
 
     array_match = re.search(r"\[.*\]", cleaned, flags=re.DOTALL)
     if array_match:
-        return json.loads(array_match.group(0))
+        arr_str = array_match.group(0)
+        try:
+            return json.loads(arr_str)
+        except json.JSONDecodeError:
+            pass
 
-    return json.loads(cleaned)
+    # Regex extraction fallback so structured fields are never lost even if full JSON is malformed
+    extracted = {}
+    scores_match = re.search(r'"scores"\s*:\s*\{([^}]+)\}', cleaned)
+    if scores_match:
+        scores = {}
+        for k, v in re.findall(r'"([a-zA-Z_]+)"\s*:\s*([0-9]+(?:\.[0-9]+)?)', scores_match.group(1)):
+            scores[k] = float(v)
+        extracted["scores"] = scores
+
+    for field in ("corrected_answer", "better_natural_answer", "explanation", "short_feedback", "appreciation", "status"):
+        field_match = re.search(rf'"{field}"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', cleaned)
+        if field_match:
+            try:
+                extracted[field] = field_match.group(1).encode().decode("unicode_escape", "ignore")
+            except Exception:
+                extracted[field] = field_match.group(1)
+
+    mistake_points = re.findall(r'"([^"\\]*→[^"\\]*)"', cleaned)
+    if mistake_points:
+        extracted["mistake_points"] = mistake_points
+
+    return extracted if extracted else json.loads(cleaned)
 
 
 def _fallback_topics(difficulty, source="fallback"):
@@ -444,6 +482,7 @@ def _chat(
     module=None,
     service=None,
     metadata=None,
+    response_format=None,
 ):
     provider_config = _chat_provider_config()
     provider_name = provider_config["provider"]
@@ -455,6 +494,7 @@ def _chat(
         "model": model,
         "temperature": temperature,
         **({"max_tokens": max_tokens} if max_tokens else {}),
+        **({"response_format": response_format} if response_format else {}),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

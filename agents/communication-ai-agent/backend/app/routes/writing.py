@@ -182,7 +182,9 @@ def _session_payload(session):
 def _store_turn_feedback(turn, feedback, answer):
     """Write an evaluate_writing_answer result onto a turn; returns (feedback, scores)."""
     feedback = feedback if isinstance(feedback, dict) else {}
-    scores = feedback.get("scores") if isinstance(feedback.get("scores"), dict) else {}
+    raw_scores = feedback.get("scores") if isinstance(feedback.get("scores"), dict) else {}
+    scores = convert_scores_dict(raw_scores)
+    feedback["scores"] = scores
     turn.grammar_score = to_score10(scores.get("grammar"))
     turn.vocabulary_score = to_score10(scores.get("vocabulary"))
     turn.clarity_score = to_score10(scores.get("clarity"))

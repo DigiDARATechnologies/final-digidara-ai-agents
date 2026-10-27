@@ -76,6 +76,8 @@ interface ChatViewProps {
   immersiveSpeaking?: boolean;
   /** Pronunciation uses microphone energy detection to stop after speech. */
   autoStopVoiceOnSilence?: boolean;
+  /** For pronunciation: locks typing so the learner must use the microphone. */
+  voiceOnly?: boolean;
   /** Server-side transcription for a recorded answer. When given, phones
    * record the answer and send it here instead of using the browser's live
    * speech recognition, which is unreliable on phones. */
@@ -112,6 +114,8 @@ interface ChatViewProps {
 /** Phone recording (Communication Coach): a pause this long after speaking
  * sends the answer by itself. */
 const PHONE_AUTO_SEND_SILENCE_MS = 7_000;
+/** Word pronunciation practice: stop quickly after the word is spoken (1.5s). */
+const PRONUNCIATION_SILENCE_MS = 1_500;
 /** Speaking Practice: a pause this long after speaking sends the answer
  * (unless the learner asked for more time: "just a minute"). */
 const SPEAKING_AUTO_SEND_MS = 3_000;
@@ -155,6 +159,7 @@ export default function ChatView({
   onDailyChallenge,
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
+  voiceOnly = false,
   transcribeAudio,
   previewAudio,
   alwaysRecordVoice = false,
@@ -173,9 +178,13 @@ export default function ChatView({
   const copiedTimerRef = useRef<number | undefined>(undefined);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputFromVoiceRef = useRef(false);
+  useEffect(() => {
+    inputFromVoiceRef.current = false;
+  }, [chat.id, voiceOnly]);
   // Every agent listens in English only (Indian English; the Communication
   // Coach in US English for its pronunciation practice).
-  const speech = useSpeechRecognition(agent.kind === "communication" ? "en-US" : recognitionLocale(), transcribeAudio, previewAudio, alwaysRecordVoice);
+  const speech = useSpeechRecognition(recognitionLocale(), transcribeAudio, previewAudio, alwaysRecordVoice);
   // Recording mode (phones): tapping the mic to stop sends the answer once
   // the server has transcribed it -- the text does not exist yet at the tap.
   const sendOnFinalRef = useRef(false);
@@ -228,31 +237,39 @@ export default function ChatView({
       speech.stop();
       if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
       if (input.trim()) {
+        inputFromVoiceRef.current = false;
         onSend(input.trim());
         setInput("");
       }
       return;
     }
     setInput("");
+    inputFromVoiceRef.current = false;
+    if (inputError) setInputError("");
     // On a phone the answer is sent by itself once the student stops talking
     // (or taps the mic again) -- no Send tap needed.
     sendOnFinalRef.current = speech.recordingMode;
     setAutoSendIn(null);
     const session = ++voiceSessionRef.current;
+    const effectiveSilenceMs = voiceOnly ? PRONUNCIATION_SILENCE_MS : (speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined);
     speech.start((text, final) => {
       if (voiceSessionRef.current !== session) return;
+      if (text.trim()) {
+        inputFromVoiceRef.current = true;
+      }
       setInput(text);
       if (final && sendOnFinalRef.current) {
         sendOnFinalRef.current = false;
         if (text.trim()) {
           voiceSessionRef.current += 1;
+          inputFromVoiceRef.current = false;
           onSend(text.trim());
           setInput("");
         }
       }
     }, {
       autoStopOnSilence: autoStopVoiceOnSilence || speech.recordingMode,
-      silenceMs: speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined,
+      silenceMs: effectiveSilenceMs,
       finalFromPreview: true,
       onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
@@ -316,6 +333,10 @@ export default function ChatView({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     const text = input.trim();
+    if (voiceOnly && !inputFromVoiceRef.current) {
+      setInputError("Please click the microphone to speak your answer. Typing is disabled for pronunciation practice. 🎙️");
+      return;
+    }
     if (!text && pendingFiles.length === 0) {
       setInputError(multilineMode ? "Please write your paragraph before submitting. ✍️" : "Please enter a message before sending.");
       return;
@@ -325,6 +346,7 @@ export default function ChatView({
       return;
     }
     setInputError("");
+    inputFromVoiceRef.current = false;
     voiceSessionRef.current += 1;
     if (speech.listening) speech.stop();
     cancelVoiceConversation();
@@ -806,11 +828,43 @@ export default function ChatView({
           <textarea
             ref={composerTextareaRef}
             rows={1}
-            placeholder="Message SkillDARA..."
+            placeholder={
+              voiceOnly
+                ? (speech.listening
+                    ? "Listening... speak clearly"
+                    : speech.transcribing
+                    ? "Turning your speech into text..."
+                    : "🎙️ Click microphone to speak (typing disabled)")
+                : "Message SkillDARA..."
+            }
             value={input}
+            readOnly={voiceOnly}
             disabled={composerDisabled}
-            onChange={(e) => { setInput(e.target.value); if (inputError) setInputError(""); }}
+            className={voiceOnly ? "composer-textarea-voice-only" : undefined}
+            onClick={() => {
+              if (voiceOnly && !input.trim()) {
+                setInputError("Please click the microphone button below to speak. Typing is disabled for pronunciation.");
+              }
+            }}
+            onChange={(e) => {
+              if (voiceOnly) return;
+              setInput(e.target.value);
+              if (inputError) setInputError("");
+            }}
             onKeyDown={(e) => {
+              if (voiceOnly) {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!composerDisabled && inputFromVoiceRef.current && input.trim()) {
+                    e.currentTarget.form?.requestSubmit();
+                  } else {
+                    setInputError("Please click the microphone button below to speak. Typing is disabled for pronunciation.");
+                  }
+                } else if (e.key !== "Tab" && e.key !== "Escape") {
+                  setInputError("Please click the microphone button below to speak. Typing is disabled for pronunciation.");
+                }
+                return;
+              }
               // Enter sends; Shift+Enter is left alone so the textarea's own
               // default behavior inserts a real newline instead.
               if (e.key === "Enter" && !e.shiftKey) {
@@ -822,8 +876,18 @@ export default function ChatView({
           {speech.supported && (
             <button
               type="button"
-              className={`icon-btn${speech.listening ? " mic-recording" : ""}`}
-              title={isGeneralChat ? "Talk with Boss" : speech.transcribing ? "Turning your recording into text..." : speech.listening ? "Stop recording" : "Voice input"}
+              className={`icon-btn${speech.listening ? " mic-recording" : voiceOnly ? " mic-required" : ""}`}
+              title={
+                isGeneralChat
+                  ? "Talk with Boss"
+                  : speech.transcribing
+                  ? "Turning your recording into text..."
+                  : speech.listening
+                  ? "Stop recording"
+                  : voiceOnly
+                  ? "Click to speak your pronunciation"
+                  : "Voice input"
+              }
               disabled={speech.transcribing}
               onClick={isGeneralChat ? () => { stopSpeaking(); setVoiceConversation("listen"); } : handleMicClick}
             >
@@ -833,7 +897,13 @@ export default function ChatView({
               </svg>
             </button>
           )}
-          <button type="submit" disabled={composerDisabled || (!input.trim() && pendingFiles.length === 0)} className="icon-btn send-btn" aria-label="Send">
+          <button
+            type="submit"
+            disabled={composerDisabled || (!input.trim() && pendingFiles.length === 0) || (voiceOnly && !inputFromVoiceRef.current)}
+            className="icon-btn send-btn"
+            aria-label="Send"
+            title={voiceOnly && !inputFromVoiceRef.current ? "Speak using the microphone first" : "Send"}
+          >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path
                 d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
@@ -846,13 +916,16 @@ export default function ChatView({
           </button>
         </form>
       )}
+      {!codeMode && !multilineMode && inputError && (
+        <div className="mic-error" role="alert">{inputError}</div>
+      )}
       {!codeMode && !multilineMode && autoStopVoiceOnSilence && !speech.recordingMode && speech.listening && (
         <div className="voice-capture-status" role="status">Listening… I’ll stop automatically after you finish speaking.</div>
       )}
       {!codeMode && !multilineMode && speech.recordingMode && speech.listening && (
         <div className="voice-capture-status" role="status">{autoSendIn !== null
           ? `Sending your answer in ${autoSendIn}s – keep talking to continue.`
-          : "Recording… stop talking for 7 seconds (or tap the microphone) and your answer is sent."}</div>
+          : (voiceOnly ? "Listening… say the word and it will capture automatically." : "Recording… stop talking for 7 seconds (or tap the microphone) and your answer is sent.")}</div>
       )}
       {!codeMode && !multilineMode && speech.transcribing && (
         <div className="voice-capture-status" role="status">Turning your recording into text…</div>

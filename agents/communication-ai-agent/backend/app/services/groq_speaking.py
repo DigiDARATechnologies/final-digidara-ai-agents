@@ -80,7 +80,7 @@ DAILY_FALLBACK_QUESTIONS = [
 GPT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 
 
-def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", content_type="audio/webm"):
+def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", content_type="audio/webm", prompt=None):
     if not audio_bytes:
         raise ValueError("No audio bytes were provided for transcription")
     if len(audio_bytes) > 10 * 1024 * 1024:
@@ -109,18 +109,24 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         else "https://api.groq.com/openai/v1/audio/transcriptions"
     )
     started = time.monotonic()
+    post_data = {
+        "model": model,
+        # No forced language: Tamil or other speech comes back in its own
+        # script, and the SkillDARA app asks the learner to speak English,
+        # instead of an empty transcript ("I couldn't hear any words").
+        "response_format": "json",
+        "temperature": "0",
+    }
+    if prompt:
+        clean_prompt = str(prompt).strip()
+        post_data["prompt"] = clean_prompt
+        post_data["language"] = "en"
+
     response = httpx.post(
         endpoint_url,
         headers={"Authorization": f"Bearer {api_key}"},
         files={"file": (filename or "speaking-answer.webm", audio_bytes, content_type or "audio/webm")},
-        data={
-            "model": model,
-            # No forced language: Tamil or other speech comes back in its own
-            # script, and the SkillDARA app asks the learner to speak English,
-            # instead of an empty transcript ("I couldn't hear any words").
-            "response_format": "json",
-            "temperature": "0",
-        },
+        data=post_data,
         timeout=45,
     )
     latency_ms = int((time.monotonic() - started) * 1000)
@@ -136,6 +142,8 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
 
     data = response.json()
     transcript = str(data.get("text") or "").strip()
+    if prompt and transcript and not str(prompt).endswith(".") and transcript.endswith("."):
+        transcript = transcript[:-1].strip()
     current_app.logger.info(
         "[%s AUDIO] Operation: speaking.audio_transcription | Model: %s | Audio bytes: %s | Latency: %.2fs",
         provider_name.upper(),

@@ -2048,6 +2048,8 @@ export default function App() {
     awaiting_speaking_topic: "Choose a speaking topic",
     awaiting_pronunciation_mode: "Choose a pronunciation mode",
     writing_turn: "Writing practice",
+    writing_result: "Writing practice",
+    writing_chat_turn: "Writing practice",
     speaking_turn: "Speaking practice",
     pronunciation_turn: "Pronunciation practice",
   };
@@ -2288,12 +2290,20 @@ export default function App() {
                 // model (the Communication Coach through its own backend), on
                 // every device -- never the browser's built-in recognizer.
                 transcribeAudio={isCommunicationChat && communicationState?.authToken
-                  ? (audio) => transcribeCommunicationAudio(communicationState.authToken!, audio)
+                  ? (audio) => transcribeCommunicationAudio(
+                      communicationState.authToken!,
+                      audio,
+                      communicationState.step === "pronunciation_turn" ? communicationState.currentItemText : undefined
+                    )
                   : transcribeGeneralAudio}
                 alwaysRecordVoice
                 // Live text: the words appear in the box while the learner speaks.
                 previewAudio={isCommunicationChat && communicationState?.authToken
-                  ? (audio) => previewCommunicationAudio(communicationState.authToken!, audio)
+                  ? (audio) => previewCommunicationAudio(
+                      communicationState.authToken!,
+                      audio,
+                      communicationState.step === "pronunciation_turn" ? communicationState.currentItemText : undefined
+                    )
                   : transcribeGeneralAudio}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}
                 multilinePlaceholder="Write your paragraph here..."
@@ -2339,6 +2349,7 @@ export default function App() {
                 onDailyChallenge={() => sendMessage("daily_challenge")}
                 immersiveSpeaking={isCommunicationChat && communicationState?.step === "speaking_turn"}
                 autoStopVoiceOnSilence={isCommunicationChat && communicationState?.step === "pronunciation_turn"}
+                voiceOnly={isCommunicationChat && communicationState?.step === "pronunciation_turn"}
                 certificateExamInstructions={isCertificateChat && certificateState?.step === "exam_instructions"
                   ? {
                       topic: certificateState.topic || "Certification",

@@ -4,6 +4,7 @@ import re
 from .cache_service import get_cached, set_cached
 from .level_rules import generation_rule, scoring_rule
 from .groq_common import _chat, _clamp_score, _extract_json, _score_average
+from ..utils.score_utils import to_score10
 
 logger = logging.getLogger(__name__)
 
@@ -337,21 +338,19 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         else "Set 'knowledge' to null. Also score 'relevance' (0.0-10.0) for how well the answer responds to the daily prompt."
     )
     system_prompt = (
-        "You are an expert writing evaluator. Respond with STRICT JSON only, no markdown fences. "
+        "You are an expert writing evaluator. Respond with STRICT JSON only, matching the schema. "
         "Focus on grammar, clarity, spelling, and vocabulary. "
-        "When giving grammar corrections in the top-level 'mistake_points' array, you MUST extract the EXACT original phrase "
-        "from the user's submitted text and show the EXACT corrected version — never output placeholder text, ellipsis (...), or generic symbols.\n"
-        "Format each correction as exactly:\n"
-        "\"<exact original phrase from user's text>\" → \"<corrected phrase>\" — <short reason why>\n"
-        "Example (always replace with the user's actual words):\n"
-        "\"me and him went to the store\" → \"he and I went to the store\" — subject pronoun order and case correction\n"
-        "If there are no grammar errors to correct, the array must contain exactly one string: \"No grammar corrections needed for this response.\" "
-        "Do NOT output empty quotes or ellipsis under any circumstance. Every correction must reference text that actually appears in the user's submitted answer — do not invent or generalize corrections. "
+        "When giving grammar corrections in 'mistake_points', format each string using single quotes for quoted phrases, like:\n"
+        "'<exact original phrase>' → '<corrected phrase>' — <short reason why>\n"
+        "Example:\n"
+        "'me and him went to the store' → 'he and I went to the store' — subject pronoun order and case correction\n"
+        "If there are no grammar errors, set mistake_points to: [\"No grammar corrections needed for this response.\"]. "
+        "Every correction must reference text that actually appears in the user's submitted answer. "
         "Preserve the student's original meaning in corrected_answer. "
         "matching this schema exactly:\n"
         '{"appreciation":"Good attempt.","status":"Needs Improvement","original_answer":"...",'
         '"corrected_answer":"...","better_natural_answer":"...","explanation":"...",'
-        '"mistake_points":["\"incorrect phrase\" → \"corrected phrase\" — reason"],'
+        '"mistake_points": ["\'incorrect phrase\' → \'corrected phrase\' — reason"],'
         '"mistakes":[{"incorrect":"...","correct":"...",'
         '"type":"Grammar","mistake_points":["short bullet"],"explanation":"..."}],'
         '"vocabulary_suggestions":[{"original":"...","suggestion":"...","example":"..."}],'
@@ -369,22 +368,41 @@ def evaluate_writing_answer(mode, difficulty, topic_title, question, answer):
         f"Give a corrected answer and up to six distinct grammar corrections. Do not score above 10. "
         f"Avoid long grammar lessons, generic praise, a next question, or any follow-up task."
     )
+    data = {}
     try:
-        raw = _chat(system_prompt, user_prompt, temperature=0.3, operation="writing.answer_evaluation", module="writing", service="groq_writing.evaluate_writing_answer")
+        raw = _chat(system_prompt, user_prompt, temperature=0.3, operation="writing.answer_evaluation", module="writing", service="groq_writing.evaluate_writing_answer", response_format={"type": "json_object"})
         data = _extract_json(raw)
     except Exception:
-        logger.exception("Writing answer AI evaluation failed; using fallback feedback")
-        data = {}
-    scores = data.get("scores") if isinstance(data.get("scores"), dict) else data
+        logger.warning("Writing answer evaluation first pass failed; retrying with strict JSON...")
+        try:
+            raw = _chat(system_prompt + "\nOutput valid JSON object only.", user_prompt, temperature=0.1, operation="writing.answer_evaluation_retry", module="writing", service="groq_writing.evaluate_writing_answer", response_format={"type": "json_object"})
+            data = _extract_json(raw)
+        except Exception:
+            logger.exception("Writing answer AI evaluation retry failed; using fallback feedback")
+            data = {}
+
+    scores = data.get("scores") if isinstance(data.get("scores"), dict) else (data if isinstance(data, dict) else {})
+    if not isinstance(scores, dict):
+        scores = {}
+
+    def _eval_score10(val, default=6.0):
+        if val is None:
+            return default
+        try:
+            parsed = float(val)
+            return to_score10(parsed) if parsed > 0 else 0.0
+        except (TypeError, ValueError):
+            return default
+
     normalized_scores = {
-        "grammar": _clamp_score(scores.get("grammar")),
-        "vocabulary": _clamp_score(scores.get("vocabulary")),
-        "clarity": _clamp_score(scores.get("clarity")),
-        "spelling": _clamp_score(scores.get("spelling")),
-        "relevance": _clamp_score(scores.get("relevance")) if mode != "topic" else None,
-        "knowledge": _clamp_score(scores.get("knowledge")) if mode == "topic" else None,
+        "grammar": _eval_score10(scores.get("grammar")),
+        "vocabulary": _eval_score10(scores.get("vocabulary")),
+        "clarity": _eval_score10(scores.get("clarity")),
+        "spelling": _eval_score10(scores.get("spelling")),
+        "relevance": _eval_score10(scores.get("relevance")) if mode != "topic" else None,
+        "knowledge": _eval_score10(scores.get("knowledge")) if mode == "topic" else None,
     }
-    normalized_scores["overall"] = _clamp_score(scores.get("overall") or _score_average(normalized_scores.values()))
+    normalized_scores["overall"] = _eval_score10(scores.get("overall"), default=_score_average([v for v in normalized_scores.values() if v is not None]) or 6.0)
     def _normalize_points(value):
         if isinstance(value, list):
             points = [str(item).strip() for item in value if str(item or "").strip()]
