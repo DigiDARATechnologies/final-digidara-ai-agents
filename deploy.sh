@@ -82,9 +82,9 @@ if [ "$JOB_AGENT_GATEWAY_OK" = false ]; then
 fi
 
 
-# Address the health checks use. Defaults to the domain that serves the site
-# today.
-SITE_URL=${SITE_URL:-https://skilldara.com}
+# Address the health checks use: the domain that serves the site (skilldara.com
+# redirects here, and a redirect is not a healthy answer).
+SITE_URL=${SITE_URL:-https://www.skilldara.com}
 SITE_OK=false
 for _ in $(seq 1 12); do
   if curl -fsS -o /dev/null "$SITE_URL/"; then
