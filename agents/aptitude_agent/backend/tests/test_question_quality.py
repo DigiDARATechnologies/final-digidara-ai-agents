@@ -704,6 +704,22 @@ def test_a_technical_slot_tied_to_an_unfitting_skill_is_rescued_without_the_skil
     assert calls[0][0]["technical_skill"]=="Excel" and "technical_skill" not in calls[1][0]
 
 
+def test_a_rescue_never_puts_the_same_question_in_a_test_twice(monkeypatch):
+    seen=[]
+    def generate(slots,**kwargs):
+        seen.append(kwargs.get("_lenient_history"))
+        return [{"question":"q0"} for _ in slots],"m",{}            # repeats a question already in the test
+    monkeypatch.setattr(test_generation,"generate_questions",generate)
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            rescue_slots(),accepted,ValueError("x"),True,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is None
+    assert 1 not in accepted and seen==[False]          # asked strictly: no leniency for in-test repeats
+
+
 @pytest.mark.parametrize("skill,topic,needle", [
     ("Python", "Programming Fundamentals", "python"),
     ("Machine Learning", "Machine Learning Fundamentals", "machine learning"),

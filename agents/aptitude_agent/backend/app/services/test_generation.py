@@ -551,6 +551,8 @@ def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avo
             swapped,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
             allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
             background=background,request_timeout=request_timeout,_rescue=False,
+            # The "avoid" list holds this test's own questions: never accept a repeat of one.
+            _lenient_history=False,
         )
     except (ValueError,TimeoutError) as exc:
         current_app.logger.warning("Batch generation rescue failed: %s",str(exc)[:200])
@@ -570,16 +572,27 @@ def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avo
                 general,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
                 allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
                 background=background,request_timeout=request_timeout,_rescue=False,
+                _lenient_history=False,
             )
         except (ValueError,TimeoutError) as retry_exc:
             current_app.logger.warning("Batch generation general rescue failed: %s",str(retry_exc)[:200])
+            return None
+    # The questions already in this test went in as "avoid" text, and on its
+    # last attempt generate_questions accepts a question that resembles one to
+    # avoid (meant for the learner's earlier tests). Here that would put the
+    # same question in the test twice, so a rescue that repeats one fails.
+    kept=[accepted[index] for index in sorted(accepted)]
+    for question in questions:
+        if any(question.get("content_hash") and question.get("content_hash")==item.get("content_hash")
+               or questions_are_near_duplicates(question.get("question",""),item.get("question","")) for item in kept):
+            current_app.logger.warning("Batch generation rescue repeated a question already in the test; not used")
             return None
     for index,question in zip(pending,questions):
         accepted[index]=question
     return usage,model
 
 
-def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True):
+def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True, _lenient_history=True):
     total_started=time.perf_counter()
     if not current_app.config.get("OPENAI_API_KEY"):
         if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
@@ -731,7 +744,7 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
             validated=[accepted[index] for index in range(count)]
             offenders,reason,offender_reasons=_cross_check_offenders(validated,set(new_items),forbidden_questions,return_reasons=True)
             only_resembles_history=bool(offenders) and all(offender_reasons.get(index)==RECENT_REPEAT_REASON for index in offenders)
-            if offenders and only_resembles_history and attempt==max_validation_attempts:
+            if offenders and only_resembles_history and attempt==max_validation_attempts and _lenient_history:
                 # Resembling a question the learner saw before is a soft preference, not a
                 # defect: these questions are valid and differ from every other question in
                 # this test. With a long history the model can fail to avoid all of it on every
