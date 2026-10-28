@@ -298,6 +298,7 @@ function TestEditor({ orgId, testId, onBack, onToast, onCreateLink, onListChange
             </button>
           )}
         </div>
+        {!test.locked && !generating && <p className="assess-sub">Writing questions (and reading pictures) uses the AI, paid from your coins: exactly what it uses, more for more questions.</p>}
         {generating && <p className="rd-muted" aria-live="polite"><span className="kt-spinner" style={{ display: "inline-block", width: 16, height: 16, verticalAlign: "middle", marginRight: 8 }} />The AI is reading your documents and writing questions. This takes up to a minute or two.</p>}
         {test.error && <p className="org-notice">{test.error}</p>}
         {!generating && questions.length === 0 && <p className="assess-sub">{docs.length ? "Press the button to write the questions." : "Add documents first."}</p>}

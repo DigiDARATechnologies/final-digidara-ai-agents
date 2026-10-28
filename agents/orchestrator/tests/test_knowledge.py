@@ -210,3 +210,83 @@ def test_documents_are_read():
         extract.extract("virus.exe", b"MZ")
     with pytest.raises(extract.ExtractError, match="no usable content"):
         extract.extract("tiny.txt", b"hi")
+
+
+# --- coins: the builder pays, the learner never does ------------------------------
+
+def _balance(user_id):
+    from app.auth import service as auth_service
+
+    return auth_service.get_by_id(user_id).token_balance
+
+
+@pytest.fixture
+def metered_model(fake_model, monkeypatch):
+    """The fake model, reporting 100 tokens for every call it answers."""
+    from types import SimpleNamespace
+
+    answer = generate._complete
+
+    def complete(system, user, max_tokens):
+        generate.record_usage(SimpleNamespace(usage=SimpleNamespace(total_tokens=100)))
+        return answer(system, user, max_tokens)
+
+    monkeypatch.setattr(generate, "_complete", complete)
+    return fake_model
+
+
+def test_writing_questions_is_paid_by_the_admin_who_asked(api, metered_model):
+    org_id = _org(api)
+    before = _balance("admin")
+    _ready_test(api, org_id, "mixed", 4)
+    # One batch for 4 questions: 100 tokens, exactly what the model used.
+    assert _balance("admin") == before - 100 * len(metered_model)
+
+
+def test_learners_take_a_knowledge_test_free_and_grading_is_the_creators(api, metered_model, database):
+    org_id = _org(api)
+    test = _ready_test(api, org_id, "mixed", 4)
+    link = api.post(f"/organizations/{org_id}/assessments", headers=auth("admin"), json={
+        "title": "Quiz", "kind": "knowledge_test", "config": {"test_id": test["id"]},
+        "proctoring": {"tab": False, "fullscreen": False, "copy_paste": False, "webcam": False, "face": False}}).json()
+    token = link["path"].rsplit("/", 1)[-1]
+    learner_before, admin_before = _balance("learner"), _balance("admin")
+    calls_before = len(metered_model)
+    session = api.post(f"/assessments/{token}/start", headers=auth(), json={"consent": True}).json()
+    attempt = api.post("/knowledge/attempts", headers=auth(), json={"session_id": session["id"]}).json()
+    for q in attempt["questions"]:
+        api.post(f"/knowledge/attempts/{attempt['id']}/answers", headers=auth(), json={"question_id": q["id"], "answer": "0", "time_taken": 5})
+    api.post(f"/knowledge/attempts/{attempt['id']}/finish", headers=auth())
+    assert _balance("learner") == learner_before
+    assert _balance("admin") == admin_before - 100 * (len(metered_model) - calls_before)
+
+
+def test_no_coins_no_new_questions(api, fake_model, database):
+    org_id = _org(api)
+    base = f"/organizations/{org_id}/knowledge-tests"
+    test = api.post(base, headers=auth("admin"), json={"title": "Unit 2", "question_type": "mcq", "num_questions": 2,
+                                                       "seconds_per_question": 60}).json()
+    api.post(f"{base}/{test['id']}/documents", headers=auth("admin"), files=[("files", ("notes.txt", MATERIAL.encode(), "text/plain"))])
+    session = database()
+    session.query(User).filter_by(id="admin").update({"token_balance": 0})
+    session.commit()
+    session.close()
+    refused = api.post(f"{base}/{test['id']}/generate", headers=auth("admin"))
+    assert refused.status_code == 402 and "coins" in refused.json()["detail"]
+
+
+def test_a_shuffled_test_gives_each_learner_their_own_steady_order(api, fake_model, database):
+    org_id = _org(api)
+    test = _ready_test(api, org_id, "mcq", 10)
+    link = api.post(f"/organizations/{org_id}/assessments", headers=auth("admin"), json={
+        "title": "Shuffled", "kind": "knowledge_test", "config": {"test_id": test["id"], "shuffle": True},
+        "proctoring": {"tab": False, "fullscreen": False, "copy_paste": False, "webcam": False, "face": False}}).json()
+    assert link["config"]["shuffle"] is True
+    token = link["path"].rsplit("/", 1)[-1]
+    session = api.post(f"/assessments/{token}/start", headers=auth(), json={"consent": True}).json()
+    first = api.post("/knowledge/attempts", headers=auth(), json={"session_id": session["id"]}).json()
+    again = api.post("/knowledge/attempts", headers=auth(), json={"session_id": session["id"]}).json()
+    order = [q["id"] for q in first["questions"]]
+    assert order == [q["id"] for q in again["questions"]]                     # steady across reloads
+    assert order != [q["id"] for q in test["questions"]]                       # not the written order
+    assert sorted(order) == sorted(q["id"] for q in test["questions"])

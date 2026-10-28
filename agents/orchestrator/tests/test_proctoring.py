@@ -263,3 +263,53 @@ def test_modules_import_in_any_order(module):
     result = subprocess.run([sys.executable, "-c", f"import {module}"], cwd=Path(__file__).resolve().parents[1],
                             env={**os.environ}, capture_output=True, text=True, timeout=120)
     assert result.returncode == 0, result.stderr[-2000:]
+
+
+def test_assessment_interviews_are_paid_by_the_creator_not_the_learner(api, interview_agent, database):
+    from app.auth import service as auth_service
+    from app.models import User
+
+    org_id, code = _make_org(api)
+    created = _assessment(api, org_id)
+    token = created["path"].rsplit("/", 1)[-1]
+    api.post("/organizations/join", headers=auth(), json={"join_code": code})
+    session = database()
+    session.query(User).filter_by(id="learner").update({"token_balance": 0})     # a learner with no coins can still attend
+    session.commit()
+    session.close()
+    admin_before = auth_service.get_by_id("admin").token_balance
+    api.post(f"/assessments/{token}/start", headers=auth(), json={"consent": True})
+    started = api.post("/gateway/agents/mock_interview_agent/invoke", headers=auth(), json={
+        "action": "start_interview", "payload": {"round_type": "technical"}})
+    assert started.status_code == 200
+    api.post("/gateway/agents/mock_interview_agent/invoke", headers=auth(), json={
+        "action": "end_interview", "payload": {"interview_id": 77}})
+    assert auth_service.get_by_id("learner").token_balance == 0
+    assert auth_service.get_by_id("admin").token_balance < admin_before
+
+    # Outside the assessment the learner pays for themselves (and has nothing left).
+    own = api.post("/gateway/agents/mock_interview_agent/invoke", headers=auth(), json={
+        "action": "start_interview", "payload": {"round_type": "hr"}})
+    assert own.status_code == 402
+
+
+def test_an_assessment_needs_the_creators_coins(api, interview_agent, database):
+    from app.models import User
+
+    org_id, code = _make_org(api)
+    created = _assessment(api, org_id)
+    token = created["path"].rsplit("/", 1)[-1]
+    api.post("/organizations/join", headers=auth(), json={"join_code": code})
+    session = database()
+    session.query(User).filter_by(id="admin").update({"token_balance": 0})
+    session.commit()
+    session.close()
+    # No new assessments without coins...
+    assert api.post(f"/organizations/{org_id}/assessments", headers=auth("admin"), json={
+        "title": "Another", "kind": "mock_interview",
+        "config": {"round_type": "hr", "num_questions": 5, "level": "medium"}}).status_code == 402
+    # ...and an existing one cannot start an interview, with a message for the learner.
+    api.post(f"/assessments/{token}/start", headers=auth(), json={"consent": True})
+    refused = api.post("/gateway/agents/mock_interview_agent/invoke", headers=auth(), json={
+        "action": "start_interview", "payload": {"round_type": "technical"}})
+    assert refused.status_code == 402 and "trainer" in refused.json()["detail"]

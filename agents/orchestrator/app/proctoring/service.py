@@ -494,6 +494,32 @@ def _open_assessment_session(session, user_id: str) -> ProctorSession | None:
             .order_by(ProctorSession.started_at.desc()).first())
 
 
+def billing_payer(user_id: str, agent_name: str, envelope: dict) -> str | None:
+    """Who pays for this agent call when it belongs to an assessment attempt:
+    the admin or staff member who created the assessment (learners attend
+    for free). None for an ordinary call, which the learner pays."""
+    if agent_name != "mock_interview_agent" or not isinstance(envelope, dict):
+        return None
+    payload = envelope.get("payload") if isinstance(envelope.get("payload"), dict) else {}
+    session = db.get_session()
+    try:
+        if envelope.get("action") == "start_interview":
+            ps = _open_assessment_session(session, user_id)
+        elif payload.get("interview_id"):
+            ps = (session.query(ProctorSession)
+                  .filter(ProctorSession.user_id == user_id, ProctorSession.agent_name == agent_name,
+                          ProctorSession.ref == str(payload["interview_id"]), ProctorSession.assessment_id.isnot(None))
+                  .order_by(ProctorSession.started_at.desc()).first())
+        else:
+            ps = None
+        if ps is None:
+            return None
+        assessment = session.get(Assessment, ps.assessment_id)
+        return assessment.created_by if assessment is not None and assessment.created_by else None
+    finally:
+        session.close()
+
+
 def apply_assessment(user_id: str, agent_name: str, envelope: dict) -> None:
     """Before forwarding: a mock interview started during an assessment
     attempt gets the admin's round, role/topic, question count and level,
@@ -623,13 +649,18 @@ def create_assessment(user_id: str, org_id: str, data: dict) -> dict:
     session = db.get_session()
     try:
         _admin(session, user_id, org_id)
+        creator = session.get(User, user_id)
+        # Learners attend for free: their attempts use the creator's coins.
+        if creator is None or (creator.token_balance <= 0 and not creator.is_admin):
+            raise ProctorError(402, "Not enough coins. Students' attempts at your assessments use your coins; please top up first.")
     finally:
         session.close()
     if kind == "knowledge_test":
         from app.knowledge import service as knowledge_service
 
         try:
-            config = knowledge_service.assessment_config(org_id, (data.get("config") or {}).get("test_id"))
+            config = knowledge_service.assessment_config(org_id, (data.get("config") or {}).get("test_id"),
+                                                         bool((data.get("config") or {}).get("shuffle")))
         except knowledge_service.KnowledgeError as exc:
             raise ProctorError(exc.status_code, exc.message) from exc
     else:

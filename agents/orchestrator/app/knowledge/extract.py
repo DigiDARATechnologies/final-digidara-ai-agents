@@ -150,6 +150,9 @@ def _image(data: bytes, filename: str) -> str:
     except Exception as exc:
         logger.warning("knowledge image read failed for %s", filename, exc_info=True)
         raise ExtractError(f"{filename}: the image could not be read right now. Try again.") from exc
+    from app.knowledge.generate import record_usage
+
+    record_usage(response)
     text = (response.choices[0].message.content or "").strip()
     return "" if text.upper().startswith("NO CONTENT") else text
 

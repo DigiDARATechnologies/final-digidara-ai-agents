@@ -58,6 +58,8 @@ export interface AssessmentConfig {
   test_title?: string;
   question_type?: "mcq" | "qa" | "mixed";
   seconds_per_question?: number;
+  /** Knowledge test links: each learner gets the questions in their own order. */
+  shuffle?: boolean;
 }
 
 export type AssessmentKind = "mock_interview" | "knowledge_test";

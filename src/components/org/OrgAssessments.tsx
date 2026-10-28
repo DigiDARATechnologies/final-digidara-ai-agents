@@ -59,6 +59,7 @@ function CreateForm({ orgId, presetTestId, onCreated, onToast }: {
   const [opensAt, setOpensAt] = useState("");
   const [closesAt, setClosesAt] = useState("");
   const [membersOnly, setMembersOnly] = useState(true);
+  const [shuffle, setShuffle] = useState(true);
   const [checks, setChecks] = useState<ProctorSettings>(DEFAULT_CHECKS);
   const [busy, setBusy] = useState(false);
 
@@ -67,7 +68,7 @@ function CreateForm({ orgId, presetTestId, onCreated, onToast }: {
     setBusy(true);
     try {
       const created = await createAssessment(orgId, kind === "knowledge_test" ? {
-        title, kind, config: { test_id: testId },
+        title, kind, config: { test_id: testId, shuffle },
         proctoring: { ...checks, face: checks.webcam && checks.face },
         opens_at: toIso(opensAt), closes_at: toIso(closesAt), members_only: membersOnly,
       } : {
@@ -117,6 +118,15 @@ function CreateForm({ orgId, presetTestId, onCreated, onToast }: {
             {tests.length === 0 && <small>No ready knowledge tests yet. Build one in the Knowledge tests tab.</small>}
           </label>
         )}
+        {kind === "knowledge_test" && (
+          <fieldset className="assess-order">
+            <legend>Question order</legend>
+            <label><input type="radio" name="order" checked={shuffle} onChange={() => setShuffle(true)} /> Shuffle: each learner gets the questions in their own order</label>
+            <label><input type="radio" name="order" checked={!shuffle} onChange={() => setShuffle(false)} /> Same order for everyone</label>
+          </fieldset>
+        )}
+        {kind === "mock_interview" && <p className="assess-sub">Each learner gets their own AI-written interview questions, so no two interviews are the same.</p>}
+        <p className="assess-sub assess-coins">Learners attend free. The AI used during their attempts is paid from <b>your coins</b>, so keep some coins in your account while the assessment is open.</p>
         {kind === "mock_interview" && <>
         <div className="assess-form-row">
           <label>Interview
