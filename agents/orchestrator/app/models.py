@@ -383,6 +383,56 @@ class OrganizationMember(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class Course(Base):
+    """A course SkillDARA's admin publishes for every learner: lessons with a
+    video (uploaded, or a YouTube/Vimeo link) and notes or a handbook."""
+
+    __tablename__ = "courses"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    category: Mapped[str] = mapped_column(String(80), default="")
+    level: Mapped[str] = mapped_column(String(20), default="")
+    published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class CourseLesson(Base):
+    """One lesson. Files live under COURSE_FILES_DIR; only their names are kept here."""
+
+    __tablename__ = "course_lessons"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    course_id: Mapped[str] = mapped_column(String(32), ForeignKey("courses.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    video_url: Mapped[str] = mapped_column(String(500), default="")
+    video_file: Mapped[str] = mapped_column(String(200), default="")
+    video_name: Mapped[str] = mapped_column(String(255), default="")
+    video_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    notes_file: Mapped[str] = mapped_column(String(200), default="")
+    notes_name: Mapped[str] = mapped_column(String(255), default="")
+    notes_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class CourseProgress(Base):
+    """A lesson a learner has finished."""
+
+    __tablename__ = "course_progress"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
+    lesson_id: Mapped[str] = mapped_column(String(32), ForeignKey("course_lessons.id", ondelete="CASCADE"))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("user_id", "lesson_id"),)
+
+
 class UserAvatar(Base):
     """A learner's profile picture, so others see it (leaderboards). `image`
     is the 256px picture and `thumb` a 64px copy for lists, both as JPEG/PNG

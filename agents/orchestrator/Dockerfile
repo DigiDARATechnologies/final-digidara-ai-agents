@@ -15,7 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# /app/course_files holds course videos and notes (a volume; a new volume
+# takes this folder's owner, so the app user can write to it).
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin appuser \
+    && mkdir -p /app/course_files \
     && chown -R appuser:appuser /app
 USER appuser
 

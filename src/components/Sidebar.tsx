@@ -27,7 +27,7 @@ export interface SidebarProps {
   onGoHome: () => void;
   onOpenChat: (chatId: string) => void;
   onOpenHelpPage: (page: "help-center" | "release-notes" | "contact" | "bug-report") => void;
-  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments") => void;
+  onNavAction: (action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments" | "courses") => void;
   onToggleUserMenu: (e: React.MouseEvent) => void;
   onUserMenuAction: (action: "profile" | "settings" | "upgrade" | "logout") => void;
   onToggleChatMenu: (chatId: string, e: React.MouseEvent) => void;
@@ -214,6 +214,15 @@ export default function Sidebar({
             </svg>
           </span>
           <span className="label">Assessments</span>
+        </button>
+        <button className="nav-item" onClick={() => onNavAction("courses")}>
+          <span className="nav-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="3.5" y="5" width="17" height="12" rx="2" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M10.5 8.5v5l4-2.5-4-2.5zM8 20h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span className="label">Courses</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("readiness")}>
           <span className="nav-icon">

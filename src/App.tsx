@@ -54,6 +54,7 @@ const OrganizationView = lazy(() => import("./components/OrganizationView"));
 const Leaderboard = lazy(() => import("./components/Leaderboard"));
 const LearningDashboard = lazy(() => import("./components/LearningDashboard"));
 const MyAssessments = lazy(() => import("./components/MyAssessments"));
+const Courses = lazy(() => import("./components/Courses"));
 const HelpPage = lazy(() => import("./components/HelpPage"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
 const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
@@ -1877,7 +1878,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments" | "courses") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1895,7 +1896,7 @@ export default function App() {
       switchView("admin");
       return;
     }
-    if (action === "readiness" || action === "organization" || action === "leaderboard" || action === "learning-dashboard" || action === "assessments") {
+    if (action === "readiness" || action === "organization" || action === "leaderboard" || action === "learning-dashboard" || action === "assessments" || action === "courses") {
       switchView(action);
       return;
     }
@@ -2242,6 +2243,10 @@ export default function App() {
               <MyAssessments onBack={startNewChatLanding} onJoin={() => switchView("organization")}
                 onOpen={(token) => setSharedLink({ kind: "assessment", token })} />
             </Suspense>
+          )}
+
+          {view === "courses" && (
+            <Suspense fallback={<ScreenLoading />}><Courses onBack={startNewChatLanding} /></Suspense>
           )}
 
           {view === "learning-dashboard" && (
