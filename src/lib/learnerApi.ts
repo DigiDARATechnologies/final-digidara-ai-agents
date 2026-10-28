@@ -225,6 +225,24 @@ export interface Leaderboard {
 /** "auto": the viewer's organization when they are in one, else the whole platform. */
 export const fetchLeaderboard = (scope: LeaderboardScope | "auto", group?: LeaderboardGroup) =>
   request<Leaderboard>(`/learner/leaderboard?scope=${scope}${group ? `&group=${group}` : ""}`);
+/** The learning dashboard: your own learning, or (staff, admins) your students'. */
+export type DashboardStatus = "submitted" | "open" | "in_progress" | "upcoming" | "missed";
+export interface LearningDashboardData {
+  view: string; views: string[]; label: string; people: number;
+  kpis: {
+    readiness: number | null; assessments: number; submitted: number; submission_rate: number | null;
+    average_score: number | null; active_recently: number; active_days: number; requests_30d: number;
+  };
+  monthly: { month: string; requests: number; assigned: number; attempted: number }[];
+  status: Record<DashboardStatus, number>;
+  agents: { agent: string; requests: number }[];
+  areas: { label: string; average: number }[];
+  assessments: { title: string; status: DashboardStatus; score: number | null; closes_at: string | null; opens_at: string | null }[];
+  learners: { user_id: string; name: string; readiness: number | null; submitted: number; assigned: number; last_active_at: string | null }[];
+}
+export const fetchLearningDashboard = (view?: string) =>
+  request<LearningDashboardData>(`/learner/dashboard${view ? `?view=${encodeURIComponent(view)}` : ""}`);
+
 /** The profile picture kept on the server, so others see it on leaderboards. */
 export const fetchMyAvatar = () => request<{ image: string | null }>("/learner/avatar");
 export const saveMyAvatar = (image: string, thumb: string) => request<{ saved: boolean }>("/learner/avatar", json("PUT", { image, thumb }));
