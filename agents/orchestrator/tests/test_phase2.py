@@ -1129,3 +1129,89 @@ def test_an_admin_puts_an_existing_student_under_a_staff_member(app_client, user
     # And back under no one.
     assert app_client.put(url, headers=auth("admin"), json={"staff_member_id": None}).status_code == 200
     assert app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json() == []
+
+
+# --- learning dashboard -------------------------------------------------------
+
+def _assessment(database, org_id, title, created_by="admin", opens_in=None, closed=False):
+    from app.models import Assessment
+
+    session = database()
+    row = Assessment(organization_id=org_id, created_by=created_by, title=title, config={}, proctoring={},
+                     token=uuid.uuid4().hex,
+                     opens_at=datetime.utcnow() + timedelta(days=opens_in) if opens_in else None,
+                     closes_at=datetime.utcnow() - timedelta(days=1) if closed else None)
+    session.add(row)
+    session.commit()
+    assessment_id = row.id
+    session.close()
+    return assessment_id
+
+
+def _sitting(database, user_id, assessment_id, score=None, top=None, status="completed"):
+    from app.models import ProctorSession
+
+    session = database()
+    session.add(ProctorSession(user_id=user_id, agent_name="mock_interview_agent", ref="1", assessment_id=assessment_id,
+                               status=status, result={"score": score, "max": top} if top else None))
+    session.commit()
+    session.close()
+
+
+def test_a_learner_sees_their_own_learning(app_client, users, database):
+    from app.models import TokenUsageEvent
+
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    done = _assessment(database, org_id, "Python basics")
+    _assessment(database, org_id, "SQL quiz")                          # open, not taken yet
+    _assessment(database, org_id, "Old test", closed=True)             # missed
+    _assessment(database, org_id, "Next week", opens_in=7)             # upcoming
+    _sitting(database, "learner", done, score=8, top=10)
+    _score(database, "learner", 42)
+    session = database()
+    session.add_all([TokenUsageEvent(user_id="learner", agent_name="aptitude_agent", action="start", tokens=5) for _ in range(3)])
+    session.commit()
+    session.close()
+    body = app_client.get("/learner/dashboard", headers=auth()).json()
+    assert body["view"] == "me" and body["views"] == ["me"] and body["people"] == 1
+    assert body["status"] == {"upcoming": 1, "open": 1, "in_progress": 0, "submitted": 1, "missed": 1}
+    kpis = body["kpis"]
+    assert kpis["assessments"] == 4 and kpis["submitted"] == 1 and kpis["average_score"] == 80.0
+    assert kpis["submission_rate"] == round(100 / 3, 1)              # the upcoming one is not due yet
+    assert kpis["readiness"] == 42.0 and kpis["requests_30d"] == 3 and kpis["active_recently"] == 1
+    assert body["agents"] == [{"agent": "aptitude_agent", "requests": 3}]
+    assert len(body["monthly"]) == 6 and body["monthly"][-1]["requests"] == 3
+    assert {a["title"]: a["status"] for a in body["assessments"]}["Python basics"] == "submitted"
+    assert body["learners"] == []
+    assert app_client.get("/learner/dashboard?view=organization", headers=auth()).status_code == 403
+
+
+def test_staff_see_their_students_and_admins_the_whole_organization(app_client, users, database):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    staff_id = _staff_login(app_client, database, org_id)
+    code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(staff_id), json={}).json()["code"]
+    app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+                    files={"file": ("list.csv", "Name,Mobile,Email\nL,9876543210,learner@example.test\n".encode(), "text/csv")})
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": code})                              # staff student
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["organization"]["join_code"]})
+    mine = _assessment(database, org_id, "Staff test", created_by=staff_id)
+    _assessment(database, org_id, "Owner test")
+    _sitting(database, "learner", mine, score=6, top=10)
+    _score(database, "learner", 50)
+    _score(database, "other", 70)
+
+    staff = app_client.get("/learner/dashboard", headers=auth(staff_id)).json()
+    assert staff["view"] == "students" and staff["views"] == ["students", "me"]
+    assert staff["people"] == 1 and [r["user_id"] for r in staff["learners"]] == ["learner"]
+    assert staff["kpis"]["assessments"] == 1 and staff["kpis"]["average_score"] == 60.0     # only the staff member's own test
+    assert staff["learners"][0]["submitted"] == 1 and staff["kpis"]["readiness"] == 50.0
+
+    admin = app_client.get("/learner/dashboard", headers=auth("admin")).json()
+    assert admin["view"] == "organization" and admin["people"] == 2
+    assert admin["kpis"]["assessments"] == 4 and admin["kpis"]["submitted"] == 1        # 2 learners x 2 tests
+    assert admin["kpis"]["readiness"] == 60.0
+    assert [r["user_id"] for r in admin["learners"]] == ["other", "learner"]          # highest readiness first
+    assert app_client.get("/learner/dashboard?view=me", headers=auth("admin")).json()["people"] == 1

@@ -158,6 +158,17 @@ def delete_avatar(user_id: str = Depends(get_current_user_id)) -> Response:
     return Response(status_code=204)
 
 
+@router.get("/dashboard")
+def dashboard(view: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """The learning dashboard: your own learning, or (staff, admins) your students'."""
+    from app.dashboard import service as dashboard_service
+
+    try:
+        return dashboard_service.build(user_id, view)
+    except dashboard_service.DashboardError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+
+
 @router.get("/leaderboard")
 def leaderboard(scope: str = "auto", group: str | None = None, user_id: str = Depends(get_verified_user_id)) -> dict:
     """Top learners by job readiness: students or staff, platform-wide or in

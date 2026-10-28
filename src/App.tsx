@@ -52,6 +52,7 @@ import BossAssistant from "./components/BossAssistant";
 const ReadinessView = lazy(() => import("./components/ReadinessView"));
 const OrganizationView = lazy(() => import("./components/OrganizationView"));
 const Leaderboard = lazy(() => import("./components/Leaderboard"));
+const LearningDashboard = lazy(() => import("./components/LearningDashboard"));
 const HelpPage = lazy(() => import("./components/HelpPage"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
 const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
@@ -1875,7 +1876,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1893,7 +1894,7 @@ export default function App() {
       switchView("admin");
       return;
     }
-    if (action === "readiness" || action === "organization" || action === "leaderboard") {
+    if (action === "readiness" || action === "organization" || action === "leaderboard" || action === "learning-dashboard") {
       switchView(action);
       return;
     }
@@ -2233,6 +2234,10 @@ export default function App() {
 
           {view === "organization" && learnerSummary && (
             <Suspense fallback={<ScreenLoading />}><OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} /></Suspense>
+          )}
+
+          {view === "learning-dashboard" && (
+            <Suspense fallback={<ScreenLoading />}><LearningDashboard onBack={startNewChatLanding} /></Suspense>
           )}
 
           {view === "leaderboard" && (
