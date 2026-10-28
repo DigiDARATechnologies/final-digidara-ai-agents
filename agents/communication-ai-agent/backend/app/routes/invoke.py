@@ -183,10 +183,15 @@ def _transcribe(payload, path="/api/speaking/transcribe"):
     except (binascii.Error, ValueError):
         return _error("The recording could not be read.", "INVALID_AUDIO")
 
+    form_data = {"audio": (io.BytesIO(audio_bytes), f"speaking-answer.{extension}", audio_type)}
+    prompt = payload.get("prompt")
+    if prompt:
+        form_data["prompt"] = str(prompt).strip()
+
     upstream = current_app.test_client().post(
         path,
         headers={"Authorization": f"Bearer {token}"},
-        data={"audio": (io.BytesIO(audio_bytes), f"speaking-answer.{extension}", audio_type)},
+        data=form_data,
         content_type="multipart/form-data",
     )
     return current_app.response_class(upstream.data, status=upstream.status_code, content_type=upstream.content_type)

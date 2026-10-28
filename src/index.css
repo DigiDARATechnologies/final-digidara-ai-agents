@@ -1027,6 +1027,28 @@ body.glow-off .send-btn:hover{
 .icon-btn.mic-recording{ background:var(--red); color:#fff; border-color:var(--red); animation:micPulse 1.4s ease-in-out infinite; }
 .icon-btn.mic-recording:hover{ background:var(--red); color:#fff; }
 @keyframes micPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,.45); } 50%{ box-shadow:0 0 0 7px rgba(239,68,68,0); } }
+.icon-btn.mic-required{
+  background:rgba(37,99,235,0.12);
+  color:var(--accent);
+  border-color:var(--accent);
+  animation:micPulseBlue 1.8s ease-in-out infinite;
+}
+.icon-btn.mic-required:hover{
+  background:var(--accent);
+  color:#fff;
+}
+@keyframes micPulseBlue{
+  0%,100%{ box-shadow:0 0 0 0 rgba(37,99,235,0.45); }
+  50%{ box-shadow:0 0 0 7px rgba(37,99,235,0); }
+}
+.composer textarea.composer-textarea-voice-only{
+  cursor:not-allowed;
+  user-select:none;
+}
+.composer textarea.composer-textarea-voice-only::placeholder{
+  color:var(--accent3);
+  font-style:italic;
+}
 .mic-error{ margin:-14px var(--chat-col-pad) 14px; font-size:12.5px; color:var(--red); text-align:center; }
 .voice-capture-status{ margin:-8px var(--chat-col-pad) 10px; color:var(--accent3); font-size:12px; font-weight:700; text-align:center; }
 

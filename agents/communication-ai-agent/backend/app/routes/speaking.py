@@ -1257,11 +1257,14 @@ def _transcribe_uploaded_audio():
     if not audio_bytes:
         return _api_error("The recorded audio was empty.", "AUDIO_EMPTY", 400)
 
+    prompt = request.form.get("prompt")
+
     try:
         transcript = groq_service.transcribe_speaking_audio(
             audio_bytes,
             filename=audio_file.filename or "speaking-answer.webm",
             content_type=audio_file.mimetype or "audio/webm",
+            prompt=prompt,
         )
     except ValueError as exc:
         return _api_error(str(exc), "INVALID_AUDIO", 400)

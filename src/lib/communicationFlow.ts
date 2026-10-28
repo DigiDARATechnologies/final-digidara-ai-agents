@@ -228,7 +228,13 @@ export function writingCorrections(feedback: NonNullable<WritingTurnResult["feed
 
 function writingEvaluationResult(feedback: NonNullable<WritingTurnResult["feedback"]>): string {
   const scores = feedback.scores || {};
-  const score = (label: string, key: string) => `${label}: ${scores[key] == null ? "—" : scores[key]}/10`;
+  const score = (label: string, key: string) => {
+    const raw = scores[key];
+    if (raw == null) return `${label}: —`;
+    const num = Number(raw);
+    const val = !isNaN(num) && num > 10 ? Math.round(num) / 10 : raw;
+    return `${label}: ${val}/10`;
+  };
   return [
     "Focus on grammar and clarity for improvement.",
     [score("Clarity", "clarity"), score("Grammar", "grammar"), score("Knowledge", "knowledge"), score("Spelling", "spelling"), score("Vocabulary", "vocabulary"), score("Overall", "overall")].join(" · "),
@@ -389,8 +395,8 @@ async function beginPronunciationSession(
       },
       messages: [{
         text: mode === "minimal_pairs"
-          ? `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Say the first word in the pair: “${itemText(item)}”.\n3. Press Send, then record the second word when prompted. You will receive one score for both words.`
-          : `Pronunciation activity\n\n1. Click the microphone button below to turn it on.\n2. Pronounce this clearly: “${itemText(item)}”\n3. Check the captured text, then press Send for scoring.`,
+          ? `Pronunciation activity (Voice only)\n\n1. Click the glowing microphone button below to turn it on (typing is disabled).\n2. Say the first word in the pair: “${itemText(item)}”.\n3. Press Send, then record the second word when prompted. You will receive one score for both words.`
+          : `Pronunciation activity (Voice only)\n\n1. Click the glowing microphone button below to speak (typing is disabled).\n2. Pronounce this clearly: “${itemText(item)}”\n3. Check the captured speech, then press Send for scoring.`,
         options: [{ label: "End session", value: "end_session" }],
       }],
     };
@@ -835,7 +841,7 @@ export async function handleCommunicationText(
       const nextItem: PronunciationItemPayload | undefined = result.next_item;
       if (nextItem) {
         const { data } = await startPronunciationAttempt(state.authToken!, nextItem.item_id);
-        lines.push("", `Next pronunciation activity:\n1. Click the microphone button below.\n2. Pronounce clearly: “${itemText(nextItem)}”\n3. Check the captured text, then press Send for scoring.`);
+        lines.push("", `Next pronunciation activity (Voice only):\n1. Click the glowing microphone button below to speak (typing is disabled).\n2. Pronounce clearly: “${itemText(nextItem)}”\n3. Check the captured speech, then press Send for scoring.`);
         return {
           state: {
             ...state,

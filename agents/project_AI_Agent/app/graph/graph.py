@@ -82,7 +82,11 @@ def build_main_graph():
     conn.cursor = _cursor_with_reconnect
 
     checkpointer = PyMySQLSaver(conn)
-    checkpointer.setup()  # idempotent — creates the checkpoint tables on first run
+    try:
+        checkpointer.setup()  # idempotent — creates the checkpoint tables on first run
+    except Exception as e:
+        if "Duplicate key name" not in str(e) and getattr(e, "args", [None])[0] != 1061:
+            raise
 
     return graph.compile(
         checkpointer=checkpointer,
