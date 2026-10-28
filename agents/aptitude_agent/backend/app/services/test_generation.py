@@ -592,7 +592,7 @@ def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avo
     return usage,model
 
 
-def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True, _lenient_history=True):
+def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, allow_demo_fallback=True, *, deadline=None, max_validation_attempts=3, background=False, request_timeout=None, _rescue=True, _lenient_history=True, fill_missing=None):
     total_started=time.perf_counter()
     if not current_app.config.get("OPENAI_API_KEY"):
         if allow_demo_fallback and current_app.config["ALLOW_DEMO_QUESTIONS"]: return demo_questions(slots,avoid_questions), "demo-fixture", empty_usage()
@@ -830,6 +830,25 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
         accumulated_usage=merge_usage(accumulated_usage,rescue_usage)
         accumulated_usage["validation_attempt_count"]=max_validation_attempts
         return [accepted[index] for index in range(count)],model,accumulated_usage
+    # Last resort before failing the whole test (the learner's "could not
+    # prepare a quality assessment" 503): when only a few slots are still
+    # missing, fill them with already-validated questions stored earlier
+    # (see test_question_service.stored_question_filler).
+    pending=[index for index in range(count) if index not in accepted]
+    if fill_missing is not None and accepted and len(pending)<=max(2,count//3):
+        try:
+            filled=fill_missing([slots[index] for index in pending],[accepted[index]["question"] for index in sorted(accepted)])
+        except Exception as exc:  # noqa: BLE001 - the original failure is reported below
+            current_app.logger.warning("Stored-question fallback failed: %s",str(exc)[:200])
+            filled=None
+        if filled and len(filled)==len(pending):
+            for index,question in zip(pending,filled):
+                accepted[index]=question
+            current_app.logger.warning(
+                "Batch generation filled %s slot(s) with stored questions after: %s",len(pending),str(last_error)[:200],
+            )
+            accumulated_usage["validation_attempt_count"]=max_validation_attempts
+            return [accepted[index] for index in range(count)],last_model or current_app.config["OPENAI_MODEL"],accumulated_usage
     # Deterministic replacements are production-safe and keep already-valid
     # provider questions.  The ALLOW_DEMO_QUESTIONS flag only controls the
     # full local fixture fallback used when no provider question was accepted;

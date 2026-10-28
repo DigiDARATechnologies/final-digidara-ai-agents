@@ -5,13 +5,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app
+from sqlalchemy import case, func
 
 from ..extensions import db
-from ..models import AptitudeTestQuestion, RecentQuestionHash
+from ..models import AptitudeTest, AptitudeTestQuestion, RecentQuestionHash
 from .audit_service import record_event
 from .question_timing import question_time_seconds
 from .ai_service import empty_usage, merge_usage
-from .question_validation import questions_are_near_duplicates
+from .question_validation import questions_are_near_duplicates, validate_generated_item
 from .test_generation import _swap_topics, generate_questions
 from .usage_service import record_usage
 
@@ -35,7 +36,7 @@ def _cross_chunk_duplicates(generated):
     return duplicates
 
 
-def generate_question_set(slots, *, avoid_questions, deadline):
+def generate_question_set(slots, *, avoid_questions, deadline, fill_missing=None):
     """Generate every slot's question; large tests as parallel chunks.
 
     A test of up to QUESTION_GENERATION_CHUNK_SIZE questions keeps the single
@@ -50,6 +51,7 @@ def generate_question_set(slots, *, avoid_questions, deadline):
         "deadline": deadline,
         "max_validation_attempts": config["BATCH_GENERATION_MAX_ATTEMPTS"],
         "request_timeout": config["OPENAI_BATCH_TIMEOUT_SECONDS"],
+        "fill_missing": fill_missing,
     }
     size = config["QUESTION_GENERATION_CHUNK_SIZE"]
     if len(slots) <= size:
@@ -128,6 +130,63 @@ def _recent_question_texts(student_id):
     ]
 
 
+def stored_question_filler(student_id):
+    """The last resort for a slot the model could not write a valid question
+    for: an already-validated question from an earlier test, in the same
+    category and difficulty (same topic and language preferred), that this
+    learner has not seen. Returns None unless every slot gets one."""
+
+    def fill(slots, keep_texts):
+        seen = {
+            row.content_hash
+            for row in RecentQuestionHash.query.filter_by(student_id=student_id)
+            .order_by(RecentQuestionHash.created_at.desc()).limit(1000).all()
+        }
+        texts, chosen, used = list(keep_texts), [], set()
+        for slot in slots:
+            query = (
+                db.session.query(AptitudeTestQuestion)
+                .join(AptitudeTest, AptitudeTest.id == AptitudeTestQuestion.test_id)
+                .filter(
+                    AptitudeTestQuestion.category == slot["category"],
+                    AptitudeTestQuestion.difficulty == slot["difficulty"],
+                    AptitudeTest.student_id != student_id,
+                )
+            )
+            if seen:
+                query = query.filter(~AptitudeTestQuestion.content_hash.in_(seen))
+            language = slot.get("technical_language")
+            if slot["category"] == "Technical Aptitude" and language:
+                query = query.filter(AptitudeTest.technical_language == language)
+            rows = (
+                query.order_by(case((AptitudeTestQuestion.topic == slot["topic"], 0), else_=1), func.rand())
+                .limit(40).all()
+            )
+            pick = None
+            for row in rows:
+                if row.content_hash in used or any(questions_are_near_duplicates(row.question_text, text) for text in texts):
+                    continue
+                own_slot = {key: value for key, value in slot.items() if key not in ("topic", "technical_skill")}
+                own_slot["topic"] = row.topic
+                try:
+                    pick = validate_generated_item({
+                        **own_slot, "question": row.question_text,
+                        "options": {"A": row.option_a, "B": row.option_b, "C": row.option_c, "D": row.option_d},
+                        "correct_answer": row.correct_answer, "explanation": row.explanation,
+                    }, own_slot)
+                except ValueError:
+                    continue
+                break
+            if pick is None:
+                return None
+            chosen.append(pick)
+            used.add(pick["content_hash"])
+            texts.append(pick["question"])
+        return chosen
+
+    return fill
+
+
 def generate_and_store_question_batch(test, slots):
     """Generate, validate, and stage a complete test in one provider request.
 
@@ -144,6 +203,7 @@ def generate_and_store_question_batch(test, slots):
     try:
         generated, model, usage = generate_question_set(
             slots, avoid_questions=_recent_question_texts(test.student_id), deadline=deadline,
+            fill_missing=stored_question_filler(test.student_id),
         )
         if len(generated) != len(slots):
             raise ValueError(f"Expected {len(slots)} generated questions")

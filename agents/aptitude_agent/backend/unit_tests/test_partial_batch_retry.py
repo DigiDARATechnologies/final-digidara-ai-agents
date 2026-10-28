@@ -234,3 +234,39 @@ def test_a_malformed_item_fails_only_its_own_slot(monkeypatch):
     questions, _model, _usage = run(monkeypatch, provider, [SLOT] * 3)
     assert provider.asked_for == [3, 1]
     assert [q["question"] for q in questions] == [Q_MANAGER, Q_AGES, Q_CHAIRS]
+
+
+def test_a_slot_that_keeps_failing_is_filled_with_a_stored_question(monkeypatch):
+    """The live 503: one slot never validates. A stored, validated question
+    fills it instead of failing the learner's whole test."""
+    provider = Provider(
+        [good(Q_MANAGER), bad(Q_CODE), good(Q_CHAIRS)],
+        [bad(Q_AGES)],
+        [bad(Q_AGES)],
+    )
+    asked = []
+
+    def fill(slots, keep):
+        asked.append((len(slots), list(keep)))
+        return [{**good(Q_AGES), "content_hash": "stored", "structural_hash": None}]
+
+    monkeypatch.setattr(test_generation, "json_completion", provider)
+    app = Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context():
+        questions, _model, _usage = test_generation.generate_questions([SLOT] * 3, max_validation_attempts=3, fill_missing=fill)
+    assert [q["question"] for q in questions] == [Q_MANAGER, Q_AGES, Q_CHAIRS]
+    assert asked == [(1, [Q_MANAGER, Q_CHAIRS])]
+
+
+def test_a_filler_that_finds_nothing_keeps_the_original_failure(monkeypatch):
+    provider = Provider(
+        [good(Q_MANAGER), bad(Q_CODE), good(Q_CHAIRS)],
+        [bad(Q_AGES)],
+        [bad(Q_AGES)],
+    )
+    monkeypatch.setattr(test_generation, "json_completion", provider)
+    app = Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context(), pytest.raises(ValueError, match="question 2"):
+        test_generation.generate_questions([SLOT] * 3, max_validation_attempts=3, fill_missing=lambda slots, keep: None)
