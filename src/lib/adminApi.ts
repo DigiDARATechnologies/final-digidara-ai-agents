@@ -74,3 +74,8 @@ export const fetchConversation = (userId: string, conversationId: string) =>
   get<ConversationView>(`/users/${encodeURIComponent(userId)}/conversations/${encodeURIComponent(conversationId)}`);
 export const fetchPayments = (params: { status?: string; search?: string; page?: number; limit?: number }) => get<PaymentList>("/payments", params as Record<string, string | number>);
 export const fetchAgents = () => get<AgentList>("/agents");
+export interface EnterpriseEnquiryRow {
+  id: string; organization: string; organization_type: string; contact_name: string; email: string; phone: string;
+  learners: number | null; city: string; message: string; emailed: boolean; created_at: string | null;
+}
+export const fetchEnterpriseEnquiries = () => get<{ total: number; enquiries: EnterpriseEnquiryRow[] }>("/enterprise-enquiries");

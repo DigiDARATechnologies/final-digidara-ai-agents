@@ -1108,3 +1108,24 @@ def test_someone_breaking_into_the_top_3_is_new_and_learners_can_hide(app_client
     app_client.put("/learner/leaderboard/visibility", headers=auth("s4"), json={"hidden": True})
     third = app_client.get("/learner/leaderboard", headers=auth("s4")).json()
     assert "s4" not in [e["user_id"] for e in third["entries"]] and third["hidden"] is True and third["me"] is None
+
+
+def test_an_admin_puts_an_existing_student_under_a_staff_member(app_client, users, database):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    staff_id = _staff_login(app_client, database, org_id)
+    # Joined with the owner's general code: under no staff member yet.
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    assert app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json() == []
+    members = {m["user_id"]: m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json()}
+    assert members["learner"]["staff_user_id"] is None
+    staff_member = next(s["member_id"] for s in app_client.get(f"/organizations/{org_id}/staff", headers=auth("admin")).json() if s["user_id"] == staff_id)
+    url = f"/organizations/{org_id}/members/{members['learner']['member_id']}/staff"
+    assert app_client.put(url, headers=auth(staff_id), json={"staff_member_id": staff_member}).status_code == 403   # staff cannot
+    assert app_client.put(url, headers=auth("admin"), json={"staff_member_id": staff_member}).status_code == 200
+    assert [m["user_id"] for m in app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json()] == ["learner"]
+    members = {m["user_id"]: m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json()}
+    assert members["learner"]["staff_user_id"] == staff_id
+    # And back under no one.
+    assert app_client.put(url, headers=auth("admin"), json={"staff_member_id": None}).status_code == 200
+    assert app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json() == []

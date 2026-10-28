@@ -326,6 +326,24 @@ def list_payments(
         session.close()
 
 
+@router.get("/enterprise-enquiries")
+def enterprise_enquiries(limit: int = Query(100, ge=1, le=500), _admin: str = Depends(require_admin)) -> dict:
+    """Enterprise plan enquiries from the billing page, newest first."""
+    from app.models import EnterpriseEnquiry
+
+    session = get_session()
+    try:
+        rows = session.query(EnterpriseEnquiry).order_by(EnterpriseEnquiry.created_at.desc()).limit(limit).all()
+        total = session.query(EnterpriseEnquiry).count()
+        return {"total": total, "enquiries": [{
+            "id": r.id, "organization": r.organization, "organization_type": r.organization_type,
+            "contact_name": r.contact_name, "email": r.email, "phone": r.phone, "learners": r.learners,
+            "city": r.city, "message": r.message, "emailed": bool(r.emailed), "created_at": _iso(r.created_at),
+        } for r in rows]}
+    finally:
+        session.close()
+
+
 @router.get("/agents")
 def list_agents(_admin: str = Depends(require_admin)) -> dict:
     now = datetime.utcnow()

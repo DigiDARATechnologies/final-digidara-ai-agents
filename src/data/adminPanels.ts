@@ -15,6 +15,7 @@ export const ADMIN_PANELS: AdminPanelMeta[] = [
   { id: "organizations", label: "Organizations", icon: "🏫", desc: "Create colleges and companies with their admin logins, and open any organization's dashboard." },
   { id: "users", label: "Users", icon: "👥", desc: "Every account, and each user's payments, chats and progress from end to end." },
   { id: "payments", label: "Payments", icon: "💳", desc: "Every payment: what was bought, how much was credited, and its status." },
+  { id: "enterprise", label: "Enterprise", icon: "🏢", desc: "Organizations that asked about the Enterprise plan from the billing page." },
   { id: "agents", label: "Agents", icon: "🤖", desc: "Every registered agent: health, actions, endpoint and how much it is used." },
   {
     id: "job-agent",

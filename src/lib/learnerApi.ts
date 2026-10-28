@@ -149,6 +149,8 @@ export interface OrgMember {
   section?: string | null;
   join_code?: { id: string; code: string; label: string } | null;
   last_active_at?: string | null;
+  /** The staff member who looks after this student (owner/admin view). */
+  staff_user_id?: string | null;
 }
 
 export interface OrgSummary {
