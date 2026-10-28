@@ -85,4 +85,4 @@ export interface Chat {
   autoSubject?: string;
 }
 
-export type View = "store" | "chat" | "admin" | "profile" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "help-center" | "release-notes" | "contact" | "bug-report";
+export type View = "store" | "chat" | "admin" | "profile" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments" | "help-center" | "release-notes" | "contact" | "bug-report";

@@ -166,3 +166,13 @@ export async function fetchSnapshotUrl(orgId: string, sessionId: string, snapsho
   if (!response.ok) throw new Error("This snapshot is no longer available.");
   return URL.createObjectURL(await response.blob());
 }
+
+/** One assessment on the learner's Assessments page. */
+export interface MyAssessment {
+  id: string; title: string; kind: AssessmentKind; config: Partial<AssessmentConfig>; by: string;
+  opens_at: string | null; closes_at: string | null;
+  status: "open" | "in_progress" | "upcoming" | "submitted" | "missed";
+  percent: number | null; path: string;
+}
+export interface MyAssessments { member: boolean; organization: string | null; assessments: MyAssessment[] }
+export const fetchMyAssessments = () => request<MyAssessments>("/my-assessments");

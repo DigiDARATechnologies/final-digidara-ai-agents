@@ -94,6 +94,13 @@ def end_session(session_id: str, user_id: str = Depends(get_verified_user_id)) -
     return _run(service.end_session, user_id, session_id)
 
 
+@router.get("/my-assessments")
+def my_assessments(user_id: str = Depends(get_verified_user_id)) -> dict:
+    """The learner's assessments page: what their organization (or their
+    staff member) gave them, with where each stands."""
+    return service.learner_assessments(user_id)
+
+
 @router.get("/assessments/{token}")
 @limiter.limit("30/minute")
 def preview_assessment(token: str, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:

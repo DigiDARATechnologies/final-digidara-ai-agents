@@ -53,6 +53,7 @@ const ReadinessView = lazy(() => import("./components/ReadinessView"));
 const OrganizationView = lazy(() => import("./components/OrganizationView"));
 const Leaderboard = lazy(() => import("./components/Leaderboard"));
 const LearningDashboard = lazy(() => import("./components/LearningDashboard"));
+const MyAssessments = lazy(() => import("./components/MyAssessments"));
 const HelpPage = lazy(() => import("./components/HelpPage"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
 const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
@@ -1876,7 +1877,7 @@ export default function App() {
     showToast("File attachments are only available in the Capstone Project Agent chat.");
   }
 
-  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard") {
+  function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments") {
     if (action === "settings") {
       setSettingsTab("general");
       setSettingsOpen(true);
@@ -1894,7 +1895,7 @@ export default function App() {
       switchView("admin");
       return;
     }
-    if (action === "readiness" || action === "organization" || action === "leaderboard" || action === "learning-dashboard") {
+    if (action === "readiness" || action === "organization" || action === "leaderboard" || action === "learning-dashboard" || action === "assessments") {
       switchView(action);
       return;
     }
@@ -2234,6 +2235,13 @@ export default function App() {
 
           {view === "organization" && learnerSummary && (
             <Suspense fallback={<ScreenLoading />}><OrganizationView summary={learnerSummary} onSummaryChange={setLearnerSummary} onBack={startNewChatLanding} onToast={showToast} /></Suspense>
+          )}
+
+          {view === "assessments" && (
+            <Suspense fallback={<ScreenLoading />}>
+              <MyAssessments onBack={startNewChatLanding} onJoin={() => switchView("organization")}
+                onOpen={(token) => setSharedLink({ kind: "assessment", token })} />
+            </Suspense>
           )}
 
           {view === "learning-dashboard" && (

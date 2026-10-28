@@ -422,6 +422,28 @@ def _attempt_view(ps: ProctorSession | None) -> dict | None:
             "result": ps.result, "started_at": _iso(ps.started_at), "ended_at": _iso(ps.ended_at)}
 
 
+def _staff_creator(session, assessment: Assessment) -> OrganizationMember | None:
+    """The assessment's creator when they are a staff member of its organization."""
+    if not assessment.created_by:
+        return None
+    creator = session.query(OrganizationMember).filter_by(user_id=assessment.created_by).first()
+    if creator is None or creator.organization_id != assessment.organization_id or creator.role != "staff":
+        return None
+    return creator
+
+
+def _for_learner(session, assessment: Assessment, user_id: str) -> bool:
+    """A staff member's assessment is for their own students (those who joined
+    with their join codes or are on their list); an owner's or admin's is for
+    the whole organization."""
+    from app.organizations import service as org_service
+
+    creator = _staff_creator(session, assessment)
+    if creator is None:
+        return True
+    return user_id in org_service.staff_students(session, creator.user_id, assessment.organization_id)
+
+
 def preview_assessment(user_id: str, token: str) -> dict:
     """What the learner sees on opening the link, before starting."""
     session = db.get_session()
@@ -442,6 +464,8 @@ def preview_assessment(user_id: str, token: str) -> dict:
             reason = "This assessment has closed."
         elif assessment.members_only and not is_member:
             reason = f"This assessment is only for members of {org.name}. Join the organization first."
+        elif is_member and member.role == "member" and not _for_learner(session, assessment, user_id):
+            reason = "This assessment is for another staff member's students. Ask your trainer for your own assessment."
         elif attempt is not None and attempt.status != "active":
             reason = "You have already taken this assessment."
         return {
@@ -786,5 +810,59 @@ def snapshot_image(admin_id: str, org_id: str, session_id: str, snapshot_id: str
         if snapshot is None or snapshot.session_id != ps.id:
             raise ProctorError(404, "This snapshot was deleted or does not exist.")
         return snapshot.image
+    finally:
+        session.close()
+
+
+# --- the learner's list ------------------------------------------------------------
+
+def learner_assessments(user_id: str) -> dict:
+    """The assessments a learner can see: their organization's, a staff
+    member's only for that staff member's students. Empty until they join."""
+    now = _now()
+    session = db.get_session()
+    try:
+        member = session.query(OrganizationMember).filter_by(user_id=user_id).first()
+        if member is None:
+            return {"member": False, "organization": None, "assessments": []}
+        org = session.get(Organization, member.organization_id)
+        rows = (session.query(Assessment).filter_by(organization_id=member.organization_id, active=True)
+                .order_by(Assessment.created_at.desc()).all())
+        attempts = {}
+        for ps in (session.query(ProctorSession).filter(ProctorSession.user_id == user_id,
+                                                         ProctorSession.assessment_id.in_([a.id for a in rows] or [""]))
+                   .order_by(ProctorSession.started_at).all()):
+            attempts[ps.assessment_id] = ps
+        names = {}
+        result = []
+        for assessment in rows:
+            if member.role == "member" and not _for_learner(session, assessment, user_id):
+                continue
+            ps = attempts.get(assessment.id)
+            if ps is not None and ps.status in ("completed", "terminated"):
+                state = "submitted"
+            elif ps is not None:
+                state = "in_progress"
+            elif assessment.opens_at and now < assessment.opens_at:
+                state = "upcoming"
+            elif assessment.closes_at and now > assessment.closes_at:
+                state = "missed"
+            else:
+                state = "open"
+            result_data = (ps.result or {}) if ps is not None else {}
+            percent = result_data.get("percent")
+            if percent is None and isinstance(result_data.get("score"), (int, float)) and result_data.get("max"):
+                percent = round(100.0 * result_data["score"] / result_data["max"], 1)
+            creator = assessment.created_by or ""
+            if creator not in names:
+                user = session.get(User, creator) if creator else None
+                names[creator] = user.name if user else ""
+            result.append({
+                "id": assessment.id, "title": assessment.title, "kind": assessment.kind,
+                "config": _config_view(assessment.config or {}), "by": names[creator],
+                "opens_at": _iso(assessment.opens_at), "closes_at": _iso(assessment.closes_at),
+                "status": state, "percent": percent, "path": f"/assessment/{assessment.token}",
+            })
+        return {"member": True, "organization": org.name if org else "", "assessments": result}
     finally:
         session.close()

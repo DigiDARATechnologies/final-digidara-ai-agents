@@ -313,3 +313,45 @@ def test_an_assessment_needs_the_creators_coins(api, interview_agent, database):
     refused = api.post("/gateway/agents/mock_interview_agent/invoke", headers=auth(), json={
         "action": "start_interview", "payload": {"round_type": "technical"}})
     assert refused.status_code == 402 and "trainer" in refused.json()["detail"]
+
+
+def test_learners_see_their_organizations_assessments_and_staff_ones_only_for_their_students(api, database):
+    from app.models import User
+
+    org_id, code = _make_org(api)
+    staff = api.post(f"/organizations/{org_id}/staff", headers=auth("admin"), json={"name": "Priya", "email": "priya@college.edu"}).json()
+    session = database()
+    staff_user = session.query(User).filter_by(email="priya@college.edu").one()
+    staff_user.email_verified = True
+    staff_user.token_balance = 1000
+    staff_id = staff_user.id
+    session.commit()
+    session.close()
+    assert staff["status"] == "created"
+    staff_code = api.post(f"/organizations/{org_id}/codes", headers=auth(staff_id), json={"label": "CSE"}).json()["code"]
+    api.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+             files={"file": ("list.csv", "Name,Mobile,Email\nL,9876543210,learner@example.test\n".encode(), "text/csv")})
+    assert api.get("/my-assessments", headers=auth()).json() == {"member": False, "organization": None, "assessments": []}
+    api.post("/organizations/join", headers=auth(), json={"join_code": staff_code})          # Priya's student
+    from app.models import OrgRosterEntry
+
+    session = database()
+    session.add(OrgRosterEntry(organization_id=org_id, email="other@example.test"))   # on the owner's list
+    session.commit()
+    session.close()
+    assert api.post("/organizations/join", headers=auth("other"), json={"join_code": code}).json()["role"] == "member"
+    owner_test = _assessment(api, org_id, title="Whole college test")
+    staff_test = api.post(f"/organizations/{org_id}/assessments", headers=auth(staff_id), json={
+        "title": "Priya's CSE test", "kind": "mock_interview",
+        "config": {"round_type": "hr", "num_questions": 5, "level": "medium"}}).json()
+    mine = api.get("/my-assessments", headers=auth()).json()
+    assert mine["member"] is True and {a["title"] for a in mine["assessments"]} == {"Whole college test", "Priya's CSE test"}
+    assert {a["status"] for a in mine["assessments"]} == {"open"}
+    theirs = api.get("/my-assessments", headers=auth("other")).json()
+    assert [a["title"] for a in theirs["assessments"]] == ["Whole college test"]
+    # The link of a staff member's test does not let another staff member's student in.
+    token = staff_test["path"].rsplit("/", 1)[-1]
+    preview = api.get(f"/assessments/{token}", headers=auth("other")).json()
+    assert not preview["can_start"] and "another staff member" in preview["reason"]
+    assert api.get(f"/assessments/{token}", headers=auth()).json()["can_start"]
+    assert owner_test["id"]

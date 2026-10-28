@@ -99,3 +99,12 @@
   .ld-grid { grid-template-columns: 1fr; }
   .ld-table { font-size: 12.5px; }
 }
+
+/* Assessments page */
+.ma-list { display: flex; flex-direction: column; gap: 12px; }
+.ma-item { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ma-main h2 { margin: 8px 0 4px; font-size: 16px; color: var(--tx-1); }
+.ma-main p { margin: 0 0 4px; color: var(--tx-2); font-size: 13.5px; }
+.ma-main small { color: var(--tx-2); }
+.ma-side { display: flex; align-items: center; gap: 10px; }
+.ma-side strong { font-size: 22px; color: var(--tx-1); }
