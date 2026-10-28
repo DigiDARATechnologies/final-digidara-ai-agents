@@ -257,12 +257,17 @@ def invoke():
     if action == "submit_mcq_answer":
         problem_id = _int(payload.get("problem_id"), "problem_id")
         problem = repo().problem_for_evaluation(student["id"], problem_id)
-        if _assessment_gate(student, problem) is None:
+        item = _assessment_gate(student, problem)
+        if item is None:
             _require_level(body, problem.get("difficulty"))
         selected_key = payload.get("selectedKey")
         if not isinstance(selected_key, str) or not selected_key:
             raise ApiError("selectedKey is required.", 400, "invalid_parameter")
         outcome = repo().submit_mcq_answer(student["id"], problem_id, selected_key)
+        if item is not None:
+            # In an assessment only the first answer counts (no trying every option).
+            if not repo().record_mcq_assessment_answer(item["assessment_id"], item["position"], outcome.get("score", 0)):
+                raise ApiError("You have already answered this question.", 409, "already_answered")
         return jsonify(outcome), 201
 
     if action == "run_playground":

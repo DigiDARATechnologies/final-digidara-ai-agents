@@ -368,14 +368,14 @@ class MySqlRepository:
 
     def _assessment_items(self, cursor, assessment_id):
         cursor.execute(
-            "SELECT i.position,i.kind,i.best_score,i.attempts,p.id problem_id,p.name,p.slug,p.difficulty,tp.slug topic_slug "
+            "SELECT i.position,i.kind,i.best_score,i.attempts,p.id problem_id,p.name,p.slug,p.difficulty,p.question_type,tp.slug topic_slug "
             "FROM coding_assessment_items i JOIN coding_problems p ON p.id=i.problem_id JOIN coding_topics tp ON tp.id=p.topic_id "
             "WHERE i.assessment_id=%s ORDER BY i.position",
             (assessment_id,),
         )
         return [{"position": int(r["position"]), "kind": r["kind"], "best_score": int(r["best_score"]), "attempts": int(r["attempts"]),
                  "problem_id": r["problem_id"], "name": r["name"], "slug": r["slug"], "difficulty": r["difficulty"],
-                 "topic_slug": r["topic_slug"]} for r in cursor.fetchall()]
+                 "question_type": r.get("question_type") or "code", "topic_slug": r["topic_slug"]} for r in cursor.fetchall()]
 
     @staticmethod
     def _iso(value):
@@ -417,9 +417,12 @@ class MySqlRepository:
         }
 
     def start_assessment(self, student_id, technology_slug, minutes):
-        """A new attempt with three problems, preferring ones this student has
-        not had in an earlier attempt. A running attempt is returned as is."""
+        """A new attempt (three problems, or ten questions for HTML/CSS),
+        preferring ones this student has not had in an earlier attempt. A
+        running attempt is returned as is."""
         import random
+
+        from .professional_catalog import MCQ_ASSESSMENT_TECHNOLOGIES
 
         with connection() as conn, conn.cursor() as cursor:
             technology = self._technology_by_slug(cursor, technology_slug)
@@ -441,10 +444,14 @@ class MySqlRepository:
             )
             used = {row["problem_id"] for row in cursor.fetchall()}
             picks = []
-            for kind, condition in (
-                ("hard", "p.track='practice' AND p.difficulty='Hard' AND p.question_type='code'"),
-                ("expert", "p.track='professional' AND tp.slug='professional-challenges'"),
-                ("real_world", "p.track='professional' AND tp.slug='professional-real-world-tasks'"),
+            # Coding languages: one problem of each kind. HTML and CSS have no
+            # code runner, so their assessment is ten multiple-choice questions.
+            mcq = technology["slug"] in MCQ_ASSESSMENT_TECHNOLOGIES
+            question_type = "mcq" if mcq else "code"
+            for kind, condition, count in (
+                ("hard", f"p.track='practice' AND p.difficulty='Hard' AND p.question_type='{question_type}'", 4 if mcq else 1),
+                ("expert", "p.track='professional' AND tp.slug='professional-challenges'", 4 if mcq else 1),
+                ("real_world", "p.track='professional' AND tp.slug='professional-real-world-tasks'", 2 if mcq else 1),
             ):
                 cursor.execute(
                     "SELECT p.id FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id "
@@ -454,8 +461,11 @@ class MySqlRepository:
                 ids = [row["id"] for row in cursor.fetchall()]
                 if not ids:
                     raise ApiError(f"There is no Professional assessment for {technology['name']} yet.", 404, "assessment_unavailable")
-                fresh = [i for i in ids if i not in used] or ids
-                picks.append((kind, random.choice(fresh)))
+                fresh = [i for i in ids if i not in used]
+                stale = [i for i in ids if i in used]
+                random.shuffle(fresh)
+                random.shuffle(stale)
+                picks.extend((kind, problem_id) for problem_id in (fresh + stale)[:count])
             cursor.execute(
                 "INSERT INTO coding_assessments (student_id,technology_id,status,started_at,deadline_at) "
                 "VALUES (%s,%s,'in_progress',UTC_TIMESTAMP(),UTC_TIMESTAMP() + INTERVAL %s MINUTE)",
@@ -505,6 +515,11 @@ class MySqlRepository:
             )
             public = [{"id": c["id"], "input": c["stdin_text"], "expectedOutput": c["expected_output"], "sequence": c["display_order"]}
                       for c in cursor.fetchall()]
+        if problem["question_type"] == "mcq":
+            # Options only: the answer and explanation come with the result.
+            return {**self._problem_summary(problem), "kind": item["kind"], "position": item["position"],
+                    "best_score": item["best_score"], "attempts": item["attempts"],
+                    "options": self._json_dict(problem["mcq_options_json"])}
         return {**self._problem_summary(problem), "kind": item["kind"], "position": item["position"], "best_score": item["best_score"],
                 "input_format": problem["input_format"], "output_format": problem["output_format"],
                 "constraints": problem["constraints_text"], "examples": self._json_list(problem["examples_json"]),
@@ -521,6 +536,17 @@ class MySqlRepository:
                 (student_id, problem_id),
             )
             return cursor.fetchone()
+
+    def record_mcq_assessment_answer(self, assessment_id, position, score):
+        """An assessment question can be answered once. False if it already was."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "UPDATE coding_assessment_items SET attempts=1, best_score=%s "
+                "WHERE assessment_id=%s AND position=%s AND attempts=0",
+                (int(score), assessment_id, position),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
 
     def record_assessment_score(self, assessment_id, position, score):
         with connection() as conn, conn.cursor() as cursor:

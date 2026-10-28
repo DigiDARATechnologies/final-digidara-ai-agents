@@ -12,6 +12,7 @@ from lms_api.app import create_app  # noqa: E402
 from lms_api.evaluation import EvaluationService  # noqa: E402
 
 EXPERT = {**PROBLEM, "id": 9, "difficulty": "Hard", "track": "professional"}
+HTML_EXPERT = {**PROBLEM, "id": 11, "difficulty": "Hard", "track": "professional", "question_type": "mcq"}
 CODE = "a, b = map(int, input().split())\nprint(a + b)"
 
 
@@ -23,7 +24,7 @@ class AssessmentRepository(FakeRepository):
 
     def problem_for_evaluation(self, student_id, problem_id):
         del student_id
-        return {1: {**PROBLEM, "track": "practice"}, 9: EXPERT}.get(problem_id)
+        return {1: {**PROBLEM, "track": "practice"}, 9: EXPERT, 11: HTML_EXPERT}.get(problem_id)
 
     def start_assessment(self, student_id, technology_slug, minutes):
         self.running = {"id": 5, "status": "in_progress", "minutes": minutes, "technology": technology_slug,
@@ -32,7 +33,20 @@ class AssessmentRepository(FakeRepository):
 
     def assessment_item_for(self, student_id, problem_id):
         del student_id
-        return {"assessment_id": 5, "position": 2} if self.running and problem_id == 9 else None
+        if self.running and problem_id in (9, 11):
+            return {"assessment_id": 5, "position": 2 if problem_id == 9 else 3}
+        return None
+
+    def submit_mcq_answer(self, student_id, problem_id, selected_key):
+        correct = selected_key == "C"
+        return {"status": "Accepted" if correct else "Wrong Answer", "score": 100 if correct else 0,
+                "isCorrect": correct, "correctKey": "C"}
+
+    def record_mcq_assessment_answer(self, assessment_id, position, score):
+        if any(p == position for _, p, _ in self.recorded):
+            return False
+        self.recorded.append((assessment_id, position, score))
+        return True
 
     def record_assessment_score(self, assessment_id, position, score):
         self.recorded.append((assessment_id, position, score))
@@ -78,6 +92,14 @@ class ProfessionalAssessmentTests(unittest.TestCase):
         tutor = self.invoke("tutor", {"problem_id": 9, "submissionId": submitted.json["submissionId"], "hintLevel": 2})
         self.assertEqual(tutor.status_code, 403)
         self.assertEqual(tutor.json["error"]["code"], "assessment_no_tutor")
+
+    def test_an_assessment_question_counts_only_its_first_answer(self):
+        self.invoke("start_assessment", {"technology_slug": "html"})
+        first = self.invoke("submit_mcq_answer", {"problem_id": 11, "selectedKey": "A"})
+        self.assertEqual(first.status_code, 201)
+        again = self.invoke("submit_mcq_answer", {"problem_id": 11, "selectedKey": "C"})
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(self.repo.recorded, [(5, 3, 0)])
 
 
 if __name__ == "__main__":

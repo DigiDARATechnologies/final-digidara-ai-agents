@@ -37,7 +37,9 @@ class ScriptedProvider:
             return {**base, "question": f"{word.capitalize()} holds {a} {other} and {other[2:]} adds {b} more {other}. How many {other} are there in all?",
                     "correct_option": str(total), "distractors": [str(total + 5), str(total + 11), str(total - 9)],
                     "reason": "", "calculation_step_1": f"{a} + {b} = {total}", "calculation_step_2": f"Combined load = {total}"}
-        return {**base, "question": f"Among {word}, {word[::-1]}, {word[2:]+word[:2]} and {word[3:]+word[:3]}, which one best fits {word[4:]+word[:4]}?",
+        # Names its topic, as a real question does: the topic checks reject a
+        # Graph or Arrays question that never mentions graphs or arrays.
+        return {**base, "question": f"Among {word}, {word[::-1]}, {word[2:]+word[:2]} and {word[3:]+word[:3]}, which one best fits {word[4:]+word[:4]} in {slot['topic']}?",
                 "correct_option": f"The {word} rule always applies", "distractors": [f"The {word} rule never applies", f"The {word} rule sometimes applies", f"The {word} rule is unrelated"],
                 "reason": f"The premises about {word} force this conclusion.", "calculation_step_1": "", "calculation_step_2": ""}
 

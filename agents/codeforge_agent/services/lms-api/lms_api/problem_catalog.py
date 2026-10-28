@@ -605,3 +605,24 @@ PROBLEMS = [
     {'technology': 'css', 'topic': 'animations', 'name': 'Animation Fill Mode', 'slug': 'animation-fill-mode', 'description': 'What does animation-fill-mode: forwards do once an animation finishes?', 'input_format': 'There is no input for this question.', 'output_format': 'Choose the option you believe is correct.', 'constraints': 'None.', 'examples': [], 'language': 'css', 'language_id': None, 'question_type': 'mcq', 'mcq_options': {'A': "The element keeps the styles from the animation's final keyframe", 'B': 'The element reverts to its pre-animation styles', 'C': 'The animation restarts immediately', 'D': "It has no effect on the element's appearance"}, 'mcq_correct_key': 'A', 'mcq_explanation': 'forwards retains the computed values from the last keyframe after the animation completes, instead of snapping back to the original styles.', 'difficulty': 'Easy', 'order': 4},
     {'technology': 'css', 'topic': 'animations', 'name': 'Pausing an Animation', 'slug': 'pausing-an-animation', 'description': 'Which property value pauses a running CSS animation in place?', 'input_format': 'There is no input for this question.', 'output_format': 'Choose the option you believe is correct.', 'constraints': 'None.', 'examples': [], 'language': 'css', 'language_id': None, 'question_type': 'mcq', 'mcq_options': {'A': 'animation-play-state: paused;', 'B': 'animation: stop;', 'C': 'animation-iteration-count: 0;', 'D': 'animation-delay: pause;'}, 'mcq_correct_key': 'A', 'mcq_explanation': 'animation-play-state: paused freezes the animation at its current point; setting it back to running resumes from there.', 'difficulty': 'Easy', 'order': 5},
 ]
+
+
+def _shuffle_mcq_options(problems):
+    """The MCQs were written with the right answer as option A every time, so
+    learners could guess it. Each question's options get a fixed shuffled
+    order (seeded by its slug, so a re-seed gives the same order)."""
+    import random
+
+    for problem in problems:
+        if problem.get("question_type") != "mcq":
+            continue
+        options = problem["mcq_options"]
+        keys = sorted(options)
+        correct_text = options[problem["mcq_correct_key"]]
+        values = [options[key] for key in keys]
+        random.Random(f"mcq:{problem['slug']}").shuffle(values)
+        problem["mcq_options"] = dict(zip(keys, values))
+        problem["mcq_correct_key"] = keys[values.index(correct_text)]
+
+
+_shuffle_mcq_options(PROBLEMS)

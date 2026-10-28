@@ -12,7 +12,9 @@ PRO_TOPICS = [
     ("Professional Real-World Tasks", "professional-real-world-tasks"),
 ]
 
-PRO_TECHNOLOGIES = ("python", "mysql", "javascript")
+PRO_TECHNOLOGIES = ("python", "mysql", "javascript", "pandas", "numpy", "html", "css")
+# HTML and CSS have no code runner: their assessments are multiple-choice.
+MCQ_ASSESSMENT_TECHNOLOGIES = ("html", "css")
 
 PRO_PROBLEMS = [{'technology': 'python',
   'topic': 'professional-challenges',
@@ -21635,3 +21637,15 @@ PRO_PROBLEMS = [{'technology': 'python',
                       "for (let i = start + 1; i <= Math.min(n, start + s); i++) items.push('P' + i);\n"
                       'console.log(pages);\n'
                       "console.log(items.length ? items.join(' ') : 'EMPTY');\n"}]
+
+
+def _more_problems():
+    from .problem_catalog import _shuffle_mcq_options
+    from .professional_catalog_data import PRO_DATA_PROBLEMS
+    from .professional_mcq_catalog import PRO_MCQ_PROBLEMS
+
+    _shuffle_mcq_options(PRO_MCQ_PROBLEMS)
+    return PRO_DATA_PROBLEMS + PRO_MCQ_PROBLEMS
+
+
+PRO_PROBLEMS = PRO_PROBLEMS + _more_problems()
