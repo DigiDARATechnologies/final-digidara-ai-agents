@@ -680,6 +680,30 @@ def test_a_failed_rescue_leaves_the_original_failure(monkeypatch):
         ) is None
     assert 1 not in accepted
 
+
+def test_a_technical_slot_tied_to_an_unfitting_skill_is_rescued_without_the_skill(monkeypatch):
+    """The live 503: a Technical Aptitude slot whose saved skill did not fit its
+    topic failed every attempt (the model wrote SQL), failing the whole test."""
+    calls=[]
+    def generate(slots,**_kwargs):
+        calls.append([dict(slot) for slot in slots])
+        if any(slot.get("technical_skill") for slot in slots):
+            raise ValueError("question does not explicitly assess its saved technical skill")
+        return [{"question":"A general technical question?"} for _ in slots],"m",{}
+    monkeypatch.setattr(test_generation,"generate_questions",generate)
+    slots=rescue_slots()
+    slots[1]={**slots[1],"category":"Technical Aptitude","topic":"Programming Fundamentals","technical_skill":"Excel"}
+    accepted={0:{"question":"q0"},2:{"question":"q2"},3:{"question":"q3"}}
+    app=Flask(__name__)
+    with app.app_context():
+        assert test_generation._rescue_failed_slots(
+            slots,accepted,ValueError("x"),True,
+            avoid_questions=[],avoid_number_patterns=None,deadline=None,background=False,request_timeout=None,
+        ) is not None
+    assert accepted[1]=={"question":"A general technical question?"}
+    assert calls[0][0]["technical_skill"]=="Excel" and "technical_skill" not in calls[1][0]
+
+
 @pytest.mark.parametrize("skill,topic,needle", [
     ("Python", "Programming Fundamentals", "python"),
     ("Machine Learning", "Machine Learning Fundamentals", "machine learning"),
