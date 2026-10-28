@@ -61,6 +61,8 @@ def test_slugs_are_unique_across_all_content():
 
 def test_every_problem_has_hidden_tests_and_inputs_fit_the_column():
     for problem in PRO_PROBLEMS:
+        if problem.get("question_type") == "mcq":
+            continue
         assert any(hidden for _, _, hidden, _ in problem["tests"]), problem["slug"]
         assert all(len(stdin.encode()) < 65535 and len(out.encode()) < 65535 for stdin, out, _, _ in problem["tests"]), problem["slug"]
 
@@ -82,3 +84,19 @@ def test_javascript_reference_reproduces_expected_output(problem):
 def test_sql_reference_reproduces_expected_output(problem):
     for fixture, expected, _, _ in problem["tests"]:
         assert run_sql(fixture, problem["reference_query"]) == expected
+
+
+@pytest.mark.parametrize("problem", [p for p in PRO_PROBLEMS if p.get("question_type") == "mcq"], ids=lambda p: p["slug"])
+def test_professional_mcq_is_consistent(problem):
+    options = problem["mcq_options"]
+    assert sorted(options) == ["A", "B", "C", "D"] and len(set(options.values())) == 4, problem["slug"]
+    assert problem["mcq_correct_key"] in options and problem["mcq_explanation"].strip(), problem["slug"]
+    assert not problem.get("tests") and problem["language_id"] is None, problem["slug"]
+
+
+def test_html_and_css_assessments_are_multiple_choice():
+    from lms_api.professional_catalog import MCQ_ASSESSMENT_TECHNOLOGIES
+
+    for problem in PRO_PROBLEMS:
+        is_mcq = problem.get("question_type") == "mcq"
+        assert is_mcq == (problem["technology"] in MCQ_ASSESSMENT_TECHNOLOGIES), problem["slug"]

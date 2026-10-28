@@ -303,14 +303,27 @@ function endsAt(deadline: string | null): string {
   return deadline ? new Date(deadline).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "";
 }
 
-/** Move between the three problems, or finish. */
+const ASSESSMENT_QUESTION_LABELS: Record<AssessmentItem["kind"], string> = {
+  hard: "Hard question", expert: "Expert question", real_world: "Real-world scenario",
+};
+
+/** "Problem 2: Expert problem", or "Question 2: Expert question" for multiple-choice items. */
+function assessmentItemLabel(item: Pick<AssessmentItem, "position" | "kind" | "question_type">): string {
+  return item.question_type === "mcq"
+    ? `Question ${item.position}: ${ASSESSMENT_QUESTION_LABELS[item.kind]}`
+    : `Problem ${item.position}: ${ASSESSMENT_KIND_LABELS[item.kind]}`;
+}
+
+/** Move between the problems (or questions), or finish. */
 function assessmentOptions(state: CodeForgeFlowState): ChatOption[] {
   const a = state.assessment!;
   return [
     ...a.items.filter((item) => item.position !== a.position).map((item) => ({
-      label: `Problem ${item.position}: ${ASSESSMENT_KIND_LABELS[item.kind]}`,
+      label: assessmentItemLabel(item),
       value: `assessment_problem_${item.position}`,
-      description: item.best_score ? `best ${item.best_score}/100` : "not submitted yet",
+      description: item.question_type === "mcq"
+        ? (item.attempts ? "answered" : "not answered yet")
+        : item.best_score ? `best ${item.best_score}/100` : "not submitted yet",
     })),
     { label: "Finish assessment", value: "finish_assessment", description: "Score what you have submitted" },
   ];
@@ -321,6 +334,33 @@ async function openAssessmentProblem(state: CodeForgeFlowState, position: number
   const a = state.assessment!;
   try {
     const { problem } = await getAssessmentProblem(state.sessionToken!, a.id, position);
+    if (problem.question_type === "mcq") {
+      const answered = (a.items.find((item) => item.position === position)?.attempts ?? 0) > 0;
+      const options = problem.options ?? {};
+      const next: CodeForgeFlowState = {
+        ...state, step: answered ? "awaiting_problem" : "awaiting_mcq_answer", problemId: problem.id, problemSlug: problem.slug,
+        problemName: problem.name, mcqOptions: options, starterCode: undefined, lastResult: undefined, lastGuidance: undefined,
+        assessment: { ...a, position },
+      };
+      const head = `Question ${position} of ${a.items.length} · ${ASSESSMENT_QUESTION_LABELS[problem.kind]} · ends at ${endsAt(a.deadline)}`;
+      return {
+        state: next,
+        messages: [{
+          text: answered
+            ? `${head}
+
+${problem.description}
+
+You have already answered this question.`
+            : `${head}
+
+${problem.description}
+
+Pick one answer. Only your first answer counts.`,
+          options: answered ? assessmentOptions(next) : [...mcqOptions(options), ...assessmentOptions(next)],
+        }],
+      };
+    }
     const next: CodeForgeFlowState = {
       ...state, step: "awaiting_code", problemId: problem.id, problemSlug: problem.slug, problemName: problem.name,
       starterCode: problem.starter_code, lastResult: undefined, lastGuidance: undefined,
@@ -340,9 +380,41 @@ async function openAssessmentProblem(state: CodeForgeFlowState, position: number
 }
 
 function resultText(assessment: Assessment): string {
-  const lines = assessment.items.map((item) => `Problem ${item.position} (${ASSESSMENT_KIND_LABELS[item.kind]}): ${item.best_score}/100`);
+  const lines = assessment.items.map((item) => (item.question_type === "mcq"
+    ? `Question ${item.position} (${ASSESSMENT_QUESTION_LABELS[item.kind]}): ${item.best_score ? "correct" : "wrong or not answered"}`
+    : `Problem ${item.position} (${ASSESSMENT_KIND_LABELS[item.kind]}): ${item.best_score}/100`));
   const verdict = assessment.passed ? `✅ Passed with ${assessment.score}/100.` : `Not passed: ${assessment.score ?? 0}/100 (the pass mark is 70).`;
   return [assessment.status === "expired" ? "⏱ Time is up." : "Assessment finished.", verdict, "", ...lines].join("\n");
+}
+
+/** Answers the open multiple-choice question of an assessment (once). */
+async function answerAssessmentQuestion(state: CodeForgeFlowState, text: string): Promise<CodeForgeResult> {
+  const a = state.assessment!;
+  const options = state.mcqOptions ?? {};
+  const match = /^(?:option\s*)?([a-z0-9]+)\.?$/i.exec(text);
+  const selectedKey = match ? Object.keys(options).find((key) => key.toLowerCase() === match[1].toLowerCase()) : undefined;
+  if (!selectedKey || !state.sessionToken || !state.problemId) {
+    return { state, messages: [{ text: "Pick one of the answers.", options: [...mcqOptions(options), ...assessmentOptions(state)] }] };
+  }
+  try {
+    const result = await submitMcqAnswer(state.sessionToken, state.problemId, selectedKey);
+    const items = a.items.map((item) => (item.position === a.position ? { ...item, attempts: 1, best_score: result.score } : item));
+    const next: CodeForgeFlowState = { ...state, step: "awaiting_problem", assessment: { ...a, items } };
+    const nextItem = items.find((item) => !item.attempts);
+    return {
+      state: next,
+      messages: [{
+        text: `${result.isCorrect ? "Correct." : `Not quite. The answer was ${result.correctKey}.`} ${result.explanation ?? ""}`.trim()
+          + (nextItem ? "" : "\n\nYou have answered every question. Finish the assessment to see your score."),
+        options: assessmentOptions(next),
+      }],
+    };
+  } catch (error) {
+    if (/assessment|ended/i.test((error as Error).message) && !/already answered/i.test((error as Error).message)) {
+      return endAssessment(state, "⏱ Time is up.");
+    }
+    return { state: { ...state, step: "awaiting_problem" }, messages: [{ text: (error as Error).message, options: assessmentOptions(state) }] };
+  }
 }
 
 /** Finishes (or reads the finished) attempt and shows the result. */
@@ -375,7 +447,9 @@ export async function enterAssessment(state: CodeForgeFlowState, assessment: Ass
   return {
     ...opened,
     messages: [{
-      text: `🎯 Professional assessment · ${technology.name}: ${assessment.items.length} problems, ends at ${endsAt(assessment.deadline_at)}. No AI tutor until you finish; your best submission for each problem counts, and 70/100 passes.`,
+      text: assessment.items.every((item) => item.question_type === "mcq")
+        ? `🎯 Professional assessment · ${technology.name}: ${assessment.items.length} questions, ends at ${endsAt(assessment.deadline_at)}. Each question can be answered once, and 70/100 passes.`
+        : `🎯 Professional assessment · ${technology.name}: ${assessment.items.length} problems, ends at ${endsAt(assessment.deadline_at)}. No AI tutor until you finish; your best submission for each problem counts, and 70/100 passes.`,
     }, ...opened.messages],
   };
 }
@@ -439,9 +513,10 @@ export async function handleCodeForgeText(
 
   // Inside a Professional assessment only its own commands apply.
   if (state.assessment) {
-    const switchTo = /^assessment_problem_(\d)$/.exec(command);
+    const switchTo = /^assessment_problem_(\d+)$/.exec(command);
     if (switchTo) return openAssessmentProblem(state, Number(switchTo[1]));
     if (command === "finish_assessment") return endAssessment(state);
+    if (state.step === "awaiting_mcq_answer") return answerAssessmentQuestion(state, trimmed);
     if (command === "explain_error") {
       return { state, messages: [{ text: "The AI tutor is off during the assessment. It is back as soon as you finish.", options: assessmentOptions(state) }] };
     }

@@ -21,6 +21,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from lms_api.problem_catalog import PROBLEMS
+from lms_api.professional_catalog import PRO_PROBLEMS
 
 PYTHON_LANGUAGE_ID = 71
 
@@ -48,8 +49,9 @@ def run(source, stdin_text):
         Path(path).unlink()
 
 
+# Practice problems and the Professional (expert / real-world) ones.
 PANDAS_PROBLEMS = [
-    problem for problem in PROBLEMS
+    problem for problem in PROBLEMS + PRO_PROBLEMS
     if problem["technology"] == "pandas" and problem.get("reference_source")
 ]
 

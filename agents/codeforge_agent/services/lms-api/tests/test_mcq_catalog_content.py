@@ -38,3 +38,14 @@ def test_mcq_problem_has_no_code_execution_fields(problem):
     catches an entry accidentally copy-pasted from a code problem."""
     assert not problem.get("tests"), f"{problem['slug']}: MCQ problems should have no test cases"
     assert problem.get("language_id") is None, f"{problem['slug']}: MCQ problems should have no judge0 language id"
+
+
+def test_correct_answers_are_spread_across_options():
+    """The catalog was once written with every answer as option A."""
+    from collections import Counter
+
+    from lms_api.professional_catalog import PRO_PROBLEMS
+
+    keys = Counter(p["mcq_correct_key"] for p in MCQ_PROBLEMS + [p for p in PRO_PROBLEMS if p.get("question_type") == "mcq"])
+    assert set(keys) == {"A", "B", "C", "D"}
+    assert max(keys.values()) < 0.4 * sum(keys.values())

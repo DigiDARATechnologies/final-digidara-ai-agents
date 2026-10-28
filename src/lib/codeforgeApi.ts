@@ -290,6 +290,8 @@ export interface AssessmentItem {
   name: string;
   slug: string;
   difficulty: string;
+  /** "mcq" for HTML/CSS assessment questions (answered once). */
+  question_type?: "code" | "mcq";
 }
 
 export interface Assessment {

@@ -58,3 +58,26 @@ test('finishing shows the result and leaves the assessment', async () => {
   expect(done.messages[0].text).toContain('✅ Passed with 73.3/100.');
   expect(done.messages[0].text).toContain('Problem 3 (Real-world task): 60/100');
 });
+
+test('HTML assessments are multiple-choice: each question is answered once', async () => {
+  const mcqItems = [1, 2].map((position) => ({ ...items[position - 1], question_type: 'mcq' as const }));
+  jest.mocked(api.getAssessmentProblem).mockImplementation(async (_s, _id, position) => ({ problem: {
+    ...problem(position), question_type: 'mcq', language: 'html', description: `Question ${position}?`,
+    options: { A: 'One', B: 'Two', C: 'Three', D: 'Four' },
+  } }) as never);
+  const started = await enterAssessment(base, { ...assessment, technology: 'HTML', items: mcqItems }, { slug: 'html', name: 'HTML' });
+  expect(started.messages[0].text).toContain('HTML: 2 questions');
+  expect(started.state.step).toBe('awaiting_mcq_answer');
+  expect(started.messages[1].text).toContain('Question 1 of 2 · Hard question');
+  expect(started.messages[1].options?.map((o) => o.value)).toEqual(['A', 'B', 'C', 'D', 'assessment_problem_2', 'finish_assessment']);
+
+  jest.mocked(api.submitMcqAnswer).mockResolvedValue({ status: 'Wrong Answer', score: 0, isCorrect: false, correctKey: 'C', explanation: 'Because.' } as never);
+  const answered = await handleCodeForgeText(started.state, 'B');
+  expect(api.submitMcqAnswer).toHaveBeenCalledWith('s', 11, 'B');
+  expect(answered.messages[0].text).toContain('The answer was C.');
+  expect(answered.state.assessment?.items[0].attempts).toBe(1);
+
+  const back = await handleCodeForgeText(answered.state, 'assessment_problem_1');
+  expect(back.state.step).toBe('awaiting_problem');
+  expect(back.messages[0].text).toContain('You have already answered this question.');
+});
