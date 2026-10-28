@@ -16,6 +16,8 @@ import re
 import secrets
 from datetime import datetime
 
+from sqlalchemy import func
+
 from app import db
 from app.auth.security import hash_password
 from app.learner import levels as level_rules
@@ -23,8 +25,11 @@ from app.learner import service as learner_service
 from app.models import Organization, OrganizationMember, OrgJoinCode, User
 from app.readiness import service as readiness_service
 
-ROLES = ("owner", "admin", "member")
+ROLES = ("owner", "admin", "staff", "member")
+# Owners and admins manage the organization: staff logins, admins, members.
 ADMIN_ROLES = ("owner", "admin")
+# Staff also look after the students: lists, approvals, levels, codes.
+STAFF_ROLES = ("owner", "admin", "staff")
 KINDS = ("college", "training_institute", "company", "other")
 MAX_BULK = 200
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -40,6 +45,15 @@ class OrgError(Exception):
 
 def _new_join_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(8))
+
+
+def unique_join_code(session) -> str:
+    """A code no join code or organization anywhere has ever used."""
+    while True:
+        code = _new_join_code()
+        if (session.query(OrgJoinCode.id).filter_by(code=code).first() is None
+                and session.query(Organization.id).filter_by(join_code=code).first() is None):
+            return code
 
 
 def _temporary_password() -> str:
@@ -74,7 +88,7 @@ def my_organization(user_id: str) -> dict | None:
             return None
         org = session.get(Organization, member.organization_id)
         data = _org_dict(org, _count(session, org.id))
-        if member.role not in ADMIN_ROLES:
+        if member.role not in STAFF_ROLES:
             data.pop("join_code")
         return {
             "organization": data, "role": member.role, "member_id": member.id,
@@ -87,7 +101,7 @@ def my_organization(user_id: str) -> dict | None:
 
 
 def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str, member_limit: int, created_by: str) -> dict:
-    """Only DigiDARA's platform admin creates organizations, each with its
+    """Only SkillDARA's platform admin creates organizations, each with its
     first admin login (the owner). A new owner account gets a one-time
     password, returned here once; an existing account is made the owner."""
     name = " ".join(name.split())[:255]
@@ -108,7 +122,7 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
             session.flush()
         elif _membership(session, user.id) is not None:
             raise OrgError(409, f"{email} already belongs to an organization.")
-        org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=_new_join_code(),
+        org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=unique_join_code(session),
                            created_by=created_by, member_limit=max(1, min(int(member_limit or 1000), 100000)))
         session.add(org)
         session.flush()
@@ -170,7 +184,7 @@ def join(user_id: str, join_code: str, share_progress: bool = True, department: 
     """Joining is consent to share (see the module docstring); share_progress
     is accepted for older clients and ignored. A code that carries a class
     places the learner there; otherwise their own choices are used."""
-    from app.organizations import classes
+    from app.organizations import classes, roster
 
     code = join_code.strip().upper()
     session = db.get_session()
@@ -185,6 +199,13 @@ def join(user_id: str, join_code: str, share_progress: bool = True, department: 
             "year": entry.year if entry and entry.year else clean_class_value(year, 40),
             "section": entry.section if entry and entry.section else clean_class_value(section, 40),
         }
+        user = session.get(User, user_id)
+        if user is None or not roster.is_listed(session, org.id, user, entry):
+            # Not on the organization's student list: staff decide.
+            roster.request_to_join(session, org, user_id, entry, chosen)
+            session.commit()
+            return None
+        roster.drop_request(session, user_id)
         session.add(OrganizationMember(
             organization_id=org.id, user_id=user_id, role="member", progress_shared_at=datetime.utcnow(),
             join_code_id=entry.id if entry else None, **chosen,
@@ -225,29 +246,64 @@ def leave(user_id: str) -> None:
         session.close()
 
 
-def _require_admin(session, user_id: str, org_id: str) -> OrganizationMember:
-    """This organization's owner or admin -- or DigiDARA's platform admin,
-    who acts as an owner of every organization."""
+def _require_admin(session, user_id: str, org_id: str, managers_only: bool = False) -> OrganizationMember:
+    """This organization's owner, admin or staff -- only owner or admin when
+    managers_only -- or SkillDARA's platform admin, who acts as an owner of
+    every organization."""
     member = _membership(session, user_id)
     org = session.get(Organization, org_id)
     if org is None:
         raise OrgError(404, "No such organization.")
-    if member is not None and member.organization_id == org_id and member.role in ADMIN_ROLES:
+    allowed = ADMIN_ROLES if managers_only else STAFF_ROLES
+    if member is not None and member.organization_id == org_id and member.role in allowed:
         if (org.status or "active") != "active":
-            raise OrgError(403, "This organization is suspended. Contact DigiDARA.")
+            raise OrgError(403, "This organization is suspended. Contact SkillDARA.")
         return member
     user = session.get(User, user_id)
     if user is not None and user.is_admin:
         # Not added to the session: it only carries the owner role.
         return OrganizationMember(organization_id=org_id, user_id=user_id, role="owner")
+    if member is not None and member.organization_id == org_id and member.role in STAFF_ROLES:
+        raise OrgError(403, "Only this organization's admins can do that; ask an admin.")
     raise OrgError(403, "Only this organization's admins can do that.")
 
 
-def require_admin(user_id: str, org_id: str) -> str:
-    """Raises unless the user may manage this organization; returns their role."""
+def staff_students(session, staff_user_id: str, org_id: str) -> set[str]:
+    """The learners a staff member looks after: those who joined with one of
+    their join codes, or who are on the student list they uploaded."""
+    from app.models import OrgRosterEntry
+
+    code_ids = [row.id for row in session.query(OrgJoinCode.id).filter_by(organization_id=org_id, created_by=staff_user_id).all()]
+    users = set()
+    if code_ids:
+        users |= {row.user_id for row in session.query(OrganizationMember.user_id)
+                  .filter(OrganizationMember.organization_id == org_id, OrganizationMember.join_code_id.in_(code_ids)).all()}
+    emails = [row.email for row in session.query(OrgRosterEntry.email).filter_by(organization_id=org_id, uploaded_by=staff_user_id).all()]
+    if emails:
+        users |= {row.user_id for row in session.query(OrganizationMember.user_id)
+                  .join(User, User.id == OrganizationMember.user_id)
+                  .filter(OrganizationMember.organization_id == org_id, func.lower(User.email).in_(emails)).all()}
+    return users
+
+
+def visible_user_ids(session, viewer: OrganizationMember, org_id: str) -> set[str] | None:
+    """Whose details this viewer may see: None for everyone (owner, admin,
+    SkillDARA), or a staff member's own students."""
+    return staff_students(session, viewer.user_id, org_id) if viewer.role == "staff" else None
+
+
+def _require_visible(session, viewer: OrganizationMember, org_id: str, member: OrganizationMember) -> None:
+    visible = visible_user_ids(session, viewer, org_id)
+    if visible is not None and member.user_id not in visible:
+        raise OrgError(404, "No such student among yours. Staff see the students who joined with their join codes.")
+
+
+def require_admin(user_id: str, org_id: str, managers_only: bool = False) -> str:
+    """Raises unless the user may look after this organization's students
+    (managers_only: may manage the organization itself); returns their role."""
     session = db.get_session()
     try:
-        return _require_admin(session, user_id, org_id).role
+        return _require_admin(session, user_id, org_id, managers_only).role
     finally:
         session.close()
 
@@ -271,7 +327,7 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
     session = db.get_session()
     results: list[dict] = []
     try:
-        _require_admin(session, admin_id, org_id)
+        _require_admin(session, admin_id, org_id, managers_only=True)
         org = session.get(Organization, org_id)
         room = org.member_limit - _count(session, org_id)
         for row in rows:
@@ -309,6 +365,58 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
     return results
 
 
+def add_staff(admin_id: str, org_id: str, name: str, email: str) -> dict:
+    """A staff login for this organization (owner or admin only). A new
+    account gets a one-time password, returned here once to hand over; an
+    existing account in no organization, or a member here, becomes staff."""
+    email = email.strip().lower()
+    if not _EMAIL.match(email):
+        raise OrgError(400, "Enter a valid email for the staff login.")
+    session = db.get_session()
+    try:
+        _require_admin(session, admin_id, org_id, managers_only=True)
+        user = session.query(User).filter_by(email=email).first()
+        password = None
+        if user is None:
+            password = _temporary_password()
+            user = User(name=" ".join(name.split())[:255] or email.split("@")[0], email=email,
+                        password_hash=hash_password(password))
+            session.add(user)
+            session.flush()
+        else:
+            existing = _membership(session, user.id)
+            if existing is not None:
+                if existing.organization_id != org_id:
+                    raise OrgError(409, f"{email} already belongs to another organization.")
+                if existing.role in ADMIN_ROLES:
+                    raise OrgError(409, f"{email} is already an admin here.")
+                existing.role = "staff"
+                session.commit()
+                return {"name": user.name, "email": email, "status": "made_staff", "temporary_password": None}
+        if _count(session, org_id) >= session.get(Organization, org_id).member_limit:
+            raise OrgError(409, "This organization has reached its member limit.")
+        session.add(OrganizationMember(organization_id=org_id, user_id=user.id, role="staff"))
+        session.commit()
+        return {"name": user.name, "email": email, "status": "created" if password else "attached",
+                "temporary_password": password}
+    finally:
+        session.close()
+
+
+def list_staff(admin_id: str, org_id: str) -> list[dict]:
+    """Everyone who can open the organization dashboard."""
+    session = db.get_session()
+    try:
+        _require_admin(session, admin_id, org_id)
+        rows = (session.query(OrganizationMember, User).join(User, User.id == OrganizationMember.user_id)
+                .filter(OrganizationMember.organization_id == org_id, OrganizationMember.role.in_(STAFF_ROLES))
+                .order_by(User.name).all())
+        return [{"member_id": m.id, "name": u.name, "email": u.email, "role": m.role,
+                 "has_signed_in": u.consent_accepted_at is not None} for m, u in rows]
+    finally:
+        session.close()
+
+
 def _last_active(session, user_ids: list[str]) -> dict[str, datetime]:
     """Each learner's latest activity: an agent call or a chat update."""
     from sqlalchemy import func
@@ -329,13 +437,17 @@ def _last_active(session, user_ids: list[str]) -> dict[str, datetime]:
 def members(admin_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
+        viewer = _require_admin(session, admin_id, org_id)
         rows = (
             session.query(OrganizationMember, User)
             .join(User, User.id == OrganizationMember.user_id)
             .filter(OrganizationMember.organization_id == org_id)
             .order_by(User.name).all()
         )
+        visible = visible_user_ids(session, viewer, org_id)
+        if visible is not None:
+            # Staff see their own students only.
+            rows = [(m, u) for m, u in rows if m.user_id in visible and m.role == "member"]
         codes = {c.id: c for c in session.query(OrgJoinCode).filter_by(organization_id=org_id).all()}
         shared_ids = [m.user_id for m, _ in rows if m.progress_shared_at is not None]
         last_active = _last_active(session, shared_ids)
@@ -357,11 +469,11 @@ def members(admin_id: str, org_id: str) -> list[dict]:
         }
         if member.progress_shared_at is not None:
             snapshot = snapshots.get(user.id)
-            entry["readiness"] = None if snapshot is None else {
-                "overall": snapshot.overall, "band": snapshot.band,
-                "band_label": readiness_service.BAND_LABELS.get(snapshot.band, snapshot.band),
-                "computed_at": snapshot.computed_at.isoformat(),
-                "areas": readiness_service.area_scores(snapshot),
+            current = None if snapshot is None else readiness_service.scored(snapshot)
+            entry["readiness"] = None if current is None else {
+                "overall": current["overall"], "band": current["band"], "band_label": current["band_label"],
+                "computed_at": current["computed_at"],
+                "areas": readiness_service.area_map(current["areas"]),
             }
             entry["levels"] = {name: data["level"] for name, data in learner_service.get_levels(user.id).items()}
             entry["profile"] = learner_service.get_profile(user.id)
@@ -401,8 +513,11 @@ def update_member(admin_id: str, org_id: str, member_id: str, role: str | None, 
 
     session = db.get_session()
     try:
-        admin = _require_admin(session, admin_id, org_id)
+        admin = _require_admin(session, admin_id, org_id, managers_only=role is not None)
         member = _member_in_org(session, org_id, member_id)
+        if admin.role == "staff" and member.role != "member":
+            raise OrgError(403, "Staff can change students only.")
+        _require_visible(session, admin, org_id, member)
         if class_fields:
             for field, limit in (("department", 120), ("year", 40), ("section", 40)):
                 if field in class_fields:
@@ -429,7 +544,7 @@ def remove_member(admin_id: str, org_id: str, member_id: str) -> None:
     """Takes the learner out of the organization; their account stays."""
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
+        _require_admin(session, admin_id, org_id, managers_only=True)
         member = _member_in_org(session, org_id, member_id)
         if member.role == "owner":
             raise OrgError(409, "Change this owner's role before removing them.")
@@ -443,8 +558,9 @@ def shared_member_user_id(admin_id: str, org_id: str, member_id: str) -> str:
     """The member's user id, only if they share their progress with the org."""
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
+        viewer = _require_admin(session, admin_id, org_id)
         member = _member_in_org(session, org_id, member_id)
+        _require_visible(session, viewer, org_id, member)
         if member.progress_shared_at is None:
             raise OrgError(403, "This member has not agreed to share their progress.")
         return member.user_id
@@ -459,7 +575,7 @@ def rotate_join_code(admin_id: str, org_id: str) -> dict:
         if admin.role != "owner":
             raise OrgError(403, "Only an owner can change the join code.")
         org = session.get(Organization, org_id)
-        org.join_code = _new_join_code()
+        org.join_code = unique_join_code(session)
         session.commit()
     finally:
         session.close()

@@ -2,7 +2,7 @@
   "agent_name": "certificate_agent",
   "version": "v1.0.0",
   "description": "AI-powered certification exam generator, interactive chat assessment, leaderboard, and PDF certificate issuing system.",
-  "owner": "DigiDARA",
+  "owner": "SkillDARA",
   "plan_tier": "free",
   "host": "127.0.0.1",
   "port": 8008,

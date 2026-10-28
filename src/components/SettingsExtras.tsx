@@ -15,7 +15,7 @@ export function AppearanceSettings({ appearance, onAppearanceChange, glowOn, onG
   return (
     <>
       <h2>Appearance</h2>
-      <p className="settings-subtitle">Make DigiDARA Agents look and feel the way you like. Changes apply instantly and are remembered on this device.</p>
+      <p className="settings-subtitle">Make SkillDARA Agents look and feel the way you like. Changes apply instantly and are remembered on this device.</p>
 
       <div className="settings-section">
         <div className="setting-row set-stack">
@@ -103,7 +103,7 @@ export function SecuritySettings({ user, onToast, onLogout }: SecurityProps) {
   return (
     <>
       <h2>Security</h2>
-      <p className="settings-subtitle">Keep your DigiDARA account safe.</p>
+      <p className="settings-subtitle">Keep your SkillDARA account safe.</p>
 
       <h3 className="settings-title">Change Password</h3>
       <form className="set-form" onSubmit={submit}>

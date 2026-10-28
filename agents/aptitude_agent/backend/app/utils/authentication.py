@@ -37,7 +37,7 @@ def require_student(view):
             student=db.session.get(Student,str(claims["sub"])[:128])
             if not student or student.token_version!=int(claims["ver"]):
                 raise APIError("Invalid or expired session",401,"invalid_token")
-            # Strategy F learners are authenticated by the DigiDARA gateway,
+            # Strategy F learners are authenticated by the SkillDARA gateway,
             # so their Aptitude mirror intentionally has no second password.
             if claims.get("auth_source")!="strategy_f" and not student.password_hash:
                 raise APIError("Invalid or expired session",401,"invalid_token")

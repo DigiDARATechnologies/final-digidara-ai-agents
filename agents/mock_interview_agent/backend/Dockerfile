@@ -1,4 +1,4 @@
-# DigiDARA Mock Interview Agent (Flask)
+# SkillDARA Mock Interview Agent (Flask)
 FROM python:3.12-slim
 
 WORKDIR /app

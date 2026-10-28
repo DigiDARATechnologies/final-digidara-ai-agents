@@ -1,7 +1,7 @@
 """The capstone project certificate (a PDF).
 
 Issued only after BOTH the project score and the viva are passed. It is printed
-on the DigiDARA certificate template (logo, seals and signature are part of that
+on the SkillDARA certificate template (logo, seals and signature are part of that
 artwork) and carries what the student actually did: their name, the project they
 built, what it does, the technology and skills involved, a Good / Average / Bad
 rating for the project and the viva (never a mark), the issue date and an id.

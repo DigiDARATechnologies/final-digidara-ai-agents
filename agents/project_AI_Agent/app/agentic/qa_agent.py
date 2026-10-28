@@ -107,7 +107,7 @@ _TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-_SYSTEM_PROMPT = """You are the Project Q&A Assistant for a DigiDARA capstone project.
+_SYSTEM_PROMPT = """You are the Project Q&A Assistant for a SkillDARA capstone project.
 
 You answer questions ONLY about the specific project the tools below give you access
 to -- this one student's chosen topic, requirements, submitted code, submitted report,

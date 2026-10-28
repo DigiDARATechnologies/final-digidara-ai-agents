@@ -1,4 +1,4 @@
-"""Shared agent-service wrapper — self-registers with the DigiDARA
+"""Shared agent-service wrapper — self-registers with the SkillDARA
 orchestrator on boot, heartbeats on an interval, deregisters on shutdown, and
 exposes the two routes every agent needs: GET /health and POST /invoke.
 

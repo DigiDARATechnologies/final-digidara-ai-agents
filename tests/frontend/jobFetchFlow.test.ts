@@ -153,7 +153,7 @@ describe("Job Agent flow", () => {
     const result = await openJobFetchChat({ name: "john" } as User);
     expect(result.messages[0].text).toContain("Hi Dhanu");
     expect(result.messages[0].text).toContain("primary technical **skills**");
-    expect(result.messages[0].text).not.toContain("from your DigiDARA account");
+    expect(result.messages[0].text).not.toContain("from your SkillDARA account");
     expect(result.messages[0].text).not.toContain("What name or nickname");
     expect(result.state.step).toBe("browsing");
     expect(result.state.profileCompleted).toBe(false);
@@ -270,7 +270,7 @@ describe("Job Agent flow", () => {
     // the chat as a clickable link or an "open:" option — the backend
     // already rejects this at ingestion, but the render side must not rely
     // on that alone, since job data ultimately comes from third-party
-    // sources DigiDARA does not control.
+    // sources SkillDARA does not control.
     const job = sampleJob({ apply_url: "javascript:alert(document.cookie)" });
     const result = await handleJobFetchText(browsingState([job]), "detail:1");
 

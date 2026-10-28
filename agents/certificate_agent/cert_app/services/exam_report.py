@@ -190,7 +190,7 @@ def _render_pdf(learner: str, summary: Dict, rows: List[Dict]) -> bytes:
 
     story: List = [
         Paragraph("Certification Exam Report", st["title"]),
-        Paragraph("CertifyAI · DigiDARA", st["sub"]),
+        Paragraph("CertifyAI · SkillDARA", st["sub"]),
         Spacer(1, 8),
     ]
 

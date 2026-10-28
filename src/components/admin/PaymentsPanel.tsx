@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchPayments } from "../../lib/adminApi";
+import { fetchPayments, type PaymentTotal } from "../../lib/adminApi";
 import { formatDate, formatMoney, formatNumber, PAYMENT_BADGE } from "./adminFormat";
 import { formatPoints } from "../../lib/points";
 import { useLoad } from "./useLoad";
@@ -14,10 +14,15 @@ export default function PaymentsPanel() {
   const { data, error, loading, reload } = useLoad(() => fetchPayments({ status, search: query, page, limit: PAGE }), [status, query, page]);
 
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE)) : 1;
+  // "Paid" becomes two cards: money that came through Razorpay and money recorded by hand.
+  const kpis = Object.entries(data?.summary ?? {}).flatMap(([name, row]): [string, PaymentTotal][] =>
+    name === "paid" && data?.paid_by_method
+      ? [["Paid · Razorpay", data.paid_by_method.razorpay], ["Paid · Manual", data.paid_by_method.manual]]
+      : [[name, row]]);
   return (
     <div className="admin-section">
       <div className="admin-kpis">
-        {Object.entries(data?.summary ?? {}).map(([name, row]) => (
+        {kpis.map(([name, row]) => (
           <div className="admin-kpi" key={name}><span>{name}</span><strong>{formatMoney(row.amount)}</strong><small>{formatNumber(row.count)} payment{row.count === 1 ? "" : "s"}</small></div>
         ))}
       </div>
@@ -31,7 +36,7 @@ export default function PaymentsPanel() {
       {error && <div className="admin-error">{error} <button className="btn btn-outline btn-sm" onClick={reload}>Retry</button></div>}
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Points</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
+          <thead><tr><th>User</th><th>For</th><th>Amount</th><th>Coins</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
           <tbody>
             {data?.payments.map((p) => (
               <tr key={p.id}>
@@ -39,7 +44,7 @@ export default function PaymentsPanel() {
                 <td>{p.label}</td><td>{formatMoney(p.amount)}</td><td>{p.points ? formatPoints(p.points) : "—"}</td>
                 <td><span className={`admin-badge ${PAYMENT_BADGE[p.status] || "badge-expired"}`}>{p.status}</span></td>
                 <td>{formatDate(p.created_at)}</td><td>{formatDate(p.paid_at)}</td>
-                <td><small>{p.razorpay_payment_id || "—"}<br />{p.razorpay_order_id}</small></td>
+                <td><small>{p.method === "manual" ? <b>Manual</b> : p.razorpay_payment_id || "—"}<br />{p.razorpay_order_id}</small></td>
               </tr>
             ))}
             {data && !data.payments.length && <tr><td colSpan={8} className="admin-table-empty">No payments match.</td></tr>}

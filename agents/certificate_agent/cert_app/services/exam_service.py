@@ -566,7 +566,7 @@ def regenerate_certificate_with_recipient_name(user_id: int, certificate_id: int
         raise ValueError(
             f"For security, a certificate can only be issued in your verified account name "
             f"({verified_name or 'not available'}). You can correct its capitalisation or spacing here; "
-            f"to change the name itself, update the name on your DigiDARA profile first."
+            f"to change the name itself, update the name on your SkillDARA profile first."
         )
     file_path = generate_certificate(
         clean_name,

@@ -56,7 +56,7 @@ def test_no_results_means_no_portal_match_not_invented_or_substituted_jobs():
     result = chat("send machine learning jobs in Madurai", profile(), [job(1, city="Chennai")])
     assert result["matched_jobs"] == []
     assert "**Madurai**" in result["reply"]
-    assert "DigiDARA portal" in result["reply"]
+    assert "SkillDARA portal" in result["reply"]
 
 
 def test_server_saved_context_survives_restart_and_city_followup_keeps_role():

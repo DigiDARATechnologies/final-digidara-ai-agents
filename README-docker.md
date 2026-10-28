@@ -1,4 +1,4 @@
-# Running DigiDARA AI Agents in Docker
+# Running SkillDARA in Docker
 
 This containerizes the platform for local/dev use: one container per agent,
 one for the orchestrator, one for the React frontend (nginx), a shared

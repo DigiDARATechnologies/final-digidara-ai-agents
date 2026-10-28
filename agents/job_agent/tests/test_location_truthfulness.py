@@ -51,7 +51,7 @@ def test_empty_strict_location_search_never_calls_llm_or_backfills():
     assert result["show_jobs"] is True
     assert result["matched_jobs"] == []
     assert "**Ladakh**" in result["reply"]
-    assert "DigiDARA portal" in result["reply"]
+    assert "SkillDARA portal" in result["reply"]
     assert "substitute jobs from other locations or unrelated roles" in result["reply"]
     post.assert_not_called()
 

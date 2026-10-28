@@ -1,6 +1,6 @@
 """The organization admin's dashboard: analytics, filters and drill-down.
 
-Everything here is for one organization's owners/admins (or DigiDARA's
+Everything here is for one organization's owners/admins (or SkillDARA's
 platform admin) and only ever covers members who share their progress --
 joining is that consent. Opening a learner's details or one of their chats
 is written to the access log, which the organization and the learner can
@@ -167,8 +167,9 @@ def _log(session, org_id: str, viewer_id: str, subject_user_id: str, action: str
 
 
 def _shared_member(session, admin_id: str, org_id: str, member_id: str) -> OrganizationMember:
-    _require_admin(session, admin_id, org_id)
+    viewer = _require_admin(session, admin_id, org_id)
     member = _member_in_org(session, org_id, member_id)
+    org_service._require_visible(session, viewer, org_id, member)
     if member.progress_shared_at is None:
         raise OrgError(403, "This member has not agreed to share their progress.")
     return member
@@ -215,18 +216,18 @@ def member_detail(admin_id: str, org_id: str, member_id: str, action: str = "pro
     finally:
         session.close()
     snapshot = readiness_service.latest(user_id)
+    current = None if snapshot is None else readiness_service.scored(snapshot)
     plan = coach_service.get(user_id)
     return {
         "member": identity,
         "profile": learner_service.get_profile(user_id),
         "levels": list(learner_service.get_levels(user_id).values()),
         "role_history": learner_service.role_history(user_id),
-        "readiness": None if snapshot is None else {
-            "overall": snapshot.overall, "band": snapshot.band,
-            "band_label": readiness_service.BAND_LABELS.get(snapshot.band, snapshot.band),
-            "computed_at": snapshot.computed_at.isoformat(),
-            "areas": readiness_service.area_scores(snapshot),
-            "next_steps": (snapshot.areas or {}).get("next_steps") or [],
+        "readiness": None if current is None else {
+            "overall": current["overall"], "band": current["band"], "band_label": current["band_label"],
+            "computed_at": current["computed_at"],
+            "areas": readiness_service.area_map(current["areas"]),
+            "next_steps": current["next_steps"],
         },
         "readiness_history": readiness_service.history(user_id),
         "activity": sorted(activity, key=lambda a: -a["requests"]),
@@ -263,7 +264,7 @@ def _log_rows(session, query) -> list[dict]:
     names = dict(session.query(User.id, User.name).filter(
         User.id.in_({r.viewer_id for r in rows} | {r.subject_user_id for r in rows})).all()) if rows else {}
     return [{
-        "viewer": names.get(r.viewer_id, "DigiDARA admin"), "subject": names.get(r.subject_user_id, ""),
+        "viewer": names.get(r.viewer_id, "SkillDARA admin"), "subject": names.get(r.subject_user_id, ""),
         "action": r.action, "target": r.target, "at": r.created_at.isoformat() if r.created_at else None,
     } for r in rows]
 
@@ -271,8 +272,13 @@ def _log_rows(session, query) -> list[dict]:
 def access_log(admin_id: str, org_id: str) -> list[dict]:
     session = db.get_session()
     try:
-        _require_admin(session, admin_id, org_id)
-        return _log_rows(session, session.query(OrgAccessLog).filter_by(organization_id=org_id))
+        viewer = _require_admin(session, admin_id, org_id)
+        query = session.query(OrgAccessLog).filter_by(organization_id=org_id)
+        visible = org_service.visible_user_ids(session, viewer, org_id)
+        if visible is not None:
+            # Staff: what was opened about their own students.
+            query = query.filter(OrgAccessLog.subject_user_id.in_(visible or {""}))
+        return _log_rows(session, query)
     finally:
         session.close()
 

@@ -1,4 +1,4 @@
-"""Every DigiDARA agent works in English only.
+"""Every SkillDARA agent works in English only.
 
 Typed input written in another script -- Tamil, Hindi, Telugu, Malayalam,
 Kannada, Arabic, Chinese and so on -- is refused with one friendly message,
@@ -13,7 +13,7 @@ The voice always speaks English.
 """
 from __future__ import annotations
 
-ENGLISH_ONLY_MESSAGE = "Please type in English. DigiDARA agents understand and reply in English only."
+ENGLISH_ONLY_MESSAGE = "Please type in English. SkillDARA agents understand and reply in English only."
 # Said (and shown) when a learner speaks another language into a microphone.
 SPEAK_ENGLISH_MESSAGE = "I only understand English. Could you please speak in English?"
 

@@ -1,4 +1,4 @@
-"""The learner the DigiDARA gateway says this request is for (Phase 2).
+"""The learner the SkillDARA gateway says this request is for (Phase 2).
 
 The orchestrator adds a signed `learner` field to every invoke envelope: the
 learner's target role, skills, degree, experience, their level with this
@@ -103,7 +103,7 @@ def prompt_block() -> str:
         parts.append(f"their preferences and goals: {'; '.join(notes)}")
     told = _plain(learner.get("conversation_memory"))
     if told:
-        parts.append(f"what they told DigiDARA's assistant earlier: {'; '.join(told)}")
+        parts.append(f"what they told SkillDARA's assistant earlier: {'; '.join(told)}")
     if not parts:
         return ""
     return (

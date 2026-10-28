@@ -82,9 +82,12 @@ if [ "$JOB_AGENT_GATEWAY_OK" = false ]; then
 fi
 
 
+# Address the health checks use: the domain that serves the site (skilldara.com
+# redirects here, and a redirect is not a healthy answer).
+SITE_URL=${SITE_URL:-https://www.skilldara.com}
 SITE_OK=false
 for _ in $(seq 1 12); do
-  if curl -fsS -o /dev/null https://digidaraaiagents.com/; then
+  if curl -fsS -o /dev/null "$SITE_URL/"; then
     SITE_OK=true
     break
   fi
@@ -102,8 +105,8 @@ fi
 # the plan catalog 200.
 API_OK=false
 for _ in $(seq 1 12); do
-  AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://digidaraaiagents.com/auth/me || true)
-  PLANS_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://digidaraaiagents.com/billing/plans || true)
+  AUTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL/auth/me" || true)
+  PLANS_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SITE_URL/billing/plans" || true)
   if [ "$AUTH_CODE" = "401" ] && [ "$PLANS_CODE" = "200" ]; then
     API_OK=true
     break

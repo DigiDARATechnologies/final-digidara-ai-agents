@@ -1,6 +1,6 @@
 # Strategy F integration
 
-The shared React application at the repository root is the DigiDARA UI. This
+The shared React application at the repository root is the SkillDARA UI. This
 service exposes the common agent contract at `POST /api/invoke`, the same
 contract `agents/project_AI_Agent` uses.
 

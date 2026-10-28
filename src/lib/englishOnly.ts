@@ -1,10 +1,10 @@
 /**
- * Every DigiDARA agent works in English only. The same script check as the
+ * Every SkillDARA agent works in English only. The same script check as the
  * server (agents/orchestrator/app/english_only.py): Tamil, Hindi, Telugu,
  * Malayalam, Kannada, Arabic, Chinese and other non-English scripts are
  * refused; Latin letters, accents, digits, emoji and math symbols are fine.
  */
-export const ENGLISH_ONLY_MESSAGE = "Please type in English. DigiDARA agents understand and reply in English only.";
+export const ENGLISH_ONLY_MESSAGE = "Please type in English. SkillDARA agents understand and reply in English only.";
 /** Shown and said aloud when a learner speaks another language (same text as the server). */
 export const SPEAK_ENGLISH_MESSAGE = "I only understand English. Could you please speak in English?";
 

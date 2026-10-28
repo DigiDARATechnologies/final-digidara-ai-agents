@@ -45,7 +45,7 @@ def personas() -> dict:
 async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> Response:
     user = auth_service.get_by_id(user_id)
     if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
-        raise HTTPException(402, "Not enough points. Please top up to continue.")
+        raise HTTPException(402, "Not enough coins. Please top up to continue.")
     try:
         audio, spoken_as, from_cache = await run_in_threadpool(tts.synthesize, req.text, req.language, req.persona, req.pace)
     except tts.VoiceError as exc:
@@ -78,7 +78,7 @@ def ticket(req: TicketRequest, request: Request, user_id: str = Depends(get_veri
     if tts.cached(text, spoken_as, tts.DEFAULT_PERSONA, pace) is None:
         user = auth_service.get_by_id(user_id)
         if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
-            raise HTTPException(402, "Not enough points. Please top up to continue.")
+            raise HTTPException(402, "Not enough coins. Please top up to continue.")
         if not os.environ.get("OPENAI_API_KEY", "").strip():
             raise HTTPException(503, "Natural voice is not available right now.")
         if VOICE_TOKENS_PER_CHAR:

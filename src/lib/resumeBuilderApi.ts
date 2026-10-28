@@ -13,7 +13,7 @@ async function invoke<T>(action: string, payload: Record<string, unknown>, timeo
 
 function unwrap<T>(result: { data?: T } | T): T { return (result as { data?: T }).data ?? result as T; }
 
-/** What DigiDARA already knows for this learner's resume: account, profile,
+/** What SkillDARA already knows for this learner's resume: account, profile,
  * and what the other agents report (orchestrator GET /learner/resume-facts). */
 export interface ResumeFacts {
   name: string; email: string; phone: string; target_role: string; degree: string;
@@ -33,7 +33,7 @@ export async function fetchResumeFacts(): Promise<ResumeFacts> {
   const response = await fetch(`${base}/learner/resume-facts`, {
     headers: platformToken ? { Authorization: `Bearer ${platformToken}` } : {},
   });
-  if (!response.ok) throw new Error(`Could not read your DigiDARA profile (${response.status}).`);
+  if (!response.ok) throw new Error(`Could not read your SkillDARA profile (${response.status}).`);
   return response.json() as Promise<ResumeFacts>;
 }
 

@@ -1,4 +1,4 @@
-"""SaaS Token Economy & Daily Usage Manager for DigiDARA Job Agent.
+"""SaaS Token Economy & Daily Usage Manager for SkillDARA Job Agent.
 
 Features:
 - Dynamic token settings loaded from database (job_token_settings table)

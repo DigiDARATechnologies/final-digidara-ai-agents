@@ -1,5 +1,5 @@
 // PM2 process definition for the orchestrator. Deploy path assumes the
-// standard DigiDARA VPS layout (/www/wwwroot/digidaraaiagents/...) — adjust
+// standard SkillDARA VPS layout (/www/wwwroot/digidaraaiagents/...) — adjust
 // `cwd` if that differs. Real secrets (JWT_SECRET, AGENT_SHARED_SECRET,
 // DATABASE_URL, ALLOWED_ORIGINS, ...) live in this directory's own .env,
 // loaded by python-dotenv — this file only sets what PM2 itself needs to

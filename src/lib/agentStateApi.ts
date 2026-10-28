@@ -20,6 +20,9 @@ export interface RemoteAgentState {
   updatedAt: string;
 }
 
+/** Under the browsers' 64 KB limit for all pending keepalive requests together. */
+export const KEEPALIVE_MAX_BYTES = 60_000;
+
 async function ensureOk(response: Response): Promise<Response> {
   if (response.ok) return response;
   let detail = response.statusText;
@@ -46,12 +49,15 @@ export async function saveAgentState(
   state: Record<string, unknown>,
   keepalive = false,
 ): Promise<void> {
+  const body = JSON.stringify({ state });
   await ensureOk(
     await fetch(`${ORCHESTRATOR_BASE}/agent-state/${agentId}/${encodeURIComponent(chatId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ state }),
-      keepalive,
+      body,
+      // Browsers refuse a keepalive request over 64 KB outright (it showed as
+      // "Offline" when the tab was hidden); a larger save goes as a normal request.
+      keepalive: keepalive && new Blob([body]).size < KEEPALIVE_MAX_BYTES,
     }),
   );
 }

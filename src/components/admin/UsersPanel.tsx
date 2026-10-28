@@ -46,14 +46,14 @@ function UserDetail({ userId, onBack }: { userId: string; onBack: () => void }) 
       </div>
       <div className="admin-kpis">
         <div className="admin-kpi"><span>Paid so far</span><strong>{formatMoney(totals.paid)}</strong><small>{totals.paid_payments} of {totals.payments} payments paid</small></div>
-        <div className="admin-kpi"><span>Points balance</span><strong>{formatPoints(user.points)}</strong><small>{formatPoints(totals.points_bought)} bought</small></div>
+        <div className="admin-kpi"><span>Coins balance</span><strong>{formatPoints(user.points)}</strong><small>{formatPoints(totals.points_bought)} bought</small></div>
         <div className="admin-kpi"><span>Chats</span><strong>{formatNumber(totals.conversations)}</strong><small>{formatNumber(totals.messages)} messages</small></div>
       </div>
 
       <h4>Payments</h4>
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>For</th><th>Amount</th><th>Points</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
+          <thead><tr><th>For</th><th>Amount</th><th>Coins</th><th>Status</th><th>Created</th><th>Paid</th><th>Razorpay</th></tr></thead>
           <tbody>
             {data.payments.map((p) => (
               <tr key={p.id}>
@@ -118,14 +118,14 @@ export default function UsersPanel() {
         <input className="admin-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email or mobile" aria-label="Search users" />
         <select value={sort} onChange={(event) => { setSort(event.target.value); setPage(1); }} aria-label="Sort users">
           <option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="spent">Most paid</option>
-          <option value="active">Recently active</option><option value="balance">Lowest points</option>
+          <option value="active">Recently active</option><option value="balance">Lowest coins</option>
         </select>
         <button className="btn btn-outline btn-sm" type="submit">Search</button>
       </form>
       {error && <div className="admin-error">{error} <button className="btn btn-outline btn-sm" onClick={reload}>Retry</button></div>}
       <div className="admin-table-card">
         <table className="admin-table">
-          <thead><tr><th>User</th><th>Joined</th><th>Points</th><th>Paid</th><th>Chats</th><th>Agents used</th><th>Last active</th></tr></thead>
+          <thead><tr><th>User</th><th>Joined</th><th>Coins</th><th>Paid</th><th>Chats</th><th>Agents used</th><th>Last active</th></tr></thead>
           <tbody>
             {data?.users.map((u) => (
               <tr key={u.id} className="admin-row-click" onClick={() => setSelected(u.id)} tabIndex={0}

@@ -11,7 +11,7 @@ const KINDS = [
   { id: "other", label: "Other" },
 ];
 
-/** DigiDARA's own admin: every organization is created here, with its first
+/** SkillDARA's own admin: every organization is created here, with its first
  * admin login. Any organization's full dashboard opens from the list. */
 export default function OrganizationsPanel() {
   const [orgs, setOrgs] = useState<PlatformOrg[]>([]);

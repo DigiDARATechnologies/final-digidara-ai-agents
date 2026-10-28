@@ -103,7 +103,7 @@ def topic_intake_prompt(
         "project_type": "what type of project or application they want to build",
     }.get(pending_question or "", "nothing — no question is pending")
 
-    return f"""You are the conversational intake assistant of the DigiDARA Capstone Project Agent.
+    return f"""You are the conversational intake assistant of the SkillDARA Capstone Project Agent.
 You help a student settle two things before project ideas are generated:
   1. focus — the language, role, or topic (e.g. "Python", "Java", "Data Analyst", "React")
   2. project_type — the kind of project/application (e.g. "web development", "desktop tool",
@@ -170,7 +170,7 @@ OUTPUT FORMAT (strict JSON, no prose outside the JSON):
 
 def final_score_decision_prompt(state: dict[str, Any], pass_threshold: int) -> str:
     difficulty = state.get("difficulty", "easy")
-    return f"""You are the Final Score Decision Agent for a DigiDARA capstone project.
+    return f"""You are the Final Score Decision Agent for a SkillDARA capstone project.
 Four independent reviewers have already assessed different aspects of this
 submission. Your job is to weigh their findings into a single fair score — not
 to decide pass/fail, which is a deterministic threshold comparison the code
@@ -379,7 +379,7 @@ def requirement_expansion_prompt(state: dict[str, Any]) -> str:
         if state.get("free_topic_request")
         else f"- Course: {state['course_name']}"
     )
-    return f"""You are the Requirements Writer for a DigiDARA capstone project.
+    return f"""You are the Requirements Writer for a SkillDARA capstone project.
 
 CONTEXT:
 - Chosen topic: {topic['title']} — {topic['summary']}
@@ -410,7 +410,7 @@ Keep language plain and direct. No filler. This text is shown verbatim to the st
 def submission_guide_prompt(state: dict[str, Any]) -> str:
     requirements = state["requirements"]
     topic_title = state["chosen_topic"]["title"]
-    return f"""You are the Submission Guide Writer for DigiDARA capstone projects.
+    return f"""You are the Submission Guide Writer for SkillDARA capstone projects.
 
 CONTEXT:
 - Chosen topic: {topic_title}
@@ -494,7 +494,7 @@ to ask a follow-up question after reading this."""
 def structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
     deterministic = deterministic or {}
-    return f"""You are the Submission Structure Validator for a DigiDARA capstone project.
+    return f"""You are the Submission Structure Validator for a SkillDARA capstone project.
 
 CONTEXT:
 - Required sections: {drop_retired_sections(guide.get('docx_required_sections'))}
@@ -533,7 +533,7 @@ your notes field is what they will read, so be specific about what to add."""
 def zip_structure_validation_prompt(state: dict[str, Any], deterministic: dict[str, Any] | None = None) -> str:
     guide = state["submission_guide"]
     deterministic = deterministic or {}
-    return f"""You are the Code Submission Structure Validator for a DigiDARA capstone project.
+    return f"""You are the Code Submission Structure Validator for a SkillDARA capstone project.
 
 CONTEXT:
 - Required folder structure (from the submission guide given to the student): {guide.get('folder_structure')}
@@ -715,7 +715,7 @@ def _screenshots_block(state: dict[str, Any]) -> str:
 
 def output_verification_prompt(state: dict[str, Any]) -> str:
     code_files = state.get("zip_code_files") or {}
-    return f"""You are the Requirements Verifier for a DigiDARA capstone project submission.
+    return f"""You are the Requirements Verifier for a SkillDARA capstone project submission.
 
 CONTEXT:
 {_requirements_block(state)}
@@ -799,7 +799,7 @@ def code_quality_scorer_prompt(state: dict[str, Any]) -> str:
     }.get(difficulty, "")
 
     files_block = _code_files_block(code_files, config.CODE_REVIEW_CHAR_BUDGET)
-    return f"""You are the Code Quality Reviewer for a DigiDARA capstone project.
+    return f"""You are the Code Quality Reviewer for a SkillDARA capstone project.
 
 CONTEXT:
 - Course medium: {_effective_medium(state)}
@@ -866,7 +866,7 @@ def feedback_generator_prompt(state: dict[str, Any], pass_threshold: int, passed
         for item in output_verification.get("requirements_check") or []
         if item.get("status") != "met"
     ]
-    return f"""You are the Feedback Writer delivering final capstone results to a DigiDARA student.
+    return f"""You are the Feedback Writer delivering final capstone results to a SkillDARA student.
 
 CONTEXT:
 - Student: {state['student_name']}
@@ -981,7 +981,7 @@ def screenshot_structure_prompt(missing_items: list[dict], matched_items: list[d
     prompt (used with a vision-capable call_json, see app/vision/
     structure_screenshot.py) reads that image and points at exactly what's
     missing, in terms of what's actually visible in the screenshot."""
-    return f"""You are the Folder Structure Screenshot Reviewer for a DigiDARA capstone project.
+    return f"""You are the Folder Structure Screenshot Reviewer for a SkillDARA capstone project.
 
 A student's zip submission was already checked by code (never by you) and found to be
 MISSING these required folders/files:

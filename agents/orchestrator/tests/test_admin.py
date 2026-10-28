@@ -79,7 +79,7 @@ def test_overview_totals_money_users_tokens_and_agents(api, seeded):
     assert revenue["total"] == 599.0 and revenue["paid_count"] == 2 and revenue["paying_customers"] == 1
     assert revenue["last_30d"] == 499.0 and revenue["last_7d"] == 499.0          # the 45-day-old top-up is outside
     assert revenue["by_status"] == {"paid": 2, "created": 1}
-    assert {e["label"]: e["amount"] for e in revenue["by_plan"]} == {"Basic plan": 499.0, "Points top-up": 100.0}
+    assert {e["label"]: e["amount"] for e in revenue["by_plan"]} == {"Basic plan": 499.0, "Coins top-up": 100.0}
     assert len(revenue["daily"]) == 30 and sum(d["amount"] for d in revenue["daily"]) == 499.0
     # Points at each account's rate (seeded accounts get the new-account rate, 2,000
     # tokens a point: 120,000 + 10 tokens). The old-price Basic plan and the top-up
@@ -143,10 +143,23 @@ def test_payments_filter_search_and_summary(api, seeded):
     everything = get()
     assert everything["total"] == 3 and everything["payments"][0]["id"] == "p3"                                 # newest first
     assert everything["summary"] == {"paid": {"count": 2, "amount": 599.0}, "created": {"count": 1, "amount": 999.0}}
+    assert everything["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 0, "amount": 0.0}}
+    assert {p["id"]: p["method"] for p in everything["payments"]} == {"p1": "razorpay", "p2": "razorpay", "p3": "razorpay"}
     assert [p["id"] for p in get(status="paid")["payments"]] == ["p1", "p2"]
     assert [p["id"] for p in get(search="ravi")["payments"]] == ["p3"]
     assert [p["id"] for p in get(search="pay2")["payments"]] == ["p2"]
     assert get(status="paid")["payments"][0]["email"] == "asha@x.io"
+
+
+def test_paid_payments_without_a_razorpay_id_count_as_manual(api, seeded, database):
+    with database() as session:
+        session.add(Payment(id="p4", user_id="ravi", plan_id="standard", amount=99900, razorpay_order_id="manual-1", status="paid",
+                            created_at=NOW, paid_at=NOW))
+        session.commit()
+    body = api.get("/platform-admin/payments", headers=bearer("boss")).json()
+    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 999.0}}
+    assert body["summary"]["paid"] == {"count": 3, "amount": 1598.0}
+    assert next(p for p in body["payments"] if p["id"] == "p4")["method"] == "manual"
 
 
 def test_agents_show_health_actions_and_usage(api, seeded):

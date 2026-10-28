@@ -31,7 +31,7 @@ LINE=colors.HexColor("#DED9F2")
 SOFT=colors.HexColor("#F6F3FF")
 GREEN=colors.HexColor("#167A50")
 ROSE=colors.HexColor("#A43B49")
-LOGO_PATH=Path(__file__).resolve().parents[2]/"assets"/"digidara-logo.jpg"
+LOGO_PATH=Path(__file__).resolve().parents[2]/"assets"/"skilldara-logo.jpg"
 LOGO_WIDTH=38*mm
 LOGO_HEIGHT=21.375*mm
 

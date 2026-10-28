@@ -84,7 +84,7 @@ def create_google_user(name: str, email: str, google_id: str, consent_policy_ver
 
 def delete_user(user_id: str) -> None:
     """DPDP Act 2023 right to erasure. Payment rows are intentionally kept
-    (financial records DigiDARA must retain under tax/accounting law and
+    (financial records SkillDARA must retain under tax/accounting law and
     which hold no name/email/mobile of their own -- see app/models.py) but
     are no longer reachable through any authenticated account afterwards."""
     chat_history_service.purge_history(user_id)
@@ -113,7 +113,10 @@ def _purge_phase2(user_id: str) -> None:
     from app.memory import service as memory_service
     from app.orchestrator import boss_memory
 
+    from app.learner import avatar
+
     learner_service.purge(user_id)
+    avatar.remove(user_id)
     readiness_service.purge(user_id)
     org_service.purge(user_id)
     memory_service.clear(user_id)

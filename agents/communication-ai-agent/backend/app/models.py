@@ -675,7 +675,7 @@ class DailyChallengeSummary(db.Model):
 
 
 class LlmUsage(db.Model):
-    """One row per LLM call, attributed to the verified DigiDARA user id
+    """One row per LLM call, attributed to the verified SkillDARA user id
     (`X-DigiDARA-User-Id`, forwarded by the orchestrator gateway) that
     triggered it, mirroring agents/project_AI_Agent's identical table.
     groq_usage.log_groq_attempt deliberately only prints to the terminal

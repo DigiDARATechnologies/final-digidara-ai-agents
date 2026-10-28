@@ -237,7 +237,7 @@ async function prefillFromLearnerGoal(profile: JobFetchProfile, user: User): Pro
 }
 
 /**
- * After the learner edits their DigiDARA profile, the Job Agent searches for
+ * After the learner edits their SkillDARA profile, the Job Agent searches for
  * the new target role, with the new skills. Skills the Job Agent learned
  * elsewhere (a resume, its own chat) stay; skills removed from the profile go.
  */
@@ -624,7 +624,7 @@ export async function handleJobFetchText(
     }
   }
 
-  // 5. Intelligent Multi-Turn Conversational Interaction via DigiDARA Job Agent!
+  // 5. Intelligent Multi-Turn Conversational Interaction via SkillDARA Job Agent!
   const pendingChat = state.pendingChat?.message === trimmed ? state.pendingChat : {
     message: trimmed,
     clientMessageId: `m_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`,
@@ -749,9 +749,9 @@ export async function handleJobFetchText(
         state,
         messages: [
           {
-            text: `💡 **You've reached your free daily quota!**\n\nTo discover more verified fresher opportunities or continue chatting with DigiDARA Job Agent, you can top up points on the platform.\n\nTap below to top up your points:`,
+            text: `💡 **You've reached your free daily quota!**\n\nTo discover more verified fresher opportunities or continue chatting with SkillDARA Job Agent, you can top up coins on the platform.\n\nTap below to top up your points:`,
             options: [
-              { label: "💳 Top Up Points", value: "action:open_billing" },
+              { label: "💳 Top Up Coins", value: "action:open_billing" },
               { label: "🔙 View My Saved Jobs", value: "Show me my saved jobs" },
             ],
           },

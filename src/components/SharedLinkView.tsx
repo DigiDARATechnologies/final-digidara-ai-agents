@@ -84,9 +84,9 @@ export default function SharedLinkView({ link, onClose, onOpenOwnChat }: Props) 
             <>
               <p className="shared-link-note">
                 {chat.is_owner
-                  ? chat.mode === "public" ? "Your chat, shared with a public link (any signed-in DigiDARA account can open it)."
+                  ? chat.mode === "public" ? "Your chat, shared with a public link (any signed-in SkillDARA account can open it)."
                     : "Your chat. This private link opens only for your account."
-                  : `Shared by ${chat.owner_name || "a DigiDARA learner"}. Read only.`}
+                  : `Shared by ${chat.owner_name || "a SkillDARA learner"}. Read only.`}
               </p>
               <div className="shared-chat">
                 {chat.messages.map((message, index) => (

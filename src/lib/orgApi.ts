@@ -153,7 +153,7 @@ function query(filters: OrgFilters): string {
 
 export const previewJoinCode = (code: string) => request<JoinPreview>(`/organizations/join-code/${encodeURIComponent(code.trim().toUpperCase())}`);
 export const joinWithClass = (code: string, fields: ClassFields) =>
-  request<{ membership: unknown } & Record<string, unknown>>("/organizations/join", json("POST", { join_code: code.trim(), ...fields }));
+  request<{ membership: unknown; pending?: PendingRequest | null } & Record<string, unknown>>("/organizations/join", json("POST", { join_code: code.trim(), ...fields }));
 
 export const fetchCodes = (orgId: string) => request<JoinCode[]>(`/organizations/${orgId}/codes`);
 export const createCode = (orgId: string, body: { label?: string } & ClassFields) => request<JoinCode>(`/organizations/${orgId}/codes`, json("POST", body));
@@ -187,3 +187,59 @@ export const askAssistant = (orgId: string, message: string, filters: OrgFilters
   }));
 export const fetchAssistantHistory = (orgId: string) => request<AssistantTurn[]>(`/organizations/${orgId}/assistant/history`);
 export const clearAssistant = (orgId: string) => request<void>(`/organizations/${orgId}/assistant/history`, json("DELETE"));
+
+/** A learner's own request to join, waiting for staff approval. */
+export interface PendingRequest { id: string; organization: { id: string; name: string } | null; requested_at: string | null }
+export const fetchMyJoinRequest = () => request<{ pending: PendingRequest | null }>("/organizations/me/request");
+export const cancelMyJoinRequest = () => request<void>("/organizations/me/request", json("DELETE"));
+
+export interface StaffLogin { member_id: string; name: string; email: string; role: "owner" | "admin" | "staff"; has_signed_in: boolean }
+export interface AddStaffResult { name: string; email: string; status: "created" | "attached" | "made_staff"; temporary_password: string | null }
+export const fetchStaff = (orgId: string) => request<StaffLogin[]>(`/organizations/${orgId}/staff`);
+export const addStaff = (orgId: string, body: { name: string; email: string }) =>
+  request<AddStaffResult>(`/organizations/${orgId}/staff`, json("POST", body));
+
+/** One student on the uploaded list and where they stand. */
+export interface RosterEntry {
+  id: string; name: string; email: string; mobile: string;
+  status: "joined" | "waiting" | "not_signed_up" | "other_organization"; added_at: string | null;
+}
+export interface RosterUploadResult {
+  added: number; updated: number; joined: number; approved: number; invalid_count: number;
+  invalid: { row: number; email: string; reason: string }[];
+}
+export interface JoinRequest {
+  id: string; name: string; email: string; join_code: string | null; requested_at: string | null;
+  department: string | null; year: string | null; section: string | null;
+}
+export const fetchRoster = (orgId: string) => request<RosterEntry[]>(`/organizations/${orgId}/roster`);
+export const removeRosterEntry = (orgId: string, entryId: string) => request<void>(`/organizations/${orgId}/roster/${entryId}`, json("DELETE"));
+export async function uploadRoster(orgId: string, file: File): Promise<RosterUploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  // No Content-Type: the browser sets the multipart boundary itself.
+  const response = await fetch(`${BASE}/organizations/${orgId}/roster/upload`, {
+    method: "POST", body: form, headers: { Authorization: `Bearer ${sessionToken() || ""}` },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : "The file could not be uploaded. Please try again.");
+  }
+  return response.json();
+}
+/** Downloads the example student list (Name, Mobile, Email) as an Excel file. */
+export async function downloadRosterTemplate(orgId: string): Promise<void> {
+  const response = await fetch(`${BASE}/organizations/${orgId}/roster/template`, { headers: { Authorization: `Bearer ${sessionToken() || ""}` } });
+  if (!response.ok) throw new Error("The template could not be downloaded. Please try again.");
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "skilldara-student-list-template.xlsx";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+export const fetchJoinRequests = (orgId: string) => request<JoinRequest[]>(`/organizations/${orgId}/requests`);
+export const decideJoinRequest = (orgId: string, requestId: string, approve: boolean) =>
+  request<void>(`/organizations/${orgId}/requests/${requestId}`, json("POST", { approve }));

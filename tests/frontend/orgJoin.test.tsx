@@ -3,6 +3,8 @@ jest.mock('../../src/lib/orgApi', () => ({
   CLASS_LABELS: { department: 'Department', year: 'Year', section: 'Section' },
   previewJoinCode: jest.fn(),
   joinWithClass: jest.fn(),
+  fetchMyJoinRequest: jest.fn(),
+  cancelMyJoinRequest: jest.fn(),
 }));
 jest.mock('../../src/lib/learnerApi', () => ({ fetchLearnerSummary: jest.fn() }));
 
@@ -20,6 +22,8 @@ const membership = { organization: { id: 'o1', name: 'Anna University', kind: 'c
 beforeEach(() => {
   jest.clearAllMocks();
   org.joinWithClass.mockResolvedValue({ membership: null });
+  org.fetchMyJoinRequest.mockResolvedValue({ pending: null });
+  org.cancelMyJoinRequest.mockResolvedValue(undefined);
   learner.fetchLearnerSummary.mockResolvedValue({ profile: {} as never, levels: [], level_choices: [], consent_required: false, membership });
 });
 
@@ -54,6 +58,21 @@ test('a general code lets the learner pick, or add a new department', async () =
   fireEvent.change(year, { target: { value: '2nd year' } });
   fireEvent.click(screen.getByRole('button', { name: 'Join Anna University' }));
   await waitFor(() => expect(org.joinWithClass).toHaveBeenCalledWith('GEN12345', { department: 'M.Sc Data Science', year: '2nd year' }));
+});
+
+test('a learner not on the student list waits for approval, and can cancel', async () => {
+  org.previewJoinCode.mockResolvedValue({ organization: { name: 'Anna University', kind: 'college' },
+    code: { label: 'General', department: 'CSE', year: '1st year', section: 'A' }, options });
+  org.joinWithClass.mockResolvedValue({ membership: null, pending: { id: 'r1', organization: { id: 'o1', name: 'Anna University' }, requested_at: null } });
+  const onJoined = jest.fn();
+  render(<JoinOrganization onJoined={onJoined} onToast={jest.fn()} />);
+  typeCode('ABCD2345');
+  fireEvent.click(await screen.findByRole('button', { name: 'Join Anna University' }));
+  expect(await screen.findByRole('heading', { name: 'Waiting for approval' })).toBeInTheDocument();
+  expect(onJoined).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel request' }));
+  await waitFor(() => expect(org.cancelMyJoinRequest).toHaveBeenCalled());
+  expect(await screen.findByPlaceholderText('ABCD2345')).toBeInTheDocument();
 });
 
 test('an unknown code shows why', async () => {

@@ -162,7 +162,7 @@ def _validate_resume_magic_bytes(stream, extension: str) -> bool:
 
 # ---------------------------------------------------------------------------
 # User-facing routes — reached only via the gateway (POST /api/invoke) by a
-# logged-in DigiDARA user; g.job_user_id is the platform's own user id,
+# logged-in SkillDARA user; g.job_user_id is the platform's own user id,
 # bridged in by invoke.py's `ensure_profile` before any of these can be
 # called (see db.py: user_job_actions has a real FK onto user_job_profiles).
 # ---------------------------------------------------------------------------

@@ -35,7 +35,7 @@ def api(database, monkeypatch):
         for user_id in ("learner", "admin", "other"):
             session.add(User(id=user_id, name=user_id.title(), email=f"{user_id}@example.test", email_verified=True,
                              token_balance=1000, password_hash="x"))
-        session.add(User(id="platform", name="DigiDARA", email="platform@example.test", email_verified=True,
+        session.add(User(id="platform", name="SkillDARA", email="platform@example.test", email_verified=True,
                          token_balance=1000, password_hash="x", is_admin=True))
         session.commit()
     app = FastAPI()
@@ -86,6 +86,14 @@ def _make_org(client):
         "name": "Anna University", "kind": "college", "admin_email": "admin@example.test"})
     assert created.status_code == 201, created.text
     org = client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    # The learner is on the student list, so the join code lets them straight in.
+    from app import db
+    from app.models import OrgRosterEntry
+
+    session = db.get_session()
+    session.add(OrgRosterEntry(organization_id=org["organization"]["id"], email="learner@example.test"))
+    session.commit()
+    session.close()
     return org["organization"]["id"], org["organization"]["join_code"]
 
 

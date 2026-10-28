@@ -106,7 +106,7 @@ class MySqlRepository:
 
     def ensure_session(self, external_user_id, email, display_name):
         """Passwordless provisioning + login for a trusted external identity
-        (the DigiDARA gateway). Composes the existing ensure_student upsert
+        (the SkillDARA gateway). Composes the existing ensure_student upsert
         with the same _start_session used by register/login."""
         student = self.ensure_student(external_user_id, email, display_name)
         return self._start_session(student["id"])
@@ -743,7 +743,7 @@ class MySqlRepository:
 
     def record_llm_usage(self, provider, model_name, prompt_tokens, completion_tokens, total_tokens, request_type, user_id=None):
         """Best-effort — a usage-logging failure must never break the AI
-        Tutor call it's attached to. `user_id` is the verified DigiDARA
+        Tutor call it's attached to. `user_id` is the verified SkillDARA
         identity (`X-DigiDARA-User-Id`, forwarded by the orchestrator
         gateway) that triggered the call, so usage can be reported per user
         instead of as a platform-wide total."""
@@ -760,7 +760,7 @@ class MySqlRepository:
             current_app.logger.warning("failed to record LLM usage", exc_info=True)
 
     def get_llm_usage_summary(self, user_id=None):
-        """Token usage for this agent, scoped to the verified DigiDARA
+        """Token usage for this agent, scoped to the verified SkillDARA
         identity that made the calls — backs the Settings > Usage dashboard.
         Without a verified identity there is nothing safe to attribute the
         request to, so this returns all-zero totals rather than a

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
-from sqlalchemy.dialects.mysql import LONGTEXT
+from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.billing.plans import FREE_TOKENS_PER_POINT, free_signup_tokens
@@ -369,7 +369,8 @@ class OrganizationMember(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    # "owner", "admin" or "member".
+    # "owner", "admin", "staff" or "member". Staff look after the students
+    # (lists, approvals, levels, codes) but not other staff, admins or the organization.
     role: Mapped[str] = mapped_column(String(16), default="member")
     # The organization's own id for this person: roll number, employee id.
     external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -379,6 +380,96 @@ class OrganizationMember(Base):
     year: Mapped[str | None] = mapped_column(String(40), nullable=True)
     section: Mapped[str | None] = mapped_column(String(40), nullable=True)
     join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class UserAvatar(Base):
+    """A learner's profile picture, so others see it (leaderboards). `image`
+    is the 256px picture and `thumb` a 64px copy for lists, both as JPEG/PNG
+    data URLs the browser made."""
+
+    __tablename__ = "user_avatars"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    image: Mapped[str] = mapped_column(Text().with_variant(MEDIUMTEXT, "mysql"))
+    thumb: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class LeaderboardTop(Base):
+    """Who is in a leaderboard's top 3, and since when, so someone who has
+    just broken in can be shown as new."""
+
+    __tablename__ = "leaderboard_top"
+
+    # "platform:students", "org:<organization id>:staff", ...
+    board: Mapped[str] = mapped_column(String(80))
+    user_id: Mapped[str] = mapped_column(String(32))
+    entered_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("board", "user_id"),)
+
+
+class LeaderboardOptOut(Base):
+    """A learner who chose not to appear on leaderboards."""
+
+    __tablename__ = "leaderboard_opt_out"
+
+    user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class EnterpriseEnquiry(Base):
+    """An organization asking about the Enterprise plan from the billing page.
+    Kept here as well as emailed to support, so a failed email loses nothing."""
+
+    __tablename__ = "enterprise_enquiries"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    organization: Mapped[str] = mapped_column(String(255))
+    organization_type: Mapped[str] = mapped_column(String(40), default="")
+    contact_name: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(255))
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    learners: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    city: Mapped[str] = mapped_column(String(120), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    emailed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
+class OrgRosterEntry(Base):
+    """A student on an organization's uploaded list (name, mobile, email).
+    A learner whose verified email is on the list joins automatically; anyone
+    else who uses a join code waits for staff approval (OrgJoinRequest)."""
+
+    __tablename__ = "org_roster"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    mobile: Mapped[str] = mapped_column(String(32), default="")
+    uploaded_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (UniqueConstraint("organization_id", "email", name="uq_org_roster_email"),)
+
+
+class OrgJoinRequest(Base):
+    """A learner who used a join code but is not on the organization's list:
+    they get no access, and share nothing, until staff approve them."""
+
+    __tablename__ = "org_join_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    year: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    section: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 

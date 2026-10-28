@@ -1,4 +1,4 @@
-"""Self-registration with the DigiDARA orchestrator (Strategy F).
+"""Self-registration with the SkillDARA orchestrator (Strategy F).
 
 Sync-requests + daemon-heartbeat-thread pattern, since Flask has no async
 lifespan hook — copy-adapted from

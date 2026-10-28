@@ -1,6 +1,6 @@
 # Project AI Agent — Capstone Automation Backend
 
-LangGraph-driven backend for the DigiDARA capstone project flow: topic
+LangGraph-driven backend for the SkillDARA capstone project flow: topic
 generation → requirement expansion → 7-day timer → submission validation
 (docx + zip) → LLM code review → scored feedback. There is no certificate or
 enrollment gate — any student can request a project for any topic.
@@ -69,7 +69,7 @@ with attempts left answers `viva_retry`; the client then calls the gateway actio
 resubmit. Finished attempts are kept in `submissions.viva_attempts_json`.
 
 **Certificate.** Once BOTH the code score and the viva are passed
-(`app/reports/certificate.py`, printed on the DigiDARA certificate template):
+(`app/reports/certificate.py`, printed on the SkillDARA certificate template):
 
 | Gateway action | What it does |
 |---|---|

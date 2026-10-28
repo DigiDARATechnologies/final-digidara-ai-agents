@@ -4,6 +4,9 @@ import ClassSelect from "./ClassSelect";
 import StudentDrawer from "./StudentDrawer";
 import OrgAssessments from "./OrgAssessments";
 import OrgKnowledgeTests from "./OrgKnowledgeTests";
+import StaffPanel from "./StaffPanel";
+import Leaderboard from "../Leaderboard";
+import StudentListPanel from "./StudentListPanel";
 import { ScoreRing } from "../ReadinessView";
 import { parseMemberLines } from "../../lib/memberImport";
 import { addOrgMembers, BAND_TONE, LEVEL_IDS, LEVEL_LABELS, type AddMemberResult, type Band, type OrgMember } from "../../lib/learnerApi";
@@ -31,7 +34,8 @@ export interface OrgRef {
   id: string;
   name: string;
   kind: string;
-  role: "owner" | "admin";
+  /** staff: look after students; only owner and admin manage staff and members. */
+  role: "owner" | "admin" | "staff";
 }
 
 interface Props {
@@ -260,7 +264,9 @@ function Students({ org, members, analytics, onOpen, onReload, onToast }: {
         <span className="rd-muted">{learners.length} learner{learners.length === 1 ? "" : "s"}</span>
         <div className="org-actions">
           <button type="button" className="btn btn-outline btn-sm" onClick={exportCsv} disabled={!learners.length}>Export CSV</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>{showAdd ? "Close" : "Add learners"}</button>
+          {org.role !== "staff" && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(!showAdd)}>{showAdd ? "Close" : "Add learners"}</button>
+          )}
         </div>
       </div>
       {showAdd && (
@@ -413,9 +419,10 @@ function AccessLog({ entries }: { entries: AccessEntry[] }) {
   );
 }
 
-/** The organization admin's dashboard; DigiDARA's platform admin opens the same one for any organization. */
+/** The organization admin's dashboard; SkillDARA's platform admin opens the same one for any organization. */
 export default function OrgDashboard({ org, onToast, extraTabs = [], headerAction }: Props) {
-  const tabs = useMemo(() => ["Overview", "Students", "Assessments", "Knowledge tests", "Join codes", ...extraTabs.map((t) => t.name), "Access log"], [extraTabs]);
+  const tabs = useMemo(() => ["Overview", "Students", "Leaderboard", "Student list", "Assessments", "Knowledge tests", "Join codes",
+    ...(org.role === "staff" ? [] : ["Staff"]), ...extraTabs.map((t) => t.name), "Access log"], [extraTabs, org.role]);
   const [tab, setTab] = useState("Overview");
   // A knowledge test the admin chose to share: preselected on the Assessments tab.
   const [linkTestId, setLinkTestId] = useState<string | null>(null);
@@ -471,7 +478,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
         <div className="org-dash-title">
           <span className="org-avatar xl" aria-hidden="true">{org.name.slice(0, 1).toUpperCase()}</span>
           <div>
-            <span className="rd-kicker">{KIND_LABELS[org.kind] ?? "Organization"} · {org.role === "owner" ? "Owner" : "Admin"}</span>
+            <span className="rd-kicker">{KIND_LABELS[org.kind] ?? "Organization"} · {org.role === "owner" ? "Owner" : org.role === "staff" ? "Staff" : "Admin"}</span>
             <h1>{org.name}</h1>
           </div>
         </div>
@@ -500,12 +507,15 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
       )}
       {tab === "Assessments" && <OrgAssessments orgId={org.id} onToast={onToast} presetTestId={linkTestId} />}
       {tab === "Knowledge tests" && <OrgKnowledgeTests orgId={org.id} onToast={onToast} onCreateLink={(testId) => { setLinkTestId(testId); setTab("Assessments"); }} />}
+      {tab === "Leaderboard" && <Leaderboard defaultScope="organization" onToast={onToast} />}
+      {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} onChanged={() => void loadData()} onToast={onToast} />}
       {tab === "Join codes" && <Codes org={org} codes={codes} options={options} onReload={() => void loadSetup()} onToast={onToast} />}
+      {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} onToast={onToast} />}
       {tab === "Access log" && <AccessLog entries={log} />}
       {extra && extra.render(filters)}
 
       {openMember && (
-        <StudentDrawer orgId={org.id} member={openMember} isOwner={org.role === "owner"} options={options}
+        <StudentDrawer orgId={org.id} member={openMember} isOwner={org.role === "owner"} canManage={org.role !== "staff"} options={options}
           agentLabels={analytics?.agent_labels ?? {}} onClose={() => setOpenId(null)}
           onChanged={() => { void loadData(); void loadSetup(); }} onToast={onToast} />
       )}

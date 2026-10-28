@@ -59,7 +59,7 @@ def _salary_text(raw_job):
 
 
 def normalize_job(raw_job):
-    """Normalize one raw Adzuna item into the canonical DigiDARA job dictionary."""
+    """Normalize one raw Adzuna item into the canonical SkillDARA job dictionary."""
     if not isinstance(raw_job, dict):
         return None
 

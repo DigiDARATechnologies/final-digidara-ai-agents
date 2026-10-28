@@ -5,6 +5,7 @@ import {
   loadRazorpay, verifyBillingPayment, type BillingPlans, type BillingSummary, type PlanOffer, type RazorpayOrder,
 } from "../lib/billingApi";
 import { formatPoints } from "../lib/points";
+import EnterpriseEnquiry from "./EnterpriseEnquiry";
 
 interface Props { open: boolean; user: User; onToast: (message: string) => void; /** A plan chosen elsewhere (the low-points popup) to highlight and scroll to. */ focusPlanId?: string | null; }
 type CheckoutResponse = { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string };
@@ -81,7 +82,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
       await loadRazorpay();
       const Razorpay = (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay;
       const checkout = new Razorpay({
-        key: order.key_id, amount: order.amount, currency: order.currency, name: "DigiDARA", description: description(order), order_id: order.order_id,
+        key: order.key_id, amount: order.amount, currency: order.currency, name: "SkillDARA", description: description(order), order_id: order.order_id,
         // The server sends this account's own details; the email is locked so
         // the payment is always made as this account.
         prefill: order.prefill ?? { name: user.name, email: user.email, contact: user.mobile },
@@ -92,7 +93,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
             window.dispatchEvent(new Event("digidara:billing-updated"));
             await refresh();
             const added = pointsAdded();
-            onToast(added ? `Payment verified. ${formatPoints(added)} points added.` : "Payment verified.");
+            onToast(added ? `Payment verified. ${formatPoints(added)} coins added.` : "Payment verified.");
           } catch (error) { onToast((error as Error).message); } finally { setBusy(false); }
         },
         modal: { ondismiss: () => setBusy(false) },
@@ -104,7 +105,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
 
   const buyPlan = (plan: PlanOffer) => {
     if (plan.payment_page_url) {
-      // Paid on DigiDARA's Razorpay page; the server credits the account whose
+      // Paid on SkillDARA's Razorpay page; the server credits the account whose
       // email is entered there, once Razorpay confirms the payment.
       window.open(paymentPageUrl(plan.payment_page_url, user.email, user.mobile), "_blank", "noopener,noreferrer");
       setPagePlan(plan);
@@ -128,17 +129,17 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
       <div className="current-plan">
         <div>
           <small>Current Plan</small>
-          <strong>{hasPlan ? `DigiDARA ${billing?.plan_name}` : "DigiDARA Free"}</strong>
-          <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more points."}</span>
+          <strong>{hasPlan ? `SkillDARA ${billing?.plan_name}` : "SkillDARA Free"}</strong>
+          <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more coins."}</span>
         </div>
         <span className="plan-badge">{hasPlan ? "Active" : "Free"}</span>
       </div>
 
-      <h3 className="settings-title">Points Balance</h3>
-      <div className="current-plan"><div><small>Available Points</small><strong>{pointsBalance === null ? "-" : formatPoints(pointsBalance)}</strong><span>Each agent request uses a few points. Points never expire.</span></div></div>
+      <h3 className="settings-title">Coins Balance</h3>
+      <div className="current-plan"><div><small>Available Coins</small><strong>{pointsBalance === null ? "-" : formatPoints(pointsBalance)}</strong><span>Each agent request uses a few coins. Coins never expire.</span></div></div>
 
       <h3 className="settings-title">Choose a Plan</h3>
-      <p className="billing-account-note">Paying as <b>{user.email}</b>. Points are added to this account.</p>
+      <p className="billing-account-note">Paying as <b>{user.email}</b>. Coins are added to this account.</p>
       <label className="billing-gstin">
         <span>GSTIN (optional, for a business tax invoice)</span>
         <input value={gstin} onChange={(event) => setGstin(event.target.value)} placeholder="e.g. 33ABCDE1234F1Z5" maxLength={20} autoComplete="off" aria-invalid={!!gstinError} />
@@ -154,15 +155,16 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
               {plan.amount_with_gst && plan.amount_with_gst !== plan.amount && <small className="plan-gst">{money(plan.amount_with_gst, plan.currency)} incl. {plan.gst_percent || 18}% GST</small>}
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the points reach this account.</p>}
+              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the coins reach this account.</p>}
               <button ref={plan.id === focusPlanId ? focusedPlanRef : undefined} disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
             </article>
           ))}
         </div>
       )}
+      <EnterpriseEnquiry name={user.name ?? ""} email={user.email} supportEmail={catalog?.enterprise?.contact_email ?? "support@digidaratechnologies.com"} onToast={onToast} />
       {pagePlan && (
         <p className="plan-page-status" role="status">
-          Finish the {money(pagePlan.amount, pagePlan.currency, true)} payment in the Razorpay tab using {user.email}. Your {formatPoints(pagePlan.points)} points appear here once Razorpay confirms it.{" "}
+          Finish the {money(pagePlan.amount, pagePlan.currency, true)} payment in the Razorpay tab using {user.email}. Your {formatPoints(pagePlan.points)} coins appear here once Razorpay confirms it.{" "}
           <button type="button" className="invoice-btn" onClick={() => void refresh()}>Refresh balance</button>
         </p>
       )}
@@ -180,7 +182,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
           </div>
         )) : <p>No transactions yet.</p>}
       </div>
-      <p className="secure-payment">Payments are securely processed by Razorpay. Card or UPI details never pass through DigiDARA servers.</p>
+      <p className="secure-payment">Payments are securely processed by Razorpay. Card or UPI details never pass through SkillDARA servers.</p>
     </>
   );
 }

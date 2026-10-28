@@ -14,7 +14,7 @@
 # unrelated job that merely lists Python among five other tools).
 #
 # `course_keywords` classifies a certification course's name instead —
-# short, admin-entered text from DigiDARA's own catalog (e.g. "Python",
+# short, admin-entered text from SkillDARA's own catalog (e.g. "Python",
 # "AI/ML", "Machine Learning"), not noisy scraped text — so it can safely
 # use single, broader words. If omitted for a category, `keywords` is
 # reused for course-name matching too.

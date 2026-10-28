@@ -1,4 +1,4 @@
-"""What the general chat may tell a learner about DigiDARA: each live agent's
+"""What the general chat may tell a learner about SkillDARA: each live agent's
 purpose and the steps a learner takes to use it.
 
 This is the assistant's only source of facts about the platform, written from
@@ -10,15 +10,15 @@ flow changes.
 """
 
 PLATFORM_GUIDE = """
-DIGIDARA AI AGENTS (digidaraaiagents.com)
+SKILLDARA (skilldara.com)
 A learning and career platform with specialised AI agents that make learners job-ready: practise, get feedback, build proof of skills and find jobs, all in one place. Boss is the platform's AI assistant (the general chat): it explains the agents and connects you to one. Open an agent from the Store, or ask Boss to connect you.
 WHO IT IS FOR: students, freshers, graduates and job seekers getting ready for jobs, and colleges and training institutes preparing their learners. Every agent follows the learner's target role, skills and Job Readiness level. Every chat is saved in the sidebar. The microphone button lets you speak instead of typing.
 
 POINTS AND PLANS
-- Agents use points. Every new account starts with 25 free points. Points never expire.
-- Plans (one-time payments): Basic Rs 399 = 250 points; Standard Rs 799 = 500 points; Premium Rs 999 = 750 points. Prices are before 18% GST, so you pay Rs 470.82, Rs 942.82 and Rs 1,178.82. Buy from Settings > Billing: Razorpay's secure checkout opens inside DigiDARA with your account email already filled in, and the points are added to your account as soon as the payment is verified. Enter your GSTIN there (optional) to get it on your tax invoice; download the invoice from Transaction History.
-- Buy points: Settings -> Billing -> choose a plan. When points run low, a "Buy points" popup appears.
-- See points used per agent: Settings -> Usage.
+- Agents use coins. Every new account starts with 25 free coins. Coins never expire.
+- Plans (one-time payments): Basic Rs 399 = 250 coins; Standard Rs 799 = 500 coins; Premium Rs 999 = 750 coins. Prices are before 18% GST, so you pay Rs 470.82, Rs 942.82 and Rs 1,178.82. Buy from Settings > Billing: Razorpay's secure checkout opens inside SkillDARA with your account email already filled in, and the coins are added to your account as soon as the payment is verified. Enter your GSTIN there (optional) to get it on your tax invoice; download the invoice from Transaction History.
+- Buy coins: Settings -> Billing -> choose a plan. When coins run low, a "Buy coins" popup appears.
+- See coins used per agent: Settings -> Usage.
 
 LIVE AGENTS
 

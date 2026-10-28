@@ -1,6 +1,6 @@
 """Neural Text-to-Speech (TTS) Service.
 
-Speaks with the one DigiDARA platform voice (OpenAI gpt-4o-mini-tts, voice
+Speaks with the one SkillDARA platform voice (OpenAI gpt-4o-mini-tts, voice
 "coral", told to be Nila: a friendly Indian teacher, slow and clear enough for
 any student), the same voice the orchestrator's /voice/speak uses.
 Caches generated audio in-memory/TTL to eliminate redundant costs and latency.

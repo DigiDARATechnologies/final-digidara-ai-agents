@@ -206,7 +206,7 @@ export default function ChatView({
   // The reply being read aloud (Listen button, or a voice question's answer).
   const [listeningIndex, setListeningIndex] = useState<number | null>(null);
 
-  // The DigiDARA Assistant's microphone opens a spoken conversation; one
+  // The SkillDARA Assistant's microphone opens a spoken conversation; one
   // started on the new-chat screen carries on here, waiting for its reply.
   const [voiceConversation, setVoiceConversation] = useState<"off" | "listen" | "await">(
     () => (!isGeneralChat ? "off" : takeVoiceConversation() ? "await" : takeVoiceGreeting() ? "listen" : "off"));
@@ -835,7 +835,7 @@ export default function ChatView({
                     : speech.transcribing
                     ? "Turning your speech into text..."
                     : "🎙️ Click microphone to speak (typing disabled)")
-                : "Message DigiDARA..."
+                : "Message SkillDARA..."
             }
             value={input}
             readOnly={voiceOnly}

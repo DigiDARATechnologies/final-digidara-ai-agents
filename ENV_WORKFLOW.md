@@ -1,4 +1,4 @@
-# DigiDARA environment and run workflow
+# SkillDARA environment and run workflow
 
 This is the shortest reliable path for running the complete platform on
 Windows. Docker is recommended because it starts the frontend, MySQL,
@@ -38,7 +38,7 @@ to that process.
 | `agents/job_agent/.env` | Job API and worker | Database, scraper/worker settings, optional Apify, registry URLs |
 
 The separate `agents/resume_builder_agent/frontend/.env` is only for running
-that agent's standalone frontend. It is not used by the root DigiDARA UI.
+that agent's standalone frontend. It is not used by the root SkillDARA UI.
 
 Anything beginning with `VITE_` is compiled into browser JavaScript and must be
 treated as public. Never put an API secret, database password, Razorpay secret,

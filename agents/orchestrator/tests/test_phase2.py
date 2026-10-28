@@ -64,8 +64,8 @@ def users(database):
         for user_id, name in (("learner", "Learner"), ("admin", "Org Admin"), ("other", "Other")):
             session.add(User(id=user_id, name=name, email=f"{user_id}@example.test", email_verified=True,
                              token_balance=1000, password_hash="x"))
-        # DigiDARA's own platform admin, who creates organizations.
-        session.add(User(id="platform", name="DigiDARA", email="platform@example.test", email_verified=True,
+        # SkillDARA's own platform admin, who creates organizations.
+        session.add(User(id="platform", name="SkillDARA", email="platform@example.test", email_verified=True,
                          token_balance=1000, password_hash="x", is_admin=True))
         session.commit()
 
@@ -259,8 +259,9 @@ def test_agent_to_agent_call_needs_a_registered_caller(app_client, agents):
 
 def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # Only completed levels score: 80%, 60% and 70% of Beginner complete none.
-    assert body["overall"] == 0
+    # Progress inside a level counts: 80%, 60% and 70% of Beginner are worth
+    # 20 + 15 + 17.5 points, over the seven areas = 7.5.
+    assert body["overall"] == 7.5
     assert body["band"] == "not_ready"
     assert body["coverage"] == {"assessed": 3, "total": 7}
     statuses = {a["agent_name"]: a["status"] for a in body["areas"]}
@@ -273,7 +274,7 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
     assert aptitude["can_level_up"] is True and aptitude["suggested_level"] == "medium" and aptitude["unlock_at"] == 50
     assert coding["gaps"] == ["Dynamic programming"]
-    assert coding["score"] == 0 and coding["quality_score"] == 80 and coding["levels_completed"] == []
+    assert coding["score"] == 20 and coding["quality_score"] == 80 and coding["levels_completed"] == []
     assert body["next_steps"]
 
 
@@ -350,18 +351,32 @@ def test_other_agents_can_read_readiness_over_a2a(app_client, agents):
     reply = _signed(app_client, "/a2a/readiness", send("get_readiness"), {
         "x-digidara-caller-agent": "job_agent", "x-digidara-on-behalf-of": "learner",
     }).json()
-    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 0
+    assert reply["result"]["artifacts"][0]["parts"][0]["data"]["overall"] == 7.5
 
 
 # --- organizations ----------------------------------------------------------
 
-def _make_org(client):
+def _list_students(org_id, *emails):
+    """Puts emails on the organization's student list (without auto-joining
+    anyone), so a join code lets those learners straight in."""
+    from app import db
+    from app.models import OrgRosterEntry
+
+    session = db.get_session()
+    session.add_all([OrgRosterEntry(organization_id=org_id, email=email) for email in emails])
+    session.commit()
+    session.close()
+
+
+def _make_org(client, listed=("learner@example.test", "other@example.test")):
     """The platform admin creates the organization with "admin" as its owner;
-    returns the owner's membership."""
+    returns the owner's membership. The test learners are on its student list."""
     created = client.post("/organizations/platform", headers=auth("platform"), json={
         "name": "Anna University", "kind": "college", "admin_email": "admin@example.test"})
     assert created.status_code == 201, created.text
-    return client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    membership = client.get("/organizations/me", headers=auth("admin")).json()["membership"]
+    _list_students(membership["organization"]["id"], *listed)
+    return membership
 
 
 def test_register_join_and_share(app_client, users):
@@ -392,11 +407,12 @@ def test_org_sees_progress_only_with_the_members_consent(app_client, agents, dat
     app_client.put("/organizations/me/sharing", headers=auth(), json={"share": True})
     assert app_client.put(level_url, headers=auth("admin"), json={"level": "hard"}).json()["source"] == "organization"
     refreshed = app_client.post(f"/organizations/{org_id}/members/{member_id}/readiness", headers=auth("admin")).json()
-    # Aptitude set to Hard: Beginner and Medium count as done (50); 70% of Hard is not.
-    # 50 over the seven areas = 7.1.
-    assert refreshed["overall"] == 7.1
+    # Aptitude set to Hard: Beginner and Medium count as done (50) plus 70% of
+    # Hard (17.5); Coding 80% (20) and Communication 60% (15) of Beginner.
+    # 102.5 over the seven areas = 14.6.
+    assert refreshed["overall"] == 14.6
     member = next(m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json() if m["user_id"] == "learner")
-    assert member["readiness"]["overall"] == 7.1 and member["levels"]["aptitude_agent"] == "hard"
+    assert member["readiness"]["overall"] == 14.6 and member["levels"]["aptitude_agent"] == "hard"
     summary = app_client.get(f"/organizations/{org_id}/summary", headers=auth("admin")).json()
     assert summary["sharing"] == 1 and summary["levels"]["aptitude_agent"]["hard"] == 1
 
@@ -468,7 +484,7 @@ def test_resume_facts_join_the_profile_and_what_agents_report(app_client, agents
     learner_service.save_profile("learner", "Data Analyst", "B.Sc Computer Science", ["SQL", "Excel"], "fresher")
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"resume": {
         "skills": ["Python", "sql"],
-        "achievements": [{"title": "Solved 20 Python coding problems", "description": "DigiDARA Coding Practice", "x": "dropped"}],
+        "achievements": [{"title": "Solved 20 Python coding problems", "description": "SkillDARA Coding Practice", "x": "dropped"}],
         "projects": [{"description": "no title, dropped"}],
     }})
     facts = app_client.get("/learner/resume-facts", headers=auth()).json()
@@ -525,7 +541,7 @@ def test_a_new_target_role_starts_from_zero_and_switching_back_restores_it(app_c
     assert periods[0]["start"] is None and periods[0]["end"] and periods[1]["end"] is None
 
 
-def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
+def test_each_level_adds_up_to_25_points_as_it_is_done(app_client, agents, monkeypatch):
     # Coding measures each level: Beginner done, nothing at Medium yet.
     monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setitem(SUMMARY_SCORES, "mock_interview_agent", None)
@@ -541,19 +557,20 @@ def test_every_completed_level_adds_25_points(app_client, agents, monkeypatch):
     monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
     coding = next(a for a in app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["areas"]
                   if a["agent_name"] == "codeforge_agent")
-    # 40% of Medium is not a completed level yet.
-    assert coding["score"] == 25
+    # 40% of Medium adds 40% of its 25 points: 25 + 10.
+    assert coding["score"] == 35 and coding["levels_completed"] == ["beginner"]
 
 
-def test_overall_is_25_only_when_every_agent_completed_beginner(app_client, agents, monkeypatch):
+def test_overall_grows_with_each_agents_progress(app_client, agents, monkeypatch):
     for name, _, _ in readiness_service.AREAS:
         monkeypatch.setitem(SUMMARY_SCORES, name, 90)
         monkeypatch.setitem(SUMMARY_EXTRA, name, {"level_scores": {"easy": 100, "medium": 0, "hard": 0}})
     monkeypatch.setitem(SUMMARY_EXTRA, "certificate_agent", {"level_scores": {"easy": 60, "medium": 0, "hard": 0}})
     body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
-    # Five of the six leveled agents finished Beginner (25 each); the Resume
-    # Builder has no levels and scores its own result, 90: (125 + 90) / 7.
-    assert body["overall"] == 30.7
+    # Five of the six leveled agents finished Beginner (25 each), Certification
+    # is 60% through it (15); the Resume Builder has no levels and scores its
+    # own result, 90: (125 + 15 + 90) / 7.
+    assert body["overall"] == 32.9
     resume = next(a for a in body["areas"] if a["agent_name"] == "resume_builder_agent")
     assert resume["leveled"] is False and resume["score"] == 90 and resume["level"] is None
     assert resume["levels_completed"] == [] and resume["can_level_up"] is False
@@ -766,7 +783,8 @@ def test_coding_professional_progress_comes_from_passed_assessments(app_client, 
     coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
     # Professional is not Hard's 100% again: one of three assessments is passed.
     assert coding["level"] == "professional" and coding["level_progress"] == 33.3
-    assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 75
+    # Three levels done (75) plus a third of Professional (8.3).
+    assert coding["levels_completed"] == ["beginner", "medium", "hard"] and coding["score"] == 83.3
 
 
 def test_an_agents_dated_recent_activity_is_kept_cleaned_and_capped():
@@ -776,3 +794,317 @@ def test_an_agents_dated_recent_activity_is_kept_cleaned_and_capped():
     assert recent[0] == {"date": "2026-09-28T06:51:28", "title": "Aptitude test", "level": "easy", "score": 100.0}
     assert len(recent) <= readiness_service.RECENT_LIMIT
     assert readiness_service.summarize_reply({"score": 50})["recent"] == []
+
+
+def _area(agent_name, level, progress, scores=None, basis="level"):
+    return {"agent_name": agent_name, "label": agent_name, "weight": 10, "status": "assessed", "leveled": True,
+            "level": level, "level_progress": progress, "level_progress_basis": basis,
+            "level_scores": scores or {}, "quality_score": progress, "gaps": []}
+
+
+def test_area_scores_follow_progress_in_every_level():
+    # The screenshots that were wrong: Interview at Medium with 96% of Beginner,
+    # Aptitude 34% into Beginner, Projects done with Medium and half of Hard.
+    interview = _area("mock_interview_agent", "medium", 0, {"beginner": 96, "medium": 0, "hard": 0, "professional": 0})
+    aptitude = _area("aptitude_agent", "beginner", 34, {"beginner": 34, "medium": 0, "hard": 0, "professional": 0})
+    projects = _area("capstone_project_agent", "hard", 50, {"beginner": 100, "medium": 100, "hard": 50, "professional": 50})
+    assert readiness_service.level_score(interview) == 24.0
+    assert readiness_service.level_score(aptitude) == 8.5
+    assert readiness_service.level_score(projects) == 62.5
+    # An agent that does not measure each level: the levels moved past count in full.
+    assert readiness_service.level_score(_area("certificate_agent", "medium", 40, basis="score")) == 35.0
+    # A Professional score that copies Hard's is not counted twice below Professional.
+    assert readiness_service.level_score(_area("aptitude_agent", "hard", 0, {"beginner": 100, "medium": 100, "hard": 0, "professional": 0})) == 50.0
+
+
+def test_a_snapshot_saved_under_the_old_rules_is_shown_with_the_new_scores(app_client, agents, database):
+    from app.models import ReadinessSnapshot
+    old = _area("aptitude_agent", "beginner", 34, {"beginner": 34, "medium": 0, "hard": 0, "professional": 0})
+    old.update({"score": 0, "levels_completed": []})                     # what the old rules stored
+    session = database()
+    session.add(ReadinessSnapshot(user_id="learner", overall=0, band="not_ready", role_key="",
+                                  areas={"areas": [old], "next_steps": ["Improve Aptitude (0/100)."]}))
+    session.commit()
+    snapshot = session.query(ReadinessSnapshot).filter_by(user_id="learner").one()
+    session.close()
+    result = readiness_service.scored(snapshot)
+    assert result["areas"][0]["score"] == 8.5 and result["overall"] == round(8.5 / 7, 1)
+    assert result["next_steps"] == ["Improve aptitude_agent (8/100)."]     # rewritten with the new score
+    assert readiness_service.area_scores(snapshot)["aptitude_agent"]["score"] == 8.5
+    assert readiness_service.history("learner")[-1]["overall"] == 1.2
+
+
+# --- staff logins, student lists and join requests ---------------------------
+
+def _xlsx(rows):
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    for row in rows:
+        book.active.append(row)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+def test_a_code_from_someone_not_on_the_list_waits_for_staff_approval(app_client, users):
+    org = _make_org(app_client, listed=())
+    org_id, code = org["organization"]["id"], org["organization"]["join_code"]
+    reply = app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).json()
+    assert reply["membership"] is None and reply["pending"]["organization"]["name"] == "Anna University"
+    # No access and nothing shared while waiting.
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"] is None
+    assert app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).status_code == 409
+    waiting = app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json()
+    assert [r["email"] for r in waiting] == ["learner@example.test"]
+    # A learner cannot approve themselves.
+    assert app_client.post(f"/organizations/{org_id}/requests/{waiting[0]['id']}", headers=auth(), json={"approve": True}).status_code == 403
+    assert app_client.post(f"/organizations/{org_id}/requests/{waiting[0]['id']}", headers=auth("admin"), json={"approve": True}).status_code == 204
+    membership = app_client.get("/organizations/me", headers=auth()).json()["membership"]
+    # They agreed to share on the join screen when they asked.
+    assert membership["role"] == "member" and membership["progress_shared"] is True
+    assert app_client.get("/organizations/me/request", headers=auth()).json()["pending"] is None
+
+
+def test_a_declined_or_cancelled_request_gives_no_access(app_client, users):
+    org = _make_org(app_client, listed=())
+    org_id, code = org["organization"]["id"], org["organization"]["join_code"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": code})
+    request_id = app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json()[0]["id"]
+    app_client.post(f"/organizations/{org_id}/requests/{request_id}", headers=auth("admin"), json={"approve": False})
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"] is None
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": code})
+    assert app_client.delete("/organizations/me/request", headers=auth("other")).status_code == 204
+    assert app_client.get(f"/organizations/{org_id}/requests", headers=auth("admin")).json() == []
+
+
+def _staff_login(app_client, database, org_id, email="priya@college.edu", name="Priya"):
+    """An owner creates a staff login; returns the staff user id (email verified)."""
+    created = app_client.post(f"/organizations/{org_id}/staff", headers=auth("admin"), json={"name": name, "email": email}).json()
+    assert created["status"] in ("created", "attached", "made_staff")
+    session = database()
+    staff_user = session.query(User).filter_by(email=email).one()
+    staff_user.email_verified = True
+    session.commit()
+    staff_id = staff_user.id
+    session.close()
+    return staff_id
+
+
+def test_a_staff_code_lets_in_only_students_on_that_staff_list(app_client, users, database):
+    org = _make_org(app_client, listed=())
+    org_id = org["organization"]["id"]
+    staff_id = _staff_login(app_client, database, org_id)
+    assert app_client.get("/organizations/me", headers=auth(staff_id)).json()["membership"]["role"] == "staff"
+    code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(staff_id), json={"label": "CSE A"}).json()["code"]
+
+    # "other" asks first, before the list arrives: waiting.
+    assert app_client.post("/organizations/join", headers=auth("other"), json={"join_code": code}).json()["pending"]
+    data = _xlsx([["S.No", "Student Name", "Mobile Number", "Email ID"],
+                  [1, "Learner One", 9876543210, "Learner@Example.test"],
+                  [2, "Other", "98765 43211", "other@example.test"],
+                  [3, "Bad row", "", "not-an-email"]])
+    result = app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+                             files={"file": ("students.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert result["added"] == 2 and result["invalid_count"] == 1 and result["invalid"][0]["row"] == 4
+    assert result["joined"] == 0 and result["approved"] == 1            # nobody joins without a code; the waiting request matches now
+    # On the list, but signing in alone does not join: the student enters the code.
+    assert app_client.get("/learner/profile", headers=auth()).json()["membership"] is None
+    joined = app_client.post("/organizations/join", headers=auth(), json={"join_code": code}).json()
+    assert joined["role"] == "member" and joined["progress_shared"] is True
+    roster = {e["email"]: e for e in app_client.get(f"/organizations/{org_id}/roster", headers=auth(staff_id)).json()}
+    assert roster["learner@example.test"]["mobile"] == "9876543210" and roster["learner@example.test"]["status"] == "joined"
+    assert app_client.get("/organizations/me", headers=auth("other")).json()["membership"]["progress_shared"] is True
+
+
+def test_a_student_on_another_staff_list_waits_for_this_staff(app_client, users, database):
+    org = _make_org(app_client, listed=())
+    org_id = org["organization"]["id"]
+    priya = _staff_login(app_client, database, org_id)
+    ravi = _staff_login(app_client, database, org_id, email="ravi@college.edu", name="Ravi")
+    priya_code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(priya), json={}).json()["code"]
+    csv_data = "Name,Mobile,Email\nLearner,9876543210,learner@example.test\n".encode()
+    app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(ravi), files={"file": ("list.csv", csv_data, "text/csv")})
+    # Listed by Ravi, but used Priya's code: Priya decides.
+    assert app_client.post("/organizations/join", headers=auth(), json={"join_code": priya_code}).json()["pending"]
+    assert [r["email"] for r in app_client.get(f"/organizations/{org_id}/requests", headers=auth(priya)).json()] == ["learner@example.test"]
+    assert app_client.get(f"/organizations/{org_id}/requests", headers=auth(ravi)).json() == []
+    # Each staff member sees their own list.
+    assert [e["email"] for e in app_client.get(f"/organizations/{org_id}/roster", headers=auth(ravi)).json()] == ["learner@example.test"]
+    assert app_client.get(f"/organizations/{org_id}/roster", headers=auth(priya)).json() == []
+    # The owner's general code matches any list in the organization.
+    app_client.delete("/organizations/me/request", headers=auth())
+    assert app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]}).json()["role"] == "member"
+
+
+def test_every_new_join_code_is_unique(app_client, users, monkeypatch):
+    from app.organizations import service as org_service
+
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    issued = iter([org["organization"]["join_code"], "FRESH234"])
+    monkeypatch.setattr(org_service, "_new_join_code", lambda: next(issued))
+    # The first code drawn is already the organization's: a new one is drawn.
+    assert app_client.post(f"/organizations/{org_id}/codes", headers=auth("admin"), json={}).json()["code"] == "FRESH234"
+
+
+def test_the_student_list_template_downloads(app_client, users):
+    import io
+
+    from openpyxl import load_workbook
+
+    org = _make_org(app_client)
+    reply = app_client.get(f"/organizations/{org['organization']['id']}/roster/template", headers=auth("admin"))
+    assert reply.status_code == 200 and "attachment" in reply.headers["content-disposition"]
+    rows = list(load_workbook(io.BytesIO(reply.content)).active.iter_rows(values_only=True))
+    assert rows[0] == ("Name", "Mobile", "Email") and len(rows) == 3
+    assert app_client.get(f"/organizations/{org['organization']['id']}/roster/template", headers=auth()).status_code == 403
+
+
+def test_staff_see_and_look_after_only_their_own_students(app_client, users, database):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    staff_id = _staff_login(app_client, database, org_id)
+    code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(staff_id), json={"label": "CSE"}).json()["code"]
+    app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+                    files={"file": ("list.csv", "Name,Mobile,Email\nLearner,9876543210,learner@example.test\n".encode(), "text/csv")})
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": code})                         # staff student
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["organization"]["join_code"]})  # owner student
+    mine = {m["user_id"]: m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json()}
+    assert list(mine) == ["learner"]
+    everyone = {m["user_id"] for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json()}
+    assert {"learner", "other", "admin", staff_id} <= everyone
+    assert app_client.get(f"/organizations/{org_id}/analytics", headers=auth(staff_id)).json()["totals"]["learners"] == 1
+    other_member = next(m["member_id"] for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json() if m["user_id"] == "other")
+    assert app_client.get(f"/organizations/{org_id}/members/{other_member}/detail", headers=auth(staff_id)).status_code == 404
+    assert app_client.put(f"/organizations/{org_id}/members/{other_member}/levels/aptitude_agent", headers=auth(staff_id),
+                          json={"level": "medium"}).status_code == 404
+    learner_member = mine["learner"]["member_id"]
+    assert app_client.get(f"/organizations/{org_id}/members/{learner_member}/detail", headers=auth(staff_id)).status_code == 200
+    assert app_client.put(f"/organizations/{org_id}/members/{learner_member}/levels/aptitude_agent", headers=auth(staff_id),
+                          json={"level": "medium"}).status_code == 200
+    # Their own codes only.
+    assert [c["code"] for c in app_client.get(f"/organizations/{org_id}/codes", headers=auth(staff_id)).json()] == [code]
+    # Not theirs to do:
+    assert app_client.post(f"/organizations/{org_id}/staff", headers=auth(staff_id), json={"email": "x@example.test"}).status_code == 403
+    assert app_client.delete(f"/organizations/{org_id}/members/{learner_member}", headers=auth(staff_id)).status_code == 403
+    assert app_client.post(f"/organizations/{org_id}/members", headers=auth(staff_id),
+                           json={"members": [{"email": "y@example.test"}]}).status_code == 403
+    assert app_client.patch(f"/organizations/{org_id}/members/{learner_member}", headers=auth(staff_id), json={"role": "admin"}).status_code == 403
+    assert {s["role"] for s in app_client.get(f"/organizations/{org_id}/staff", headers=auth("admin")).json()} == {"owner", "staff"}
+
+
+def test_a_csv_without_a_header_is_read_by_its_columns():
+    from app.organizations import roster
+
+    # A gmail address contains "mail", but the row is still a student, not a header.
+    rows = roster.parse_upload("list.csv", "Asha,asha@gmail.com,9876543210\nRavi,ravi@x.io,9123456780\n".encode())
+    assert rows == [{"name": "Asha", "mobile": "9876543210", "email": "asha@gmail.com"},
+                    {"name": "Ravi", "mobile": "9123456780", "email": "ravi@x.io"}]
+    with pytest.raises(roster.OrgError):
+        roster.parse_upload("old.xls", b"\xd0\xcf\x11\xe0")
+
+
+# --- leaderboards ---------------------------------------------------------------
+
+def _score(database, user_id, overall, minutes_ago=0):
+    from app.readiness import leaderboard
+
+    session = database()
+    session.add(ReadinessSnapshot(user_id=user_id, overall=overall, band="developing", areas={}, role_key="",
+                                  computed_at=datetime.utcnow() - timedelta(minutes=minutes_ago)))
+    session.commit()
+    session.close()
+    leaderboard.clear_cache()
+
+
+def _add_user(database, user_id, name):
+    session = database()
+    session.add(User(id=user_id, name=name, email=f"{user_id}@example.test", email_verified=True, token_balance=10, password_hash="x"))
+    session.commit()
+    session.close()
+
+
+def test_students_see_the_platform_student_board_by_readiness(app_client, users, database):
+    _make_org(app_client)                                    # "admin" owns an organization: staff, not a student
+    _add_user(database, "third", "Third Person")
+    _score(database, "learner", 40)
+    _score(database, "other", 70)
+    _score(database, "third", 70, minutes_ago=5)            # same score, reached earlier: ranks first
+    _score(database, "admin", 90)
+    _score(database, "platform", 99)                         # SkillDARA staff never rank
+    body = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert body["group"] == "students" and body["allowed_groups"] == ["students"]
+    assert [(e["user_id"], e["rank"]) for e in body["entries"]] == [("third", 1), ("other", 2), ("learner", 3)]
+    assert body["top"][0]["name"] == "Third P." and body["me"] == {"rank": 3, "score": 40.0}
+    assert body["top"][2]["is_me"] is True
+    # The staff board is not for students.
+    assert app_client.get("/learner/leaderboard?group=staff", headers=auth()).status_code == 403
+
+
+def test_admins_see_both_boards_of_their_organization_only(app_client, users, database):
+    org = _make_org(app_client)
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    _score(database, "learner", 40)
+    _score(database, "other", 70)                            # not in the organization
+    admin_view = app_client.get("/learner/leaderboard", headers=auth("admin")).json()
+    assert admin_view["scope"] == "organization" and admin_view["allowed_scopes"] == ["organization"]
+    assert admin_view["allowed_groups"] == ["students", "staff"] and admin_view["organization"]["name"] == "Anna University"
+    assert [e["user_id"] for e in admin_view["entries"]] == ["learner"]
+    assert app_client.get("/learner/leaderboard?scope=platform", headers=auth("admin")).status_code == 403
+    # A member who stops sharing leaves the organization board.
+    app_client.put("/organizations/me/sharing", headers=auth(), json={"share": False})
+    assert app_client.get("/learner/leaderboard?scope=organization", headers=auth("admin")).json()["entries"] == []
+    # Students in an organization see it and the platform; others only the platform.
+    student = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert student["scope"] == "organization" and student["allowed_scopes"] == ["organization", "platform"]
+    assert app_client.get("/learner/leaderboard", headers=auth("other")).json()["scope"] == "platform"
+    assert app_client.get("/learner/leaderboard?scope=organization", headers=auth("other")).status_code == 404
+
+
+def test_staff_are_ranked_on_their_students_readiness_and_activity(app_client, users, database):
+    from app.models import TokenUsageEvent
+
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    priya = _staff_login(app_client, database, org_id)
+    ravi = _staff_login(app_client, database, org_id, email="ravi@college.edu", name="Ravi Kumar")
+    priya_code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(priya), json={}).json()["code"]
+    ravi_code = app_client.post(f"/organizations/{org_id}/codes", headers=auth(ravi), json={}).json()["code"]
+    for staff_id, email in ((priya, "learner@example.test"), (ravi, "other@example.test")):
+        app_client.post(f"/organizations/{org_id}/roster/upload", headers=auth(staff_id),
+                        files={"file": ("list.csv", f"Name,Mobile,Email\nX,9876543210,{email}\n".encode(), "text/csv")})
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": priya_code})
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": ravi_code})
+    _score(database, "learner", 50)
+    _score(database, "other", 60)
+    session = database()
+    session.add(TokenUsageEvent(user_id="learner", agent_name="aptitude_agent", action="start", tokens=10))   # Priya's student is active
+    session.commit()
+    session.close()
+    body = app_client.get("/learner/leaderboard", headers=auth(priya)).json()
+    assert body["group"] == "staff" and body["allowed_groups"] == ["staff"] and body["allowed_scopes"] == ["organization"]
+    # Priya: 0.7 x 50 + 0.3 x 100 = 65. Ravi: 0.7 x 60 + 0 = 42.
+    assert [(e["user_id"], e["score"]) for e in body["entries"]] == [(priya, 65.0), (ravi, 42.0)]
+    assert body["entries"][0]["staff"] == {"students": 1, "average_readiness": 50.0, "active_percent": 100}
+    assert app_client.get("/learner/leaderboard?group=students", headers=auth(priya)).status_code == 403
+    assert app_client.get("/learner/leaderboard?scope=platform", headers=auth(priya)).status_code == 403
+    assert [e["user_id"] for e in app_client.get("/learner/leaderboard?group=staff", headers=auth("admin")).json()["entries"]] == [priya, ravi]
+
+
+def test_someone_breaking_into_the_top_3_is_new_and_learners_can_hide(app_client, users, database):
+    for user_id, name in (("s1", "Asha One"), ("s2", "Ravi Two"), ("s3", "Kavi Three"), ("s4", "Nila Four")):
+        _add_user(database, user_id, name)
+    for user_id, score in (("s1", 90), ("s2", 80), ("s3", 70), ("s4", 10)):
+        _score(database, user_id, score)
+    first = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert [e["user_id"] for e in first["top"]] == ["s1", "s2", "s3"]
+    assert not any(e["new_in_top"] for e in first["top"])    # the first top 3 ever seen broke into nothing
+    _score(database, "s4", 85, minutes_ago=-1)          # later than the first (MySQL keeps whole seconds)
+    second = app_client.get("/learner/leaderboard", headers=auth()).json()
+    assert [(e["user_id"], e["new_in_top"]) for e in second["top"]] == [("s1", False), ("s4", True), ("s2", False)]
+    app_client.put("/learner/leaderboard/visibility", headers=auth("s4"), json={"hidden": True})
+    third = app_client.get("/learner/leaderboard", headers=auth("s4")).json()
+    assert "s4" not in [e["user_id"] for e in third["entries"]] and third["hidden"] is True and third["me"] is None

@@ -17,7 +17,7 @@ from job_agent.providers.greenhouse import GreenhouseAPIError
 
 
 TEST_BOARD_ID = "digidara-lifecycle-test-board"
-TEST_COMPANY_NAME = "DigiDARA Lifecycle Test Co"
+TEST_COMPANY_NAME = "SkillDARA Lifecycle Test Co"
 TEST_SOURCE_NAME = f"greenhouse:{TEST_BOARD_ID}"
 
 

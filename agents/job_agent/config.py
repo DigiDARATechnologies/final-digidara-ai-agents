@@ -13,7 +13,7 @@ ALLOWED_RESUME_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
 SCRAPER_USER_AGENT = os.getenv(
     "JOBS_SCRAPER_USER_AGENT",
-    "DigiDARAJobsBot/1.0 (+https://digidara.com; jobs@digidara.com)",
+    "SkillDARAJobsBot/1.0 (+https://skilldara.com; jobs@digidara.com)",
 )
 SCRAPER_TIMEOUT_SECONDS = int(os.getenv("JOBS_SCRAPER_TIMEOUT_SECONDS", "20"))
 SCRAPER_MAX_BYTES = int(os.getenv("JOBS_SCRAPER_MAX_BYTES", str(5 * 1024 * 1024)))

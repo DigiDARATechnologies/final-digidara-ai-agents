@@ -1,4 +1,4 @@
-"""Automated NLP Skill Extraction and Taxonomy Engine for DigiDARA Job Agent.
+"""Automated NLP Skill Extraction and Taxonomy Engine for SkillDARA Job Agent.
 
 Extracts technical skills, frameworks, tools, and competencies from:
 1. Job titles and descriptions (to enrich raw scraped job postings).

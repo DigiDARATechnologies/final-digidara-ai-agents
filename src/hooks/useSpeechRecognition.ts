@@ -516,7 +516,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
           ? removeMobileTranscriptLoops(unfilteredRunningText)
           : unfilteredRunningText;
         if (speechDebugEnabled()) {
-          console.debug("[DigiDARA speech result]", {
+          console.debug("[SkillDARA speech result]", {
             resultIndex: event.resultIndex,
             results: Array.from(event.results, (result, index) => ({
               index,
@@ -560,7 +560,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
       recognition.onstart = () => {
         setListening(true);
         setError("");
-        if (speechDebugEnabled()) console.debug("[DigiDARA speech start]", { monotonicMs: Math.round(performance.now()) });
+        if (speechDebugEnabled()) console.debug("[SkillDARA speech start]", { monotonicMs: Math.round(performance.now()) });
       };
 
       recognition.onend = () => {
@@ -574,7 +574,7 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
         latestText = "";
         resultSlots.clear();
         if (speechDebugEnabled()) {
-          console.debug("[DigiDARA speech end]", {
+          console.debug("[SkillDARA speech end]", {
             completedText: completedSessionsText,
             restarting: keepListeningRef.current,
           });

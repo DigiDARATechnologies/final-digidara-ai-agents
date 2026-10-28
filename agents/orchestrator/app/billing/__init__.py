@@ -1,1 +1,1 @@
-"""Razorpay-backed billing for the DigiDARA platform."""
+"""Razorpay-backed billing for the SkillDARA platform."""

@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.db import get_session
 from app.models import ChatHistoryState, Conversation, ConversationMessage
@@ -151,6 +151,16 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
     except OperationalError as exc:
         session.rollback()
         if _attempt < _MAX_ATTEMPTS and _is_retryable_deadlock(exc):
+            should_retry = True
+        else:
+            raise
+    except IntegrityError:
+        # Two overlapping syncs both found a new chat missing and both inserted
+        # it (or the same message positions): the slower one hit the duplicate
+        # key and used to fail with a 500. Run it again: it now sees the rows
+        # the other one wrote and updates them instead.
+        session.rollback()
+        if _attempt < _MAX_ATTEMPTS:
             should_retry = True
         else:
             raise

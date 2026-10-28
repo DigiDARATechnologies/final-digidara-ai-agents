@@ -76,7 +76,7 @@ def init_job_tables():
     """Create/upgrade this service's own schema.
 
     Deliberately has no foreign key into any other agent's database — this
-    service owns its identity (`user_job_profiles.user_id`, the DigiDARA
+    service owns its identity (`user_job_profiles.user_id`, the SkillDARA
     platform user id bridged in via `ensure_profile`) rather than depending
     on another agent's tables, so it can be deployed, migrated, and scaled
     independently of every other agent in the fleet.
@@ -155,7 +155,7 @@ def init_job_tables():
                 INDEX idx_job_runs_status (status, queued_at),
                 CONSTRAINT fk_job_runs_source FOREIGN KEY (source_id) REFERENCES job_sources(id) ON DELETE CASCADE
             )""",
-            # Keyed directly on the DigiDARA platform user id (a UUID hex
+            # Keyed directly on the SkillDARA platform user id (a UUID hex
             # string bridged in via ensure_profile) rather than a duplicate
             # local users table — this service has no reason to own a copy
             # of identity that the orchestrator already owns.

@@ -117,7 +117,7 @@ const nameKey = (name: string) => name.normalize("NFKC").toLowerCase().replace(/
 function verifiedNamePrompt(verifiedName: string | undefined): CertificateFlowMessage {
   return {
     text: verifiedName
-      ? `For security, certificates are always issued in your verified account name: **${verifiedName}**. You can correct its capitalisation or spacing — type it exactly as it should appear. To use a different name, update the name on your DigiDARA profile first.`
+      ? `For security, certificates are always issued in your verified account name: **${verifiedName}**. You can correct its capitalisation or spacing — type it exactly as it should appear. To use a different name, update the name on your SkillDARA profile first.`
       : "For security, certificates are always issued in your verified account name. Type it exactly as it should appear (only capitalisation and spacing can be changed).",
     options: [
       ...(verifiedName ? [{ label: `Use "${verifiedName}"`, value: "use_verified_certificate_name" }] : []),
@@ -974,7 +974,7 @@ export async function handleCertificateText(
         }
 
         // The standard exam mode renders the pre-generated questions in the
-        // shared DigiDARA chat interface.
+        // shared SkillDARA chat interface.
         const questionsRes: any = await getChatSessionQuestions(state.token!, currentSessionId);
 
         const questions: QuestionItem[] = (questionsRes.questions || []).map((q: any) => ({

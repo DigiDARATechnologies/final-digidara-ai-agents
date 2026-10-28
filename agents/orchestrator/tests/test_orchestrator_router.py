@@ -84,11 +84,11 @@ def test_route_node_calls_a_matching_agent_tool(monkeypatch):
 def test_route_node_returns_direct_reply_when_no_tool_matches(monkeypatch):
     monkeypatch.setattr(
         llm_client.litellm, "completion",
-        Mock(return_value=_FakeResponse(_FakeMessage(content="I connect you to DigiDARA's agents -- what are you trying to do?", tool_calls=None))),
+        Mock(return_value=_FakeResponse(_FakeMessage(content="I connect you to SkillDARA's agents -- what are you trying to do?", tool_calls=None))),
     )
     result = graph.route_node({"message": "who is the prime minister of India", "tools": []})
     assert result["tool_name"] is None
-    assert "DigiDARA" in result["reply"]
+    assert "SkillDARA" in result["reply"]
 
 
 TOOLS = [{"type": "function", "function": {"name": "capstone_project_agent", "description": "..."}}]

@@ -9,8 +9,8 @@ export const SUPPORT_EMAIL = "support@digidaraaiagents.com";
 export const FAQ: FaqItem[] = [
   {
     topic: "Getting started",
-    q: "What is DigiDARA Agents?",
-    a: "DigiDARA Agents is a workspace of specialised AI agents. Each agent is built for one kind of job, such as practising coding problems, preparing for interviews, building a resume or planning a career, so you get focused help instead of a one-size-fits-all chat.",
+    q: "What is SkillDARA Agents?",
+    a: "SkillDARA Agents is a workspace of specialised AI agents. Each agent is built for one kind of job, such as practising coding problems, preparing for interviews, building a resume or planning a career, so you get focused help instead of a one-size-fits-all chat.",
   },
   {
     topic: "Getting started",
@@ -19,13 +19,13 @@ export const FAQ: FaqItem[] = [
   },
   {
     topic: "Getting started",
-    q: "What is the difference between DigiDARA Agents and My agents?",
-    a: "DigiDARA Agents is your home screen with the main chat box. My agents is the full catalogue where you can search and filter agents by category.",
+    q: "What is the difference between SkillDARA Agents and My agents?",
+    a: "SkillDARA Agents is your home screen with the main chat box. My agents is the full catalogue where you can search and filter agents by category.",
   },
   {
     topic: "Getting started",
     q: "How do I get back to the home screen?",
-    a: "Click DigiDARA Agents at the top of the sidebar menu, or click New chat. The arrow beside the logo collapses the sidebar when you want more room.",
+    a: "Click SkillDARA Agents at the top of the sidebar menu, or click New chat. The arrow beside the logo collapses the sidebar when you want more room.",
   },
   {
     topic: "Agents",
@@ -126,7 +126,7 @@ export const RELEASES: ReleaseNote[] = [
     date: "September 25, 2026",
     title: "A brand new look and feel",
     summary:
-      "We redesigned the whole DigiDARA Agents experience: a sharper dark theme, a clean light theme, a new login, and a friendlier sidebar. Everything you already use works exactly as before.",
+      "We redesigned the whole SkillDARA Agents experience: a sharper dark theme, a clean light theme, a new login, and a friendlier sidebar. Everything you already use works exactly as before.",
     sections: [
       {
         label: "New",
@@ -142,8 +142,8 @@ export const RELEASES: ReleaseNote[] = [
       {
         label: "Improved",
         items: [
-          "A redesigned login and sign-up page with the DigiDARA blue and gold branding.",
-          "A cleaner sidebar with crisp line icons, brighter text and a larger DigiDARA logo that matches your theme.",
+          "A redesigned login and sign-up page with the SkillDARA blue and gold branding.",
+          "A cleaner sidebar with crisp line icons, brighter text and a larger SkillDARA logo that matches your theme.",
           "Your profile now sits at the bottom of the sidebar, and its menu shows your name, plan, Profile, Settings, Help and Log out.",
           "A modern, consistent typeface across the whole app for easier reading.",
           "Chat conversations, buttons, cards and forms restyled so they look right in both themes.",

@@ -3,7 +3,8 @@ import type { SaveStatus } from "../hooks/useAgentStatePersistence";
 const MESSAGES: Partial<Record<SaveStatus, string>> = {
   loading: "Loading your saved progress...",
   saving: "Saving...",
-  offline: "Offline: changes are not saved yet. Retrying...",
+  offline: "Can't reach SkillDARA right now: changes are not saved yet. Retrying...",
+  signed_out: "Your sign-in has expired: sign in again to save your changes.",
   rejected: "Some progress could not be saved because it is too large.",
 };
 

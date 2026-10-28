@@ -188,7 +188,7 @@ def test_changing_the_password_signs_out_every_other_device(api):
 def test_an_account_made_for_someone_gets_its_code_at_first_sign_in(api, smtp, database):
     from app.auth.security import hash_password
 
-    # Created by an organization or DigiDARA's admin: no sign-up, so no code yet.
+    # Created by an organization or SkillDARA's admin: no sign-up, so no code yet.
     with database() as session:
         session.add(User(id="made", name="Org Admin", email="dean@college.edu", password_hash=hash_password("temp-pass-123")))
         session.commit()

@@ -1,4 +1,4 @@
-"""Self-register this Flask service with the DigiDARA orchestrator.
+"""Self-register this Flask service with the SkillDARA orchestrator.
 
 Copied from agents/aptitude_agent/backend/app/integration/registry_client.py
 (the reference implementation for a Flask agent) with only the module root

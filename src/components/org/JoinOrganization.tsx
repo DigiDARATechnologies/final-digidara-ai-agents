@@ -1,7 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import ClassSelect from "./ClassSelect";
 import { orgSharingNotice } from "../../lib/orgConsent";
-import { CLASS_KINDS, CLASS_LABELS, joinWithClass, previewJoinCode, type ClassFields, type JoinPreview } from "../../lib/orgApi";
+import {
+  CLASS_KINDS, CLASS_LABELS, cancelMyJoinRequest, fetchMyJoinRequest, joinWithClass, previewJoinCode,
+  type ClassFields, type JoinPreview, type PendingRequest,
+} from "../../lib/orgApi";
 import { fetchLearnerSummary, type Membership } from "../../lib/learnerApi";
 
 interface Props {
@@ -17,6 +20,23 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
   const [fields, setFields] = useState<ClassFields>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // A request that waits for the organization's staff to approve it.
+  const [pending, setPending] = useState<PendingRequest | null>(null);
+
+  useEffect(() => {
+    fetchMyJoinRequest().then((r) => setPending(r.pending)).catch(() => undefined);
+  }, []);
+
+  async function cancelRequest() {
+    try {
+      await cancelMyJoinRequest();
+      setPending(null);
+      setPreview(null);
+      onToast("Request cancelled.");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   async function lookUp(event: FormEvent) {
     event.preventDefault();
@@ -37,7 +57,12 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
     setBusy(true);
     setError("");
     try {
-      await joinWithClass(code, fields);
+      const result = await joinWithClass(code, fields);
+      if (result.pending) {
+        setPending(result.pending);
+        onToast(`Request sent. ${preview.organization.name}'s staff will approve it.`);
+        return;
+      }
       const summary = await fetchLearnerSummary();
       if (summary.membership) onJoined(summary.membership);
       onToast(`You joined ${preview.organization.name}.`);
@@ -57,7 +82,17 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
           get job-ready faster.</p>
       </div>
       <div className="rd-panel org-join-card">
-        {!preview ? (
+        {pending ? (
+          <div className="org-pending">
+            <h3>Waiting for approval</h3>
+            <p className="rd-muted">
+              You asked to join <b>{pending.organization?.name ?? "your organization"}</b>. Your email is not on its student
+              list yet, so its staff need to approve you. Nothing is shared until they do.
+            </p>
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void cancelRequest()}>Cancel request</button>
+          </div>
+        ) : !preview ? (
           <form onSubmit={lookUp}>
             <label className="field"><span>Join code</span>
               <input value={code} maxLength={16} required autoFocus placeholder="ABCD2345" className="og-code-input"
@@ -98,7 +133,7 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
           </div>
         )}
       </div>
-      <p className="org-join-foot rd-muted">Is your college not on DigiDARA yet? Ask them to contact DigiDARA to set it up.</p>
+      <p className="org-join-foot rd-muted">Is your college not on SkillDARA yet? Ask them to contact SkillDARA to set it up.</p>
     </div>
   );
 }
