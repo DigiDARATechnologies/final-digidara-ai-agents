@@ -15,6 +15,8 @@ export interface MockInterviewQuestion {
   role_name?: string | null;
   difficulty?: "beginner" | "intermediate" | "advanced";
   resumed_existing?: boolean;
+  /** Resumed an interview whose answers are all in; only its report is missing. */
+  awaiting_report?: boolean;
   real_question_index?: number;
   is_followup?: boolean;
 }

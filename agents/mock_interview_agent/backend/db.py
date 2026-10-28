@@ -140,7 +140,8 @@ def create_or_resume_interview(
         orphaned_interview_id = None
         if active:
             cursor.execute(
-                """SELECT question_order, question, question_source, topic_area, is_followup
+                """SELECT question_order, question, question_source, topic_area, is_followup,
+                          answer, verdict, timed_out
                    FROM interview_details
                    WHERE interview_id = %s
                    ORDER BY question_order DESC, id DESC
@@ -164,6 +165,11 @@ def create_or_resume_interview(
                     "interview_id": active["id"],
                     "question_order": current["question_order"],
                     "question": current["question"],
+                    # The last question is already answered: every answer is in and
+                    # the interview only waits for its report (it failed earlier).
+                    "awaiting_report": bool(
+                        current.get("answer") is not None or current.get("verdict") is not None or current.get("timed_out")
+                    ),
                     "question_source": current.get("question_source"),
                     "topic_area": current.get("topic_area"),
                     "is_followup": bool(current["is_followup"]),
