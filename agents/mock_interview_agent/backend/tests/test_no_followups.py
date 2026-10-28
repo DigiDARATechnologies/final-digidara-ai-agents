@@ -178,6 +178,64 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertIsNone(result[0]["verdict"])
         self.assertIsNone(result[1]["verdict"])
 
+    def _answered_rows(self, count):
+        return [{"id": 100 + index, "question": f"Question {index}", "answer": f"Answer {index}",
+                 "timed_out": False, "processing_status": "answer_received"} for index in range(1, count + 1)]
+
+    def test_results_numbered_1_to_n_instead_of_the_ids_still_count(self):
+        """The live failure: the evaluator numbered the answers 1..15, not by id,
+        and the whole 15-question report failed."""
+        from routes.interviews import _batch_evaluations_or_error
+
+        rows = self._answered_rows(15)
+        evaluations = [{"question_id": index, "verdict": "correct", "reason": "Good", "ideal_answer": "Ideal"}
+                       for index in range(1, 16)]
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", return_value=evaluations) as batch,
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+        ):
+            result, error = _batch_evaluations_or_error({"student_id": 1, "round_type": "technical",
+                                                         "subject": "Excel", "difficulty": "intermediate"}, 7, rows)
+        self.assertIsNone(error)
+        self.assertEqual(batch.call_count, 1)
+        self.assertEqual([item["question_id"] for item in result], [row["id"] for row in rows])
+
+    def test_a_missing_verdict_is_asked_again_in_a_small_group(self):
+        from routes.interviews import _batch_evaluations_or_error
+
+        rows = self._answered_rows(15)
+        calls = []
+
+        def evaluate(_round, _subject, _difficulty, pairs):
+            calls.append([pair["question_id"] for pair in pairs])
+            if len(pairs) == 15:       # the long reply drops a verdict
+                return [{"question_id": pair["question_id"], "verdict": None if index == 9 else "partial", "reason": "r",
+                         "ideal_answer": "i"} for index, pair in enumerate(pairs)]
+            return [{"question_id": pair["question_id"], "verdict": "wrong", "reason": "r", "ideal_answer": "i"} for pair in pairs]
+
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", side_effect=evaluate),
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+        ):
+            result, error = _batch_evaluations_or_error({"student_id": 1, "round_type": "technical",
+                                                         "subject": "Excel", "difficulty": "intermediate"}, 7, rows)
+        self.assertIsNone(error)
+        self.assertEqual(calls[1], [110])                     # only the missing answer, asked again
+        self.assertEqual(result[9]["verdict"], "wrong")
+        self.assertEqual(result[0]["verdict"], "partial")
+
+    def test_the_report_fails_only_if_an_answer_never_gets_a_verdict(self):
+        from routes.interviews import _batch_evaluations_or_error
+
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", side_effect=RuntimeError("provider down")),
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+        ):
+            result, error = _batch_evaluations_or_error({"student_id": 1, "round_type": "technical",
+                                                         "subject": "Excel", "difficulty": "intermediate"}, 7, self._answered_rows(3))
+        self.assertIsNone(result)
+        self.assertIn("3 answer", error)
+
 
 if __name__ == "__main__":
     unittest.main()

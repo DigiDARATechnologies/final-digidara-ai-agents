@@ -88,45 +88,104 @@ def _apply_unanswered_score_adjustment(result, rows):
     return result
 
 
-def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
-    """Run and validate the single batch evaluator without leaking 500s."""
+# Answers re-evaluated per request when one request for every answer comes
+# back incomplete (long interviews: 15 answers in one reply).
+EVALUATION_CHUNK_SIZE = 5
+
+
+def _unanswered(row):
+    return bool(row.get("timed_out") or row.get("processing_status") == "skipped")
+
+
+def _evaluate_chunk(interview_row, interview_id, rows):
+    """One evaluator request for these rows: {row id: valid result}. Results
+    are matched to rows by position (the prompt asks for the same order), so
+    a reply that numbers them 1, 2, 3 instead of using the ids still counts;
+    a result without a valid verdict for an answered question is left out."""
+    with track_ai_usage(
+        student_id=interview_row["student_id"],
+        interview_id=interview_id,
+        request_type="answer_evaluation_batch",
+    ):
+        evaluations = groq_client.evaluate_answers_batch(
+            interview_row["round_type"], interview_row["subject"], interview_row["difficulty"],
+            [
+                {"question_id": row["id"], "question": row["question"], "answer": row.get("answer") or "",
+                 "unanswered": _unanswered(row)}
+                for row in rows
+            ],
+        )
+    if not isinstance(evaluations, list):
+        return {}
+    by_id = {}
+    ids = {int(row["id"]) for row in rows}
+    returned_ids = [item.get("question_id") for item in evaluations if isinstance(item, dict)]
+    use_ids = len(returned_ids) == len(evaluations) and {_as_int(value) for value in returned_ids} == ids
+    for position, item in enumerate(evaluations):
+        if not isinstance(item, dict):
+            continue
+        if use_ids:
+            row_id = _as_int(item.get("question_id"))
+        elif len(evaluations) == len(rows):
+            row_id = int(rows[position]["id"])
+        else:
+            continue
+        row = next((r for r in rows if int(r["id"]) == row_id), None)
+        if row is None:
+            continue
+        item = {**item, "question_id": row_id}
+        if _unanswered(row):
+            if item.get("verdict") is not None:
+                logger.warning("Ignoring provider verdict for unanswered question %s", row_id)
+            item["verdict"] = None
+            item["reason"] = None
+        elif item.get("verdict") not in {"correct", "partial", "wrong"}:
+            continue
+        by_id[row_id] = item
+    return by_id
+
+
+def _as_int(value):
     try:
-        with track_ai_usage(
-            student_id=interview_row["student_id"],
-            interview_id=interview_id,
-            request_type="answer_evaluation_batch",
-        ):
-            evaluations = groq_client.evaluate_answers_batch(
-                interview_row["round_type"], interview_row["subject"], interview_row["difficulty"],
-                [
-                    {
-                        "question_id": row["id"],
-                        "question": row["question"],
-                        "answer": row.get("answer") or "",
-                        "unanswered": bool(row.get("timed_out") or row.get("processing_status") == "skipped"),
-                    }
-                    for row in pending_rows
-                ],
-            )
-        by_id = {int(item.get("question_id", -1)): item for item in evaluations}
-        expected = {int(row["id"]) for row in pending_rows}
-        if len(evaluations) != len(pending_rows) or set(by_id) != expected:
-            raise ValueError("Batch evaluation did not return exactly one result for each question.")
-        for row in pending_rows:
-            item = by_id[int(row["id"])]
-            unanswered = bool(row.get("timed_out") or row.get("processing_status") == "skipped")
-            if unanswered and item.get("verdict") is not None:
-                logger.warning("Ignoring provider verdict for unanswered question %s", row["id"])
-                item["verdict"] = None
-                item["reason"] = None
-            if not unanswered and item.get("verdict") not in {"correct", "partial", "wrong"}:
-                raise ValueError("Batch evaluation omitted a valid verdict for an answered question.")
-            if unanswered and not item.get("ideal_answer"):
-                logger.warning("Batch evaluation omitted ideal_answer for unanswered question %s", row["id"])
-        return evaluations, None
-    except Exception as exc:
-        logger.exception("Batch interview evaluation failed for interview %s", interview_id)
-        return None, str(exc)
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
+    """Evaluate every pending answer without leaking 500s: one request for all
+    of them first; anything missing or invalid is asked again in small groups
+    (with one retry each). Fails only if an answered question still has no
+    valid verdict."""
+    results = {}
+    try:
+        results.update(_evaluate_chunk(interview_row, interview_id, pending_rows))
+    except Exception:
+        logger.exception("Batch interview evaluation failed for interview %s; retrying in smaller groups", interview_id)
+    for attempt in range(2):
+        missing = [row for row in pending_rows if int(row["id"]) not in results]
+        if not missing:
+            break
+        logger.warning("Re-evaluating %s answer(s) in groups of %s (attempt %s) for interview %s",
+                       len(missing), EVALUATION_CHUNK_SIZE, attempt + 1, interview_id)
+        for start in range(0, len(missing), EVALUATION_CHUNK_SIZE):
+            try:
+                results.update(_evaluate_chunk(interview_row, interview_id, missing[start:start + EVALUATION_CHUNK_SIZE]))
+            except Exception:
+                logger.exception("Interview evaluation group failed for interview %s", interview_id)
+    # An unanswered question needs no verdict: an omitted one gets an empty result.
+    for row in pending_rows:
+        if int(row["id"]) not in results and _unanswered(row):
+            logger.warning("Batch evaluation omitted unanswered question %s", row["id"])
+            results[int(row["id"])] = {"question_id": int(row["id"]), "verdict": None, "reason": None, "ideal_answer": None}
+    missing = [row["id"] for row in pending_rows if int(row["id"]) not in results]
+    if missing:
+        logger.error("Interview %s: no valid evaluation for question(s) %s", interview_id, missing)
+        return None, f"No valid evaluation for {len(missing)} answer(s)."
+    for item in results.values():
+        if item.get("verdict") is None and not item.get("ideal_answer"):
+            logger.warning("Batch evaluation omitted ideal_answer for unanswered question %s", item["question_id"])
+    return [results[int(row["id"])] for row in pending_rows], None
 
 
 def _live_web_search_enabled():
@@ -450,6 +509,7 @@ def start_interview():
             "requested_questions": creation["total_questions"],
             "quota_adjusted": False,
             "resumed_existing": True,
+            "awaiting_report": bool(creation.get("awaiting_report")),
             "message": "Resuming your interview already in progress.",
             **quota,
         })

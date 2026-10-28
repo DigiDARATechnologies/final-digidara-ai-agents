@@ -47,6 +47,19 @@ test('a technical custom-topic round asks for a topic, then starts at the learne
   expect(result.messages[1].text).toContain('What is a list?');
 });
 
+test('starting a new interview while a finished one waits for its report shows that report, not its last question', async () => {
+  let result = await handleMockInterviewText(withSession(), user, 'technical');
+  result = await handleMockInterviewText(result.state, user, 'custom_topic');
+  result = await handleMockInterviewText(result.state, user, 'Excel');
+  mocked.startMockInterview.mockResolvedValue({ interview_id: 30, question_order: 15, question: 'How would you troubleshoot an Excel dashboard?', total_questions: 15, resumed_existing: true, awaiting_report: true });
+  mocked.endMockInterview.mockResolvedValue({ total_marks: 10, max_marks: 15, scorecard: [] } as never);
+  result = await handleMockInterviewText(result.state, user, '5');
+  expect(mocked.endMockInterview).toHaveBeenCalledWith('token', 30);
+  expect(result.state.step).toBe('completed');
+  expect(result.messages.map((m) => m.text).join(' ')).not.toContain('How would you troubleshoot');
+  expect(result.messages[0].text).toContain('previous interview was finished');
+});
+
 test('opening the chat resumes an existing interview with its original difficulty', async () => {
   mocked.ensureMockInterviewSession.mockResolvedValue({ sessionToken: 'token', student_id: 1 });
   mocked.getActiveMockInterview.mockResolvedValue({ active: true, interview_id: 19, question_order: 3, real_question_index: 3, question: 'Describe an index.', total_questions: 10, difficulty: 'advanced', round_type: 'technical', interview_mode: 'role', role_name: 'Data Analyst' });
