@@ -18,7 +18,8 @@ Pillow==13.0.0
 reportlab>=4.2,<6
 # Renders the certificate PDF to an image for the preview (app/reports/certificate.py).
 pypdfium2>=4.30,<6
-pydantic==2.10.3
+# litellm 1.103.1 needs pydantic>=2.11.
+pydantic>=2.11,<3
 httpx==0.28.1
 playwright==1.49.0
 # Production process manager target (see ecosystem.config.js) — not used by
