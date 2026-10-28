@@ -66,6 +66,12 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 # execution evidence for that submission, not a failure — see
 # app/execution/judge0_client.py.
 JUDGE0_URL = os.environ.get("JUDGE0_URL", "http://127.0.0.1:2358")
+# Judge0 refuses requests without its access token (judge0.conf AUTHN_TOKEN /
+# AUTHZ_TOKEN); the deploy copies these from the CodeForge agent's .env.
+JUDGE0_AUTHN_HEADER = os.environ.get("JUDGE0_AUTHN_HEADER", "X-Auth-Token")
+JUDGE0_AUTHN_TOKEN = os.environ.get("JUDGE0_AUTHN_TOKEN", "")
+JUDGE0_AUTHZ_HEADER = os.environ.get("JUDGE0_AUTHZ_HEADER", "X-Auth-User")
+JUDGE0_AUTHZ_TOKEN = os.environ.get("JUDGE0_AUTHZ_TOKEN", "")
 CODE_EXECUTION_CPU_SECONDS = _int("CODE_EXECUTION_CPU_SECONDS", 5)
 CODE_EXECUTION_WALL_SECONDS = _int("CODE_EXECUTION_WALL_SECONDS", 10)
 CODE_EXECUTION_MEMORY_KB = _int("CODE_EXECUTION_MEMORY_KB", 128000)

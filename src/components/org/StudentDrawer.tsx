@@ -23,6 +23,9 @@ import {
   type ClassFields,
   type ClassOptions,
   type MemberArea,
+  type StaffLogin,
+  assignStaff,
+  fetchStaff,
   type MemberDetail,
   type Transcript,
 } from "../../lib/orgApi";
@@ -64,6 +67,10 @@ export default function StudentDrawer({ orgId, member, isOwner, canManage = true
   const [tab, setTab] = useState<Tab>("Overview");
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [busy, setBusy] = useState(false);
+  const [staffList, setStaffList] = useState<StaffLogin[] | null>(null);
+  useEffect(() => {
+    if (canManage) fetchStaff(orgId).then(setStaffList).catch(() => setStaffList([]));
+  }, [canManage, orgId]);
   const [classFields, setClassFields] = useState<ClassFields>({ department: member.department, year: member.year, section: member.section });
   const [proctored, setProctored] = useState<ProctorSummary[] | null>(null);
   const [report, setReport] = useState<string | null>(null);
@@ -282,6 +289,21 @@ export default function StudentDrawer({ orgId, member, isOwner, canManage = true
                     </label>
                   ))}
                 </div>
+
+                {canManage && member.role === "member" && staffList && staffList.some((s) => s.role === "staff") && (
+                  <>
+                    <h3>Staff in charge</h3>
+                    <label className="field"><span>The staff member who sees and looks after {member.name}</span>
+                      <select value={staffList.find((s) => s.user_id === member.staff_user_id)?.member_id ?? ""} disabled={busy}
+                        onChange={(e) => void run(() => assignStaff(orgId, member.member_id, e.target.value || null),
+                          e.target.value ? `${member.name} is now looked after by ${staffList.find((s) => s.member_id === e.target.value)?.name}.`
+                            : `${member.name} is under no staff member now.`)}>
+                        <option value="">No staff member</option>
+                        {staffList.filter((s) => s.role === "staff").map((s) => <option key={s.member_id} value={s.member_id}>{s.name} ({s.email})</option>)}
+                      </select>
+                    </label>
+                  </>
+                )}
 
                 <div className="org-actions">
                   <button className="btn btn-outline btn-sm" disabled={busy}

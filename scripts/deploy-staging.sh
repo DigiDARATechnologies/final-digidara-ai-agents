@@ -44,6 +44,9 @@ if [ -f "$JUDGE0_CONF" ]; then
   chmod 600 "$JUDGE0_CONF"
 fi
 
+# The Capstone agent needs Judge0's access token too (CodeForge already has it).
+bash scripts/sync-judge0-env.sh
+
 docker compose config --quiet
 
 echo "Ensuring service databases exist..."

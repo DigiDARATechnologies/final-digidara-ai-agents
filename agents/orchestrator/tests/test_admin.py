@@ -174,3 +174,15 @@ def test_money_is_always_a_number_even_when_the_database_sums_to_a_decimal():
     from decimal import Decimal
     assert admin._rupees(Decimal("59900")) == 599.0 and isinstance(admin._rupees(Decimal("59900")), float)
     assert admin._rupees(None) == 0.0 and admin._rupees(49900) == 499.0
+
+
+def test_platform_admins_see_enterprise_enquiries(api, seeded, database):
+    from app.models import EnterpriseEnquiry
+
+    with database() as session:
+        session.add(EnterpriseEnquiry(organization="Anna University", organization_type="college", contact_name="Priya",
+                                      email="p@anna.edu", phone="9876543210", learners=500, emailed=True))
+        session.commit()
+    body = api.get("/platform-admin/enterprise-enquiries", headers=bearer("boss")).json()
+    assert body["total"] == 1 and body["enquiries"][0]["organization"] == "Anna University" and body["enquiries"][0]["emailed"] is True
+    assert api.get("/platform-admin/enterprise-enquiries", headers=bearer("asha")).status_code == 403

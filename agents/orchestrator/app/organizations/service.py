@@ -411,7 +411,7 @@ def list_staff(admin_id: str, org_id: str) -> list[dict]:
         rows = (session.query(OrganizationMember, User).join(User, User.id == OrganizationMember.user_id)
                 .filter(OrganizationMember.organization_id == org_id, OrganizationMember.role.in_(STAFF_ROLES))
                 .order_by(User.name).all())
-        return [{"member_id": m.id, "name": u.name, "email": u.email, "role": m.role,
+        return [{"member_id": m.id, "user_id": u.id, "name": u.name, "email": u.email, "role": m.role,
                  "has_signed_in": u.consent_accepted_at is not None} for m, u in rows]
     finally:
         session.close()
@@ -449,6 +449,7 @@ def members(admin_id: str, org_id: str) -> list[dict]:
             # Staff see their own students only.
             rows = [(m, u) for m, u in rows if m.user_id in visible and m.role == "member"]
         codes = {c.id: c for c in session.query(OrgJoinCode).filter_by(organization_id=org_id).all()}
+        in_charge = staff_in_charge(session, org_id)
         shared_ids = [m.user_id for m, _ in rows if m.progress_shared_at is not None]
         last_active = _last_active(session, shared_ids)
     finally:
@@ -466,6 +467,7 @@ def members(admin_id: str, org_id: str) -> list[dict]:
             **_class_of(member),
             "join_code": {"id": code.id, "code": code.code, "label": code.label} if code else None,
             "last_active_at": last_active[user.id].isoformat() if user.id in last_active else None,
+            "staff_user_id": in_charge.get(user.id),
         }
         if member.progress_shared_at is not None:
             snapshot = snapshots.get(user.id)
@@ -615,5 +617,65 @@ def purge(user_id: str) -> None:
         session.query(OrgAssistantMessage).filter_by(user_id=user_id).delete()
         session.query(OrganizationMember).filter_by(user_id=user_id).delete()
         session.commit()
+    finally:
+        session.close()
+
+
+def staff_in_charge(session, org_id: str) -> dict[str, str]:
+    """student user id -> the staff user id who looks after them: the staff
+    member whose list has their email, else whose join code they used."""
+    from app.models import OrgRosterEntry
+
+    staff_ids = {m.user_id for m in session.query(OrganizationMember).filter_by(organization_id=org_id, role="staff").all()}
+    if not staff_ids:
+        return {}
+    result: dict[str, str] = {}
+    code_owner = {c.id: c.created_by for c in session.query(OrgJoinCode).filter_by(organization_id=org_id).all()
+                  if c.created_by in staff_ids}
+    students = (session.query(OrganizationMember, User).join(User, User.id == OrganizationMember.user_id)
+                .filter(OrganizationMember.organization_id == org_id, OrganizationMember.role == "member").all())
+    listed = {e.email: e.uploaded_by for e in session.query(OrgRosterEntry).filter_by(organization_id=org_id).all()
+              if e.uploaded_by in staff_ids}
+    for member, user in students:
+        owner = listed.get((user.email or "").lower()) or code_owner.get(member.join_code_id or "")
+        if owner:
+            result[member.user_id] = owner
+    return result
+
+
+def assign_staff(admin_id: str, org_id: str, member_id: str, staff_member_id: str | None) -> dict:
+    """Owner or admin: put a student under a staff member (or under none),
+    e.g. one who joined with the organization's general code. It puts the
+    student's email on that staff member's list."""
+    from app.models import OrgRosterEntry
+
+    session = db.get_session()
+    try:
+        _require_admin(session, admin_id, org_id, managers_only=True)
+        student = _member_in_org(session, org_id, member_id)
+        if student.role != "member":
+            raise OrgError(400, "Only students are put under a staff member.")
+        user = session.get(User, student.user_id)
+        email = (user.email or "").lower()
+        staff_user_id = None
+        if staff_member_id:
+            staff = _member_in_org(session, org_id, staff_member_id)
+            if staff.role != "staff":
+                raise OrgError(400, "Choose a staff login.")
+            staff_user_id = staff.user_id
+        entry = session.query(OrgRosterEntry).filter_by(organization_id=org_id, email=email).first()
+        if entry is None and staff_user_id:
+            session.add(OrgRosterEntry(organization_id=org_id, email=email, name=user.name or "", mobile=user.mobile or "",
+                                       uploaded_by=staff_user_id))
+        elif entry is not None:
+            entry.uploaded_by = staff_user_id
+        if staff_user_id is None:
+            # Not under a staff member's join code either.
+            code = session.get(OrgJoinCode, student.join_code_id) if student.join_code_id else None
+            if code is not None and session.query(OrganizationMember).filter_by(
+                    organization_id=org_id, user_id=code.created_by, role="staff").first() is not None:
+                student.join_code_id = None
+        session.commit()
+        return {"staff_member_id": staff_member_id}
     finally:
         session.close()

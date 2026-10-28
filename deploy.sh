@@ -41,6 +41,9 @@ else
   echo "WARNING: python3 not found; skipping the .env drift check."
 fi
 
+# The Capstone agent needs Judge0's access token too (CodeForge already has it).
+bash scripts/sync-judge0-env.sh
+
 # Catch missing env files and other Compose configuration errors before any
 # containers are touched.
 docker compose config --quiet

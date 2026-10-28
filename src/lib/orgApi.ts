@@ -193,9 +193,12 @@ export interface PendingRequest { id: string; organization: { id: string; name: 
 export const fetchMyJoinRequest = () => request<{ pending: PendingRequest | null }>("/organizations/me/request");
 export const cancelMyJoinRequest = () => request<void>("/organizations/me/request", json("DELETE"));
 
-export interface StaffLogin { member_id: string; name: string; email: string; role: "owner" | "admin" | "staff"; has_signed_in: boolean }
+export interface StaffLogin { member_id: string; user_id: string; name: string; email: string; role: "owner" | "admin" | "staff"; has_signed_in: boolean }
 export interface AddStaffResult { name: string; email: string; status: "created" | "attached" | "made_staff"; temporary_password: string | null }
 export const fetchStaff = (orgId: string) => request<StaffLogin[]>(`/organizations/${orgId}/staff`);
+/** Owner or admin: put a student under a staff member (null: under none). */
+export const assignStaff = (orgId: string, memberId: string, staffMemberId: string | null) =>
+  request<{ staff_member_id: string | null }>(`/organizations/${orgId}/members/${memberId}/staff`, json("PUT", { staff_member_id: staffMemberId }));
 export const addStaff = (orgId: string, body: { name: string; email: string }) =>
   request<AddStaffResult>(`/organizations/${orgId}/staff`, json("POST", body));
 

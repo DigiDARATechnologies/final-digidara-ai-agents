@@ -102,6 +102,10 @@ class DecisionIn(BaseModel):
     approve: bool
 
 
+class AssignStaffIn(BaseModel):
+    staff_member_id: str | None = None
+
+
 def _run(fn, *args):
     try:
         return fn(*args)
@@ -327,6 +331,12 @@ def rotate_join_code(org_id: str, user_id: str = Depends(get_verified_user_id)) 
 
 
 # --- staff logins (owner or admin) -------------------------------------------
+
+@router.put("/{org_id}/members/{member_id}/staff")
+def assign_staff(org_id: str, member_id: str, req: AssignStaffIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Owner or admin: put a student under a staff member (null: under none)."""
+    return _run(service.assign_staff, user_id, org_id, member_id, req.staff_member_id)
+
 
 @router.get("/{org_id}/staff")
 def list_staff(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:

@@ -56,6 +56,16 @@ def _pack_additional_files(code_files: dict[str, str], exclude: str) -> str:
     return _b64(buffer.getvalue())
 
 
+def _auth_headers() -> dict[str, str]:
+    """Judge0's access token, as the CodeForge agent sends it."""
+    headers = {}
+    if config.JUDGE0_AUTHN_TOKEN:
+        headers[config.JUDGE0_AUTHN_HEADER] = config.JUDGE0_AUTHN_TOKEN
+    if config.JUDGE0_AUTHZ_TOKEN:
+        headers[config.JUDGE0_AUTHZ_HEADER] = config.JUDGE0_AUTHZ_TOKEN
+    return headers
+
+
 def _run_submission(language_id: int, code_files: dict[str, str], entry_point: str, node: bool = False) -> dict:
     """Submits `entry_point` as the program and every other file as
     `additional_files` (Judge0 extracts these into the same working
@@ -76,14 +86,18 @@ def _run_submission(language_id: int, code_files: dict[str, str], entry_point: s
         "wall_time_limit": config.CODE_EXECUTION_WALL_SECONDS,
         "memory_limit": config.CODE_EXECUTION_MEMORY_KB,
         "enable_network": False,
+        # Per-process limits: the only kind this Judge0 host can enforce. With
+        # Judge0's default (cgroup) limits every run, Python included, ended
+        # in "Internal Error: No such file or directory /box/script.py".
+        "enable_per_process_and_thread_time_limit": True,
+        "enable_per_process_and_thread_memory_limit": True,
     }
     if node:
-        # Per-process limits (the only ones this Judge0 host enforces) at
         # Judge0's largest memory limit: address space, not real use (~30 MB).
-        payload.update({"memory_limit": NODE_MEMORY_LIMIT_KB, "enable_per_process_and_thread_time_limit": True,
-                        "enable_per_process_and_thread_memory_limit": True})
+        payload["memory_limit"] = NODE_MEMORY_LIMIT_KB
     try:
-        with httpx.Client(base_url=config.JUDGE0_URL, timeout=config.CODE_EXECUTION_WALL_SECONDS + 10.0) as client:
+        with httpx.Client(base_url=config.JUDGE0_URL, timeout=config.CODE_EXECUTION_WALL_SECONDS + 10.0,
+                          headers=_auth_headers()) as client:
             response = client.post(
                 "/submissions",
                 params={"base64_encoded": "true", "wait": "true"},

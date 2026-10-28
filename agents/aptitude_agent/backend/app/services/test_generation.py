@@ -554,7 +554,26 @@ def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avo
         )
     except (ValueError,TimeoutError) as exc:
         current_app.logger.warning("Batch generation rescue failed: %s",str(exc)[:200])
-        return None
+        # A Technical Aptitude slot can be tied to a saved skill that does not
+        # fit its topic (e.g. Excel for "OOP Four Pillars"); the model then
+        # writes about another skill (SQL) and the slot fails every attempt,
+        # failing the whole test with a 503. Last try: the same slots as a
+        # general technical question for the learner's role, without the skill.
+        if not isinstance(exc,ValueError) or not any(slot.get("technical_skill") for slot in swapped):
+            return None
+        if deadline is not None and time.monotonic()>=deadline:
+            return None
+        general=[{key:value for key,value in slot.items() if key!="technical_skill"} for slot in swapped]
+        current_app.logger.warning("Batch generation retrying %s slot(s) without the saved skill",len(general))
+        try:
+            questions,model,usage=generate_questions(
+                general,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
+                allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
+                background=background,request_timeout=request_timeout,_rescue=False,
+            )
+        except (ValueError,TimeoutError) as retry_exc:
+            current_app.logger.warning("Batch generation general rescue failed: %s",str(retry_exc)[:200])
+            return None
     for index,question in zip(pending,questions):
         accepted[index]=question
     return usage,model
