@@ -11,8 +11,8 @@ httpx==0.28.1
 # pin to pick up fixes for known CVEs in litellm/langgraph/langchain-core
 # (see CI_CD_SETUP.md). httpx==0.28.1 already matches the working pin used
 # by the communication agent elsewhere in this repo.
-# 1.95.0: GHSA-g5ff-637f-6q2m (HIGH) is fixed there; 1.88.6 failed the PR security scan.
-litellm==1.95.0
+# 1.103.1: fixes GHSA-g5ff-637f-6q2m, PYSEC-2026-4066 and CVE-2026-114612 (HIGH), which failed the PR security scan.
+litellm==1.103.1
 langgraph==1.2.13
 bcrypt>=4.2,<5
 PyJWT>=2.9,<3
