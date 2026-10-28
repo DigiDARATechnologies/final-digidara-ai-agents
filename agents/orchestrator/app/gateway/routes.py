@@ -235,12 +235,25 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
     is_job_resume_upload = agent_name == "job_agent" and is_multipart
     is_free_action = action_name in FREE_ACTIONS or is_job_resume_upload
     is_billable = bool(user_id) and not is_free_action
+    # An assessment attempt is paid by whoever created the assessment, never
+    # by the learner taking it.
+    payer_id = user_id
+    if is_billable and isinstance(envelope, dict):
+        try:
+            payer_id = proctoring_service.billing_payer(user_id, agent_name, envelope) or user_id
+        except Exception:
+            logger.warning("assessment payer not found: agent=%s action=%s", agent_name, action_name, exc_info=True)
+            payer_id = user_id
 
     if is_billable:
         # Cheap pre-check only -- blocks starting a new request once a
         # balance has already run out. The real, accurate charge for this
         # specific request happens after the response comes back below.
-        if user.token_balance <= 0:
+        if payer_id != user_id:
+            payer = auth_service.get_by_id(payer_id)
+            if action_name == "start_interview" and (payer is None or payer.token_balance <= 0):
+                raise HTTPException(402, "This assessment cannot start right now: the organization's coins have run out. Please tell your trainer.")
+        elif user.token_balance <= 0:
             raise HTTPException(402, "Not enough coins. Please top up to continue.")
 
     headers: dict[str, str] = {}
@@ -252,7 +265,8 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         # Derived from the verified platform JWT, never from the JSON payload.
         headers["x-digidara-user-id"] = user_id
         headers["x-digidara-is-admin"] = "true" if user and user.is_admin else "false"
-        headers["x-digidara-token-balance"] = str(user.token_balance) if user else "0"
+        balance_owner = auth_service.get_by_id(payer_id) if payer_id != user_id else user
+        headers["x-digidara-token-balance"] = str(balance_owner.token_balance) if balance_owner else "0"
 
     if isinstance(envelope, dict) and user_id:
         if envelope.get("action") in IDENTITY_ACTIONS:
@@ -329,7 +343,8 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
                 pass
         # Real usage when the agent reports it; otherwise the flat fallback
         # rate, so billing still works for agents not yet upgraded.
-        auth_service.settle_tokens(user_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL, agent_name, action_name or "")
+        auth_service.settle_tokens(payer_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL, agent_name,
+                                   action_name if payer_id == user_id else f"assessment:{action_name or ''}"[:100])
     elif user_id:
         # For actions in FREE_ACTIONS that dynamically report token usage when free quota is exceeded
         header_value = upstream.headers.get("x-tokens-used")

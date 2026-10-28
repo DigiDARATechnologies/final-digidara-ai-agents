@@ -9,9 +9,42 @@ from __future__ import annotations
 import json
 import logging
 import random
-from typing import Any
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Iterator
 
 logger = logging.getLogger("orchestrator.knowledge")
+
+# Tokens the model used inside a metered() block: the admin or staff member
+# who builds a test pays exactly that in coins.
+_meter: ContextVar[list[int] | None] = ContextVar("knowledge_meter", default=None)
+
+
+class Meter:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    @property
+    def tokens(self) -> int:
+        return sum(self.calls)
+
+
+@contextmanager
+def metered() -> Iterator[Meter]:
+    meter = Meter()
+    token = _meter.set(meter.calls)
+    try:
+        yield meter
+    finally:
+        _meter.reset(token)
+
+
+def record_usage(response: Any) -> None:
+    """Adds a model response's token count to the open meter, if any."""
+    calls = _meter.get()
+    if calls is not None:
+        usage = getattr(response, "usage", None)
+        calls.append(int(getattr(usage, "total_tokens", 0) or 0))
 
 # About 25k tokens of material per request.
 MAX_CONTEXT_CHARS = 100_000
@@ -53,6 +86,7 @@ def _complete(system: str, user: str, max_tokens: int) -> dict[str, Any]:
         response_format={"type": "json_object"},
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
+    record_usage(response)
     return json.loads(response.choices[0].message.content or "{}")
 
 

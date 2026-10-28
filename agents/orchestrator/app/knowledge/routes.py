@@ -124,7 +124,7 @@ def delete_document(org_id: str, test_id: str, document_id: str, user_id: str = 
 def generate(org_id: str, test_id: str, request: Request, background: BackgroundTasks,
              user_id: str = Depends(get_verified_user_id)) -> dict:
     test = _run(service.start_generation, user_id, org_id, test_id)
-    background.add_task(service.run_generation, test_id)
+    background.add_task(service.run_generation, test_id, user_id)
     return test
 
 

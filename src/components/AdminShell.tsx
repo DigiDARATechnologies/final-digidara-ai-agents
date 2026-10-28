@@ -8,6 +8,7 @@ import PaymentsPanel from "./admin/PaymentsPanel";
 import AgentsPanel from "./admin/AgentsPanel";
 import OrganizationsPanel from "./admin/OrganizationsPanel";
 import EnterprisePanel from "./admin/EnterprisePanel";
+import CoursesPanel from "./admin/CoursesPanel";
 import AdminChangePassword from "./admin/AdminChangePassword";
 
 interface AdminShellProps {
@@ -58,6 +59,7 @@ export default function AdminShell({ user, onBack }: AdminShellProps) {
             {activePanelId === "users" && <UsersPanel />}
             {activePanelId === "payments" && <PaymentsPanel />}
             {activePanelId === "enterprise" && <EnterprisePanel />}
+            {activePanelId === "courses" && <CoursesPanel />}
             {activePanelId === "agents" && <AgentsPanel />}
             {activePanelId === "job-agent" && <JobsAdminPanel />}
           </>

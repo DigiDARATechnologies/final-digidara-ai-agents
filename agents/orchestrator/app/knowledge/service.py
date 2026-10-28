@@ -11,6 +11,8 @@ change a test and its answers; learners only ever receive the questions.
 """
 from __future__ import annotations
 
+import random
+
 import logging
 from datetime import datetime, timedelta
 
@@ -210,20 +212,31 @@ def add_documents(user_id: str, org_id: str, test_id: str, files: list[tuple[str
         existing = session.query(KnowledgeDocument).filter_by(test_id=test.id).count()
     finally:
         session.close()
+    def is_image(name: str) -> bool:
+        try:
+            return extract.kind_of(_clean(name, 255) or "document") == "image"
+        except extract.ExtractError:
+            return False
+
+    if any(is_image(name) for name, _ in files):
+        # Pictures are read by the model, paid with the uploader's coins.
+        require_coins(user_id)
     results = []
     readable: list[tuple[str, str, str]] = []
-    for filename, data in files:
-        name = _clean(filename, 255) or "document"
-        if existing + len(readable) >= MAX_DOCUMENTS:
-            results.append({"filename": name, "ok": False, "message": f"A test can have at most {MAX_DOCUMENTS} documents."})
-            continue
-        try:
-            kind, text = extract.extract(name, data)
-        except extract.ExtractError as exc:
-            results.append({"filename": name, "ok": False, "message": str(exc)})
-            continue
-        readable.append((name, kind, text))
-        results.append({"filename": name, "ok": True, "chars": len(text)})
+    with generate.metered() as meter:
+        for filename, data in files:
+            name = _clean(filename, 255) or "document"
+            if existing + len(readable) >= MAX_DOCUMENTS:
+                results.append({"filename": name, "ok": False, "message": f"A test can have at most {MAX_DOCUMENTS} documents."})
+                continue
+            try:
+                kind, text = extract.extract(name, data)
+            except extract.ExtractError as exc:
+                results.append({"filename": name, "ok": False, "message": str(exc)})
+                continue
+            readable.append((name, kind, text))
+            results.append({"filename": name, "ok": True, "chars": len(text)})
+    charge(user_id, meter.tokens, "read_documents")
     session = db.get_session()
     try:
         test = _test(session, org_id, test_id)
@@ -252,8 +265,27 @@ def delete_document(user_id: str, org_id: str, test_id: str, document_id: str) -
         session.close()
 
 
+def require_coins(user_id: str) -> None:
+    """Building a test uses the model, paid with the builder's own coins."""
+    from app.auth import service as auth_service
+
+    user = auth_service.get_by_id(user_id)
+    if user is None or (user.token_balance <= 0 and not user.is_admin):
+        raise KnowledgeError(402, "Not enough coins. Writing questions and reading pictures uses your coins; please top up to continue.")
+
+
+def charge(user_id: str | None, tokens: int, action: str) -> None:
+    """The model's real usage, taken from the coins of whoever built the test."""
+    if not user_id or tokens <= 0:
+        return
+    from app.auth import service as auth_service
+
+    auth_service.settle_tokens(user_id, tokens, "knowledge_test", action)
+
+
 def start_generation(user_id: str, org_id: str, test_id: str) -> dict:
     """Marks the test as generating; the route runs run_generation afterwards."""
+    require_coins(user_id)
     session = db.get_session()
     try:
         _admin(session, user_id, org_id)
@@ -272,8 +304,9 @@ def start_generation(user_id: str, org_id: str, test_id: str) -> dict:
         session.close()
 
 
-def run_generation(test_id: str) -> None:
-    """Writes the questions (runs after the request returns)."""
+def run_generation(test_id: str, user_id: str | None = None) -> None:
+    """Writes the questions (runs after the request returns); the model's
+    usage is charged to `user_id`, who asked for them."""
     session = db.get_session()
     try:
         test = session.get(KnowledgeTest, test_id)
@@ -284,11 +317,13 @@ def run_generation(test_id: str) -> None:
         question_type, count, instructions = test.question_type, test.num_questions, test.instructions
     finally:
         session.close()
-    try:
-        written = generate.write_questions(generate.build_context(documents), question_type, count, instructions)
-    except Exception:
-        logger.exception("knowledge generation failed for test %s", test_id)
-        written = []
+    with generate.metered() as meter:
+        try:
+            written = generate.write_questions(generate.build_context(documents), question_type, count, instructions)
+        except Exception:
+            logger.exception("knowledge generation failed for test %s", test_id)
+            written = []
+    charge(user_id, meter.tokens, "write_questions")
     session = db.get_session()
     try:
         test = session.get(KnowledgeTest, test_id)
@@ -364,7 +399,7 @@ def delete_question(user_id: str, org_id: str, test_id: str, question_id: str) -
         session.close()
 
 
-def assessment_config(org_id: str, test_id: str) -> dict:
+def assessment_config(org_id: str, test_id: str, shuffle: bool = False) -> dict:
     """What an assessment link stores about the test it runs."""
     session = db.get_session()
     try:
@@ -375,7 +410,7 @@ def assessment_config(org_id: str, test_id: str) -> dict:
         if test.status != "ready" or count == 0:
             raise KnowledgeError(400, "This knowledge test has no questions yet. Generate them first.")
         return {"test_id": test.id, "test_title": test.title, "question_type": test.question_type,
-                "num_questions": count, "seconds_per_question": test.seconds_per_question}
+                "num_questions": count, "seconds_per_question": test.seconds_per_question, "shuffle": bool(shuffle)}
     finally:
         session.close()
 
@@ -386,8 +421,17 @@ def _question_learner(q: KnowledgeQuestion) -> dict:
     return {"id": q.id, "position": q.position, "qtype": q.qtype, "question": q.question, "options": q.options or []}
 
 
+def _assessment_of(session, attempt: KnowledgeAttempt) -> Assessment | None:
+    ps = session.get(ProctorSession, attempt.proctor_session_id) if attempt.proctor_session_id else None
+    return session.get(Assessment, ps.assessment_id) if ps is not None and ps.assessment_id else None
+
+
 def _attempt_view(session, attempt: KnowledgeAttempt, test: KnowledgeTest) -> dict:
     questions = session.query(KnowledgeQuestion).filter_by(test_id=test.id).order_by(KnowledgeQuestion.position).all()
+    assessment = _assessment_of(session, attempt)
+    if assessment is not None and (assessment.config or {}).get("shuffle"):
+        # Each learner gets their own order, the same on every reload of their attempt.
+        random.Random(attempt.id).shuffle(questions)
     return {
         "id": attempt.id, "status": attempt.status, "title": test.title, "question_type": test.question_type,
         "seconds_per_question": test.seconds_per_question,
@@ -505,7 +549,12 @@ def finish_attempt(user_id: str, attempt_id: str) -> dict:
     session = db.get_session()
     try:
         attempt, test = _own_attempt(session, user_id, attempt_id)
-        report = _build_report(session, attempt, test)
+        assessment = _assessment_of(session, attempt)
+        # Grading written answers uses the model: paid by whoever created the
+        # assessment, never by the learner taking it.
+        with generate.metered() as meter:
+            report = _build_report(session, attempt, test)
+        charge(assessment.created_by if assessment is not None else test.created_by, meter.tokens, "grade_attempt")
         user = session.get(User, user_id)
         org = session.get(Organization, test.organization_id)
         ps = session.get(ProctorSession, attempt.proctor_session_id) if attempt.proctor_session_id else None

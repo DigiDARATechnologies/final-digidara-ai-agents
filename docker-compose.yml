@@ -54,6 +54,10 @@ services:
       MEM0_QDRANT_HOST: qdrant
       MEM0_QDRANT_PORT: "6333"
       MEM0_COLLECTION: org_assistant_memory
+      COURSE_FILES_DIR: /app/course_files
+    # Course videos and notes must outlive a redeploy.
+    volumes:
+      - course_files:/app/course_files
     depends_on:
       mysql:
         condition: service_healthy
@@ -238,6 +242,7 @@ services:
 
 volumes:
   mysql_data:
+  course_files:
   job_uploads:
   capstone_uploads:
   qdrant_data:
