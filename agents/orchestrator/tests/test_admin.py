@@ -186,3 +186,14 @@ def test_platform_admins_see_enterprise_enquiries(api, seeded, database):
     body = api.get("/platform-admin/enterprise-enquiries", headers=bearer("boss")).json()
     assert body["total"] == 1 and body["enquiries"][0]["organization"] == "Anna University" and body["enquiries"][0]["emailed"] is True
     assert api.get("/platform-admin/enterprise-enquiries", headers=bearer("asha")).status_code == 403
+
+
+def test_admin_granted_payments_marked_manual_count_as_manual(api, seeded, database):
+    """Coins granted by an admin carry razorpay ids like manual_grant / manual_<n>."""
+    with database() as session:
+        session.add(Payment(id="p5", user_id="ravi", plan_id="standard", amount=0, razorpay_order_id="manual_1793168000",
+                            razorpay_payment_id="manual_grant", status="paid", created_at=NOW, paid_at=NOW))
+        session.commit()
+    body = api.get("/platform-admin/payments", headers=bearer("boss")).json()
+    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 0.0}}
+    assert next(p for p in body["payments"] if p["id"] == "p5")["method"] == "manual"
