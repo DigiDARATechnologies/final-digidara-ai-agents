@@ -64,7 +64,7 @@
 .ps-assess-main b { color: var(--tx-1); }
 .ps-assess-btn { padding: 10px 16px; border: 0; border-radius: 10px; background: var(--accent3); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; }
 .ps-assess-btn:disabled { opacity: .6; cursor: default; }
-.ps-attempts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; }
+.ps-attempts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; max-height: 132px; overflow-y: auto; }
 .ps-attempts li { display: inline-flex; gap: 8px; padding: 4px 10px; border-radius: 999px; background: var(--surf-2); color: var(--tx-2); font-size: 12px; }
 .ps-attempts b { color: var(--tx-1); }
 .ps-attempts b.ok { color: #16a34a; }

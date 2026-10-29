@@ -15,6 +15,8 @@
 #   6. Every .env readable by root only; judge0.conf by the Judge0 user only.
 #   7. Lists old backups that contain secrets, for you to delete.
 #   8. Confirms the skilldara.com certificate renews automatically.
+#   9. Clock synced to India's NIC / NPL time servers (CERT-In).
+#  10. Logs kept 180 days in the system journal, Docker logs included (CERT-In).
 #
 # It never touches other websites' configs or certificates.
 set -uo pipefail
@@ -111,6 +113,51 @@ step "8. skilldara.com certificate auto-renewal"
 systemctl enable --now certbot.timer >/dev/null 2>&1 || true
 systemctl list-timers 2>/dev/null | grep -i certbot || echo "certbot timer not found"
 certbot certificates --cert-name skilldara.com 2>/dev/null | grep -E "Expiry" || echo "certificate not managed by certbot"
+
+step "9. Clock sync (CERT-In: sync with NIC / NPL time servers)"
+mkdir -p /etc/systemd/timesyncd.conf.d
+cat > /etc/systemd/timesyncd.conf.d/skilldara.conf <<'NTP'
+[Time]
+NTP=time.nplindia.org samay1.nic.in samay2.nic.in
+FallbackNTP=ntp.ubuntu.com
+NTP
+if systemctl list-unit-files 2>/dev/null | grep -q '^systemd-timesyncd'; then
+  timedatectl set-ntp true 2>/dev/null || true
+  systemctl restart systemd-timesyncd 2>/dev/null || true
+  sleep 2
+  timedatectl 2>/dev/null | grep -E "synchronized|NTP service" || true
+else
+  echo "systemd-timesyncd is not installed here (chrony or ntpd may manage time): check that time.nplindia.org is configured"
+fi
+
+step "10. Keep logs for 180 days (CERT-In)"
+# The system journal keeps 180 days, compressed, up to 8 GB on disk. Docker
+# logs go to the journal too (see below), so they survive deploys: with the
+# default json-file driver a container's log is deleted when the container
+# is replaced, i.e. on every deploy.
+mkdir -p /etc/systemd/journald.conf.d /var/log/journal
+cat > /etc/systemd/journald.conf.d/skilldara.conf <<'JOURNAL'
+[Journal]
+Storage=persistent
+Compress=yes
+MaxRetentionSec=180day
+SystemMaxUse=8G
+# Busy hours produce many lines a second; never drop them.
+RateLimitIntervalSec=0
+JOURNAL
+systemctl restart systemd-journald
+journalctl --disk-usage 2>/dev/null || true
+df -h / | tail -1 | awk '{print "disk free on /: " $4}'
+if [ ! -s /etc/docker/daemon.json ]; then
+  echo '{ "log-driver": "journald", "log-opts": { "tag": "{{.Name}}" } }' > /etc/docker/daemon.json
+  echo "Docker will log to the journal. It takes effect after a Docker restart (about 1 minute of downtime):"
+  echo "    at a quiet time:  systemctl restart docker && cd $APP && docker compose up -d --force-recreate"
+elif grep -q '"log-driver"' /etc/docker/daemon.json; then
+  echo "Docker log driver already set: $(grep -o '"log-driver"[^,}]*' /etc/docker/daemon.json)"
+else
+  echo "!! /etc/docker/daemon.json has other settings: add  \"log-driver\": \"journald\"  to it by hand, then restart Docker at a quiet time."
+fi
+echo "Read logs: docker compose logs <service>   or   journalctl CONTAINER_NAME=<container> --since '2026-10-01'"
 
 step "Done"
 [ -f /var/run/reboot-required ] && echo "A reboot is pending for installed updates: run 'reboot' at a quiet time."
