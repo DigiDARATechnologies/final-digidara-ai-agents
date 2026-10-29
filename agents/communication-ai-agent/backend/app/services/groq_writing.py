@@ -92,6 +92,21 @@ def generate_writing_prompt(mode, difficulty, topic_title, turn_number, history,
     return prompt.strip().strip('"') or _fallback_writing_prompt(mode, difficulty, topic_title, topic_description)
 
 
+# Values a model sometimes returns instead of real text: "null" as a string,
+# or a field description copied from the prompt (shown to learners as
+# "friendly acknowledgment" / 'you can say: "null"').
+_PLACEHOLDER_VALUES = {
+    "", "null", "none", "n/a", "na", "nil", "undefined", "-", "friendly acknowledgment", "friendly acknowledgement",
+    "one related follow-up question", "corrected sentence or null", "corrected sentence",
+}
+
+
+def _model_text(value):
+    """A model's string value, or "" when it is empty, "null" or a placeholder."""
+    text = str(value or "").strip().strip('"').strip()
+    return "" if text.casefold().rstrip(".") in _PLACEHOLDER_VALUES else text
+
+
 def generate_writing_chat_reply(topic, difficulty, history=None):
     """Create one short, contextual reply for the optional Writing chat mode."""
     topic = (topic or "this topic").strip()
@@ -111,9 +126,12 @@ def generate_writing_chat_reply(topic, difficulty, history=None):
         "You are a warm English conversation partner helping a student discuss one writing topic. "
         "Reply naturally in one or two short sentences, acknowledge something specific from the latest student message, "
         "then ask exactly one related follow-up question. Also give one corrected_answer only if the latest student message "
-        "has a clear grammar or phrasing error. Preserve meaning. Return strict JSON only: "
-        '{"reaction":"friendly acknowledgment","next_question":"one related follow-up question","corrected_answer":"corrected sentence or null"}. '
-        "Do not score, write a long lesson, or use markdown."
+        "has a clear grammar or phrasing error. Preserve meaning. A short answer such as \"I don't know\" is fine: "
+        "encourage the student, do not correct it. Return strict JSON only with three keys: "
+        "reaction (your own warm one-sentence response to what the student said), "
+        "next_question (one related follow-up question), and "
+        "corrected_answer (the student's sentence rewritten correctly, or JSON null when nothing needs correcting). "
+        "Never copy these descriptions into the values. Do not score, write a long lesson, or use markdown."
     )
     user_prompt = (
         f"Topic: {topic}\nDifficulty: {difficulty}\nConversation:\n{history_text}\n\n"
@@ -123,10 +141,10 @@ def generate_writing_chat_reply(topic, difficulty, history=None):
         data = _extract_json(_chat(system_prompt, user_prompt, temperature=0.65, operation="writing.chat_reply", module="writing", service="groq_writing.generate_writing_chat_reply"))
         if not isinstance(data, dict):
             return fallback
-        reaction = str(data.get("reaction") or "").strip()
-        next_question = str(data.get("next_question") or "").strip()
+        reaction = _model_text(data.get("reaction"))
+        next_question = _model_text(data.get("next_question"))
         reply = " ".join(part for part in (reaction, next_question) if part)
-        corrected_answer = str(data.get("corrected_answer") or "").strip() or None
+        corrected_answer = _model_text(data.get("corrected_answer")) or None
         return {"reply": reply or fallback["reply"], "reaction": reaction, "next_question": next_question, "corrected_answer": corrected_answer}
     except Exception:
         return fallback

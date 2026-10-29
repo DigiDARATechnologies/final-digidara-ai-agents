@@ -1,6 +1,7 @@
 jest.mock("../../src/lib/communicationApi", () => ({
   finishWritingChat: jest.fn(),
   downloadWritingReportPdf: jest.fn(),
+  writingChat: jest.fn(),
 }));
 
 import * as api from "../../src/lib/communicationApi";
@@ -41,4 +42,15 @@ test("a chat the learner never answered just ends", async () => {
   const { messages } = await handleCommunicationText(chatState([{ role: "assistant", text: "What do you think?" }]), "end_session");
   expect(mocked.finishWritingChat).not.toHaveBeenCalled();
   expect(messages[0].text).toContain("Writing chat ended");
+});
+
+test('a model reply with "null" or a copied field label is never shown to the learner', async () => {
+  mocked.writingChat.mockResolvedValue({
+    reply: "friendly acknowledgment Are there any experiences you find interesting?",
+    reaction: "friendly acknowledgment", corrected_answer: "null",
+    next_question: "Are there any experiences or themes in life that you find interesting?",
+  } as never);
+  const { messages } = await handleCommunicationText(chatState([{ role: "assistant", text: "What aspect of life would you like to explore?" }]), "I don't know");
+  expect(messages[0].text).toBe("Are there any experiences or themes in life that you find interesting?");
+  expect(messages[0].text).not.toMatch(/null|friendly acknowledgment/i);
 });
