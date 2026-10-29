@@ -284,7 +284,9 @@ def test_an_agent_that_does_not_answer_keeps_its_last_score(app_client, agents, 
     # down during a check: its area counted as 0.
     from app.readiness import service as readiness_service
 
-    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    # Every refresh checks again (MySQL rounds stored times to the second,
+    # so "0 seconds ago" could otherwise reuse the last snapshot).
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(days=-1))
     first = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
     monkeypatch.delitem(SUMMARY_SCORES, "aptitude_agent")          # aptitude does not answer now
     for _ in range(2):                                              # nor on the check after
