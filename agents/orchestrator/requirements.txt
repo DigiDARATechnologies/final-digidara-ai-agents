@@ -1,42 +1,44 @@
 # Runtime dependencies for the SkillDARA FastAPI orchestrator.
-fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
-pydantic>=2.8,<3
-typing-extensions>=4.12,<5
-SQLAlchemy>=2.0,<3
-PyMySQL>=1.1,<2
-python-dotenv>=1.0,<2
+fastapi>=0.162.0,<1
+uvicorn[standard]>=0.54.0,<1
+pydantic>=2.14.1,<3
+typing-extensions>=4.16.0,<5
+SQLAlchemy>=2.1.6,<3
+PyMySQL>=1.2.3,<2
+python-dotenv>=1.2.4,<2
 httpx==0.28.1
 # LiteLLM 1.84.0 requires httpx>=0.28,<1 — bumped from the previous 1.55.4
 # pin to pick up fixes for known CVEs in litellm/langgraph/langchain-core
 # (see CI_CD_SETUP.md). httpx==0.28.1 already matches the working pin used
 # by the communication agent elsewhere in this repo.
 # 1.103.1: fixes GHSA-g5ff-637f-6q2m, PYSEC-2026-4066 and CVE-2026-114612 (HIGH), which failed the PR security scan.
+# Kept at 1.103.1: 1.104+ requires filelock<4, and every filelock 3.x has known
+# vulnerabilities (fixed in 4.0.9), which fails the security scan.
 litellm==1.103.1
-langgraph==1.2.13
-bcrypt>=4.2,<5
-PyJWT>=2.9,<3
-slowapi>=0.1.9,<1
+langgraph==1.2.17
+bcrypt>=5.0.0,<6
+PyJWT>=2.15.1,<3
+slowapi>=0.1.10,<1
 # Rate-limit counters shared by all workers (RATE_LIMIT_STORAGE_URI=redis://...).
-redis>=5.2,<9
+redis>=8.1.0,<9
 # Production process manager target (see ecosystem.config.js) — not used by
 # `uvicorn --reload` in local dev, and doesn't run as a server on Windows.
-gunicorn>=23.0,<24
+gunicorn>=26.2.0,<27
 # PDF invoices (app/billing/invoice.py). Same pins the other agents already
 # pass the pip-audit/Trivy gate with; Pillow is reportlab's own dependency.
-reportlab==5.0.1
+reportlab==5.1.0
 Pillow==13.0.0
 # Organization assistant memory (app/organizations/assistant_memory.py): mem0
 # over the compose `qdrant` service. Same pins the resume builder already
 # passes the pip-audit/Trivy gate with.
 mem0ai==2.2.1
-qdrant-client==1.19.1
+qdrant-client==1.20.0
 # Knowledge tests (app/knowledge): admins upload PDF, Word, PowerPoint and
 # text files; uploads need python-multipart. Same pypdf/python-docx pins the
 # other agents already pass the pip-audit/Trivy gate with.
 pypdf==6.21.2
-python-docx==1.1.2
+python-docx==1.2.0
 python-pptx==1.0.2
-python-multipart==0.0.31
+python-multipart==0.0.32
 # Organization student lists (app/organizations/roster.py): staff upload .xlsx files.
 openpyxl==3.1.5
