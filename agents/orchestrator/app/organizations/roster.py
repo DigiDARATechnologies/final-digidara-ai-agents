@@ -20,6 +20,7 @@ from datetime import datetime
 
 from app import db
 from app.models import Organization, OrganizationMember, OrgJoinCode, OrgJoinRequest, OrgRosterEntry, User
+from app.organizations import coins
 from app.organizations.service import (
     OrgError,
     _EMAIL,
@@ -353,6 +354,7 @@ def _decide(staff_id: str | None, org_id: str, request_id: str, approve: bool) -
             code = session.get(OrgJoinCode, request.join_code_id) if request.join_code_id else None
             if code is None or code.created_by != staff_id:
                 raise OrgError(404, "That request was made with another staff member's join code.")
+        joined = None
         if approve:
             org = session.get(Organization, org_id)
             fields = {"department": clean_class_value(request.department, 120), "year": clean_class_value(request.year, 40),
@@ -363,11 +365,14 @@ def _decide(staff_id: str | None, org_id: str, request_id: str, approve: bool) -
                 raise OrgError(409, "This organization has reached its member limit.")
             else:
                 classes.remember_options(session, org_id, fields)
+                joined = request.user_id
         else:
             session.delete(request)
         session.commit()
     finally:
         session.close()
+    if joined:
+        coins.grant(org_id, joined, "member")
 
 
 def template_xlsx() -> bytes:

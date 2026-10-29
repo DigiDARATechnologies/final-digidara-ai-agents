@@ -23,6 +23,7 @@ from app.auth.security import hash_password
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
 from app.models import Organization, OrganizationMember, OrgJoinCode, User
+from app.organizations import coins
 from app.readiness import service as readiness_service
 
 ROLES = ("owner", "admin", "staff", "member")
@@ -30,6 +31,8 @@ ROLES = ("owner", "admin", "staff", "member")
 ADMIN_ROLES = ("owner", "admin")
 # Staff also look after the students: lists, approvals, levels, codes.
 STAFF_ROLES = ("owner", "admin", "staff")
+# Coins given once to each admin, staff login and student (organizations/coins.py).
+COIN_FIELDS = ("admin_coins", "staff_coins", "student_coins")
 KINDS = ("college", "training_institute", "company", "other")
 MAX_BULK = 200
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -64,6 +67,7 @@ def _org_dict(org: Organization, member_count: int | None = None) -> dict:
     return {
         "id": org.id, "name": org.name, "kind": org.kind, "join_code": org.join_code,
         "member_limit": org.member_limit, "member_count": member_count, "status": org.status or "active",
+        **{field: getattr(org, field) or 0 for field in COIN_FIELDS},
         "created_at": org.created_at.isoformat() if org.created_at else None,
     }
 
@@ -117,7 +121,8 @@ def my_organization(user_id: str) -> dict | None:
         session.close()
 
 
-def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str, member_limit: int, created_by: str) -> dict:
+def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str, member_limit: int, created_by: str,
+                        coin_amounts: dict | None = None) -> dict:
     """Only SkillDARA's platform admin creates organizations, each with its
     first admin login (the owner). A new owner account gets a one-time
     password, returned here once; an existing account is made the owner."""
@@ -140,12 +145,14 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
         elif _membership(session, user.id) is not None:
             raise OrgError(409, f"{email} already belongs to an organization.")
         org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=unique_join_code(session),
-                           created_by=created_by, member_limit=_limit(member_limit, 1000))
+                           created_by=created_by, member_limit=_limit(member_limit, 1000),
+                           **{field: coins.clean(value) for field, value in (coin_amounts or {}).items() if field in COIN_FIELDS})
         session.add(org)
         session.flush()
         session.add(OrgJoinCode(organization_id=org.id, code=org.join_code, label="General", created_by=created_by))
         session.add(OrganizationMember(organization_id=org.id, user_id=user.id, role="owner"))
         session.commit()
+        org_id, owner_id = org.id, user.id
         result = {
             "organization": _org_dict(org, 1),
             "admin": {"name": user.name, "email": email, "status": "created" if password else "attached",
@@ -153,11 +160,13 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
         }
     finally:
         session.close()
+    result["admin"]["coins"] = coins.grant(org_id, owner_id, "owner")
     return result
 
 
-def set_status(org_id: str, status: str, member_limit: int | None = None) -> dict:
-    """Platform admin: suspend or reactivate an organization, or change its limit."""
+def set_status(org_id: str, status: str, member_limit: int | None = None, coin_amounts: dict | None = None) -> dict:
+    """Platform admin: suspend or reactivate an organization, or change its
+    limit or the coins it gives (from now on; see coins.grant_current_members)."""
     if status not in ("active", "suspended"):
         raise OrgError(400, "Status must be active or suspended.")
     session = db.get_session()
@@ -168,6 +177,9 @@ def set_status(org_id: str, status: str, member_limit: int | None = None) -> dic
         org.status = status
         if member_limit is not None:
             org.member_limit = _limit(member_limit, org.member_limit)
+        for field, value in (coin_amounts or {}).items():
+            if field in COIN_FIELDS and value is not None:
+                setattr(org, field, coins.clean(value))
         session.commit()
         return _org_dict(org, _count(session, org.id))
     finally:
@@ -228,9 +240,11 @@ def join(user_id: str, join_code: str, share_progress: bool = True, department: 
             join_code_id=entry.id if entry else None, **chosen,
         ))
         classes.remember_options(session, org.id, chosen)
+        org_id = org.id
         session.commit()
     finally:
         session.close()
+    coins.grant(org_id, user_id, "member")
     return my_organization(user_id)
 
 
@@ -343,6 +357,7 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
         raise OrgError(400, f"Add at most {MAX_BULK} members at a time.")
     session = db.get_session()
     results: list[dict] = []
+    added: list[str] = []
     try:
         _require_admin(session, admin_id, org_id, managers_only=True)
         org = session.get(Organization, org_id)
@@ -374,11 +389,14 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
                     continue
                 status = "attached"
             session.add(OrganizationMember(organization_id=org_id, user_id=user.id, role="member", external_id=external_id))
+            added.append(user.id)
             room -= 1
             results.append({"email": email, "name": name, "status": status, "temporary_password": password})
         session.commit()
     finally:
         session.close()
+    for user_id in added:
+        coins.grant(org_id, user_id, "member")
     return results
 
 
@@ -410,6 +428,7 @@ def add_staff(admin_id: str, org_id: str, name: str, email: str, details: dict |
                 existing.role = "staff"
                 _set_staff_details(existing, details)
                 session.commit()
+                coins.grant(org_id, existing.user_id, "staff")
                 return {"name": user.name, "email": email, "status": "made_staff", "temporary_password": None}
         if is_full(session.get(Organization, org_id), _count(session, org_id)):
             raise OrgError(409, "This organization has reached its member limit.")
@@ -417,6 +436,7 @@ def add_staff(admin_id: str, org_id: str, name: str, email: str, details: dict |
         _set_staff_details(staff, details)
         session.add(staff)
         session.commit()
+        coins.grant(org_id, user.id, "staff")
         return {"name": user.name, "email": email, "status": "created" if password else "attached",
                 "temporary_password": password}
     finally:
@@ -588,9 +608,12 @@ def update_member(admin_id: str, org_id: str, member_id: str, role: str | None, 
             member.role = role
         if external_id is not None:
             member.external_id = external_id.strip()[:64] or None
+        user_id = member.user_id
         session.commit()
     finally:
         session.close()
+    if role is not None:
+        coins.grant(org_id, user_id, role)      # e.g. a student made staff gets the staff coins
 
 
 def remove_member(admin_id: str, org_id: str, member_id: str) -> None:

@@ -1,4 +1,6 @@
-jest.mock('../../src/lib/orgApi', () => ({ fetchStaff: jest.fn(), addStaff: jest.fn(), updateStaff: jest.fn(), fetchFilteredMembers: jest.fn() }));jest.mock('../../src/lib/learnerApi', () => ({ removeOrgMember: jest.fn(), BAND_TONE: { not_started: 'muted', not_ready: 'low', developing: 'mid', almost_ready: 'good', job_ready: 'top' } }));jest.mock('../../src/components/ReadinessView', () => ({ ScoreRing: ({ score }: { score: number | null }) => <span>ring {score ?? '-'}</span> }));
+jest.mock('../../src/lib/orgApi', () => ({ fetchStaff: jest.fn(), addStaff: jest.fn(), updateStaff: jest.fn(), fetchFilteredMembers: jest.fn() }));
+jest.mock('../../src/lib/learnerApi', () => ({ removeOrgMember: jest.fn(), BAND_TONE: { not_started: 'muted', not_ready: 'low', developing: 'mid', almost_ready: 'good', job_ready: 'top' } }));
+jest.mock('../../src/components/ReadinessView', () => ({ ScoreRing: ({ score }: { score: number | null }) => <span>ring {score ?? '-'}</span> }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import StaffPanel from '../../src/components/org/StaffPanel';

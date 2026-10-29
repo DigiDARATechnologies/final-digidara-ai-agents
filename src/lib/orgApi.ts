@@ -128,7 +128,10 @@ export interface Transcript {
 
 export interface AccessEntry { viewer: string; subject: string; action: string; target: string; at: string | null }
 
-export interface PlatformOrg {
+/** Coins SkillDARA gives once to each admin, staff login and student of an organization (0: none). */
+export interface OrgCoins { admin_coins: number; staff_coins: number; student_coins: number }
+
+export interface PlatformOrg extends Partial<OrgCoins> {
   id: string;
   name: string;
   kind: string;
@@ -143,7 +146,7 @@ export interface PlatformOrg {
 
 export interface PlatformCreateResult {
   organization: PlatformOrg;
-  admin: { name: string; email: string; status: "created" | "attached"; temporary_password: string | null };
+  admin: { name: string; email: string; status: "created" | "attached"; temporary_password: string | null; coins?: number };
 }
 
 function query(filters: OrgFilters): string {
@@ -175,10 +178,13 @@ export const updateMemberClass = (orgId: string, memberId: string, fields: Class
   request<void>(`/organizations/${orgId}/members/${memberId}`, json("PATCH", fields));
 
 export const fetchPlatformOrgs = () => request<PlatformOrg[]>("/organizations/all");
-export const platformCreateOrg = (body: { name: string; kind: string; admin_name: string; admin_email: string; member_limit: number }) =>
+export const platformCreateOrg = (body: { name: string; kind: string; admin_name: string; admin_email: string; member_limit: number } & Partial<OrgCoins>) =>
   request<PlatformCreateResult>("/organizations/platform", json("POST", body));
-export const platformUpdateOrg = (orgId: string, body: { status: "active" | "suspended"; member_limit?: number }) =>
+export const platformUpdateOrg = (orgId: string, body: { status: "active" | "suspended"; member_limit?: number } & Partial<OrgCoins>) =>
   request<PlatformOrg>(`/organizations/platform/${orgId}`, json("PATCH", body));
+/** Gives the organization's coins to everyone already in it who has not had them yet. */
+export const platformGiveCoins = (orgId: string) =>
+  request<{ people: number; coins: number }>(`/organizations/platform/${orgId}/coins`, json("POST"));
 
 export interface AssistantTurn { role: "user" | "assistant"; content: string; actions: string[]; created_at: string | null }
 

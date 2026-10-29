@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import OrgAssistant from "../org/OrgAssistant";
 import OrgDashboard from "../org/OrgDashboard";
-import { fetchPlatformOrgs, platformCreateOrg, platformUpdateOrg, type PlatformCreateResult, type PlatformOrg } from "../../lib/orgApi";
+import {
+  fetchPlatformOrgs, platformCreateOrg, platformGiveCoins, platformUpdateOrg, type OrgCoins, type PlatformCreateResult, type PlatformOrg,
+} from "../../lib/orgApi";
 import "../org/Org.css";
 
 const KINDS = [
@@ -10,13 +12,42 @@ const KINDS = [
   { id: "company", label: "Company" },
   { id: "other", label: "Other" },
 ];
+const NO_COINS: OrgCoins = { admin_coins: 0, staff_coins: 0, student_coins: 0 };
+const EMPTY_FORM = { name: "", kind: "college", admin_name: "", admin_email: "", member_limit: 1000, ...NO_COINS };
+const COIN_FIELDS: { key: keyof OrgCoins; label: string }[] = [
+  { key: "admin_coins", label: "For the admin" },
+  { key: "staff_coins", label: "For each staff login" },
+  { key: "student_coins", label: "For each student" },
+];
+
+function coinsOf(org: PlatformOrg): OrgCoins {
+  return { admin_coins: org.admin_coins ?? 0, staff_coins: org.staff_coins ?? 0, student_coins: org.student_coins ?? 0 };
+}
+
+/** Coins for the admin, each staff login and each student; each person gets them once, when they get access. */
+function CoinFields({ value, onChange }: { value: OrgCoins; onChange: (next: OrgCoins) => void }) {
+  return (
+    <fieldset className="org-coins">
+      <legend>Coins to give <small>(1 coin = 2,000 tokens, given once to each person)</small></legend>
+      <div className="org-class-grid three">
+        {COIN_FIELDS.map(({ key, label }) => (
+          <label key={key} className="field"><span>{label}</span>
+            <input type="number" min={0} max={1000000} step={1} value={value[key]}
+              onChange={(e) => onChange({ ...value, [key]: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} />
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 /** SkillDARA's own admin: every organization is created here, with its first
  * admin login. Any organization's full dashboard opens from the list. */
 export default function OrganizationsPanel() {
   const [orgs, setOrgs] = useState<PlatformOrg[]>([]);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ name: "", kind: "college", admin_name: "", admin_email: "", member_limit: 1000 });
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [coinEdit, setCoinEdit] = useState<{ id: string; coins: OrgCoins } | null>(null);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PlatformCreateResult | null>(null);
   const [open, setOpen] = useState<PlatformOrg | null>(null);
@@ -44,7 +75,7 @@ export default function OrganizationsPanel() {
     setBusy(true);
     try {
       setCreated(await platformCreateOrg(form));
-      setForm({ name: "", kind: "college", admin_name: "", admin_email: "", member_limit: 1000 });
+      setForm(EMPTY_FORM);
       void load();
     } catch (err) {
       setError((err as Error).message);
@@ -59,6 +90,24 @@ export default function OrganizationsPanel() {
     try {
       await platformUpdateOrg(org.id, { status: next });
       setToast(next === "suspended" ? `${org.name} suspended.` : `${org.name} reactivated.`);
+      void load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function saveCoins(org: PlatformOrg, giveNow: boolean) {
+    if (!coinEdit) return;
+    try {
+      await platformUpdateOrg(org.id, { status: org.status, ...coinEdit.coins });
+      if (giveNow) {
+        const given = await platformGiveCoins(org.id);
+        setToast(given.people ? `${given.coins.toLocaleString()} coins given to ${given.people} ${given.people === 1 ? "person" : "people"}.`
+          : "Everyone here already has their coins.");
+      } else {
+        setToast(`Coins saved for ${org.name}.`);
+      }
+      setCoinEdit(null);
       void load();
     } catch (err) {
       setError((err as Error).message);
@@ -120,6 +169,7 @@ export default function OrganizationsPanel() {
                 onChange={(e) => setForm({ ...form, member_limit: e.target.checked ? 0 : 1000 })} />
               Unlimited members
             </label>
+            <CoinFields value={form} onChange={(coins) => setForm({ ...form, ...coins })} />
             <button className="btn btn-primary btn-full" disabled={busy}>{busy ? "Creating…" : "Create organization"}</button>
           </form>
           {created && (
@@ -130,6 +180,7 @@ export default function OrganizationsPanel() {
                 <span>One-time password: <code>{created.admin.temporary_password}</code> <button type="button" className="link-btn"
                   onClick={() => { void navigator.clipboard?.writeText(created.admin.temporary_password ?? ""); setToast("Password copied."); }}>Copy</button></span>
               ) : <span>That account already existed, so it keeps its own password.</span>}
+              {(created.admin.coins ?? 0) > 0 && <span>{created.admin.coins?.toLocaleString()} coins given to the admin.</span>}
               <span>General join code: <code>{created.organization.join_code}</code></span>
               <small>The password is shown only now. The admin should sign in, verify their email and change it.</small>
             </div>
@@ -142,16 +193,32 @@ export default function OrganizationsPanel() {
           </div>
           <ul className="org-code-list">
             {visible.map((org) => (
-              <li key={org.id} className={org.status === "active" ? "" : "off"}>
+              <li key={org.id} className={`${org.status === "active" ? "" : "off"}${coinEdit?.id === org.id ? " org-staff-editing" : ""}`}>
                 <div>
                   <b>{org.name}</b>
                   <span>{org.member_count ?? 0} / {org.member_limit ? org.member_limit : "Unlimited"} members · {org.active_codes} active code{org.active_codes === 1 ? "" : "s"}</span>
+                  <span className="org-staff-class">Coins: admin {coinsOf(org).admin_coins} · staff {coinsOf(org).staff_coins} · student {coinsOf(org).student_coins}</span>
                   <small>{org.admins.map((a) => a.email).join(", ") || "No admin"}{org.status === "suspended" ? " · suspended" : ""}</small>
                 </div>
-                <div className="org-actions">
-                  <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpen(org)}>Open</button>
-                  <button type="button" className="link-btn" onClick={() => void toggle(org)}>{org.status === "active" ? "Suspend" : "Reactivate"}</button>
-                </div>
+                {coinEdit?.id !== org.id && (
+                  <div className="org-actions">
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpen(org)}>Open</button>
+                    <button type="button" className="link-btn" onClick={() => setCoinEdit({ id: org.id, coins: coinsOf(org) })}>Coins</button>
+                    <button type="button" className="link-btn" onClick={() => void toggle(org)}>{org.status === "active" ? "Suspend" : "Reactivate"}</button>
+                  </div>
+                )}
+                {coinEdit?.id === org.id && (
+                  <div className="org-staff-edit">
+                    <CoinFields value={coinEdit.coins} onChange={(coins) => setCoinEdit({ ...coinEdit, coins })} />
+                    <p className="rd-muted">New amounts apply to people who join from now on. "Save and give now" also gives them to everyone
+                      already here who has not had coins for their role yet; nobody gets them twice.</p>
+                    <div className="org-actions">
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveCoins(org, false)}>Save</button>
+                      <button type="button" className="btn btn-outline btn-sm" onClick={() => void saveCoins(org, true)}>Save and give now</button>
+                      <button type="button" className="link-btn" onClick={() => setCoinEdit(null)}>Cancel</button>
+                    </div>
+                  </div>
+                )}
               </li>
             ))}
             {visible.length === 0 && <li className="org-empty">No organizations yet.</li>}

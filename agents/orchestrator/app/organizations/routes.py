@@ -11,7 +11,7 @@ from app.admin.routes import require_admin
 from app.auth import service as auth_service
 from app.auth.verified import get_verified_user_id
 from app.learner import service as learner_service
-from app.organizations import assistant, classes, insights, roster, service
+from app.organizations import assistant, classes, coins, insights, roster, service
 from app.organizations.service import OrgError
 from app.rate_limit import limiter
 from app.readiness import service as readiness_service
@@ -30,11 +30,21 @@ class PlatformCreateIn(BaseModel):
     admin_name: str = Field(default="", max_length=255)
     admin_email: str = Field(min_length=3, max_length=255)
     member_limit: int = Field(default=1000, ge=0, le=100000)  # 0: unlimited
+    # Coins given once to each admin, staff login and student (0: none).
+    admin_coins: int = Field(default=0, ge=0, le=1_000_000)
+    staff_coins: int = Field(default=0, ge=0, le=1_000_000)
+    student_coins: int = Field(default=0, ge=0, le=1_000_000)
 
 
 class PlatformUpdateIn(BaseModel):
     status: str = "active"
     member_limit: int | None = Field(default=None, ge=0, le=100000)  # 0: unlimited
+    admin_coins: int | None = Field(default=None, ge=0, le=1_000_000)
+    staff_coins: int | None = Field(default=None, ge=0, le=1_000_000)
+    student_coins: int | None = Field(default=None, ge=0, le=1_000_000)
+
+
+_COIN_FIELDS = {"admin_coins", "staff_coins", "student_coins"}
 
 
 class JoinIn(BaseModel):
@@ -142,12 +152,20 @@ def create_organization(req: CreateIn, user_id: str = Depends(get_verified_user_
 @router.post("/platform", status_code=201)
 def platform_create_organization(req: PlatformCreateIn, admin_id: str = Depends(require_admin)) -> dict:
     """Platform admin only: an organization with its first admin login."""
-    return _run(service.create_for_platform, req.name, req.kind, req.admin_name, req.admin_email, req.member_limit, admin_id)
+    return _run(service.create_for_platform, req.name, req.kind, req.admin_name, req.admin_email, req.member_limit, admin_id,
+                req.model_dump(include=_COIN_FIELDS))
 
 
 @router.patch("/platform/{org_id}")
 def platform_update_organization(org_id: str, req: PlatformUpdateIn, _admin: str = Depends(require_admin)) -> dict:
-    return _run(service.set_status, org_id, req.status, req.member_limit)
+    return _run(service.set_status, org_id, req.status, req.member_limit, req.model_dump(include=_COIN_FIELDS))
+
+
+@router.post("/platform/{org_id}/coins")
+def platform_give_coins(org_id: str, _admin: str = Depends(require_admin)) -> dict:
+    """Platform admin: give the organization's coins to everyone already in
+    it who has not had them yet (each person once per role)."""
+    return coins.grant_current_members(org_id)
 
 
 @router.get("/me")

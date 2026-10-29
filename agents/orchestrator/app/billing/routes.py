@@ -166,7 +166,7 @@ def summary(user_id: str = Depends(get_current_user_id)) -> dict:
                     "id": p.id, "plan_id": p.plan_id, "label": payment_label(p.plan_id), "amount": p.amount,
                     "currency": p.currency, "status": p.status, "payment_id": p.razorpay_payment_id,
                     "points": credited_points(p) if p.status == "paid" else points_for_payment(p.plan_id, p.amount),
-                    "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid",
+                    "created_at": p.created_at.isoformat(), "invoice_available": p.status == "paid" and p.amount > 0,
                 }
                 for p in payments
             ],
@@ -323,6 +323,8 @@ def download_invoice(payment_id: str, user_id: str = Depends(get_current_user_id
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Invoice not found.")
         if payment.status != "paid" or payment.paid_at is None:
             raise HTTPException(status.HTTP_409_CONFLICT, "An invoice is available once the payment is complete.")
+        if payment.amount <= 0:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Coins given free of charge have no invoice.")
         user = auth_service.get_by_id(user_id)
         customer = {"name": getattr(user, "name", ""), "email": getattr(user, "email", ""), "mobile": getattr(user, "mobile", "") or "",
                     "gstin": payment.customer_gstin or ""}

@@ -265,6 +265,8 @@ def payment_label(plan_id: str) -> str:
     """Human-readable name for a payment row, whatever kind of payment it was."""
     if plan_id.startswith("topup_"):
         return "Coins top-up"
+    if plan_id == "org_coins":
+        return "Coins from your organization"
     if plan_id in PLANS:
         return f"{PLANS[plan_id]['name']} plan"
     if plan_id in LEGACY_PLANS:

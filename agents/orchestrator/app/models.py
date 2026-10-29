@@ -299,6 +299,12 @@ class Organization(Base):
     member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
     # "active" or "suspended" (a suspended organization's admins and codes stop working).
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
+    # Coins SkillDARA gives each person once, when they get access: the
+    # organization's admins (owner and admins), each staff login and each
+    # student. 0 gives none. See organizations/coins.py.
+    admin_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    staff_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    student_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
