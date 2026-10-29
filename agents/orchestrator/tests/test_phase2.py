@@ -273,9 +273,26 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     assert coding["can_level_up"] is False and coding["suggested_level"] is None and coding["unlock_at"] == 100
     aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
     assert aptitude["can_level_up"] is True and aptitude["suggested_level"] == "medium" and aptitude["unlock_at"] == 50
+
     assert coding["gaps"] == ["Dynamic programming"]
     assert coding["score"] == 20 and coding["quality_score"] == 80 and coding["levels_completed"] == []
     assert body["next_steps"]
+
+
+def test_an_agent_that_does_not_answer_keeps_its_last_score(app_client, agents, monkeypatch):
+    # The score used to drop (e.g. 45 to 35) whenever one agent was busy or
+    # down during a check: its area counted as 0.
+    from app.readiness import service as readiness_service
+
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    first = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    monkeypatch.delitem(SUMMARY_SCORES, "aptitude_agent")          # aptitude does not answer now
+    for _ in range(2):                                              # nor on the check after
+        again = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+        assert again["overall"] == first["overall"]
+        aptitude = next(a for a in again["areas"] if a["agent_name"] == "aptitude_agent")
+        assert aptitude["status"] == "assessed" and aptitude["carried_over"] is True
+        assert aptitude["quality_score"] == 70
 
 
 def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypatch):
@@ -1262,3 +1279,52 @@ def test_a_staff_login_carries_department_degree_class_and_class_head(app_client
     updated = app_client.put(f"/organizations/{org_id}/staff/{staff['member_id']}", headers=auth("admin"), json={
         "department": "Computer Science", "degree": "B.E.", "year": "3rd year", "section": "B", "class_head": False}).json()
     assert (updated["year"], updated["section"], updated["class_head"]) == ("3rd year", "B", False)
+
+
+def test_an_organization_gives_coins_to_its_admin_staff_and_students(app_client, users, database):
+    from app.models import Payment
+
+    def balance(email):
+        session = database()
+        user = session.query(User).filter_by(email=email).one()
+        session.close()
+        return user.token_balance
+
+    before = {email: balance(email) for email in ("admin@example.test", "learner@example.test", "other@example.test")}
+    created = app_client.post("/organizations/platform", headers=auth("platform"), json={
+        "name": "Coin College", "admin_email": "admin@example.test", "admin_coins": 100, "staff_coins": 50, "student_coins": 20}).json()
+    org = created["organization"]
+    assert (org["admin_coins"], org["staff_coins"], org["student_coins"]) == (100, 50, 20)
+    assert created["admin"]["coins"] == 100
+    assert balance("admin@example.test") == before["admin@example.test"] + 100 * 2000
+    _staff_login(app_client, database, org["id"], email="staff@example.test")
+    from app.billing.plans import free_signup_tokens
+    assert balance("staff@example.test") == free_signup_tokens() + 50 * 2000   # a new account's welcome coins too
+    _list_students(org["id"], "learner@example.test", "other@example.test")
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["join_code"]})
+    assert balance("learner@example.test") == before["learner@example.test"] + 20 * 2000
+    # Leaving and joining again does not give the coins twice.
+    assert app_client.delete("/organizations/me", headers=auth()).status_code == 204
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["join_code"]})
+    assert balance("learner@example.test") == before["learner@example.test"] + 20 * 2000
+    # Shown in the learner's billing history, with no invoice.
+    session = database()
+    grant = session.query(Payment).filter_by(user_id="learner", plan_id="org_coins").one()
+    session.close()
+    assert grant.amount == 0 and grant.credited_points == 20 and grant.razorpay_order_id.startswith("manual_org_")
+    # Giving coins to current members later reaches only those who had none.
+    app_client.patch(f"/organizations/platform/{org['id']}", headers=auth("platform"), json={"status": "active", "student_coins": 30})
+    app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["join_code"]})
+    assert balance("other@example.test") == before["other@example.test"] + 30 * 2000
+    given = app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json()
+    assert given == {"people": 0, "coins": 0}
+    assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("admin")).status_code == 403
+
+
+def test_coins_reach_members_who_joined_before_coins_were_set(app_client, users, database):
+    org = _make_org(app_client)["organization"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["join_code"]})
+    app_client.patch(f"/organizations/platform/{org['id']}", headers=auth("platform"),
+                     json={"status": "active", "admin_coins": 10, "student_coins": 5})
+    assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json() == {"people": 2, "coins": 15}
+    assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json() == {"people": 0, "coins": 0}

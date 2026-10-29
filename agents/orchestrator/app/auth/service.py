@@ -254,25 +254,31 @@ def credit_tokens(user_id: str, amount: int, points: float | None = None) -> Non
     account's existing rate. The row is locked so a concurrent charge
     (settle_tokens) can't land between reading and writing the balance.
     """
-    from app.billing.plans import FREE_TOKENS_PER_POINT
-
     session = get_session()
     try:
         user = session.get(User, user_id, with_for_update=True)
         if user is None:
             return
-        rate = user.tokens_per_point or FREE_TOKENS_PER_POINT
-        balance = user.token_balance or 0
-        new_balance = balance + amount
-        if points and new_balance > 0:
-            # A negative balance (the last call overshot) is a debt in tokens;
-            # it shows as 0 points, and is paid off out of the new tokens.
-            new_points = max(0, balance) / rate + points
-            user.tokens_per_point = new_balance / new_points
-        user.token_balance = new_balance
+        add_credit(user, amount, points)
         session.commit()
     finally:
         session.close()
+
+
+def add_credit(user: User, amount: int, points: float | None = None) -> None:
+    """credit_tokens on a user row the caller has locked, inside the caller's
+    transaction (so a credit and its record are saved together)."""
+    from app.billing.plans import FREE_TOKENS_PER_POINT
+
+    rate = user.tokens_per_point or FREE_TOKENS_PER_POINT
+    balance = user.token_balance or 0
+    new_balance = balance + amount
+    if points and new_balance > 0:
+        # A negative balance (the last call overshot) is a debt in tokens;
+        # it shows as 0 points, and is paid off out of the new tokens.
+        new_points = max(0, balance) / rate + points
+        user.tokens_per_point = new_balance / new_points
+    user.token_balance = new_balance
 
 
 def link_google_id(user_id: str, google_id: str) -> User:

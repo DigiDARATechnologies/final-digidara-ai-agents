@@ -363,18 +363,51 @@ def _next_steps(areas: list[dict]) -> list[str]:
     return steps
 
 
+def _carry_over(user_id: str, areas: list[dict]) -> set[str]:
+    """An agent that did not answer this time (down, busy or slow) keeps its
+    last known result instead of counting as 0: a learner's score never
+    drops because of a server hiccup. Returns the agents carried over."""
+    unavailable = {a["agent_name"] for a in areas if a["status"] == "unavailable"}
+    if not unavailable:
+        return set()
+    session = db.get_session()
+    try:
+        # Recent snapshots, newest first: the last one may itself have
+        # missed this agent.
+        snapshots = (_for_current_role(session.query(ReadinessSnapshot), user_id)
+                     .order_by(ReadinessSnapshot.computed_at.desc()).limit(HISTORY_LIMIT).all())
+    finally:
+        session.close()
+    previous: dict[str, tuple[dict, datetime]] = {}
+    for snapshot in snapshots:
+        for area in (snapshot.areas or {}).get("areas") or []:
+            if (isinstance(area, dict) and area.get("agent_name") in unavailable and area.get("status") == "assessed"
+                    and "quality_score" in area and area["agent_name"] not in previous):
+                previous[area["agent_name"]] = (area, snapshot.computed_at)
+    carried = set()
+    for index, area in enumerate(areas):
+        found = previous.get(area["agent_name"])
+        if area["status"] == "unavailable" and found is not None:
+            last, when = found
+            areas[index] = {**last, "carried_over": True, "reason": area.get("reason"), "carried_from": when.isoformat()}
+            carried.add(area["agent_name"])
+    return carried
+
+
 async def compute(user) -> dict:
     # Database work in worker threads, never on the event loop (it held up
     # every other request of the worker: voice, chat, agents).
     levels = await run_in_threadpool(learner_service.get_levels, user.id)
     periods = await run_in_threadpool(learner_service.role_periods, user.id)
     areas = list(await asyncio.gather(*(_area(name, label, weight, user, levels, periods) for name, label, weight in AREAS)))
+    carried = await run_in_threadpool(_carry_over, user.id, areas)
     try:
-        await run_in_threadpool(_auto_promote, user, areas, levels)
+        await run_in_threadpool(_auto_promote, user, [a for a in areas if a["agent_name"] not in carried], levels)
     except Exception:
         logger.warning("automatic level change failed", exc_info=True)
     for area in areas:
-        area["quality_score"] = area["score"]
+        if area["agent_name"] not in carried:
+            area["quality_score"] = area["score"]
         area["levels_completed"] = completed_levels(area)
         area["score"] = level_score(area)
     assessed = [a for a in areas if a["status"] == "assessed"]

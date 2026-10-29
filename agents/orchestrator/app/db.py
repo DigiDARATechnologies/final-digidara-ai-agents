@@ -126,6 +126,9 @@ def init_db() -> None:
         member_columns = {column["name"] for column in inspect(engine).get_columns("organization_members")}
         for table, existing, column, ddl in (
             ("organizations", org_columns, "status", "VARCHAR(16) NOT NULL DEFAULT 'active'"),
+            ("organizations", org_columns, "admin_coins", "INT NOT NULL DEFAULT 0"),
+            ("organizations", org_columns, "staff_coins", "INT NOT NULL DEFAULT 0"),
+            ("organizations", org_columns, "student_coins", "INT NOT NULL DEFAULT 0"),
             ("organization_members", member_columns, "department", "VARCHAR(120) NULL"),
             ("organization_members", member_columns, "year", "VARCHAR(40) NULL"),
             ("organization_members", member_columns, "section", "VARCHAR(40) NULL"),

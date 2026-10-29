@@ -220,3 +220,33 @@ def test_a_non_deadlock_database_error_during_sync_is_not_retried(history_client
     monkeypatch.setattr(service, "get_session", broken_get_session)
     with pytest.raises(OperationalError):
         service.sync_history(_user_a_id, [sample_chat()], [])
+
+
+def test_an_older_copy_of_a_chat_never_cuts_off_newer_messages(history_client):
+    # Another tab or device (or a browser whose saves failed) still holds the
+    # chat as it was two messages ago: saving it must not drop those two.
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    full = sample_chat()
+    full["messages"] = [{"role": "user" if i % 2 else "agent", "text": f"m{i}", "time": "10:00 AM"} for i in range(4)]
+    assert client.put("/chats/sync", json={"chats": [full], "deleted_ids": []}).status_code == 200
+    stale = {**full, "messages": full["messages"][:2], "updatedAt": full["updatedAt"] + 10, "title": "Renamed"}
+    saved = client.put("/chats/sync", json={"chats": [stale], "deleted_ids": []}).json()["chats"][0]
+    assert [m["text"] for m in saved["messages"]] == ["m0", "m1", "m2", "m3"]
+    assert saved["title"] == "Renamed"
+
+
+def test_an_edited_chat_keeps_the_replaced_messages_in_the_archive(history_client, database):
+    from app.models import ConversationArchive
+
+    client, _current_user, user_a_id, _user_b_id = history_client
+    chat = sample_chat()
+    chat["messages"] = [{"role": "user", "text": "first question", "time": "10:00 AM"},
+                        {"role": "agent", "text": "first answer", "time": "10:00 AM"}]
+    client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
+    edited = {**chat, "messages": [{"role": "user", "text": "edited question", "time": "10:01 AM"}], "updatedAt": chat["updatedAt"] + 1}
+    saved = client.put("/chats/sync", json={"chats": [edited], "deleted_ids": []}).json()["chats"][0]
+    assert [m["text"] for m in saved["messages"]] == ["edited question"]
+    session = database()
+    archived = session.query(ConversationArchive).filter_by(user_id=user_a_id, conversation_id=chat["id"]).one()
+    session.close()
+    assert [m["text"] for m in archived.messages] == ["first question", "first answer"]

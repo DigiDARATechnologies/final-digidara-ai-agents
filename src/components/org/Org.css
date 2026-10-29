@@ -281,3 +281,8 @@ button.org-bar-row:hover { background: var(--surf-2); }
 .org-staff-head > div { display: flex; flex-direction: column; gap: 2px; }
 .org-staff-head h3 { margin: 0; }
 .org-staff-of { display: block; color: var(--tx-3); font-size: 12px; }
+
+/* Coins an organization gives its admin, staff and students (platform admin). */
+.org-coins { border: 1px solid var(--line-1); border-radius: 12px; padding: 10px 12px 2px; margin: 0 0 14px; }
+.org-coins legend { padding: 0 6px; font-size: 13.5px; font-weight: 700; color: var(--tx-1); }
+.org-coins legend small { font-weight: 500; color: var(--tx-3); }

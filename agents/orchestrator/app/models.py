@@ -154,6 +154,19 @@ class ConversationMessage(Base):
     )
 
 
+class ConversationArchive(Base):
+    """Messages a chat sync replaced (an edited message rewrites the rest of
+    the chat), kept so no conversation is ever lost."""
+    __tablename__ = "conversation_archives"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    messages: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class AgentChatState(Base):
     """A learner's progress in one chat with one agent, kept server-side so it
     follows them across devices instead of living in browser storage."""
@@ -286,6 +299,12 @@ class Organization(Base):
     member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
     # "active" or "suspended" (a suspended organization's admins and codes stop working).
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
+    # Coins SkillDARA gives each person once, when they get access: the
+    # organization's admins (owner and admins), each staff login and each
+    # student. 0 gives none. See organizations/coins.py.
+    admin_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    staff_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    student_coins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
