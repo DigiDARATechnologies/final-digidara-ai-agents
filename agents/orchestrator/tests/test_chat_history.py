@@ -81,13 +81,42 @@ def test_device_sync_merges_unseen_conversations_without_deleting_them(history_c
     assert {chat["id"] for chat in synced.json()["chats"]} == {"c_device_a", "c_device_b"}
 
 
-def test_invalid_or_duplicate_chats_are_rejected(history_client):
+def test_a_duplicate_chat_keeps_its_newest_copy(history_client):
     client, _current_user, _user_a_id, _user_b_id = history_client
-    chat = sample_chat()
-    duplicate = client.put("/chats/sync", json={"chats": [chat, chat], "deleted_ids": []})
-    assert duplicate.status_code == 422
-    malformed = client.put("/chats/sync", json={"chats": [{"id": "bad"}], "deleted_ids": []})
-    assert malformed.status_code == 422
+    older, newer = sample_chat(), sample_chat()
+    newer["updatedAt"] += 5
+    newer["title"] = "Newer title"
+    saved = client.put("/chats/sync", json={"chats": [older, newer], "deleted_ids": []})
+    assert saved.status_code == 200
+    assert [c["title"] for c in saved.json()["chats"]] == ["Newer title"]
+
+
+def test_one_malformed_message_does_not_block_the_whole_history(history_client):
+    # A message without time, with a null or object text, or an unknown role
+    # used to make every sync fail with 422; it is now repaired and kept.
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    good = sample_chat("c_good")
+    odd = sample_chat("c_odd")
+    odd["messages"] = [{"role": "agent", "text": None, "options": [{"label": "Problem list", "value": "list"}]},
+                       {"role": "system", "text": {"a": 1}, "time": "10:01 AM"},
+                       {"role": "user", "text": "hi", "time": 5}, "not a message"]
+    odd["title"] = "x" * 900
+    saved = client.put("/chats/sync", json={"chats": [good, odd, {"id": ""}, "junk"], "deleted_ids": ["", None, "gone"]})
+    assert saved.status_code == 200
+    chats = {c["id"]: c for c in saved.json()["chats"]}
+    assert set(chats) == {"c_good", "c_odd"}
+    assert len(chats["c_odd"]["title"]) == 500
+    assert [(m["role"], m["text"], m["time"]) for m in chats["c_odd"]["messages"]] == [
+        ("agent", "", ""), ("agent", '{"a": 1}', "10:01 AM"), ("user", "hi", "")]
+    assert chats["c_odd"]["messages"][0]["options"] == [{"label": "Problem list", "value": "list"}]
+
+
+def test_more_than_five_hundred_chats_still_sync(history_client):
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    chats = [sample_chat(f"c_{i}") for i in range(600)]
+    saved = client.put("/chats/sync", json={"chats": chats, "deleted_ids": []})
+    assert saved.status_code == 200
+    assert len(saved.json()["chats"]) == 600
 
 
 def test_history_endpoint_requires_authentication():

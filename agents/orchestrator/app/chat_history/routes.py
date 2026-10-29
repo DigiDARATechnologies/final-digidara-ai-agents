@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response
@@ -8,49 +9,79 @@ from app.auth.security import get_current_user_id
 from app.agent_state import service as agent_state_service
 from app.chat_history import service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chats", tags=["chat-history"])
 
 
+MAX_CHATS = 5000
+MAX_MESSAGES = 10_000
+MAX_HISTORY_BYTES = 25_000_000
+ROLES = {"user", "agent"}
+
+
+def _clean_message(message: Any) -> dict[str, Any] | None:
+    """A message as stored: role, text and time always present. Fields an
+    older or buggy client left out are filled in, never a reason to refuse
+    the whole history."""
+    if not isinstance(message, dict):
+        return None
+    text = message.get("text")
+    if not isinstance(text, str):
+        text = "" if text is None else json.dumps(text, ensure_ascii=False) if isinstance(text, (dict, list)) else str(text)
+    time = message.get("time")
+    return {
+        **message,
+        "role": message.get("role") if message.get("role") in ROLES else "agent",
+        "text": text,
+        "time": time if isinstance(time, str) else "",
+    }
+
+
+def _clean_chat(chat: Any) -> dict[str, Any] | None:
+    """None only for a chat that cannot be stored at all (no usable id)."""
+    if not isinstance(chat, dict):
+        return None
+    chat_id = chat.get("id")
+    if not isinstance(chat_id, str) or not chat_id or len(chat_id) > 128:
+        return None
+    agent_id = chat.get("agentId")
+    title = chat.get("title")
+    updated_at = chat.get("updatedAt")
+    messages = chat.get("messages") if isinstance(chat.get("messages"), list) else []
+    return {
+        **chat,
+        "agentId": agent_id[:128] if isinstance(agent_id, str) and agent_id else "general",
+        "title": title[:500] if isinstance(title, str) else "",
+        "updatedAt": updated_at if isinstance(updated_at, (int, float)) and not isinstance(updated_at, bool) else 0,
+        "messages": [m for m in (_clean_message(m) for m in messages[-MAX_MESSAGES:]) if m is not None],
+    }
+
+
 class ChatHistorySync(BaseModel):
-    chats: list[dict[str, Any]] = Field(max_length=500)
-    deleted_ids: list[str] = Field(default_factory=list, max_length=500)
+    chats: list[Any] = Field(max_length=MAX_CHATS)
+    deleted_ids: list[Any] = Field(default_factory=list, max_length=MAX_CHATS)
 
     @field_validator("chats")
     @classmethod
-    def validate_chats(cls, chats: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        required = {"id", "agentId", "title", "messages", "updatedAt"}
-        ids: set[str] = set()
-        for chat in chats:
-            if not required.issubset(chat):
-                raise ValueError("Each chat must include id, agentId, title, messages, and updatedAt.")
-            if not isinstance(chat["id"], str) or not chat["id"] or len(chat["id"]) > 128:
-                raise ValueError("Each chat must have a valid id.")
-            if chat["id"] in ids:
-                raise ValueError("Chat ids must be unique.")
-            ids.add(chat["id"])
-            if not isinstance(chat["agentId"], str) or len(chat["agentId"]) > 128:
-                raise ValueError("Each chat must have a valid agentId.")
-            if not isinstance(chat["title"], str) or len(chat["title"]) > 500:
-                raise ValueError("Each chat must have a valid title.")
-            if not isinstance(chat["updatedAt"], (int, float)):
-                raise ValueError("Each chat must have a valid updatedAt timestamp.")
-            if not isinstance(chat["messages"], list) or len(chat["messages"]) > 2000:
-                raise ValueError("Each chat must contain a valid messages list.")
-            for message in chat["messages"]:
-                if not isinstance(message, dict) or not {"role", "text", "time"}.issubset(message):
-                    raise ValueError("Each message must include role, text, and time.")
-                if message["role"] not in {"user", "agent"} or not isinstance(message["text"], str):
-                    raise ValueError("Each message must have a valid role and text.")
-        if len(json.dumps(chats, ensure_ascii=False)) > 10_000_000:
+    def validate_chats(cls, chats: list[Any]) -> list[dict[str, Any]]:
+        by_id: dict[str, dict[str, Any]] = {}
+        for raw in chats:
+            chat = _clean_chat(raw)
+            if chat is None:
+                logger.warning("chat sync: skipped a chat without a usable id")
+                continue
+            # The same chat twice: keep its newest copy.
+            if chat["id"] not in by_id or chat["updatedAt"] >= by_id[chat["id"]]["updatedAt"]:
+                by_id[chat["id"]] = chat
+        cleaned = list(by_id.values())
+        if len(json.dumps(cleaned, ensure_ascii=False)) > MAX_HISTORY_BYTES:
             raise ValueError("Chat history is too large.")
-        return chats
+        return cleaned
 
     @field_validator("deleted_ids")
     @classmethod
-    def validate_deleted_ids(cls, deleted_ids: list[str]) -> list[str]:
-        if any(not chat_id or len(chat_id) > 128 for chat_id in deleted_ids):
-            raise ValueError("Deleted chat ids must be valid.")
-        return deleted_ids
+    def validate_deleted_ids(cls, deleted_ids: list[Any]) -> list[str]:
+        return [chat_id for chat_id in deleted_ids if isinstance(chat_id, str) and 0 < len(chat_id) <= 128]
 
 
 @router.get("")

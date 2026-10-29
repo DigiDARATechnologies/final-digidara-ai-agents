@@ -2149,6 +2149,7 @@ export default function App() {
           onCloseMobile={() => setMobileOpen(false)}
           mobileOpen={mobileOpen}
           homeActive={isHome}
+          inOrganization={Boolean(learnerSummary?.membership)}
           chats={chats}
           currentChatId={currentChatId}
           userMenuOpen={openMenu === "user"}

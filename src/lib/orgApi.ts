@@ -57,6 +57,8 @@ export interface OrgFilters {
   level?: LevelId;
   status?: "active" | "inactive" | "not_signed_in";
   search?: string;
+  /** The staff in charge: their user id, or "none" for students with no staff. */
+  staff?: string;
 }
 
 export interface LearnerBrief {
@@ -210,6 +212,8 @@ export const updateStaff = (orgId: string, memberId: string, body: StaffDetails)
 export interface RosterEntry {
   id: string; name: string; email: string; mobile: string;
   status: "joined" | "waiting" | "not_signed_up" | "other_organization"; added_at: string | null;
+  /** User id of whoever uploaded this row (a staff member, owner or admin). */
+  uploaded_by?: string | null;
 }
 export interface RosterUploadResult {
   added: number; updated: number; joined: number; approved: number; invalid_count: number;

@@ -16,7 +16,10 @@ async function parseResponse(response: Response): Promise<RemoteChatHistory> {
     let detail = response.statusText;
     try {
       const body = await response.json();
-      detail = body.detail ?? detail;
+      // FastAPI validation errors are a list of {loc, msg}: show them as text.
+      detail = Array.isArray(body.detail)
+        ? body.detail.map((e: { loc?: unknown[]; msg?: string }) => `${(e.loc ?? []).join(".")}: ${e.msg ?? ""}`).join("; ")
+        : body.detail ?? detail;
     } catch {
       // Preserve the HTTP status text when the response is not JSON.
     }

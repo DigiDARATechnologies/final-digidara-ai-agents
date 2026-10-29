@@ -19,6 +19,7 @@ import {
   fetchCodes,
   fetchFilteredMembers,
   fetchOptions,
+  fetchStaff,
   setCodeActive,
   type AccessEntry,
   type ClassFields,
@@ -28,6 +29,7 @@ import {
   type LearnerBrief,
   type OrgAnalytics,
   type OrgFilters,
+  type StaffLogin,
 } from "../../lib/orgApi";
 
 export interface OrgRef {
@@ -85,8 +87,9 @@ function Kpi({ value, label, hint }: { value: ReactNode; label: string; hint?: s
   return <div className="org-kpi"><b>{value}</b><span>{label}</span>{hint && <small>{hint}</small>}</div>;
 }
 
-function Filters({ filters, setFilters, options, codes, agentLabels }: {
+function Filters({ filters, setFilters, options, codes, agentLabels, staff }: {
   filters: OrgFilters; setFilters: (f: OrgFilters) => void; options: ClassOptions; codes: JoinCode[]; agentLabels: Record<string, string>;
+  staff: StaffLogin[];
 }) {
   const set = (patch: Partial<OrgFilters>) => setFilters({ ...filters, ...patch });
   const active = Object.values(filters).filter(Boolean).length;
@@ -100,6 +103,13 @@ function Filters({ filters, setFilters, options, codes, agentLabels }: {
           {options[kind].map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
       ))}
+      {staff.length > 0 && (
+        <select value={filters.staff ?? ""} aria-label="Staff" onChange={(e) => set({ staff: e.target.value || undefined })}>
+          <option value="">All staff</option>
+          {staff.map((s) => <option key={s.user_id} value={s.user_id}>{s.name}</option>)}
+          <option value="none">No staff assigned</option>
+        </select>
+      )}
       <select value={filters.code_id ?? ""} aria-label="Join code" onChange={(e) => set({ code_id: e.target.value || undefined })}>
         <option value="">All join codes</option>
         {codes.map((code) => <option key={code.id} value={code.id}>{code.code} · {code.label}</option>)}
@@ -223,9 +233,10 @@ function Overview({ analytics, onOpen, onFilter }: { analytics: OrgAnalytics; on
   );
 }
 
-function Students({ org, members, analytics, onOpen, onReload, onToast }: {
-  org: OrgRef; members: OrgMember[]; analytics: OrgAnalytics | null; onOpen: (id: string) => void; onReload: () => void; onToast: (m: string) => void;
+function Students({ org, members, analytics, staff, onOpen, onReload, onToast }: {
+  org: OrgRef; members: OrgMember[]; analytics: OrgAnalytics | null; staff: StaffLogin[]; onOpen: (id: string) => void; onReload: () => void; onToast: (m: string) => void;
 }) {
+  const staffName = (m: OrgMember) => staff.find((s) => s.user_id === m.staff_user_id)?.name ?? "";
   const [lines, setLines] = useState("");
   const [adding, setAdding] = useState(false);
   const [results, setResults] = useState<AddMemberResult[] | null>(null);
@@ -251,9 +262,9 @@ function Students({ org, members, analytics, onOpen, onReload, onToast }: {
 
   function exportCsv() {
     downloadCsv(`${org.name}-learners.csv`, [
-      ["name", "email", "roll", "department", "year", "section", "join_code", "readiness", "band", "last_active", "signed_in"],
-      ...learners.map((m) => [m.name, m.email, m.external_id ?? "", m.department ?? "", m.year ?? "", m.section ?? "",
-        m.join_code?.code ?? "", m.readiness?.overall != null ? String(Math.round(m.readiness.overall)) : "",
+      ["name", "email", "roll", "department", "year", "section", "staff", "join_code", "readiness", "band", "last_active", "signed_in"],
+      ...learners.map((m) => [m.name, m.email, m.external_id ?? "", m.department ?? "", m.year ?? "", m.section ?? "", staffName(m),
+        m.join_code?.code ?? "",m.readiness?.overall != null ? String(Math.round(m.readiness.overall)) : "",
         m.readiness?.band_label ?? "", m.last_active_at ?? "", m.has_signed_in ? "yes" : "no"]),
     ]);
   }
@@ -307,7 +318,8 @@ function Students({ org, members, analytics, onOpen, onReload, onToast }: {
                 onKeyDown={(e) => e.key === "Enter" && onOpen(m.member_id)}>
                 <td><div className="org-person"><span className="org-avatar" aria-hidden="true">{m.name.slice(0, 1).toUpperCase()}</span>
                   <span><b>{m.name}</b><small>{m.email}{m.external_id ? ` · ${m.external_id}` : ""}</small></span></div></td>
-                <td>{[m.department, m.year, m.section].filter(Boolean).join(" · ") || <span className="rd-muted">—</span>}</td>
+                <td>{[m.department, m.year, m.section].filter(Boolean).join(" · ") || <span className="rd-muted">—</span>}
+                  {staffName(m) && <small className="org-staff-of">Staff: {staffName(m)}</small>}</td>
                 <td>{!m.progress_shared ? <span className="rd-muted">{m.has_signed_in ? "Not shared" : "Not signed in"}</span>
                   : m.readiness ? <span className={`og-band tone-${BAND_TONE[m.readiness.band]}`}>
                     {m.readiness.overall === null ? "–" : Math.round(m.readiness.overall)} · {m.readiness.band_label}</span>
@@ -433,18 +445,23 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
   const [options, setOptions] = useState<ClassOptions>(EMPTY_OPTIONS);
   const [log, setLog] = useState<AccessEntry[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  // A student opened from a staff member's list, which may be outside the current filters.
+  const [openRow, setOpenRow] = useState<OrgMember | null>(null);
+  const [staff, setStaff] = useState<StaffLogin[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
   const loadSetup = useCallback(async () => {
     try {
-      const [c, o] = await Promise.all([fetchCodes(org.id), fetchOptions(org.id)]);
+      const [c, o, s] = await Promise.all([fetchCodes(org.id), fetchOptions(org.id),
+        org.role === "staff" ? Promise.resolve([]) : fetchStaff(org.id)]);
       setCodes(c);
       setOptions(o);
+      setStaff(s.filter((person) => person.role === "staff"));
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [org.id]);
+  }, [org.id, org.role]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -469,7 +486,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
     if (tab === "Access log") fetchAccessLog(org.id).then(setLog).catch((err) => setError((err as Error).message));
   }, [tab, org.id]);
 
-  const openMember = members.find((m) => m.member_id === openId);
+  const openMember = members.find((m) => m.member_id === openId) ?? (openRow?.member_id === openId ? openRow : undefined);
   const extra = extraTabs.find((t) => t.name === tab);
 
   return (
@@ -494,7 +511,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
       </nav>
 
       {(tab === "Overview" || tab === "Students" || extra) && (
-        <Filters filters={filters} setFilters={setFilters} options={options} codes={codes} agentLabels={analytics?.agent_labels ?? {}} />
+        <Filters filters={filters} setFilters={setFilters} options={options} codes={codes} agentLabels={analytics?.agent_labels ?? {}} staff={staff} />
       )}
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && !analytics && <div className="org-skeleton tall" />}
@@ -503,14 +520,15 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
         <Overview analytics={analytics} onOpen={setOpenId} onFilter={(patch) => { setFilters({ ...filters, ...patch }); setTab("Students"); }} />
       )}
       {tab === "Students" && (
-        <Students org={org} members={members} analytics={analytics} onOpen={setOpenId} onReload={() => void loadData()} onToast={onToast} />
+        <Students org={org} members={members} analytics={analytics} staff={staff} onOpen={setOpenId} onReload={() => void loadData()} onToast={onToast} />
       )}
       {tab === "Assessments" && <OrgAssessments orgId={org.id} onToast={onToast} presetTestId={linkTestId} />}
       {tab === "Knowledge tests" && <OrgKnowledgeTests orgId={org.id} onToast={onToast} onCreateLink={(testId) => { setLinkTestId(testId); setTab("Assessments"); }} />}
       {tab === "Leaderboard" && <Leaderboard defaultScope="organization" onToast={onToast} />}
-      {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} onChanged={() => void loadData()} onToast={onToast} />}
+      {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} staff={staff} onChanged={() => void loadData()} onToast={onToast} />}
       {tab === "Join codes" && <Codes org={org} codes={codes} options={options} onReload={() => void loadSetup()} onToast={onToast} />}
-      {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} options={options} onToast={onToast} />}
+      {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} options={options} onToast={onToast}
+        onOpenStudent={(member) => { setOpenRow(member); setOpenId(member.member_id); }} />}
       {tab === "Access log" && <AccessLog entries={log} />}
       {extra && extra.render(filters)}
 

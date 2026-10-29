@@ -203,7 +203,7 @@ def entries(staff_id: str, org_id: str) -> list[dict]:
             status = ("joined" if member and member.organization_id == org_id else "other_organization" if member
                       else "not_signed_up" if user is None else "waiting")
             result.append({"id": r.id, "name": r.name, "email": r.email, "mobile": r.mobile, "status": status,
-                           "added_at": r.created_at.isoformat() if r.created_at else None})
+                           "uploaded_by": r.uploaded_by, "added_at": r.created_at.isoformat() if r.created_at else None})
         return result
     finally:
         session.close()

@@ -271,3 +271,13 @@ button.org-bar-row:hover { background: var(--surf-2); }
 .org-code-list li.org-staff-editing { flex-wrap: wrap; }
 .org-staff-edit { width: 100%; margin-top: 10px; }
 @media (max-width: 640px) { .org-staff-fields { grid-template-columns: 1fr; } }
+
+/* A staff member's students: click a staff name on the Staff tab. */
+.org-staff-name { all: unset; cursor: pointer; font-weight: 700; color: var(--accent3); text-decoration: underline; text-underline-offset: 3px; }
+.org-staff-name:hover, .org-staff-name[aria-pressed="true"] { color: var(--tx-1); }
+.org-staff-name:focus-visible { outline: 2px solid var(--accent3); outline-offset: 2px; border-radius: 4px; }
+.org-staff-students { margin-bottom: 16px; display: grid; gap: 14px; }
+.org-staff-head { display: flex; align-items: center; gap: 12px; }
+.org-staff-head > div { display: flex; flex-direction: column; gap: 2px; }
+.org-staff-head h3 { margin: 0; }
+.org-staff-of { display: block; color: var(--tx-3); font-size: 12px; }
