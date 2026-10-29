@@ -97,6 +97,29 @@ def test_every_agent_receives_shared_and_its_own_memories(api):
     assert [m["text"] for m in api.remote.calls[-1][1]["learner"]["memory"]] == ["Goal: get a data analyst job"]
 
 
+def test_gateway_database_work_never_runs_on_the_event_loop(api, monkeypatch):
+    """The slow-voice bug: the learner context (database, memory) was built on
+    the event loop, so every other request of the worker waited behind it."""
+    import asyncio
+
+    from app.learner import service as learner_service
+
+    seen = []
+    original = learner_service.learner_context
+
+    def recording(user_id, agent_name):
+        try:
+            asyncio.get_running_loop()
+            seen.append("event loop")
+        except RuntimeError:
+            seen.append("worker thread")
+        return original(user_id, agent_name)
+
+    monkeypatch.setattr(learner_service, "learner_context", recording)
+    api.post("/gateway/agents/aptitude_agent/invoke", headers=auth(), json={"action": "dashboard", "payload": {}})
+    assert seen == ["worker thread"]
+
+
 def test_readiness_refreshes_strengths_and_gaps_in_memory(api, database):
     api.get("/learner/readiness?refresh=true", headers=auth())
     api.get("/learner/readiness?refresh=true", headers=auth())

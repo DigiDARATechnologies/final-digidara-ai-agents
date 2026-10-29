@@ -21,6 +21,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from fastapi.concurrency import run_in_threadpool
+
 from app import db
 from app.a2a import client as a2a_client
 from app.learner import levels as level_rules
@@ -362,11 +364,13 @@ def _next_steps(areas: list[dict]) -> list[str]:
 
 
 async def compute(user) -> dict:
-    levels = learner_service.get_levels(user.id)
-    periods = learner_service.role_periods(user.id)
+    # Database work in worker threads, never on the event loop (it held up
+    # every other request of the worker: voice, chat, agents).
+    levels = await run_in_threadpool(learner_service.get_levels, user.id)
+    periods = await run_in_threadpool(learner_service.role_periods, user.id)
     areas = list(await asyncio.gather(*(_area(name, label, weight, user, levels, periods) for name, label, weight in AREAS)))
     try:
-        _auto_promote(user, areas, levels)
+        await run_in_threadpool(_auto_promote, user, areas, levels)
     except Exception:
         logger.warning("automatic level change failed", exc_info=True)
     for area in areas:
@@ -383,12 +387,12 @@ async def compute(user) -> dict:
         "coverage": {"assessed": len(assessed), "total": len(AREAS)},
         "areas": areas,
         "next_steps": _next_steps(areas),
-        "profile": learner_service.get_profile(user.id),
+        "profile": await run_in_threadpool(learner_service.get_profile, user.id),
         "computed_at": datetime.utcnow().isoformat(),
     }
-    _store(user.id, result)
+    await run_in_threadpool(_store, user.id, result)
     try:
-        memory_service.sync_readiness(user.id, areas)
+        await run_in_threadpool(memory_service.sync_readiness, user.id, areas)
     except Exception:
         logger.warning("readiness memory sync failed", exc_info=True)
     return result
@@ -499,9 +503,9 @@ def history(user_id: str) -> list[dict]:
 
 async def get(user, refresh: bool = False) -> dict:
     """The readiness result, recomputed when asked or when the last one is old."""
-    snapshot = latest(user.id)
+    snapshot = await run_in_threadpool(latest, user.id)
     age = datetime.utcnow() - snapshot.computed_at if snapshot is not None else None
-    levels = learner_service.get_levels(user.id)
+    levels = await run_in_threadpool(learner_service.get_levels, user.id)
     # A level changed after the snapshot: its progress was measured at the old level.
     level_changed = snapshot is not None and any(
         (changed := _naive_utc(level.get("updated_at"))) and changed > snapshot.computed_at for level in levels.values()
@@ -522,7 +526,7 @@ async def get(user, refresh: bool = False) -> dict:
             # the area scores and the overall have to be worked out again.
             return await compute(user)
         areas.append(area)
-    return {**scored(snapshot), "profile": learner_service.get_profile(user.id), "cached": True}
+    return {**scored(snapshot), "profile": await run_in_threadpool(learner_service.get_profile, user.id), "cached": True}
 
 
 async def skill(action: str, user) -> dict:

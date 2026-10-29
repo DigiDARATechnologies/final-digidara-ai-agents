@@ -43,7 +43,8 @@ def personas() -> dict:
 @router.post("/speak")
 @limiter.limit(_SPEAK_RATE_LIMIT)
 async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> Response:
-    user = auth_service.get_by_id(user_id)
+    # Database calls in a worker thread: never block this worker's event loop.
+    user = await run_in_threadpool(auth_service.get_by_id, user_id)
     if VOICE_TOKENS_PER_CHAR and user is not None and user.token_balance <= 0:
         raise HTTPException(402, "Not enough coins. Please top up to continue.")
     try:
@@ -51,7 +52,7 @@ async def speak(req: SpeakRequest, request: Request, user_id: str = Depends(get_
     except tts.VoiceError as exc:
         raise HTTPException(exc.status_code, exc.message) from exc
     if VOICE_TOKENS_PER_CHAR and not from_cache:
-        auth_service.settle_tokens(user_id, len(req.text) * VOICE_TOKENS_PER_CHAR, "voice", "speak")
+        await run_in_threadpool(auth_service.settle_tokens, user_id, len(req.text) * VOICE_TOKENS_PER_CHAR, "voice", "speak")
     return Response(
         content=audio, media_type="audio/mpeg",
         headers={"X-Voice-Language": spoken_as, "Cache-Control": "private, max-age=3600"},
