@@ -17,6 +17,8 @@ export interface SidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   homeActive: boolean;
+  /** Assessments come from an organization: the item shows only for its members. */
+  inOrganization?: boolean;
   chats: Chat[];
   currentChatId: string | null;
   userMenuOpen: boolean;
@@ -44,6 +46,7 @@ export default function Sidebar({
   collapsed,
   mobileOpen,
   homeActive,
+  inOrganization = false,
   chats,
   currentChatId,
   userMenuOpen,
@@ -134,13 +137,14 @@ export default function Sidebar({
     <div className={`sidebar-backdrop${mobileOpen ? " open" : ""}`} onClick={onCloseMobile} aria-hidden="true" />
     <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileOpen ? " mobile-open" : ""}`} id="sidebar">
       <div className="sidebar-top">
-        <div className="brand">
+        <button type="button" className="brand brand-home" onClick={onGoHome} aria-label="SkillDARA agents home"
+          aria-current={homeActive ? "page" : undefined}>
           <Logo
             variant={collapsed ? "icon" : "full"}
             size={collapsed ? 44 : 66}
             src={collapsed ? undefined : theme === "dark" ? blackThemeLogo : whiteThemeLogo}
           />
-        </div>
+        </button>
         <button className="icon-btn sidebar-close-mobile" onClick={onCloseMobile} aria-label="Close menu">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
         </button>
@@ -171,18 +175,6 @@ export default function Sidebar({
         </button>
       </div>
 
-      <button
-        className={`nav-item nav-item-primary${homeActive ? " active" : ""}`}
-        onClick={onGoHome}
-      >
-        <span className="nav-icon glow-icon">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M3.5 10.8L12 3.5l8.5 7.3V20a1 1 0 01-1 1H15v-6h-6v6H4.5a1 1 0 01-1-1v-9.2z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-          </svg>
-        </span>
-        <span className="label">SkillDARA Agents</span>
-      </button>
-
       <nav className="nav-list">
         <button className="nav-item" onClick={() => onNavAction("my-agents")}>
           <span className="nav-icon">
@@ -204,17 +196,19 @@ export default function Sidebar({
               <rect x="3.5" y="15.5" width="7" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
             </svg>
           </span>
-          <span className="label">Dashboard</span>
+          <span className="label">My Dashboard</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("assessments")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <rect x="5" y="3.5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M9 3.5h6v3H9zM8.5 11.5l2 2 4-4M8.5 16.5h7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="label">Assessments</span>
-        </button>
+        {inOrganization && (
+          <button className="nav-item" onClick={() => onNavAction("assessments")}>
+            <span className="nav-icon">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="5" y="3.5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M9 3.5h6v3H9zM8.5 11.5l2 2 4-4M8.5 16.5h7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span className="label">Assessments</span>
+          </button>
+        )}
         <button className="nav-item" onClick={() => onNavAction("courses")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -251,15 +245,6 @@ export default function Sidebar({
             </svg>
           </span>
           <span className="label">Organization</span>
-        </button>
-        <button className="nav-item" onClick={() => onNavAction("settings")}>
-          <span className="nav-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1.1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34h0a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55h0a1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87v0a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
-            </svg>
-          </span>
-          <span className="label">Settings</span>
         </button>
         <button className="nav-item" onClick={() => onNavAction("playground")}>
           <span className="nav-icon">

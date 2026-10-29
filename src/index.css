@@ -483,6 +483,8 @@ body.glow-off .send-btn:hover{
 
 .sidebar-top{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 2px 18px;}
 .brand{ display:flex; align-items:center; gap:9px; overflow:hidden; }
+.brand-home{ padding:0; border:0; background:none; cursor:pointer; color:inherit; font:inherit; text-align:left; border-radius:10px; }
+.brand-home:focus-visible{ outline:2px solid var(--accent3); outline-offset:2px; }
 /* The full logo is wide: let it shrink to the space next to the collapse
    button instead of being cut off by .brand's overflow:hidden. */
 .sidebar:not(.collapsed) .brand{ flex:1 1 auto; min-width:0; }
