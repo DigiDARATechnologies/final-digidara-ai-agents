@@ -1296,17 +1296,19 @@ def test_an_organization_gives_coins_to_its_admin_staff_and_students(app_client,
     org = created["organization"]
     assert (org["admin_coins"], org["staff_coins"], org["student_coins"]) == (100, 50, 20)
     assert created["admin"]["coins"] == 100
-    assert balance("admin@example.test") == before["admin@example.test"] + 100 * 2000
+    from app.organizations.coins import TOKENS_PER_COIN as RATE
+    assert RATE == 15_600                                    # a bought coin: Basic's 3,900,000 tokens / 250 coins
+    assert balance("admin@example.test") == before["admin@example.test"] + 100 * RATE
     _staff_login(app_client, database, org["id"], email="staff@example.test")
     from app.billing.plans import free_signup_tokens
-    assert balance("staff@example.test") == free_signup_tokens() + 50 * 2000   # a new account's welcome coins too
+    assert balance("staff@example.test") == free_signup_tokens() + 50 * RATE   # a new account's welcome coins too
     _list_students(org["id"], "learner@example.test", "other@example.test")
     app_client.post("/organizations/join", headers=auth(), json={"join_code": org["join_code"]})
-    assert balance("learner@example.test") == before["learner@example.test"] + 20 * 2000
+    assert balance("learner@example.test") == before["learner@example.test"] + 20 * RATE
     # Leaving and joining again does not give the coins twice.
     assert app_client.delete("/organizations/me", headers=auth()).status_code == 204
     app_client.post("/organizations/join", headers=auth(), json={"join_code": org["join_code"]})
-    assert balance("learner@example.test") == before["learner@example.test"] + 20 * 2000
+    assert balance("learner@example.test") == before["learner@example.test"] + 20 * RATE
     # Shown in the learner's billing history, with no invoice.
     session = database()
     grant = session.query(Payment).filter_by(user_id="learner", plan_id="org_coins").one()
@@ -1315,7 +1317,7 @@ def test_an_organization_gives_coins_to_its_admin_staff_and_students(app_client,
     # Giving coins to current members later reaches only those who had none.
     app_client.patch(f"/organizations/platform/{org['id']}", headers=auth("platform"), json={"status": "active", "student_coins": 30})
     app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["join_code"]})
-    assert balance("other@example.test") == before["other@example.test"] + 30 * 2000
+    assert balance("other@example.test") == before["other@example.test"] + 30 * RATE
     given = app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json()
     assert given == {"people": 0, "coins": 0}
     assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("admin")).status_code == 403

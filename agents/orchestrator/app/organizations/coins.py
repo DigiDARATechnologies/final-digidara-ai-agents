@@ -22,12 +22,15 @@ from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.auth.service import add_credit
-from app.billing.plans import FREE_TOKENS_PER_POINT
+from app.billing.plans import PLANS
 from app.models import Organization, OrganizationMember, Payment, User
 
 logger = logging.getLogger(__name__)
 
 PLAN_ID = "org_coins"
+# A coin given by an organization is worth what a bought coin is (the Basic
+# plan's tokens per coin), so a coin means the same everywhere.
+TOKENS_PER_COIN = PLANS["basic"]["tokens"] / PLANS["basic"]["points"]
 MAX_COINS = 1_000_000
 # Organization role -> (Organization column, the role group a grant is for).
 ROLE_FIELDS = {"owner": "admin_coins", "admin": "admin_coins", "staff": "staff_coins", "member": "student_coins"}
@@ -66,7 +69,7 @@ def grant(org_id: str, user_id: str, role: str) -> int:
         user = session.get(User, user_id, with_for_update=True)
         if user is None:
             return 0
-        tokens = int(coins * FREE_TOKENS_PER_POINT)
+        tokens = int(coins * TOKENS_PER_COIN)
         session.add(Payment(user_id=user_id, plan_id=PLAN_ID, amount=0, currency="INR", razorpay_order_id=order_id,
                             razorpay_payment_id=None, status="paid", paid_at=datetime.utcnow(),
                             credited_tokens=tokens, credited_points=float(coins)))

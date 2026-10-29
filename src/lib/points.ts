@@ -3,8 +3,8 @@
  * the helpers here only convert agent-reported token counts with that rate
  * and format the result. */
 
-/** New accounts, and every plan, count 2,000 tokens a point (see the
- * orchestrator's FREE_TOKENS_PER_POINT). */
+/** New accounts count 2,000 tokens a point (see the orchestrator's
+ * FREE_TOKENS_PER_POINT); each plan has its own rate, stored per account. */
 export const FREE_TOKENS_PER_POINT = 2000;
 
 export function tokensToPoints(tokens: number, tokensPerPoint?: number | null): number {
