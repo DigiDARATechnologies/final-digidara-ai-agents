@@ -1,5 +1,4 @@
-jest.mock('../../src/lib/orgApi', () => ({ fetchStaff: jest.fn(), addStaff: jest.fn(), updateStaff: jest.fn() }));
-jest.mock('../../src/lib/learnerApi', () => ({ removeOrgMember: jest.fn() }));
+jest.mock('../../src/lib/orgApi', () => ({ fetchStaff: jest.fn(), addStaff: jest.fn(), updateStaff: jest.fn(), fetchFilteredMembers: jest.fn() }));jest.mock('../../src/lib/learnerApi', () => ({ removeOrgMember: jest.fn(), BAND_TONE: { not_started: 'muted', not_ready: 'low', developing: 'mid', almost_ready: 'good', job_ready: 'top' } }));jest.mock('../../src/components/ReadinessView', () => ({ ScoreRing: ({ score }: { score: number | null }) => <span>ring {score ?? '-'}</span> }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import StaffPanel from '../../src/components/org/StaffPanel';
@@ -34,4 +33,24 @@ test('the staff list shows each class and lets the owner edit it', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(api.updateStaff).toHaveBeenCalledWith('org', 'm1', expect.objectContaining({ year: '2nd year', class_head: true })));
+});
+
+test('clicking a staff name shows their students with each job readiness score', async () => {
+  api.fetchStaff.mockResolvedValue([
+    { member_id: 'm1', user_id: 'u1', name: 'Harini M', email: 'harini@college.edu', role: 'staff', has_signed_in: true, department: 'Computer Science', degree: '', year: '', section: '', class_head: false },
+    { member_id: 'm0', user_id: 'u0', name: 'Owner', email: 'owner@college.edu', role: 'owner', has_signed_in: true },
+  ]);
+  const student = { member_id: 's1', user_id: 'l1', name: 'Ramya', email: 'ramya@gmail.com', role: 'member', external_id: null,
+    joined_at: null, progress_shared: true, has_signed_in: true, department: 'Computer Science', year: '2nd year', section: 'A',
+    last_active_at: null, staff_user_id: 'u1', readiness: { overall: 72.4, band: 'almost_ready', band_label: 'Almost ready', computed_at: '', areas: {} } };
+  api.fetchFilteredMembers.mockResolvedValue([student] as never);
+  const onOpenStudent = jest.fn();
+  render(<StaffPanel orgId="org" options={options} onToast={jest.fn()} onOpenStudent={onOpenStudent} />);
+  expect(screen.queryByRole('button', { name: 'Owner' })).not.toBeInTheDocument();     // only staff have students
+  fireEvent.click(await screen.findByRole('button', { name: 'Harini M' }));
+  await waitFor(() => expect(api.fetchFilteredMembers).toHaveBeenCalledWith('org', { staff: 'u1' }));
+  expect(await screen.findByText('72 · Almost ready')).toBeInTheDocument();
+  expect(screen.getByText('ring 72.4')).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Ramya'));
+  expect(onOpenStudent).toHaveBeenCalledWith(student);
 });

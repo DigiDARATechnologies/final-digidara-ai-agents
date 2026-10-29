@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { removeOrgMember } from "../../lib/learnerApi";
+import { removeOrgMember, type OrgMember } from "../../lib/learnerApi";
 import {
   addStaff, fetchStaff, updateStaff, type AddStaffResult, type ClassOptions, type StaffDetails, type StaffLogin,
 } from "../../lib/orgApi";
 import ClassSelect from "./ClassSelect";
+import StaffStudents from "./StaffStudents";
 
 const ROLE_TEXT: Record<StaffLogin["role"], string> = { owner: "Owner", admin: "Admin", staff: "Staff" };
 const EMPTY_DETAILS: StaffDetails = { department: "", degree: "", year: "", section: "", class_head: false };
@@ -38,11 +39,13 @@ function StaffFields({ value, options, onChange }: { value: StaffDetails; option
 }
 
 /** Owners and admins create staff logins. Staff look after the students
- * (student list, approvals, levels, join codes) but cannot add staff or admins. */
-export default function StaffPanel({ orgId, options = NO_OPTIONS, onToast }: {
-  orgId: string; options?: ClassOptions; onToast: (message: string) => void;
+ * (student list, approvals, levels, join codes) but cannot add staff or admins.
+ * Clicking a staff member's name shows their students and readiness scores. */
+export default function StaffPanel({ orgId, options = NO_OPTIONS, onToast, onOpenStudent = () => undefined }: {
+  orgId: string; options?: ClassOptions; onToast: (message: string) => void; onOpenStudent?: (member: OrgMember) => void;
 }) {
   const [staff, setStaff] = useState<StaffLogin[] | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [details, setDetails] = useState<StaffDetails>(EMPTY_DETAILS);
@@ -98,7 +101,13 @@ export default function StaffPanel({ orgId, options = NO_OPTIONS, onToast }: {
     }
   }
 
+  const selected = staff?.find((s) => s.member_id === selectedId);
+
   return (
+    <>
+    {selected && (
+      <StaffStudents orgId={orgId} person={selected} details={detailsText(selected)} onOpen={onOpenStudent} onClose={() => setSelectedId(null)} />
+    )}
     <div className="org-grid-2">
       <datalist id="org-degree-options">{DEGREES.map((d) => <option key={d} value={d} />)}</datalist>
       <section className="org-card">
@@ -133,7 +142,13 @@ export default function StaffPanel({ orgId, options = NO_OPTIONS, onToast }: {
             {staff.map((s) => (
               <li key={s.member_id} className={editing?.memberId === s.member_id ? "org-staff-editing" : undefined}>
                 <div>
-                  <b>{s.name}</b><span>{s.email}</span>
+                  {s.role === "staff" ? (
+                    <button type="button" className="org-staff-name" aria-pressed={selectedId === s.member_id}
+                      title={`See ${s.name}'s students`} onClick={() => setSelectedId(selectedId === s.member_id ? null : s.member_id)}>
+                      {s.name}
+                    </button>
+                  ) : <b>{s.name}</b>}
+                  <span>{s.email}</span>
                   {detailsText(s) && <span className="org-staff-class">{detailsText(s)}</span>}
                   <small>{ROLE_TEXT[s.role]}{s.has_signed_in ? "" : " · not signed in yet"}</small>
                 </div>
@@ -160,5 +175,6 @@ export default function StaffPanel({ orgId, options = NO_OPTIONS, onToast }: {
         )}
       </section>
     </div>
+    </>
   );
 }

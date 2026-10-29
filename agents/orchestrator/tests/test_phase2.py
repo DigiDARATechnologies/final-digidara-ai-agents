@@ -1131,6 +1131,22 @@ def test_an_admin_puts_an_existing_student_under_a_staff_member(app_client, user
     assert app_client.get(f"/organizations/{org_id}/members", headers=auth(staff_id)).json() == []
 
 
+def test_an_admin_filters_students_by_staff(app_client, users, database):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    staff_id = _staff_login(app_client, database, org_id)
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    learner = next(m for m in app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).json() if m["user_id"] == "learner")
+    members_url = f"/organizations/{org_id}/members"
+    assert app_client.get(f"{members_url}?staff={staff_id}", headers=auth("admin")).json() == []
+    assert [m["user_id"] for m in app_client.get(f"{members_url}?staff=none", headers=auth("admin")).json()] == ["learner"]
+    staff_member = next(s["member_id"] for s in app_client.get(f"/organizations/{org_id}/staff", headers=auth("admin")).json() if s["user_id"] == staff_id)
+    app_client.put(f"{members_url}/{learner['member_id']}/staff", headers=auth("admin"), json={"staff_member_id": staff_member})
+    assert [m["user_id"] for m in app_client.get(f"{members_url}?staff={staff_id}", headers=auth("admin")).json()] == ["learner"]
+    assert app_client.get(f"{members_url}?staff=none", headers=auth("admin")).json() == []
+    assert app_client.get(f"/organizations/{org_id}/analytics?staff={staff_id}", headers=auth("admin")).json()["totals"]["learners"] == 1
+
+
 # --- learning dashboard -------------------------------------------------------
 
 def _assessment(database, org_id, title, created_by="admin", opens_in=None, closed=False):

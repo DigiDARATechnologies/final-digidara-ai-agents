@@ -127,10 +127,10 @@ def _run(fn, *args):
 
 
 def _filters(department: str | None, year: str | None, section: str | None, code_id: str | None, band: str | None,
-             agent: str | None, level: str | None, status: str | None, search: str | None) -> dict:
+             agent: str | None, level: str | None, status: str | None, search: str | None, staff: str | None = None) -> dict:
     return {k: v for k, v in {
         "department": department, "year": year, "section": section, "code_id": code_id, "band": band,
-        "agent": agent, "level": level, "status": status, "search": search,
+        "agent": agent, "level": level, "status": status, "search": search, "staff": staff,
     }.items() if v}
 
 
@@ -218,9 +218,10 @@ def organization_analytics(
     org_id: str, department: str | None = None, year: str | None = None, section: str | None = None,
     code_id: str | None = None, band: str | None = None, agent: str | None = None, level: str | None = None,
     status: str | None = None, search: str | None = Query(default=None, max_length=120),
-    user_id: str = Depends(get_verified_user_id),
+    staff: str | None = Query(default=None, max_length=64), user_id: str = Depends(get_verified_user_id),
 ) -> dict:
-    return _run(insights.analytics, user_id, org_id, _filters(department, year, section, code_id, band, agent, level, status, search))
+    return _run(insights.analytics, user_id, org_id,
+                _filters(department, year, section, code_id, band, agent, level, status, search, staff))
 
 
 @router.get("/{org_id}/members")
@@ -228,10 +229,10 @@ def organization_members(
     org_id: str, department: str | None = None, year: str | None = None, section: str | None = None,
     code_id: str | None = None, band: str | None = None, agent: str | None = None, level: str | None = None,
     status: str | None = None, search: str | None = Query(default=None, max_length=120),
-    user_id: str = Depends(get_verified_user_id),
+    staff: str | None = Query(default=None, max_length=64), user_id: str = Depends(get_verified_user_id),
 ) -> list[dict]:
     rows = _run(service.members, user_id, org_id)
-    filters = _filters(department, year, section, code_id, band, agent, level, status, search)
+    filters = _filters(department, year, section, code_id, band, agent, level, status, search, staff)
     return insights.filter_members(rows, filters) if filters else rows
 
 

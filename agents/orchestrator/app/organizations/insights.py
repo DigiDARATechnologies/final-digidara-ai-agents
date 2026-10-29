@@ -47,7 +47,8 @@ def _parse_time(value: str | None) -> datetime | None:
 
 def filter_members(rows: list[dict], filters: dict) -> list[dict]:
     """Members matching every filter that is set: class fields, join code,
-    readiness band, a level with one agent, activity and a text search."""
+    staff in charge ("none": no staff), readiness band, a level with one
+    agent, activity and a text search."""
     now = datetime.utcnow()
     search = str(filters.get("search") or "").strip().lower()
     agent, level = filters.get("agent"), filters.get("level")
@@ -58,6 +59,8 @@ def filter_members(rows: list[dict], filters: dict) -> list[dict]:
         if any(filters.get(field) and (row.get(field) or "") != filters[field] for field in FILTER_FIELDS):
             continue
         if filters.get("code_id") and (row.get("join_code") or {}).get("id") != filters["code_id"]:
+            continue
+        if filters.get("staff") and (row.get("staff_user_id") or "none") != filters["staff"]:
             continue
         band = (row.get("readiness") or {}).get("band", "not_started") if row.get("progress_shared") else None
         if filters.get("band") and band != filters["band"]:

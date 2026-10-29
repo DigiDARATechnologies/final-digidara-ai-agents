@@ -9,6 +9,7 @@ import {
   type JoinRequest,
   type RosterEntry,
   type RosterUploadResult,
+  type StaffLogin,
 } from "../../lib/orgApi";
 
 const STATUS_TEXT: Record<RosterEntry["status"], string> = {
@@ -25,9 +26,10 @@ function when(iso: string | null): string {
 /** Staff upload the organization's student list (Excel or CSV: name, mobile,
  * email). Listed students join on their own once they sign in; anyone else
  * who uses a join code waits here for approval. */
-export default function StudentListPanel({ orgId, orgName, onChanged, onToast }: {
-  orgId: string; orgName: string; onChanged: () => void; onToast: (message: string) => void;
+export default function StudentListPanel({ orgId, orgName, staff = [], onChanged, onToast }: {
+  orgId: string; orgName: string; staff?: StaffLogin[]; onChanged: () => void; onToast: (message: string) => void;
 }) {
+  const [staffFilter, setStaffFilter] = useState("");
   const [entries, setEntries] = useState<RosterEntry[] | null>(null);
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const [result, setResult] = useState<RosterUploadResult | null>(null);
@@ -89,7 +91,9 @@ export default function StudentListPanel({ orgId, orgName, onChanged, onToast }:
   }
 
   const term = search.trim().toLowerCase();
-  const shown = (entries ?? []).filter((e) => !term || `${e.name} ${e.email} ${e.mobile}`.toLowerCase().includes(term));
+  const staffName = (e: RosterEntry) => staff.find((s) => s.user_id === e.uploaded_by)?.name ?? "";
+  const shown = (entries ?? []).filter((e) => (!term || `${e.name} ${e.email} ${e.mobile}`.toLowerCase().includes(term))
+    && (!staffFilter || (staffFilter === "none" ? !staffName(e) : e.uploaded_by === staffFilter)));
 
   return (
     <div className="org-grid-1">
@@ -151,22 +155,32 @@ export default function StudentListPanel({ orgId, orgName, onChanged, onToast }:
 
       <section className="org-card">
         <div className="org-card-head">
-          <h3>Student list ({entries?.length ?? 0})</h3>
-          <input className="og-search" value={search} placeholder="Search name, email or mobile" onChange={(e) => setSearch(e.target.value)} />
+          <h3>Student list ({staffFilter ? `${shown.length} of ` : ""}{entries?.length ?? 0})</h3>
+          <div className="org-actions">
+            {staff.length > 0 && (
+              <select className="og-search" value={staffFilter} aria-label="Uploaded by staff" onChange={(e) => setStaffFilter(e.target.value)}>
+                <option value="">All staff</option>
+                {staff.map((s) => <option key={s.user_id} value={s.user_id}>{s.name}</option>)}
+                <option value="none">Uploaded by owner or admin</option>
+              </select>
+            )}
+            <input className="og-search" value={search} placeholder="Search name, email or mobile" onChange={(e) => setSearch(e.target.value)} />
+          </div>
         </div>
         {entries === null ? <div className="org-skeleton" /> : (
           <div className="org-table-wrap">
             <table className="org-table compact">
-              <thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Mobile</th>{staff.length > 0 && <th>Staff</th>}<th>Status</th><th /></tr></thead>
               <tbody>
                 {shown.slice(0, 500).map((e) => (
                   <tr key={e.id}>
                     <td>{e.name || "—"}</td><td>{e.email}</td><td>{e.mobile || "—"}</td>
+                    {staff.length > 0 && <td>{staffName(e) || <span className="rd-muted">—</span>}</td>}
                     <td><span className={`org-chip status-${e.status}`}>{STATUS_TEXT[e.status]}</span></td>
                     <td><button type="button" className="link-btn" onClick={() => void remove(e)}>Remove</button></td>
                   </tr>
                 ))}
-                {shown.length === 0 && <tr><td colSpan={5} className="org-empty">{entries.length ? "No student matches." : "No list uploaded yet."}</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={staff.length > 0 ? 6 : 5} className="org-empty">{entries.length ? "No student matches." : "No list uploaded yet."}</td></tr>}
               </tbody>
             </table>
             {shown.length > 500 && <p className="rd-muted">Showing the first 500. Search to find others.</p>}
