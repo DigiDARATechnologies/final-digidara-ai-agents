@@ -263,7 +263,8 @@ def _openai() -> httpx.Client:
 # and without the accent steering, but it has not been seen to stall); the
 # first to send audio is played and the rest are closed.
 HEDGE_SCHEDULE: tuple[tuple[float, str], ...] = ((0.0, TTS_MODEL), (0.0, TTS_MODEL), (1.5, TTS_MODEL), (3.0, "tts-1"))
-HEDGE_DEADLINE_SECONDS = 20.0
+# Past this, the browser speaks with the device voice instead: better than silence.
+HEDGE_DEADLINE_SECONDS = 10.0
 
 
 def _hedged_open(text: str, spoken_as: str, pace: str):

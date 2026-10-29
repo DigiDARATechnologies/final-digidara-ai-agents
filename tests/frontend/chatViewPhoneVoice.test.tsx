@@ -195,3 +195,20 @@ describe('speaking practice nudges ("are you here?")', () => {
     mockRecordingMode = true;
   });
 });
+
+test('pronunciation practice never sends by itself: the learner checks the text and presses Send', () => {
+  const onSend = jest.fn();
+  render(
+    <ChatView
+      chat={chat} agent={agent} user={user} typing={false}
+      onBack={jest.fn()} onSend={onSend} onChooseOption={jest.fn()}
+      attachEnabled={false} pendingFiles={[]} onAttachFiles={jest.fn()} onAttachDisabled={jest.fn()}
+      transcribeAudio={jest.fn()} voiceOnly autoStopVoiceOnSilence
+    />,
+  );
+  fireEvent.click(screen.getByTitle('Click to speak your pronunciation'));
+  const [onResult] = mockStart.mock.calls[0];
+  act(() => { onResult('Playing soccer helps improve teamwork skills.', true); });
+  expect(onSend).not.toHaveBeenCalled();
+  expect(screen.getByDisplayValue('Playing soccer helps improve teamwork skills.')).toBeInTheDocument();
+});

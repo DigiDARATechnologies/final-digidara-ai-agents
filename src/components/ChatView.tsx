@@ -227,6 +227,14 @@ export default function ChatView({
     setAgentSpeaking(false);
     if (speech.transcribing) return;
     if (speech.listening) {
+      // Pronunciation practice: tapping the mic only stops recording. The
+      // learner checks the captured text and presses Send themselves.
+      if (voiceOnly) {
+        sendOnFinalRef.current = false;
+        speech.stop();
+        if (orbRef.current) orbRef.current.style.setProperty("--voice-level", "0");
+        return;
+      }
       if (speech.recordingMode) {
         sendOnFinalRef.current = true;
         speech.stop();
@@ -247,8 +255,9 @@ export default function ChatView({
     inputFromVoiceRef.current = false;
     if (inputError) setInputError("");
     // On a phone the answer is sent by itself once the student stops talking
-    // (or taps the mic again) -- no Send tap needed.
-    sendOnFinalRef.current = speech.recordingMode;
+    // (or taps the mic again) -- no Send tap needed. Not in pronunciation
+    // practice, which asks the learner to check the text and press Send.
+    sendOnFinalRef.current = speech.recordingMode && !voiceOnly;
     setAutoSendIn(null);
     const session = ++voiceSessionRef.current;
     const effectiveSilenceMs = voiceOnly ? PRONUNCIATION_SILENCE_MS : (speech.recordingMode ? PHONE_AUTO_SEND_SILENCE_MS : undefined);

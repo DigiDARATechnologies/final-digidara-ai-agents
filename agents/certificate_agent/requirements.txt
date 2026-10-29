@@ -3,7 +3,7 @@ uvicorn[standard]
 langchain
 langchain-openai
 langchain-groq
-openai>=1.99.0
+openai>=1.109.1
 zhipuai
 langgraph
 mysql-connector-python
@@ -13,7 +13,7 @@ python-dotenv
 reportlab
 Pillow
 requests
-PyJWT>=2.13.0
+PyJWT>=2.15.1
 passlib[bcrypt]
 python-multipart
 aiofiles

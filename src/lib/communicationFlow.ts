@@ -243,9 +243,19 @@ function writingEvaluationResult(feedback: NonNullable<WritingTurnResult["feedba
   ].join("\n\n");
 }
 
+/** "" for an empty value, "null"/"none", or a field description a model copied from its prompt. */
+const MODEL_PLACEHOLDERS = new Set(["null", "none", "n/a", "na", "nil", "undefined", "-", "friendly acknowledgment",
+  "friendly acknowledgement", "one related follow-up question", "corrected sentence or null", "corrected sentence"]);
+function modelText(value?: string | null): string {
+  const text = String(value || "").trim().replace(/^"+|"+$/g, "").trim();
+  return MODEL_PLACEHOLDERS.has(text.toLowerCase().replace(/\.$/, "")) ? "" : text;
+}
+
 function writingChatReply(reply: string, originalAnswer?: string, correctedAnswer?: string | null, reaction?: string, nextQuestion?: string): string {
   const original = String(originalAnswer || "").trim();
-  const corrected = String(correctedAnswer || "").trim();
+  const corrected = modelText(correctedAnswer);
+  reaction = modelText(reaction);
+  nextQuestion = modelText(nextQuestion);
   const hasCorrection = Boolean(corrected && original && normalizedSentence(corrected) !== normalizedSentence(original));
   const correction = hasCorrection ? `Just a small correction: Instead of “${original}”, you can say: “${corrected}”` : "";
   return [reaction, correction, nextQuestion].filter(Boolean).join("\n\n") || reply;

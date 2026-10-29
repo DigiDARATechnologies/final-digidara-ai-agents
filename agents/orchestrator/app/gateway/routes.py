@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 
 from app import config
@@ -164,7 +165,10 @@ def _add_learner_context(agent_name: str, envelope: dict, user_id: str) -> None:
 @router.post("/agents/{agent_name}/invoke")
 async def invoke_registered_agent(agent_name: str, request: Request) -> Response:
     """Forward JSON or multipart bodies only to a live registry endpoint."""
-    agent = _resolve_agent(agent_name)
+    # Database work runs in a worker thread, never on the event loop: a
+    # blocking call here used to hold up every other request of this worker
+    # (voice, chat, all agents) while it ran.
+    agent = await run_in_threadpool(_resolve_agent, agent_name)
 
     body = await request.body()
     envelope = None
@@ -183,16 +187,7 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
         if not authorization.startswith("Bearer "):
             raise HTTPException(401, "Missing bearer token.")
         user_id = decode_access_token(authorization[7:])
-        # Resolve every authenticated request, including free actions. This
-        # rejects deleted accounts and supplies the trusted platform admin
-        # flag that Job Agent authorization requires.
-        user = auth_service.get_by_id(user_id)
-        # Also refuses an account that still has to verify its email.
-        ensure_verified(user)
-        # Every agent works in English only: Tamil or any other script is
-        # refused here, before an agent or a model sees it.
-        if isinstance(envelope, dict) and contains_non_english(envelope.get("payload")):
-            raise HTTPException(400, ENGLISH_ONLY_MESSAGE)
+        user = await run_in_threadpool(_verified_user, user_id, envelope)
 
     return await _forward(
         agent, agent_name, body, envelope, user,
@@ -200,11 +195,25 @@ async def invoke_registered_agent(agent_name: str, request: Request) -> Response
     )
 
 
+def _verified_user(user_id: str, envelope):
+    # Resolve every authenticated request, including free actions. This
+    # rejects deleted accounts and supplies the trusted platform admin
+    # flag that Job Agent authorization requires.
+    user = auth_service.get_by_id(user_id)
+    # Also refuses an account that still has to verify its email.
+    ensure_verified(user)
+    # Every agent works in English only: Tamil or any other script is
+    # refused here, before an agent or a model sees it.
+    if isinstance(envelope, dict) and contains_non_english(envelope.get("payload")):
+        raise HTTPException(400, ENGLISH_ONLY_MESSAGE)
+    return user
+
+
 async def invoke_json(agent_name: str, action: str, payload: dict, user, caller: str | None = None) -> Response:
     """Call one agent action for an already-authenticated, verified user --
     the A2A hub and the readiness service use this, so they get exactly the
     browser path's routing, billing, signing and learner context."""
-    agent = _resolve_agent(agent_name)
+    agent = await run_in_threadpool(_resolve_agent, agent_name)
     envelope: dict = {"action": action, "payload": dict(payload or {})}
     if caller:
         envelope["caller"] = caller
@@ -223,7 +232,10 @@ def _signature_rejected(upstream: httpx.Response) -> bool:
     return isinstance(data, dict) and data.get("code") == "invalid_service_signature"
 
 
-async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None) -> Response:
+def _prepare(agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None):
+    """Everything before the agent call that reads the database: who pays,
+    the balance check, the identity headers and the learner context. Runs in
+    a worker thread (see _forward)."""
     user_id = user.id if user is not None else None
     action_name = envelope.get("action") if isinstance(envelope, dict) else None
     # The Job Agent's only multipart action is its deterministic resume
@@ -285,6 +297,55 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
             logger.warning("assessment settings not applied: agent=%s action=%s", agent_name, action_name, exc_info=True)
         _add_learner_context(agent_name, envelope, user_id)
         body = json.dumps(envelope).encode("utf-8")
+    return user_id, action_name, payer_id, is_free_action, is_billable, is_multipart, headers, body
+
+
+def _after_call(upstream: httpx.Response, agent_name: str, envelope, user_id, action_name, payer_id, is_free_action: bool, is_billable: bool) -> None:
+    """Charging and result recording once the agent has answered (database
+    work, so in a worker thread like _prepare)."""
+    if upstream.status_code >= 400:
+        # The learner got an error, not an answer: never charge for it (the
+        # flat fallback below used to bill every failed call too).
+        if user_id and not is_free_action:
+            logger.info("gateway: not charging failed call agent=%s action=%s status=%s", agent_name, action_name, upstream.status_code)
+    elif is_billable:
+        real_tokens = None
+        header_value = upstream.headers.get("x-tokens-used")
+        if header_value is not None:
+            try:
+                parsed = int(header_value)
+                if parsed > 0:
+                    real_tokens = parsed
+            except ValueError:
+                pass
+        # Real usage when the agent reports it; otherwise the flat fallback
+        # rate, so billing still works for agents not yet upgraded.
+        auth_service.settle_tokens(payer_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL, agent_name,
+                                   action_name if payer_id == user_id else f"assessment:{action_name or ''}"[:100])
+    elif user_id:
+        # For actions in FREE_ACTIONS that dynamically report token usage when free quota is exceeded
+        header_value = upstream.headers.get("x-tokens-used")
+        if header_value is not None:
+            try:
+                parsed = int(header_value)
+                if parsed > 0:
+                    auth_service.settle_tokens(user_id, parsed, agent_name, action_name or "")
+            except ValueError:
+                pass
+
+    if (user_id and upstream.status_code < 400 and isinstance(envelope, dict)
+            and action_name in proctoring_service.RESULT_ACTIONS.get(agent_name, ())):
+        # Proctored sittings keep the interview's or viva's result, recorded here
+        # (not reported by the browser).
+        try:
+            proctoring_service.after_agent_call(user_id, agent_name, action_name or "", envelope.get("payload"), upstream.json())
+        except Exception:
+            logger.warning("proctoring result not recorded: agent=%s action=%s", agent_name, action_name, exc_info=True)
+
+
+async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None) -> Response:
+    prepared = await run_in_threadpool(_prepare, agent_name, body, envelope, user, content_type, accept)
+    user_id, action_name, payer_id, is_free_action, is_billable, is_multipart, headers, body = prepared
 
     # Aptitude batch creation and mock-interview question planning/final
     # evaluation can outlast ordinary agent calls. Keep their larger budgets
@@ -326,44 +387,7 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         logger.exception("gateway call failed: agent=%s endpoint=%s", agent_name, agent.endpoint)
         raise HTTPException(502, f"Registered agent {agent_name!r} could not be reached.") from exc
 
-    if upstream.status_code >= 400:
-        # The learner got an error, not an answer: never charge for it (the
-        # flat fallback below used to bill every failed call too).
-        if user_id and not is_free_action:
-            logger.info("gateway: not charging failed call agent=%s action=%s status=%s", agent_name, action_name, upstream.status_code)
-    elif is_billable:
-        real_tokens = None
-        header_value = upstream.headers.get("x-tokens-used")
-        if header_value is not None:
-            try:
-                parsed = int(header_value)
-                if parsed > 0:
-                    real_tokens = parsed
-            except ValueError:
-                pass
-        # Real usage when the agent reports it; otherwise the flat fallback
-        # rate, so billing still works for agents not yet upgraded.
-        auth_service.settle_tokens(payer_id, real_tokens if real_tokens is not None else TOKEN_COST_PER_CALL, agent_name,
-                                   action_name if payer_id == user_id else f"assessment:{action_name or ''}"[:100])
-    elif user_id:
-        # For actions in FREE_ACTIONS that dynamically report token usage when free quota is exceeded
-        header_value = upstream.headers.get("x-tokens-used")
-        if header_value is not None:
-            try:
-                parsed = int(header_value)
-                if parsed > 0:
-                    auth_service.settle_tokens(user_id, parsed, agent_name, action_name or "")
-            except ValueError:
-                pass
-
-    if (user_id and upstream.status_code < 400 and isinstance(envelope, dict)
-            and action_name in proctoring_service.RESULT_ACTIONS.get(agent_name, ())):
-        # Proctored sittings keep the interview's or viva's result, recorded here
-        # (not reported by the browser).
-        try:
-            proctoring_service.after_agent_call(user_id, agent_name, action_name or "", envelope.get("payload"), upstream.json())
-        except Exception:
-            logger.warning("proctoring result not recorded: agent=%s action=%s", agent_name, action_name, exc_info=True)
+    await run_in_threadpool(_after_call, upstream, agent_name, envelope, user_id, action_name, payer_id, is_free_action, is_billable)
 
     response_headers: dict[str, str] = {}
     if upstream_content_type := upstream.headers.get("content-type"):

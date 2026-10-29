@@ -81,6 +81,17 @@ app.include_router(courses_router)
 
 
 @app.on_event("startup")
+async def widen_thread_pool() -> None:
+    """Blocking work (database, voice, Boss's streamed answers) runs in this
+    worker's thread pool. Its default of 40 threads filled up at busy times --
+    a voice or chat stream holds a thread while it plays -- and every other
+    request then waited for a free one."""
+    import anyio.to_thread
+
+    anyio.to_thread.current_default_thread_limiter().total_tokens = int(os.environ.get("ORCHESTRATOR_THREADS", "120"))
+
+
+@app.on_event("startup")
 def on_startup() -> None:
     init_db()
     # Boss's memory (mem0) loads in the background in every worker.

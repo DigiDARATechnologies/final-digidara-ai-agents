@@ -42,6 +42,10 @@ updates:
       # pandas/numpy must match the versions baked into the Judge0 image.
       - dependency-name: pandas
       - dependency-name: numpy
+      # litellm 1.104+ pins filelock<4, and filelock 3.x has known
+      # vulnerabilities: stay on 1.103.1 until litellm allows filelock 4.
+      - dependency-name: litellm
+        versions: [">=1.104.0"]
 
   - package-ecosystem: github-actions
     directory: /

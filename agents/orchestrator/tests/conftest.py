@@ -10,7 +10,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 from app import db
 from app.auth import service as auth_service, service_auth
 from app.agent_state import service as agent_state_service
@@ -19,7 +18,7 @@ from app.registry import routes, service
 from app.gateway import routes as gateway
 
 @pytest.fixture
-def database(monkeypatch):
+def database(monkeypatch, tmp_path):
     test_url = os.environ.get("INTEGRATION_DATABASE_URL")
     if test_url:
         from sqlalchemy.engine import make_url
@@ -28,7 +27,12 @@ def database(monkeypatch):
             raise RuntimeError("Integration tests require a dedicated MySQL database ending in _test")
         engine = create_engine(test_url)
     else:
-        engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        # A file, with a connection per use (like MySQL's pool in production):
+        # the app runs database work in worker threads, several at a time
+        # (readiness asks every agent at once), and one shared in-memory
+        # connection cannot be used from several threads at the same time.
+        engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}", connect_args={"check_same_thread": False, "timeout": 30},
+                               pool_size=10, max_overflow=20)
     db.Base.metadata.drop_all(engine)
     db.Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
