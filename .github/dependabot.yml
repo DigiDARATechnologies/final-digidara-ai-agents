@@ -1,0 +1,53 @@
+# Dependency updates, kept low-noise and safe:
+# - monthly, one grouped PR per ecosystem;
+# - minor and patch versions only (major upgrades change APIs: done by hand);
+# - into phase2, so every update is tested on staging before production.
+# Security alerts (Dependabot alerts) are separate and still arrive at once.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: phase2
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      frontend:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: pip
+    directories:
+      - /agents/orchestrator
+      - /agents/aptitude_agent
+      - /agents/certificate_agent
+      - /agents/codeforge_agent/services/lms-api
+      - /agents/communication-ai-agent/backend
+      - /agents/job_agent
+      - /agents/mock_interview_agent/backend
+      - /agents/project_AI_Agent
+      - /agents/resume_builder_agent/backend
+    target-branch: phase2
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      python:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # pandas/numpy must match the versions baked into the Judge0 image.
+      - dependency-name: pandas
+      - dependency-name: numpy
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: phase2
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
