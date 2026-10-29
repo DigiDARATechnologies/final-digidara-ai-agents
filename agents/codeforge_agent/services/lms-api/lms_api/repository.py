@@ -402,7 +402,7 @@ class MySqlRepository:
             conn.commit()
             cursor.execute(
                 "SELECT a.*,t.name technology FROM coding_assessments a JOIN coding_technologies t ON t.id=a.technology_id "
-                "WHERE a.student_id=%s AND a.technology_id=%s ORDER BY a.started_at DESC LIMIT 20",
+                "WHERE a.student_id=%s AND a.technology_id=%s ORDER BY a.started_at DESC",
                 (student_id, technology["id"]),
             )
             attempts = [self._assessment_dict(cursor, row) for row in cursor.fetchall()]

@@ -51,7 +51,7 @@ function AssessmentPanel({ overview, busy, onStart }: { overview: AssessmentOver
       )}
       {overview.attempts.length > 0 && (
         <ul className="ps-attempts">
-          {overview.attempts.slice(0, 5).map((attempt) => (
+          {overview.attempts.map((attempt) => (
             <li key={attempt.id}>
               <span>{when(attempt.finished_at ?? attempt.started_at)}</span>
               <b className={attempt.passed ? "ok" : ""}>{attempt.score ?? 0}/100 · {attempt.passed ? "Passed" : attempt.status === "expired" ? "Time up" : "Not passed"}</b>
