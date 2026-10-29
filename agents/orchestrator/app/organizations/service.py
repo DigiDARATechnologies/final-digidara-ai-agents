@@ -80,6 +80,23 @@ def _count(session, org_id: str) -> int:
     return session.query(OrganizationMember).filter_by(organization_id=org_id).count()
 
 
+# A member limit of 0 means unlimited.
+UNLIMITED_ROOM = 10 ** 9
+
+
+def is_full(org: Organization, member_count: int) -> bool:
+    return bool(org.member_limit) and member_count >= org.member_limit
+
+
+def _limit(value, default: int) -> int:
+    """A member limit from the form: 0 (unlimited) or 1..100000."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return 0 if number <= 0 else min(number, 100000)
+
+
 def my_organization(user_id: str) -> dict | None:
     session = db.get_session()
     try:
@@ -123,7 +140,7 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
         elif _membership(session, user.id) is not None:
             raise OrgError(409, f"{email} already belongs to an organization.")
         org = Organization(name=name, kind=kind if kind in KINDS else "other", join_code=unique_join_code(session),
-                           created_by=created_by, member_limit=max(1, min(int(member_limit or 1000), 100000)))
+                           created_by=created_by, member_limit=_limit(member_limit, 1000))
         session.add(org)
         session.flush()
         session.add(OrgJoinCode(organization_id=org.id, code=org.join_code, label="General", created_by=created_by))
@@ -150,7 +167,7 @@ def set_status(org_id: str, status: str, member_limit: int | None = None) -> dic
             raise OrgError(404, "No such organization.")
         org.status = status
         if member_limit is not None:
-            org.member_limit = max(1, min(int(member_limit), 100000))
+            org.member_limit = _limit(member_limit, org.member_limit)
         session.commit()
         return _org_dict(org, _count(session, org.id))
     finally:
@@ -192,7 +209,7 @@ def join(user_id: str, join_code: str, share_progress: bool = True, department: 
         if _membership(session, user_id) is not None:
             raise OrgError(409, "You already belong to an organization.")
         org, entry = find_code(session, code)
-        if _count(session, org.id) >= org.member_limit:
+        if is_full(org, _count(session, org.id)):
             raise OrgError(409, "This organization has reached its member limit.")
         chosen = {
             "department": entry.department if entry and entry.department else clean_class_value(department, 120),
@@ -329,7 +346,7 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
     try:
         _require_admin(session, admin_id, org_id, managers_only=True)
         org = session.get(Organization, org_id)
-        room = org.member_limit - _count(session, org_id)
+        room = UNLIMITED_ROOM if not org.member_limit else org.member_limit - _count(session, org_id)
         for row in rows:
             email = str(row.get("email") or "").strip().lower()
             name = " ".join(str(row.get("name") or "").split())[:255] or email.split("@")[0]
@@ -365,7 +382,7 @@ def add_members(admin_id: str, org_id: str, rows: list[dict]) -> list[dict]:
     return results
 
 
-def add_staff(admin_id: str, org_id: str, name: str, email: str) -> dict:
+def add_staff(admin_id: str, org_id: str, name: str, email: str, details: dict | None = None) -> dict:
     """A staff login for this organization (owner or admin only). A new
     account gets a one-time password, returned here once to hand over; an
     existing account in no organization, or a member here, becomes staff."""
@@ -391,14 +408,48 @@ def add_staff(admin_id: str, org_id: str, name: str, email: str) -> dict:
                 if existing.role in ADMIN_ROLES:
                     raise OrgError(409, f"{email} is already an admin here.")
                 existing.role = "staff"
+                _set_staff_details(existing, details)
                 session.commit()
                 return {"name": user.name, "email": email, "status": "made_staff", "temporary_password": None}
-        if _count(session, org_id) >= session.get(Organization, org_id).member_limit:
+        if is_full(session.get(Organization, org_id), _count(session, org_id)):
             raise OrgError(409, "This organization has reached its member limit.")
-        session.add(OrganizationMember(organization_id=org_id, user_id=user.id, role="staff"))
+        staff = OrganizationMember(organization_id=org_id, user_id=user.id, role="staff")
+        _set_staff_details(staff, details)
+        session.add(staff)
         session.commit()
         return {"name": user.name, "email": email, "status": "created" if password else "attached",
                 "temporary_password": password}
+    finally:
+        session.close()
+
+
+def _set_staff_details(member: OrganizationMember, details: dict | None) -> None:
+    """Department, degree, year, section and class head, for a staff login."""
+    if not details:
+        return
+    member.department = clean_class_value(details.get("department"), 120)
+    member.degree = clean_class_value(details.get("degree"), 80)
+    member.year = clean_class_value(details.get("year"), 40)
+    member.section = clean_class_value(details.get("section"), 40)
+    member.class_head = bool(details.get("class_head"))
+
+
+def _staff_details(member: OrganizationMember) -> dict:
+    return {"department": member.department or "", "degree": member.degree or "", "year": member.year or "",
+            "section": member.section or "", "class_head": bool(member.class_head)}
+
+
+def update_staff(admin_id: str, org_id: str, member_id: str, details: dict) -> dict:
+    """Owner or admin: change a staff login's department, degree, class."""
+    session = db.get_session()
+    try:
+        _require_admin(session, admin_id, org_id, managers_only=True)
+        member = session.get(OrganizationMember, member_id)
+        if member is None or member.organization_id != org_id or member.role != "staff":
+            raise OrgError(404, "No such staff login.")
+        _set_staff_details(member, details)
+        session.commit()
+        return {"member_id": member.id, **_staff_details(member)}
     finally:
         session.close()
 
@@ -412,7 +463,7 @@ def list_staff(admin_id: str, org_id: str) -> list[dict]:
                 .filter(OrganizationMember.organization_id == org_id, OrganizationMember.role.in_(STAFF_ROLES))
                 .order_by(User.name).all())
         return [{"member_id": m.id, "user_id": u.id, "name": u.name, "email": u.email, "role": m.role,
-                 "has_signed_in": u.consent_accepted_at is not None} for m, u in rows]
+                 "has_signed_in": u.consent_accepted_at is not None, **_staff_details(m)} for m, u in rows]
     finally:
         session.close()
 

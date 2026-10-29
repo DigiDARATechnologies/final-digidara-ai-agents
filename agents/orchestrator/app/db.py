@@ -130,6 +130,8 @@ def init_db() -> None:
             ("organization_members", member_columns, "year", "VARCHAR(40) NULL"),
             ("organization_members", member_columns, "section", "VARCHAR(40) NULL"),
             ("organization_members", member_columns, "join_code_id", "VARCHAR(32) NULL"),
+            ("organization_members", member_columns, "degree", "VARCHAR(80) NULL"),
+            ("organization_members", member_columns, "class_head", "TINYINT(1) NOT NULL DEFAULT 0"),
         ):
             if column not in existing:
                 try:

@@ -510,7 +510,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
       {tab === "Leaderboard" && <Leaderboard defaultScope="organization" onToast={onToast} />}
       {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} onChanged={() => void loadData()} onToast={onToast} />}
       {tab === "Join codes" && <Codes org={org} codes={codes} options={options} onReload={() => void loadSetup()} onToast={onToast} />}
-      {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} onToast={onToast} />}
+      {tab === "Staff" && org.role !== "staff" && <StaffPanel orgId={org.id} options={options} onToast={onToast} />}
       {tab === "Access log" && <AccessLog entries={log} />}
       {extra && extra.render(filters)}
 

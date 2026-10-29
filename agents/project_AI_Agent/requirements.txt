@@ -12,7 +12,7 @@ langchain-core==1.7.0
 langgraph-checkpoint-mysql[pymysql]==3.0.0
 # Kept at 1.103.1: 1.104+ requires filelock<4, and every filelock 3.x has known
 # vulnerabilities (fixed in 4.0.9), which fails the security scan.
-litellm==1.103.1
+litellm==1.103.9
 python-docx==1.2.0
 pytesseract==0.3.13
 Pillow==13.0.0
