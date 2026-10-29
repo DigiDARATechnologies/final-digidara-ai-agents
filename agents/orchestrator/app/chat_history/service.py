@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.db import get_session
-from app.models import ChatHistoryState, Conversation, ConversationMessage
+from app.models import ChatHistoryState, Conversation, ConversationArchive, ConversationMessage
 
 # MySQL error codes for "Deadlock found when trying to get lock" and "Lock wait timeout
 # exceeded". Two overlapping /chats/sync requests for the same user (a debounced save
@@ -55,6 +55,11 @@ def _to_chat(row: Conversation, messages: list[ConversationMessage]) -> dict:
     return chat
 
 
+def _said(messages: list) -> list[tuple[str, str]]:
+    """What a list of messages says (role and text), to compare two copies."""
+    return [(m.role, m.content) if isinstance(m, ConversationMessage) else (m.get("role"), m.get("text")) for m in messages]
+
+
 def get_history(user_id: str) -> tuple[list[dict], bool]:
     session = get_session()
     try:
@@ -85,6 +90,7 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
             row.id: row
             for row in session.query(Conversation).filter_by(user_id=user_id).all()
         }
+        stored_messages = _messages_by_conversation(session, user_id)
 
         for chat in chats:
             chat_id = chat["id"]
@@ -104,6 +110,8 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
                 session.add(row)
                 existing[chat_id] = row
             else:
+                stored = stored_messages.get(chat_id, [])
+                stored_said, incoming_said = _said(stored), _said(chat["messages"])
                 row.agent_id = chat["agentId"]
                 row.title = chat["title"]
                 row.pinned = bool(chat.get("pinned", False))
@@ -111,6 +119,19 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
                 row.updated_at_ms = incoming_updated_at
                 row.version += 1
                 row.deleted_at = None
+                if len(incoming_said) < len(stored_said) and stored_said[:len(incoming_said)] == incoming_said:
+                    # An older copy of this chat (another tab or device, or one
+                    # saved before a failed sync): it never cuts off the newer
+                    # messages the server already has.
+                    continue
+                if stored_said[:len(stored_said)] != incoming_said[:len(stored_said)]:
+                    # A rewrite (an edited message): the replaced messages are
+                    # archived, never lost.
+                    session.add(ConversationArchive(
+                        user_id=user_id, conversation_id=chat_id, title=row.title,
+                        messages=[{**(m.message_metadata or {}), "role": m.role, "text": m.content,
+                                   "time": m.display_time} for m in stored],
+                    ))
                 session.query(ConversationMessage).filter_by(
                     conversation_id=chat_id,
                     user_id=user_id,
@@ -175,6 +196,7 @@ def purge_history(user_id: str) -> None:
     session = get_session()
     try:
         session.query(ConversationMessage).filter_by(user_id=user_id).delete(synchronize_session=False)
+        session.query(ConversationArchive).filter_by(user_id=user_id).delete(synchronize_session=False)
         session.query(Conversation).filter_by(user_id=user_id).delete(synchronize_session=False)
         session.query(ChatHistoryState).filter_by(user_id=user_id).delete(synchronize_session=False)
         session.commit()

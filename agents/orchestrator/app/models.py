@@ -154,6 +154,19 @@ class ConversationMessage(Base):
     )
 
 
+class ConversationArchive(Base):
+    """Messages a chat sync replaced (an edited message rewrites the rest of
+    the chat), kept so no conversation is ever lost."""
+    __tablename__ = "conversation_archives"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(500))
+    messages: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class AgentChatState(Base):
     """A learner's progress in one chat with one agent, kept server-side so it
     follows them across devices instead of living in browser storage."""

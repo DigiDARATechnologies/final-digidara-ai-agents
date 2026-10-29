@@ -33,7 +33,7 @@ def _clean_message(message: Any) -> dict[str, Any] | None:
         **message,
         "role": message.get("role") if message.get("role") in ROLES else "agent",
         "text": text,
-        "time": time if isinstance(time, str) else "",
+        "time": time[:32] if isinstance(time, str) else "",
     }
 
 

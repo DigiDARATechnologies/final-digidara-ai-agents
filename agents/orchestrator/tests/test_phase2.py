@@ -273,9 +273,26 @@ def test_readiness_weights_untested_areas_as_zero(app_client, agents):
     assert coding["can_level_up"] is False and coding["suggested_level"] is None and coding["unlock_at"] == 100
     aptitude = next(a for a in body["areas"] if a["agent_name"] == "aptitude_agent")
     assert aptitude["can_level_up"] is True and aptitude["suggested_level"] == "medium" and aptitude["unlock_at"] == 50
+
     assert coding["gaps"] == ["Dynamic programming"]
     assert coding["score"] == 20 and coding["quality_score"] == 80 and coding["levels_completed"] == []
     assert body["next_steps"]
+
+
+def test_an_agent_that_does_not_answer_keeps_its_last_score(app_client, agents, monkeypatch):
+    # The score used to drop (e.g. 45 to 35) whenever one agent was busy or
+    # down during a check: its area counted as 0.
+    from app.readiness import service as readiness_service
+
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(0))
+    first = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    monkeypatch.delitem(SUMMARY_SCORES, "aptitude_agent")          # aptitude does not answer now
+    for _ in range(2):                                              # nor on the check after
+        again = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+        assert again["overall"] == first["overall"]
+        aptitude = next(a for a in again["areas"] if a["agent_name"] == "aptitude_agent")
+        assert aptitude["status"] == "assessed" and aptitude["carried_over"] is True
+        assert aptitude["quality_score"] == 70
 
 
 def test_moving_up_needs_half_of_the_current_level(app_client, agents, monkeypatch):
