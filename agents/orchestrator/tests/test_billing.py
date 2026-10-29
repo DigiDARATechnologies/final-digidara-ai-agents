@@ -118,7 +118,7 @@ def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
 
 def test_plans_sell_fixed_tokens_shown_as_points():
     assert [(plan_catalog.PLANS[i]["tokens"], plan_catalog.PLANS[i]["points"]) for i in ("basic", "standard", "premium")] == [
-        (500_000, 250), (1_000_000, 500), (1_500_000, 750),
+        (3_900_000, 250), (7_800_000, 500), (9_800_000, 750),
     ]
     # Off-price payments are still priced at gpt-4o-mini's rate: $0.15 in /
     # $0.60 out per million, blended 3:1, at INR 96.25 per USD.
@@ -127,12 +127,12 @@ def test_plans_sell_fixed_tokens_shown_as_points():
 
 def test_only_an_exact_plan_price_credits_and_only_exactly_its_tokens():
     credit = plan_catalog.exact_credit
-    assert credit("basic", 39900, "INR") == (500_000, 250)
-    assert credit("basic", 47082, "INR") == (500_000, 250)          # its Razorpay page: 399 + GST
-    assert credit("standard", 79900, "INR") == (1_000_000, 500)
-    assert credit("standard", 94282, "INR") == (1_000_000, 500)       # its Razorpay page: 799 + GST
-    assert credit("premium", 99900, "INR") == (1_500_000, 750)
-    assert credit("premium", 117882, "INR") == (1_500_000, 750)      # the Razorpay page: 999 + GST, no extra tokens
+    assert credit("basic", 39900, "INR") == (3_900_000, 250)
+    assert credit("basic", 47082, "INR") == (3_900_000, 250)          # its Razorpay page: 399 + GST
+    assert credit("standard", 79900, "INR") == (7_800_000, 500)
+    assert credit("standard", 94282, "INR") == (7_800_000, 500)       # its Razorpay page: 799 + GST
+    assert credit("premium", 99900, "INR") == (9_800_000, 750)
+    assert credit("premium", 117882, "INR") == (9_800_000, 750)      # the Razorpay page: 999 + GST, no extra tokens
     # Anything else credits nothing -- never scaled, never rounded up.
     for plan_id, amount, currency in [
         ("basic", 39901, "INR"), ("basic", 39899, "INR"), ("basic", 47083, "INR"), ("basic", 100, "INR"), ("basic", 45000, "INR"), ("basic", 79900, "INR"),
@@ -252,7 +252,7 @@ def test_verifying_a_plan_payment_credits_its_tokens_exactly_once(env, monkeypat
     body = {"razorpay_order_id": "order_1", "razorpay_payment_id": "pay_1", "razorpay_signature": signature("order_1", "pay_1")}
     assert env.client.post("/billing/verify", json=body).json() == {"verified": True, "plan": "standard"}
     assert env.client.post("/billing/verify", json=body).status_code == 200  # client retry
-    assert balance(env) == before + 1_000_000                               # exactly, once
+    assert balance(env) == before + 7_800_000                               # exactly, once
 
 
 @pytest.mark.parametrize("plan_id,amount", [("topup_500000", 50000), ("standard", 99900), ("basic", 49900)])
@@ -411,7 +411,7 @@ def test_the_399_page_charges_gst_and_still_credits_exactly_the_399_plan(env):
     # The Razorpay page charges INR 399 + 18% GST = INR 470.82.
     set_balance(env, 0)
     assert page_payment(env, amount=47082).status_code == 200
-    assert balance(env) == 500_000 and points(env) == 250
+    assert balance(env) == 3_900_000 and points(env) == 250
     payment = env.client.get("/billing/summary").json()["payments"][0]
     assert (payment["plan_id"], payment["amount"], payment["points"]) == ("basic", 47082, 250)
 
@@ -431,7 +431,7 @@ def test_the_799_page_charges_gst_and_still_credits_exactly_the_799_plan(env):
     # The Razorpay page charges INR 799 + 18% GST = INR 942.82.
     set_balance(env, 0)
     assert page_payment(env, amount=94282).status_code == 200
-    assert balance(env) == 1_000_000 and points(env) == 500
+    assert balance(env) == 7_800_000 and points(env) == 500
     payment = env.client.get("/billing/summary").json()["payments"][0]
     assert (payment["plan_id"], payment["amount"], payment["points"]) == ("standard", 94282, 500)
 
@@ -440,7 +440,7 @@ def test_the_999_page_charges_gst_and_still_credits_exactly_the_999_plan(env):
     # The Razorpay page charges INR 999 + 18% GST = INR 1,178.82.
     set_balance(env, 0)
     assert page_payment(env, amount=117882).status_code == 200
-    assert balance(env) == 1_500_000 and points(env) == 750
+    assert balance(env) == 9_800_000 and points(env) == 750
     payment = env.client.get("/billing/summary").json()["payments"][0]
     assert (payment["plan_id"], payment["amount"], payment["points"]) == ("premium", 117882, 750)
 
@@ -528,9 +528,9 @@ def test_each_plan_shows_its_own_points(env, monkeypatch, plan_id, shown):
 
 def test_points_add_up_across_plans_with_different_rates(env, monkeypatch):
     set_balance(env, 0)
-    buy(env, monkeypatch, "basic", "order_1")        # 500,000 tokens as 250 points
-    buy(env, monkeypatch, "premium", "order_2")      # 1,500,000 tokens as 750 points
-    assert balance(env) == 2_000_000 and points(env) == 1000
+    buy(env, monkeypatch, "basic", "order_1")        # 3,900,000 tokens as 250 points
+    buy(env, monkeypatch, "premium", "order_2")      # 9,800,000 tokens as 750 points
+    assert balance(env) == 13_700_000 and points(env) == 1000
 
 
 def test_free_points_and_a_plan_add_up(env, monkeypatch):
@@ -540,15 +540,15 @@ def test_free_points_and_a_plan_add_up(env, monkeypatch):
 
 def test_spending_tokens_spends_points_at_the_accounts_rate(env, monkeypatch):
     set_balance(env, 0)
-    buy(env, monkeypatch, "basic", "order_1")        # 2,000 tokens a point
-    auth_service.settle_tokens(env.user.id, 15_000, "aptitude_agent", "create_test")
-    assert points(env) == 242.5
+    buy(env, monkeypatch, "basic", "order_1")        # 15,600 tokens a point
+    auth_service.settle_tokens(env.user.id, 156_000, "aptitude_agent", "create_test")
+    assert points(env) == 240
 
 
 def test_a_negative_balance_still_shows_the_points_just_bought(env, monkeypatch):
     set_balance(env, -2_000)
     buy(env, monkeypatch, "standard", "order_1")
-    assert balance(env) == 998_000 and points(env) == 500
+    assert balance(env) == 7_798_000 and points(env) == 500
 
 
 def test_an_old_balance_keeps_the_rate_stored_on_its_row(env):
@@ -560,7 +560,7 @@ def test_an_old_balance_keeps_the_rate_stored_on_its_row(env):
 def test_monthly_usage_reports_points(env, monkeypatch):
     set_balance(env, 0)
     buy(env, monkeypatch, "basic", "order_1")
-    auth_service.settle_tokens(env.user.id, 30_000, "aptitude_agent", "create_test")   # also records the usage
+    auth_service.settle_tokens(env.user.id, 234_000, "aptitude_agent", "create_test")   # 15 points; also records the usage
     body = env.client.get("/billing/usage-month").json()
     assert body["points_used"] == 15 and body["points_balance"] == 235 and body["points_limit"] == 250
     assert [(a["agent_name"], a["points"]) for a in body["agents"]] == [("aptitude_agent", 15)]
@@ -583,7 +583,7 @@ def test_a_paid_payment_records_what_it_credited_and_a_later_price_change_cannot
     session = env.database()
     try:
         row = session.query(Payment).filter_by(razorpay_order_id="order_1").one()
-        assert (row.credited_tokens, row.credited_points) == (500_000, 250)
+        assert (row.credited_tokens, row.credited_points) == (3_900_000, 250)
     finally:
         session.close()
     monkeypatch.setitem(plan_catalog.PLANS["basic"], "points", 1)       # the catalog changes later

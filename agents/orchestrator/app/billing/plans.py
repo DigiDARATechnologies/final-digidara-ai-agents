@@ -63,7 +63,9 @@ PLANS: dict[str, dict] = {
         "name": "Basic",
         "amount": 39900,
         "currency": "INR",
-        "tokens": 500_000,
+        # Tokens set for a ~72.5% margin after the AI cost and Razorpay's
+        # fee (30 Oct 2026); the coins sold stay the same.
+        "tokens": 3_900_000,
         "points": 250,
         "description": "For getting started and light, occasional use.",
         "payment_page_url": os.getenv("RAZORPAY_BASIC_PAGE_URL", ""),
@@ -74,7 +76,7 @@ PLANS: dict[str, dict] = {
         "name": "Standard",
         "amount": 79900,
         "currency": "INR",
-        "tokens": 1_000_000,
+        "tokens": 7_800_000,
         "points": 500,
         "description": "For regular learners who use several agents each week.",
         "popular": True,
@@ -86,7 +88,7 @@ PLANS: dict[str, dict] = {
         "name": "Premium",
         "amount": 99900,
         "currency": "INR",
-        "tokens": 1_500_000,
+        "tokens": 9_800_000,
         "points": 750,
         "description": "For heavy daily use across every agent.",
         "payment_page_url": os.getenv("RAZORPAY_PREMIUM_PAGE_URL", ""),
@@ -118,9 +120,9 @@ def gst_breakdown(plan_id: str, amount_paise: int) -> tuple[int, int] | None:
 def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, int] | None:
     """The one place that decides what a payment credits: exactly the plan's
     tokens and points, and only for exactly its price -- INR 399 (or the
-    INR 470.82 charged with GST) -> 500,000, INR 799 (or INR 942.82 with
-    GST) -> 1,000,000, INR 999 (or INR 1,178.82 with GST) ->
-    1,500,000.
+    INR 470.82 charged with GST) -> 3,900,000, INR 799 (or INR 942.82 with
+    GST) -> 7,800,000, INR 999 (or INR 1,178.82 with GST) ->
+    9,800,000.
     Never scaled, never rounded up.
 
     Anything else credits nothing: a different amount, a plan no longer sold,
@@ -133,9 +135,11 @@ def exact_credit(plan_id: str, amount_paise: int, currency: str) -> tuple[int, i
         return None
     return plan["tokens"], plan["points"]
 
-# Every plan sells points at 2,000 tokens a point, and new free accounts use
-# the same rate. (Accounts created before this kept the rate stored on their
-# row, so their shown balance never jumps.) New accounts start with enough
+# New free accounts count 2,000 tokens a point; each plan has its own rate
+# (its tokens / its points: 15,600 for Basic and Standard, ~13,067 for
+# Premium). Accounts keep the rate stored on their row (blended on every
+# purchase, see auth/service.py:add_credit), so a shown balance never jumps.
+# New accounts start with enough
 # points to finish full flows in at least four agents (one Aptitude test, one
 # mock interview, a Communication Coach session and a resume, say); tune with
 # these env vars.
@@ -235,6 +239,12 @@ PREVIOUS_PLAN_TOKENS = {
     ("basic", 49900): 500_000,
     ("standard", 99900): 1_200_000,
     ("premium", 199900): 2_600_000,
+    # 1 Oct - 30 Oct 2026, the same prices with fewer tokens. Payments since
+    # then record what they credited (Payment.credited_tokens), so only
+    # older rows without it are looked up here.
+    ("basic", 39900): 500_000, ("basic", 47082): 500_000,
+    ("standard", 79900): 1_000_000, ("standard", 94282): 1_000_000,
+    ("premium", 99900): 1_500_000, ("premium", 117882): 1_500_000,
 }
 
 

@@ -28,7 +28,7 @@ function coinsOf(org: PlatformOrg): OrgCoins {
 function CoinFields({ value, onChange }: { value: OrgCoins; onChange: (next: OrgCoins) => void }) {
   return (
     <fieldset className="org-coins">
-      <legend>Coins to give <small>(1 coin = 2,000 tokens, given once to each person)</small></legend>
+      <legend>Coins to give <small>(worth the same as a bought coin; given once to each person)</small></legend>
       <div className="org-class-grid three">
         {COIN_FIELDS.map(({ key, label }) => (
           <label key={key} className="field"><span>{label}</span>
