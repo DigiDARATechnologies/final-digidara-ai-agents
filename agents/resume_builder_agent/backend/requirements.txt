@@ -1,21 +1,21 @@
 Flask==3.1.3
-flask-cors==6.0.0
+flask-cors==6.0.5
 Flask-SQLAlchemy==3.1.1
-PyMySQL==1.1.1
-cryptography==50.0.0
-reportlab==4.2.5
+PyMySQL==1.2.3
+cryptography==50.0.2
+reportlab==4.5.1
 Pillow==13.0.0
 pypdf==6.21.2
-anthropic==0.69.0
+anthropic==0.125.0
 # Long-term chat memory (app/services/memory.py). Off unless MEM0_ENABLED=true.
 mem0ai==2.2.1
-qdrant-client==1.19.1
-httpx>=0.27,<1
-python-dotenv==1.2.2
-redis==5.2.1
+qdrant-client==1.20.0
+httpx>=0.28.1,<1
+python-dotenv==1.2.4
+redis==5.3.1
 defusedxml==0.7.1
-pytest==9.0.3
-requests==2.33.0
+pytest==9.1.1
+requests==2.34.2
 pytesseract==0.3.13
 pdf2image==1.17.0
 # Production/Docker process target — not used by the Flask dev server in
