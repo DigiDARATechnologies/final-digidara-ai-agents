@@ -14,7 +14,7 @@ httpx==0.28.1
 # 1.103.1: fixes GHSA-g5ff-637f-6q2m, PYSEC-2026-4066 and CVE-2026-114612 (HIGH), which failed the PR security scan.
 # Kept at 1.103.1: 1.104+ requires filelock<4, and every filelock 3.x has known
 # vulnerabilities (fixed in 4.0.9), which fails the security scan.
-litellm==1.103.1
+litellm==1.103.9
 langgraph==1.2.17
 bcrypt>=5.0.0,<6
 PyJWT>=2.15.1,<3
