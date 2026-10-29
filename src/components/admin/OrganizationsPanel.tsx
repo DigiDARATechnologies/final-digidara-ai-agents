@@ -111,8 +111,14 @@ export default function OrganizationsPanel() {
               </label>
             </div>
             <label className="field"><span>Member limit</span>
-              <input type="number" min={1} max={100000} value={form.member_limit}
-                onChange={(e) => setForm({ ...form, member_limit: Number(e.target.value) || 1 })} />
+              <input type="number" min={1} max={100000} value={form.member_limit || ""} disabled={form.member_limit === 0}
+                placeholder={form.member_limit === 0 ? "Unlimited" : undefined}
+                onChange={(e) => setForm({ ...form, member_limit: Math.max(1, Number(e.target.value) || 1) })} />
+            </label>
+            <label className="org-check">
+              <input type="checkbox" checked={form.member_limit === 0}
+                onChange={(e) => setForm({ ...form, member_limit: e.target.checked ? 0 : 1000 })} />
+              Unlimited members
             </label>
             <button className="btn btn-primary btn-full" disabled={busy}>{busy ? "Creating…" : "Create organization"}</button>
           </form>
@@ -139,7 +145,7 @@ export default function OrganizationsPanel() {
               <li key={org.id} className={org.status === "active" ? "" : "off"}>
                 <div>
                   <b>{org.name}</b>
-                  <span>{org.member_count ?? 0} / {org.member_limit} members · {org.active_codes} active code{org.active_codes === 1 ? "" : "s"}</span>
+                  <span>{org.member_count ?? 0} / {org.member_limit ? org.member_limit : "Unlimited"} members · {org.active_codes} active code{org.active_codes === 1 ? "" : "s"}</span>
                   <small>{org.admins.map((a) => a.email).join(", ") || "No admin"}{org.status === "suspended" ? " · suspended" : ""}</small>
                 </div>
                 <div className="org-actions">

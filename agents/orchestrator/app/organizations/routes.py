@@ -29,12 +29,12 @@ class PlatformCreateIn(BaseModel):
     kind: str = "college"
     admin_name: str = Field(default="", max_length=255)
     admin_email: str = Field(min_length=3, max_length=255)
-    member_limit: int = Field(default=1000, ge=1, le=100000)
+    member_limit: int = Field(default=1000, ge=0, le=100000)  # 0: unlimited
 
 
 class PlatformUpdateIn(BaseModel):
     status: str = "active"
-    member_limit: int | None = Field(default=None, ge=1, le=100000)
+    member_limit: int | None = Field(default=None, ge=0, le=100000)  # 0: unlimited
 
 
 class JoinIn(BaseModel):
@@ -96,6 +96,19 @@ class LevelIn(BaseModel):
 class StaffIn(BaseModel):
     name: str = Field(default="", max_length=255)
     email: str = Field(min_length=3, max_length=255)
+    department: str = Field(default="", max_length=120)
+    degree: str = Field(default="", max_length=80)
+    year: str = Field(default="", max_length=40)
+    section: str = Field(default="", max_length=40)
+    class_head: bool = False
+
+
+class StaffDetailsIn(BaseModel):
+    department: str = Field(default="", max_length=120)
+    degree: str = Field(default="", max_length=80)
+    year: str = Field(default="", max_length=40)
+    section: str = Field(default="", max_length=40)
+    class_head: bool = False
 
 
 class DecisionIn(BaseModel):
@@ -343,9 +356,17 @@ def list_staff(org_id: str, user_id: str = Depends(get_verified_user_id)) -> lis
     return _run(service.list_staff, user_id, org_id)
 
 
+@router.put("/{org_id}/staff/{member_id}")
+def update_staff(org_id: str, member_id: str, req: StaffDetailsIn, user_id: str = Depends(get_verified_user_id)) -> dict:
+    """Owner or admin: change a staff login's department, degree, year, section, class head."""
+    return _run(service.update_staff, user_id, org_id, member_id, req.model_dump())
+
+
 @router.post("/{org_id}/staff", status_code=201)
 def add_staff(org_id: str, req: StaffIn, user_id: str = Depends(get_verified_user_id)) -> dict:
-    return _run(service.add_staff, user_id, org_id, req.name, req.email)
+    return _run(service.add_staff, user_id, org_id, req.name, req.email,
+                {"department": req.department, "degree": req.degree, "year": req.year, "section": req.section,
+                 "class_head": req.class_head})
 
 
 # --- student list and join requests (staff) -----------------------------------

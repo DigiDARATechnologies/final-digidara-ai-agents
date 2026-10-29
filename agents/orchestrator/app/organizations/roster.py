@@ -25,6 +25,7 @@ from app.organizations.service import (
     _EMAIL,
     _count,
     _membership,
+    is_full,
     _require_admin,
     clean_class_value,
 )
@@ -247,7 +248,7 @@ def is_listed(session, org_id: str, user: User, code: OrgJoinCode | None = None)
 # --- joining -----------------------------------------------------------------
 
 def _add_member(session, org: Organization, user_id: str, shared: bool, fields: dict | None = None, code_id: str | None = None) -> bool:
-    if _membership(session, user_id) is not None or _count(session, org.id) >= org.member_limit:
+    if _membership(session, user_id) is not None or is_full(org, _count(session, org.id)):
         return False
     session.add(OrganizationMember(organization_id=org.id, user_id=user_id, role="member",
                                    progress_shared_at=datetime.utcnow() if shared else None,

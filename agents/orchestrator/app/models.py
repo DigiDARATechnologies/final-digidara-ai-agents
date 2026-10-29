@@ -282,6 +282,7 @@ class Organization(Base):
     kind: Mapped[str] = mapped_column(String(32), default="college")
     join_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     created_by: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # 0 means unlimited.
     member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
     # "active" or "suspended" (a suspended organization's admins and codes stop working).
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
@@ -379,6 +380,10 @@ class OrganizationMember(Base):
     department: Mapped[str | None] = mapped_column(String(120), nullable=True)
     year: Mapped[str | None] = mapped_column(String(40), nullable=True)
     section: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Staff only: the degree they teach (B.E., B.Sc...) and whether they are
+    # the head (in-charge) of the class above.
+    degree: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    class_head: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     join_code_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 

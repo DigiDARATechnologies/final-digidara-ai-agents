@@ -1215,3 +1215,34 @@ def test_staff_see_their_students_and_admins_the_whole_organization(app_client, 
     assert admin["kpis"]["readiness"] == 60.0
     assert [r["user_id"] for r in admin["learners"]] == ["other", "learner"]          # highest readiness first
     assert app_client.get("/learner/dashboard?view=me", headers=auth("admin")).json()["people"] == 1
+
+
+def test_an_organization_can_have_unlimited_members(app_client, users):
+    created = app_client.post("/organizations/platform", headers=auth("platform"), json={
+        "name": "Open College", "admin_email": "admin@example.test", "member_limit": 0}).json()
+    org = created["organization"]
+    assert org["member_limit"] == 0  # 0: unlimited
+    _list_students(org["id"], "learner@example.test", "other@example.test")
+    for who in ("learner", "other"):
+        joined = app_client.post("/organizations/join", headers=auth(who), json={"join_code": org["join_code"]})
+        assert joined.status_code in (200, 201), joined.text
+    # A limit can be set again, and back to unlimited.
+    assert app_client.patch(f"/organizations/platform/{org['id']}", headers=auth("platform"),
+                          json={"status": "active", "member_limit": 2}).json()["member_limit"] == 2
+    assert app_client.patch(f"/organizations/platform/{org['id']}", headers=auth("platform"),
+                          json={"status": "active", "member_limit": 0}).json()["member_limit"] == 0
+
+
+def test_a_staff_login_carries_department_degree_class_and_class_head(app_client, users):
+    org_id = _make_org(app_client)["organization"]["id"]
+    created = app_client.post(f"/organizations/{org_id}/staff", headers=auth("admin"), json={
+        "name": "Priya", "email": "priya@example.test", "department": " Computer  Science ", "degree": "B.E.",
+        "year": "2nd year", "section": "A", "class_head": True})
+    assert created.status_code == 201, created.text
+    staff = next(s for s in app_client.get(f"/organizations/{org_id}/staff", headers=auth("admin")).json()
+                 if s["email"] == "priya@example.test")
+    assert (staff["department"], staff["degree"], staff["year"], staff["section"], staff["class_head"]) == (
+        "Computer Science", "B.E.", "2nd year", "A", True)
+    updated = app_client.put(f"/organizations/{org_id}/staff/{staff['member_id']}", headers=auth("admin"), json={
+        "department": "Computer Science", "degree": "B.E.", "year": "3rd year", "section": "B", "class_head": False}).json()
+    assert (updated["year"], updated["section"], updated["class_head"]) == ("3rd year", "B", False)
