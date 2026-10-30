@@ -137,17 +137,25 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
           </ol>
 
           {rest.length > 0 && (
+            <>
+            <div className="lb-list-head" aria-hidden="true">
+              <span>#</span><span /><span>{board.group === "staff" ? "Staff" : "Learner"}</span><span>Organization</span>
+              <span>{board.group === "staff" ? "Staff score" : "Readiness"}</span><span />
+            </div>
             <ol className="lb-list" start={4}>
               {shown.map((entry) => (
                 <li key={entry.user_id} className={entry.is_me ? "me" : ""}>
                   <span className="lb-rank">#{entry.rank}</span>
                   <Avatar entry={entry} className="lb-avatar tiny" />
-                  <span className="lb-name">{entry.name}{entry.is_me ? " (you)" : ""}{entry.organization && <small>{entry.organization}</small>}
+                  <span className="lb-name">{entry.name}{entry.is_me ? " (you)" : ""}
                     {entry.staff && <small>{staffLine(entry.staff)}</small>}</span>
+                  <span className="lb-org">{entry.organization ?? "—"}</span>
+                  <span className="lb-bar" aria-hidden="true"><i style={{ width: `${Math.max(2, Math.min(100, entry.score))}%` }} /></span>
                   <span className="lb-score">{Math.round(entry.score)}</span>
                 </li>
               ))}
             </ol>
+            </>
           )}
           {rest.length > shown.length && !showAll && (
             <button type="button" className="link-btn" onClick={() => setShowAll(true)}>Show all {board.entries.length}</button>
@@ -184,16 +192,24 @@ function staffLine(staff: NonNullable<LeaderboardEntry["staff"]>): string {
   return `${staff.students} student${staff.students === 1 ? "" : "s"} · avg readiness ${Math.round(staff.average_readiness)} · ${staff.active_percent}% active`;
 }
 
+const PODIUM_BADGES = ["Champion", "Runner Up", "Rising Star"];
+
 function PodiumPlace({ entry }: { entry: LeaderboardEntry }) {
   return (
     <li className={`lb-place place-${entry.rank}${entry.is_me ? " me" : ""}${entry.new_in_top ? " new" : ""}`}>
-      <span className="lb-medal" aria-hidden="true">{MEDALS[entry.rank - 1]}</span>
-      <Avatar entry={entry} className="lb-avatar" />
-      <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
-      {entry.organization && <small>{entry.organization}</small>}
-      {entry.new_in_top && <span className="lb-new">New</span>}
-      <strong>{Math.round(entry.score)}</strong>
-      <div className="lb-step"><span>{entry.rank}</span></div>
+      <div className="lb-pcard">
+        <span className="lb-medal-num" aria-hidden="true">{entry.rank}</span>
+        <Avatar entry={entry} className="lb-avatar" />
+        <b>{entry.name}{entry.is_me ? " (you)" : ""}</b>
+        <small className="lb-porg">{entry.organization ?? (entry.staff ? "Staff" : "SkillDARA learner")}</small>
+        <span className="lb-badge">{PODIUM_BADGES[entry.rank - 1]}</span>
+        {entry.new_in_top && <span className="lb-new">New</span>}
+        <div className="lb-pstats">
+          <div><strong>{Math.round(entry.score)}</strong><span>{entry.staff ? "Staff score" : "Readiness"}</span></div>
+          <div><strong>#{entry.rank}</strong><span>{entry.staff ? `${entry.staff.students} students` : "Rank"}</span></div>
+        </div>
+      </div>
+      <div className="lb-step" aria-hidden="true" />
     </li>
   );
 }

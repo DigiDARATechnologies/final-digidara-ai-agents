@@ -7,8 +7,8 @@ import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 import SearchChatsModal from "./SearchChatsModal";
 import ConfirmDialog from "./ConfirmDialog";
-import blackThemeLogo from "../assets/Black_theme_logo.png";
-import whiteThemeLogo from "../assets/White_theme_logo.png";
+import darkBgLogo from "../assets/skilldara-logo-dark.png";
+import lightBgLogo from "../assets/skilldara-logo.png";
 
 export interface SidebarProps {
   theme: "dark" | "light";
@@ -141,8 +141,8 @@ export default function Sidebar({
           aria-current={homeActive ? "page" : undefined}>
           <Logo
             variant={collapsed ? "icon" : "full"}
-            size={collapsed ? 44 : 66}
-            src={collapsed ? undefined : theme === "dark" ? blackThemeLogo : whiteThemeLogo}
+            size={collapsed ? 40 : 42}
+            src={collapsed ? undefined : theme === "dark" ? darkBgLogo : lightBgLogo}
           />
         </button>
         <button className="icon-btn sidebar-close-mobile" onClick={onCloseMobile} aria-label="Close menu">
