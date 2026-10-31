@@ -80,6 +80,8 @@ export const CERTIFICATE_ACTION = "open_certificate";
 export const START_VIVA_ACTION = "start_viva_attempt";
 /** Sent by the viva panel when the attempt's 20 minutes run out. */
 export const VIVA_TIME_UP_ACTION = "viva_time_up";
+/** Sent when proctoring ends the viva (too many warnings), with time left. */
+export const VIVA_PROCTOR_END_ACTION = "viva_proctor_end";
 
 /** When the current viva attempt must be finished (epoch ms), from the
  * server's seconds-left so a wrong device clock does not matter. */
@@ -715,7 +717,8 @@ export async function handleCapstoneText(
           ],
         };
       }
-      const timeUp = trimmed === VIVA_TIME_UP_ACTION;
+      const endedByProctoring = trimmed === VIVA_PROCTOR_END_ACTION;
+      const timeUp = endedByProctoring || trimmed === VIVA_TIME_UP_ACTION;
       if (!trimmed) {
         return { state, messages: [{ text: "Please answer the question above before continuing." }] };
       }
@@ -739,7 +742,7 @@ export async function handleCapstoneText(
       }
       try {
         const result = timeUp
-          ? await vivaTimeUp(state.vivaSubmissionId)
+          ? await vivaTimeUp(state.vivaSubmissionId, endedByProctoring)
           : await submitVivaAnswer(state.vivaSubmissionId, state.vivaQuestionId, trimmed);
         if (result.status === "pending_viva" && result.viva_question) {
           return {
@@ -774,7 +777,7 @@ export async function handleCapstoneText(
               vivaDeadlineAt: null,
             },
             messages: [{
-              text: `${result.viva_timed_out ? `Time's up: the 20 minutes for viva attempt ${attempt} of ${total} have ended, and the questions you did not answer count as wrong.` : `Viva attempt ${attempt} of ${total} finished.`} Result: ${rating ?? "-"}.\n\nYou need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass, so this attempt did not pass. You have ${plural(left, "attempt")} left, and every attempt asks new questions. Review your project, then start the next attempt when you're ready.`,
+              text: `${endedByProctoring ? `Proctoring ended viva attempt ${attempt} of ${total} after too many warnings, and the questions you did not answer count as wrong.` : result.viva_timed_out ? `Time's up: the 20 minutes for viva attempt ${attempt} of ${total} have ended, and the questions you did not answer count as wrong.` : `Viva attempt ${attempt} of ${total} finished.`} Result: ${rating ?? "-"}.\n\nYou need at least ${VIVA_PASS_PERCENT}% of the answers correct to pass, so this attempt did not pass. You have ${plural(left, "attempt")} left, and every attempt asks new questions. Review your project, then start the next attempt when you're ready.`,
               options: vivaRetryOptions(attempt + 1, total),
             }],
           };

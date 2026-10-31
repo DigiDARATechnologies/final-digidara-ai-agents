@@ -217,6 +217,18 @@ def test_running_out_of_time_ends_the_attempt_and_offers_the_next_one(client, wo
     assert started["viva_attempt"] == 2 and started["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS
 
 
+def test_proctoring_ends_the_attempt_with_time_left(client, workflow, database, monkeypatch):
+    submission_id = upload(client).json()["submission_id"]
+    monkeypatch.setattr(routes, "verify_viva_answer", Mock(return_value={"correct": True, "note": "ok"}))
+    assert answer(client, submission_id, 0).status_code == 200
+    assert time_up(client, submission_id).status_code == 409               # a timer cannot end it early
+    result = client.post("/api/invoke", json={"action": "viva_time_up",
+                                              "payload": {"submission_id": submission_id, "ended_early": True}}).json()
+    assert result["status"] == "viva_retry" and result["viva_attempt"] == 1 and result["viva_attempts_left"] == 2
+    started = start_attempt(client, submission_id).json()
+    assert started["viva_attempt"] == 2 and started["viva_seconds_left"] == viva.VIVA_TIME_LIMIT_SECONDS
+
+
 def test_an_answer_long_after_the_limit_is_not_graded(client, workflow, database, monkeypatch):
     submission_id = upload(client).json()["submission_id"]
     verdict = Mock(return_value={"correct": True, "note": "ok"})

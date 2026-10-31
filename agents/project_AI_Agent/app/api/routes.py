@@ -798,9 +798,10 @@ def _close_viva_attempt(session, submission, questions, answers, thread_id, time
 
 
 def viva_time_up(req: VivaTimeUpRequest) -> SubmissionResultResponse:
-    """The student's viva timer ran out: ends the current attempt (unanswered
-    questions count as wrong) and moves on exactly as a finished attempt does.
-    Refused while the server's own clock says time remains."""
+    """The student's viva timer ran out, or proctoring ended the viva
+    (`ended_early`): ends the current attempt (unanswered questions count as
+    wrong) and moves on exactly as a finished attempt does. A timer that ran
+    out is refused while the server's own clock says time remains."""
     logger.info("=== viva time up submission=%s", req.submission_id)
     session = get_session()
     try:
@@ -814,7 +815,7 @@ def viva_time_up(req: VivaTimeUpRequest) -> SubmissionResultResponse:
         if questions and len(answers) >= len(questions):
             raise HTTPException(409, "This viva attempt is finished. Start the next attempt to continue.")
         # A few seconds' tolerance for a browser clock running slightly ahead.
-        if not _viva_overdue(submission.viva_started_at, -5):
+        if not req.ended_early and not _viva_overdue(submission.viva_started_at, -5):
             raise HTTPException(409, "There is still time left in this viva attempt.")
         return _close_viva_attempt(session, submission, questions, answers, submission.assignment.thread_id, timed_out=True)
     finally:

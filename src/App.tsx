@@ -12,6 +12,7 @@ import {
   initialCapstoneMessage,
   mergeCapstoneFiles,
   submitCapstoneFiles,
+  VIVA_PROCTOR_END_ACTION,
   VIVA_TIME_UP_ACTION,
   type CapstoneFlowState,
 } from "./lib/capstoneFlow";
@@ -2356,7 +2357,7 @@ export default function App() {
                           agentName: "capstone_project_agent",
                           refId: `${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
                           label: "Capstone viva",
-                          onTerminate: () => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Viva ended by proctoring"),
+                          onTerminate: () => sendMessage(VIVA_PROCTOR_END_ACTION, undefined, false, "Viva ended by proctoring"),
                         }
                         : null,
                       <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />,

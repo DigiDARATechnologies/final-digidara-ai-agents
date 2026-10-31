@@ -285,10 +285,11 @@ export function submitVivaAnswer(submission_id: string, question_id: number, ans
   return invoke<SubmissionResult>("submit_viva_answer", { submission_id, question_id, answer });
 }
 
-/** The viva attempt's time ran out: the server ends it (unanswered questions
- * count as wrong) and the next attempt is offered as after a failed one. */
-export function vivaTimeUp(submission_id: string) {
-  return invoke<SubmissionResult>("viva_time_up", { submission_id });
+/** The viva attempt's time ran out, or proctoring ended it (`endedEarly`):
+ * the server ends it (unanswered questions count as wrong) and the next
+ * attempt is offered as after a failed one. */
+export function vivaTimeUp(submission_id: string, endedEarly = false) {
+  return invoke<SubmissionResult>("viva_time_up", endedEarly ? { submission_id, ended_early: true } : { submission_id });
 }
 
 export interface QAAskResult {
