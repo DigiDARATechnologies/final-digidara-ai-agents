@@ -40,7 +40,7 @@ def test_summary_averages_completed_tests_and_names_topics(client, auth_headers,
     body = _summary(client).get_json()
     assert body["score"] == 60.0
     # Each level counts its own best five tests: one Beginner test at 80% (a pass) is a fifth of it.
-    assert body["level_scores"] == {"easy": 20.0, "medium": 0.0, "hard": 0.0}
+    assert body["level_scores"] == {"easy": 20.0, "medium": 0.0, "hard": 0.0, "professional": 0.0}
     assert body["activity_count"] == 3
     assert body["strengths"] == ["Percentages (90%)"]
     assert body["gaps"] == ["Puzzles (25%)"]
@@ -60,4 +60,8 @@ def test_level_progress_never_drops_and_five_passes_complete_a_level():
     # A weaker test after it does not take progress down.
     assert level_scores([("easy", 40.0), ("easy", 92.0)])["easy"] == 30.0
     assert level_scores([("easy", 85.0)] * 5 + [("easy", 30.0)])["easy"] == 100.0
-    assert level_scores([("medium", 60.0)] * 5) == {"easy": 0.0, "medium": 75.0, "hard": 0.0}
+    assert level_scores([("medium", 60.0)] * 5) == {"easy": 0.0, "medium": 75.0, "hard": 0.0, "professional": 0.0}
+    # Professional is the Hard tests against 90%: five at 85% complete Hard but not Professional.
+    hard = level_scores([("hard", 85.0)] * 5)
+    assert hard["hard"] == 100.0 and hard["professional"] == 94.4
+    assert level_scores([("hard", 90.0)] * 5)["professional"] == 100.0

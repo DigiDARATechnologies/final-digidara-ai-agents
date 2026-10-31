@@ -41,7 +41,7 @@ def test_each_exam_counts_at_every_level_it_asked_and_never_lowers_progress():
         {"exam_id": 9, "difficulty": "beginner", "correct": 10, "asked": 10},     # not a finished exam
     ]
     body = build_student_summary(exams, [], answers)
-    assert body["level_scores"] == {"easy": 25.0, "medium": 15.0, "hard": 0.0}
+    assert body["level_scores"] == {"easy": 25.0, "medium": 15.0, "hard": 0.0, "professional": 0.0}
 
 
 def test_five_passed_exams_complete_a_level():
@@ -49,6 +49,15 @@ def test_five_passed_exams_complete_a_level():
     answers = [{"exam_id": n, "difficulty": "beginner", "correct": 8, "asked": 10} for n in range(1, 6)]
     answers.append({"exam_id": 6, "difficulty": "beginner", "correct": 1, "asked": 10})
     assert build_student_summary(exams, [], answers)["level_scores"]["easy"] == 100.0
+
+
+def test_professional_needs_90_percent_of_the_advanced_answers():
+    exams = [{"id": n, "topic": "SQL", "score_percentage": 85, "completed_at": datetime(2026, 9, n)} for n in range(1, 6)]
+    at_80 = [{"exam_id": n, "difficulty": "advanced", "correct": 8, "asked": 10} for n in range(1, 6)]
+    scores = build_student_summary(exams, [], at_80)["level_scores"]
+    assert scores["hard"] == 100.0 and scores["professional"] == 88.9
+    at_90 = [{**row, "correct": 9} for row in at_80]
+    assert build_student_summary(exams, [], at_90)["level_scores"]["professional"] == 100.0
 
 
 def test_without_answers_no_level_scores_are_sent():

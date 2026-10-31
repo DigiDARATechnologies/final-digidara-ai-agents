@@ -38,6 +38,12 @@ class FakeRepository:
         if email != STUDENT["email"] or password != "Password1!": raise ApiError("Email or password is incorrect.", 401, "invalid_credentials")
         return STUDENT, "valid-session", "2099-01-01T00:00:00+00:00"
     def student_for_session(self, token): return None if token in self.revoked else self.sessions.get(token)
+    # One technology's own progress (per difficulty); nothing solved by default.
+    technology_progress = {}
+    def technology_counts(self, student_id, technology_id): return self.technology_progress
+    def technology_level_by_slug(self, student_id, technology_slug):
+        from lms_api.repository import technology_level
+        return technology_level(self.technology_progress)
     def revoke_session(self, token): self.revoked.add(token)
     def health(self): return True
     def dashboard(self, student_id): return {"courses": self.list_courses(student_id), "continue": {"label": "Coding Practice", "href": "/coding", "kind": "dashboard"}}

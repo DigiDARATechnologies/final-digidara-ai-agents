@@ -79,6 +79,26 @@ class LevelLockTests(unittest.TestCase):
         # A Medium learner can still redo Easy problems.
         self.assertEqual(self.invoke("submit_problem", {"problem_id": 1, "sourceCode": CODE}, "medium").status_code, 201)
 
+    def test_a_language_opens_its_next_level_on_its_own_progress(self):
+        # Every Easy problem of this language solved: its Medium opens for a Beginner learner.
+        self.repo.technology_progress = {"Easy": {"total": 1, "solved": 1}, "Medium": {"total": 1, "solved": 0},
+                                         "Hard": {"total": 1, "solved": 0}}
+        opened = self.invoke("get_problem", {"course_slug": COURSE["slug"], "technology_slug": "python",
+                                             "topic_slug": "print-and-input", "problem_slug": "word-count"}, "easy")
+        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(self.invoke("submit_problem", {"problem_id": 2, "sourceCode": CODE}, "easy").status_code, 201)
+        self.assertEqual(self.invoke("submit_problem", {"problem_id": 3, "sourceCode": CODE}, "easy").status_code, 403)
+
+    def test_the_problem_set_opens_a_level_finished_in_that_language(self):
+        def solved_easy(*args, **kwargs):
+            languages, selected, course, problems = LevelRepository.problem_set(self.repo, *args, **kwargs)
+            languages[0]["counts"]["Easy"]["solved"] = 1
+            return languages, selected, course, problems
+        self.repo.problem_set = solved_easy
+        response = self.invoke("problem_set", {"technology_slug": "python"}, "easy").json
+        self.assertEqual(response["level_name"], "Medium")
+        self.assertEqual([p["locked"] for p in response["problems"]], [False, False, True])
+
 
 if __name__ == "__main__":
     unittest.main()

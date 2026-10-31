@@ -11,6 +11,19 @@ from .db import connection
 from .errors import ApiError
 
 
+def technology_level(counts):
+    """What one technology's own progress opens: the first difficulty with an
+    unsolved practice problem (Easy, Medium or Hard), or "Professional" once
+    every one is solved. counts: difficulty -> {"total", "solved"}."""
+    if not any(counts.get(d, {}).get("total") for d in ("Easy", "Medium", "Hard")):
+        return "Easy"
+    for difficulty in ("Easy", "Medium", "Hard"):
+        count = counts.get(difficulty) or {"total": 0, "solved": 0}
+        if count["solved"] < count["total"]:
+            return difficulty
+    return "Professional"
+
+
 class MySqlRepository:
     def register_account(self, email, password, display_name):
         with connection() as conn, conn.cursor() as cursor:
@@ -575,10 +588,29 @@ class MySqlRepository:
             )
             return cursor.fetchall()
 
+    def technology_counts(self, student_id, technology_id):
+        """Practice problems of one technology per difficulty: total and solved by this student."""
+        with connection() as conn, conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT p.difficulty,COUNT(*) total,SUM(CASE WHEN spp.status='Solved' THEN 1 ELSE 0 END) solved "
+                "FROM coding_problems p JOIN coding_topics tp ON tp.id=p.topic_id AND tp.is_active=TRUE "
+                "LEFT JOIN student_problem_progress spp ON spp.problem_id=p.id AND spp.student_id=%s "
+                "WHERE tp.technology_id=%s AND p.is_active=TRUE AND p.track='practice' GROUP BY p.difficulty",
+                (student_id, technology_id),
+            )
+            return {row["difficulty"]: {"total": int(row["total"]), "solved": int(row["solved"] or 0)}
+                    for row in cursor.fetchall()}
+
+    def technology_level_by_slug(self, student_id, technology_slug):
+        """technology_level for one technology, by its slug."""
+        with connection() as conn, conn.cursor() as cursor:
+            technology = self._technology_by_slug(cursor, technology_slug)
+        return technology_level(self.technology_counts(student_id, technology["id"]))
+
     def problem_for_evaluation(self, student_id, problem_id):
         with connection() as conn, conn.cursor() as cursor:
             cursor.execute(
-                "SELECT p.*,tp.name topic_name,t.name technology_name FROM coding_problems p "
+                "SELECT p.*,tp.name topic_name,t.id technology_id,t.name technology_name FROM coding_problems p "
                 "JOIN coding_topics tp ON tp.id=p.topic_id JOIN coding_technologies t ON t.id=tp.technology_id "
                 "WHERE p.id=%s AND p.is_active=TRUE AND tp.is_active=TRUE AND t.is_active=TRUE",
                 (problem_id,),

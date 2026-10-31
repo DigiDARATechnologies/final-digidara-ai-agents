@@ -120,22 +120,29 @@ def _text_items(value) -> list[str]:
 
 
 # Phase 2 levels: progress at each difficulty, starting from 0. A session at
-# PASS_PERCENT or better counts in full, a lower one in proportion; progress is
-# the best LEVEL_SESSIONS sessions at that difficulty added up and divided by
-# LEVEL_SESSIONS. So it grows with every session, a weaker session never takes
-# it down, and LEVEL_SESSIONS passed sessions complete the level. The
+# the pass mark or better counts in full, a lower one in proportion; progress
+# is the best LEVEL_SESSIONS sessions at that difficulty added up and divided
+# by LEVEL_SESSIONS. So it grows with every session, a weaker session never
+# takes it down, and LEVEL_SESSIONS passed sessions complete the level. The
 # orchestrator maps easy/medium/hard to the Beginner/Medium/Hard levels.
+# Professional has no sessions of its own: it is the Hard sessions measured
+# against a higher pass mark.
 LEVEL_SESSIONS = 5
 PASS_PERCENT = 80
+PROFESSIONAL_PASS_PERCENT = 90
+
+
+def _progress(scores, pass_percent):
+    credits = sorted((min(100.0, max(0.0, float(score)) * 100 / pass_percent) for score in scores), reverse=True)
+    return round(sum(credits[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
 
 
 def level_scores(sessions):
     """sessions: (difficulty, score 0-100) pairs."""
-    result = {}
-    for difficulty in ("easy", "medium", "hard"):
-        credits = sorted((min(100.0, max(0.0, float(score)) * 100 / PASS_PERCENT)
-                          for level, score in sessions if level == difficulty and score is not None), reverse=True)
-        result[difficulty] = round(sum(credits[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    scores = {difficulty: [score for level, score in sessions if level == difficulty and score is not None]
+              for difficulty in ("easy", "medium", "hard")}
+    result = {difficulty: _progress(values, PASS_PERCENT) for difficulty, values in scores.items()}
+    result["professional"] = _progress(scores["hard"], PROFESSIONAL_PASS_PERCENT)
     return result
 
 
