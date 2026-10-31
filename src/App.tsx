@@ -2252,7 +2252,8 @@ export default function App() {
           )}
 
           {view === "learning-dashboard" && (
-            <Suspense fallback={<ScreenLoading />}><LearningDashboard onBack={startNewChatLanding} /></Suspense>
+            <Suspense fallback={<ScreenLoading />}><LearningDashboard onBack={startNewChatLanding} userName={user?.name}
+              onNavigate={(target) => switchView(target)} onOpenAgent={openAgentChat} /></Suspense>
           )}
 
           {view === "leaderboard" && (
