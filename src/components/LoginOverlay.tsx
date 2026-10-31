@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
-import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
-import blackThemeLogo from "../assets/Black_theme_logo.png";
-import whiteThemeLogo from "../assets/White_theme_logo.png";
+import lightBgLogo from "../assets/skilldara-logo.png";
+import LandingNav from "./LandingNav";
+import AgentIcon from "./AgentIcon";
+import { AGENTS } from "../data/landingAgents";
+import "./LoginOverlay.css";
 
 interface LoginOverlayProps {
   onBack?: () => void;
@@ -42,46 +44,42 @@ function EyeIcon({ open }: { open: boolean }) {
   );
 }
 
+const ROW_A = AGENTS.slice(0, 4);
+const ROW_B = AGENTS.slice(4);
+
+function AgentCard({ item }: { item: (typeof AGENTS)[number] }) {
+  return (
+    <article className="lg-card" style={{ "--c": item.color } as CSSProperties}>
+      <div className="lg-card-head">
+        <span className="lg-card-icon"><AgentIcon name={item.icon} size="1.2em" /></span>
+        <div><h3>{item.name}</h3><small>{item.cat}</small></div>
+      </div>
+      <p>{item.text}</p>
+    </article>
+  );
+}
+
 function BrandPanel() {
   return (
-    <aside className="login-illustration">
-      <div className="login-illustration-glow login-illustration-glow--a" aria-hidden="true" />
-      <div className="login-illustration-glow login-illustration-glow--b" aria-hidden="true" />
-
-      <div className="login-illustration-brand">
-        <Logo src={blackThemeLogo} size={150} />
+    <section className="lg-copy">
+      <div className="lg-copy-head">
+        <h2>One account. <span className="lp-grad">Eight AI agents.</span></h2>
+        <p>Everything you need to practise, get certified and get hired.</p>
       </div>
-
-      <div className="login-illustration-copy">
-        <h2>Your team's <em>AI agent</em> workspace, in one place.</h2>
-        <p>Coding practice, communication coaching, aptitude training, resumes and certification — each backed by a specialized agent, all under one account.</p>
+      <div className="lg-rows" aria-hidden="true">
+        <div className="lg-row lg-row-a">
+          <div className="lg-track">
+            {[0, 1].map((k) => <div key={k} className="lg-group">{ROW_A.map((a) => <AgentCard key={a.name} item={a} />)}</div>)}
+          </div>
+        </div>
+        <div className="lg-row lg-row-b">
+          <div className="lg-track">
+            {[0, 1].map((k) => <div key={k} className="lg-group">{ROW_B.map((a) => <AgentCard key={a.name} item={a} />)}</div>)}
+          </div>
+        </div>
       </div>
-
-      <div className="login-mockup" aria-hidden="true">
-        <div className="login-mockup-bar">
-          <span /><span /><span />
-        </div>
-        <div className="login-mockup-row">
-          <span className="login-mockup-avatar">⚡</span>
-          <div className="login-mockup-bubble">Hi! What would you like to work on today?</div>
-        </div>
-        <div className="login-mockup-row login-mockup-row--user">
-          <div className="login-mockup-bubble login-mockup-bubble--user">Help me prep for a system design interview.</div>
-        </div>
-        <div className="login-mockup-row">
-          <span className="login-mockup-avatar">⚡</span>
-          <div className="login-mockup-bubble login-mockup-bubble--typing"><i /><i /><i /></div>
-        </div>
-        <span className="login-badge login-badge--a">🔒 Secure by design</span>
-        <span className="login-badge login-badge--b">✓ DPDP-ready privacy</span>
-      </div>
-
-      <div className="login-illustration-stats">
-        <div><strong>7+</strong><span>Specialized agents</span></div>
-        <div><strong>24/7</strong><span>Always available</span></div>
-        <div><strong>Bank-grade</strong><span>Session security</span></div>
-      </div>
-    </aside>
+      <p className="lg-note">Start free with 25 coins. No setup needed.</p>
+    </section>
   );
 }
 
@@ -131,24 +129,25 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
   }
 
   return (
-    <div className="login-overlay" id="loginOverlay">
-      {onBack && (
-        <button type="button" className="login-back-btn" onClick={onBack}>← Back to home</button>
-      )}
-      <div className="login-shell">
+    <div className="login-overlay lp lp-force-light" id="loginOverlay">
+      <LandingNav
+        logo={lightBgLogo}
+        onHome={onBack}
+        onNavigate={(id) => { sessionStorage.setItem("lp_scroll", id); onBack?.(); }}
+        onLogin={() => switchMode("login")}
+        onSignup={() => switchMode("signup")}
+      />
+      <div className="lg-main">
         <BrandPanel />
 
-        <div className="login-form-panel">
+        <div className="lg-form-panel">
           <div className="login-card">
-            <div className="login-logo login-logo--mobile-only">
-              <Logo src={whiteThemeLogo} size={80} />
-            </div>
 
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
             <p className="login-sub">
               {mode === "signup"
-                ? "Set up your SkillDARA account to start using every specialized agent."
-                : "Sign in to continue to your SkillDARA workspace."}
+                ? "Start free and put every specialized AI agent to work."
+                : "Log in to pick up where your agents left off."}
             </p>
 
             <button type="button" className="btn btn-outline btn-full google-btn" onClick={handleGoogleClick}>

@@ -54,8 +54,8 @@ class StudentSummaryTests(unittest.TestCase):
         self.assertEqual(body["metrics"]["technical_accuracy"], 60.0)
         self.assertIsNone(body["metrics"]["confidence"])
         self.assertTrue(body["last_activity_at"].startswith("2026-10-02"))
-        # Both were Beginner interviews: (80 + 60) / 5 at the easy level.
-        self.assertEqual(body["level_scores"], {"easy": 28.0, "medium": 0.0, "hard": 0.0})
+        # Both were Beginner interviews: 8/10 is a pass (100), 6/10 counts 75: (100 + 75) / 5.
+        self.assertEqual(body["level_scores"], {"easy": 35.0, "medium": 0.0, "hard": 0.0})
 
 
 if __name__ == "__main__":

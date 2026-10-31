@@ -1,508 +1,250 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import logoOnLight from "../assets/logo-navbar-light.webp";
+import { useEffect, useState, type CSSProperties } from "react";
+import logoOnLight from "../assets/skilldara-logo.png";
+import logoOnDark from "../assets/skilldara-logo-dark.png";
+import heroImage from "../assets/hero-students.webp";
+import careerImage from "../assets/career-path.webp";
 import "./LandingPage.css";
 import AgentIcon from "./AgentIcon";
+import LegalModal from "./LegalModal";
+import LandingNav from "./LandingNav";
+import { AGENTS } from "../data/landingAgents";
 
 interface LandingPageProps {
   onLogin: () => void;
 }
 
-const INDUSTRIES = [
-  { color: "#6f8dff", tag: "Learn & grow", icon: "cap", name: "Education & Training", text: "Coding practice, aptitude drills, capstone projects and certifications for learners and institutions." },
-  { color: "#38d0f5", tag: "Guest experience", icon: "plane", name: "Travel & Hospitality", text: "Itinerary planning, booking support and multilingual guest assistance that never sleeps." },
-  { color: "#f2a71b", tag: "Build smarter", icon: "building", name: "Construction & Real Estate", text: "Project tracking, site reporting, estimating and compliance paperwork handled by agents." },
-  { color: "#34d399", tag: "Care, simplified", icon: "heart", name: "Healthcare", text: "Appointment flows, patient FAQs and documentation support, built with privacy first." },
-  { color: "#c084fc", tag: "Serve faster", icon: "bank", name: "Finance & Retail", text: "Customer support, report summaries and catalog or inventory assistants for growing teams." },
-  { color: "#fb7185", tag: "Built for you", icon: "rocket", name: "Your Industry", text: "Tell us your workflow. We design, build and deploy a specialized agent around it." },
+const JOURNEY = [
+  { n: "01", title: "Learn & practice", text: "Build your coding, aptitude and communication skills with daily practice.", agents: "Coding · Aptitude · Communication" },
+  { n: "02", title: "Build your profile", text: "Create an ATS-ready resume and finish a graded capstone project.", agents: "Resume Builder · Capstone" },
+  { n: "03", title: "Prove your skills", text: "Take assessments, earn certificates and climb the leaderboard.", agents: "Certification · Leaderboard" },
+  { n: "04", title: "Get hired", text: "Rehearse interviews, then apply to roles that match your profile.", agents: "Mock Interview · Job Agent" },
 ];
 
-const AGENTS = [
-  { color: "#16a34a", icon: "cap", name: "Capstone Project Agent", text: "Guides a project from idea to graded submission with eligibility checks and review." },
-  { color: "#eab308", icon: "code", name: "Coding Practice", text: "Real coding problems, sandboxed test runs and an AI tutor when you get stuck." },
-  { color: "#f43f5e", icon: "chat", name: "Communication Coach", text: "Pronunciation, speaking and writing practice scored by AI, with daily challenges." },
-  { color: "#f97316", icon: "calculator", name: "Aptitude Trainer", text: "Quantitative, logical and verbal practice sets with timed tests and explanations." },
-  { color: "#8b5cf6", icon: "mic", name: "Mock Interview Agent", text: "Technical and HR interview rounds with per-answer scoring and feedback." },
-  { color: "#14b8a6", icon: "file", name: "Resume Builder", text: "Create, import, analyze and export ATS-friendly resumes in a guided workflow." },
-  { color: "#3b82f6", icon: "search", name: "Job Agent", text: "Finds roles that match your profile and ranks them with an explainable fit score." },
-  { color: "#a78bfa", icon: "award", name: "AI Certification Agent", text: "Exam generation, chat-based assessment, leaderboard and PDF certificates." },
+const COLLEGE_FEATURES = [
+  { icon: "building", title: "Organization dashboard", text: "See learner activity and progress across your whole institution in one place." },
+  { icon: "cap", title: "Class & staff management", text: "Add staff, upload student lists and organize learners by class." },
+  { icon: "award", title: "Assessments with proctoring", text: "Run knowledge tests and assessments, and review proctoring reports." },
+  { icon: "chat", title: "Reports & leaderboards", text: "Track results, compare cohorts and spot students who need help." },
 ];
 
-const STEPS = [
-  { n: "1", title: "Create a free account", text: "Sign up with email or Google in under a minute." },
-  { n: "2", title: "Pick or ask for an agent", text: "Open a ready-made agent, or just describe what you need and be routed to the right one." },
-  { n: "3", title: "Get work done", text: "Chat, practice, generate and export. Your progress is saved across devices." },
+const PLANS = [
+  { name: "Free", price: "₹0", coins: "25 coins on signup", text: "Try the agents and see how SkillDARA works.", cta: "Start free" },
+  { name: "Basic", price: "₹399", coins: "250 coins", text: "For getting started and light, occasional use.", cta: "Get Basic" },
+  { name: "Standard", price: "₹799", coins: "500 coins", text: "For regular learners who use several agents each week.", cta: "Get Standard", popular: true },
+  { name: "Premium", price: "₹999", coins: "750 coins", text: "For heavy daily use across every agent.", cta: "Get Premium" },
 ];
 
 const FAQS = [
-  { q: "What is SkillDARA?", a: "SkillDARA is an AI agent workspace where businesses, teams and individuals use specialized AI agents for learning, careers, communication, hiring and industry workflows, all under one account." },
-  { q: "Who is SkillDARA for?", a: "Anyone, anywhere in the world. Students and job seekers use it for practice and careers, while companies in travel, construction, education and other industries use it to automate repetitive work with custom AI agents." },
-  { q: "Can SkillDARA build a custom AI agent for my industry?", a: "Yes. SkillDARA designs and builds specialized AI agents for industries such as travel, construction, healthcare, finance and education, shaped around your own workflow." },
+  { q: "What is SkillDARA?", a: "SkillDARA is an AI agent workspace for students and job seekers. Each agent focuses on one part of getting career-ready: coding practice, aptitude, communication, resumes, mock interviews, capstone projects, certification and job search." },
+  { q: "Who is SkillDARA for?", a: "Students, fresh graduates and job seekers who want to practise and prepare. Colleges and training institutes can also use it to run assessments and track their learners." },
+  { q: "Do I need to pay to start?", a: "No. You can create a free account and try the agents. When you want more usage, you can buy coins in one-time packs under Billing inside the app." },
+  { q: "How do coins work?", a: "Each agent request uses a few coins. Coins are bought once, never expire, and you can see your balance inside the app. Prices are before GST." },
+  { q: "Can my college or institute use SkillDARA?", a: "Yes. Organizations get an admin dashboard, staff and class management, assessments with proctoring and reports. Contact us and we will set it up." },
   { q: "Is my data safe?", a: "Sessions are secured, agent requests are signed, and privacy controls follow data-protection principles including data export and account deletion." },
-  { q: "How much does it cost?", a: "You can start free. Paid plans add more usage and are shown inside the app under Billing." },
 ];
 
-function Reveal({ children, delay = 0, className = "" }: { children: ReactNode; delay?: number; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") { setShown(true); return; }
-    const io = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { setShown(true); io.disconnect(); }
-    }, { threshold: 0.12 });
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-  return (
-    <div ref={ref} className={`lp-reveal ${shown ? "is-in" : ""} ${className}`} style={{ transitionDelay: `${delay}ms` }}>
-      {children}
-    </div>
-  );
-}
+const COMPARE = [
+  { need: "Coding practice", us: "Runs your code against real and hidden test cases", other: "Explains code, but does not test it for you" },
+  { need: "Mock interviews", us: "Interview rounds with a score and feedback on every answer", other: "You write the prompts and judge the answers yourself" },
+  { need: "Your resume", us: "Guided builder with import, ATS analysis and export", other: "Gives you text that you format yourself" },
+  { need: "Finding jobs", us: "Ranks roles against your profile with a fit score", other: "No job matching" },
+  { need: "Proof of your skills", us: "Assessments, a leaderboard and PDF certificates", other: "Nothing to show an employer" },
+  { need: "Tracking progress", us: "One account, saved across devices", other: "Scattered chats to dig through" },
+  { need: "For colleges", us: "Organization dashboard, staff tools and proctored tests", other: "Not built for institutions" },
+];
 
-const REDUCED_MOTION = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-const TYPE_WORDS = ["every industry", "travel teams", "construction", "education", "healthcare", "your business"];
-
-function Typewriter({ words }: { words: string[] }) {
-  const [text, setText] = useState(words[0]);
-  useEffect(() => {
-    if (REDUCED_MOTION()) return;
-    let w = 0;
-    let c = words[0].length;
-    let deleting = true;
-    let timer = 0;
-    const tick = () => {
-      const word = words[w];
-      c += deleting ? -1 : 1;
-      setText(word.slice(0, c));
-      let delay = deleting ? 45 : 85;
-      if (!deleting && c === word.length) { deleting = true; delay = 1700; }
-      else if (deleting && c === 0) { deleting = false; w = (w + 1) % words.length; delay = 250; }
-      timer = window.setTimeout(tick, delay);
-    };
-    timer = window.setTimeout(tick, 1800);
-    return () => window.clearTimeout(timer);
-  }, [words]);
-  return <>{text}<span className="lp-caret" /></>;
-}
-
-function CountUp({ to, suffix = "" }: { to: number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [n, setN] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined" || REDUCED_MOTION()) { setN(to); return; }
-    let raf = 0;
-    const io = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      io.disconnect();
-      const t0 = performance.now();
-      const step = (t: number) => {
-        const p = Math.min((t - t0) / 1400, 1);
-        setN(Math.round(to * (1 - Math.pow(1 - p, 3))));
-        if (p < 1) raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-    }, { threshold: 0.4 });
-    io.observe(el);
-    return () => { io.disconnect(); cancelAnimationFrame(raf); };
-  }, [to]);
-  return <span ref={ref}>{n}{suffix}</span>;
-}
-
-/** Drifting dots that link up with each other and with the cursor. */
-function ParticleBg() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    const ctx = canvas?.getContext("2d");
-    const parent = canvas?.parentElement;
-    if (!canvas || !ctx || !parent || REDUCED_MOTION()) return;
-    const rgb = "40,81,216";
-    const mouse = { x: -9999, y: -9999 };
-    let w = 0;
-    let h = 0;
-    let raf = 0;
-    let visible = true;
-    let dots: { x: number; y: number; vx: number; vy: number; r: number }[] = [];
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = parent.clientWidth;
-      h = parent.clientHeight;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const count = Math.min(70, Math.round((w * h) / 18000));
-      dots = Array.from({ length: count }, () => ({
-        x: Math.random() * w, y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4, r: 1 + Math.random() * 1.8,
-      }));
-    };
-    const draw = () => {
-      raf = requestAnimationFrame(draw);
-      if (!visible) return;
-      ctx.clearRect(0, 0, w, h);
-      for (let i = 0; i < dots.length; i++) {
-        const d = dots[i];
-        d.x += d.vx; d.y += d.vy;
-        if (d.x < 0 || d.x > w) d.vx *= -1;
-        if (d.y < 0 || d.y > h) d.vy *= -1;
-        ctx.beginPath();
-        ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${rgb},.75)`;
-        ctx.fill();
-        for (let j = i + 1; j < dots.length; j++) {
-          const o = dots[j];
-          const dist = Math.hypot(d.x - o.x, d.y - o.y);
-          if (dist < 120) {
-            ctx.strokeStyle = `rgba(${rgb},${0.22 * (1 - dist / 120)})`;
-            ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(o.x, o.y); ctx.stroke();
-          }
-        }
-        const md = Math.hypot(d.x - mouse.x, d.y - mouse.y);
-        if (md < 170) {
-          ctx.strokeStyle = `rgba(242,167,27,${0.55 * (1 - md / 170)})`;
-          ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke();
-        }
-      }
-    };
-    const onMove = (e: globalThis.MouseEvent) => {
-      const r = parent.getBoundingClientRect();
-      mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
-    };
-    const onLeave = () => { mouse.x = -9999; mouse.y = -9999; };
-    const io = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; });
-    resize();
-    io.observe(parent);
-    window.addEventListener("resize", resize);
-    parent.addEventListener("mousemove", onMove);
-    parent.addEventListener("mouseleave", onLeave);
-    raf = requestAnimationFrame(draw);
-    return () => {
-      cancelAnimationFrame(raf); io.disconnect();
-      window.removeEventListener("resize", resize);
-      parent.removeEventListener("mousemove", onMove);
-      parent.removeEventListener("mouseleave", onLeave);
-    };
-  }, []);
-  return <canvas ref={ref} className="lp-particles" aria-hidden="true" />;
-}
-
-function spotlight(e: MouseEvent<HTMLElement>) {
-  const el = e.currentTarget;
-  const r = el.getBoundingClientRect();
-  const x = e.clientX - r.left;
-  const y = e.clientY - r.top;
-  el.style.setProperty("--mx", `${x}px`);
-  el.style.setProperty("--my", `${y}px`);
-  el.style.setProperty("--ry", `${(x / r.width - 0.5) * 10}deg`);
-  el.style.setProperty("--rx", `${-(y / r.height - 0.5) * 10}deg`);
-}
-
-function unspot(e: MouseEvent<HTMLElement>) {
-  e.currentTarget.style.setProperty("--rx", "0deg");
-  e.currentTarget.style.setProperty("--ry", "0deg");
-}
-
-function SectionHead({ eyebrow, title, hl, text }: { eyebrow: string; title: string; hl: string; text?: string }) {
-  return (
-    <Reveal className="lp-head">
-      <span className="lp-eyebrow"><i />{eyebrow}<i /></span>
-      <h2>{title} <em>{hl}</em></h2>
-      {text && <p>{text}</p>}
-    </Reveal>
-  );
-}
+const STATS = [
+  { n: "8", l: "AI agents in one account" },
+  { n: "25", l: "Free coins on signup" },
+  { n: "24/7", l: "Practice anytime" },
+  { n: "1", l: "Place for your whole prep" },
+];
 
 const SUPPORT_EMAIL = "support@digidaraaiagents.com";
-const COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${SUPPORT_EMAIL}&su=${encodeURIComponent("Custom AI agent enquiry")}`;
-
-function cardClick(onActivate: () => void) {
-  return {
-    role: "button" as const,
-    tabIndex: 0,
-    onClick: onActivate,
-    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onActivate(); }
-    },
-  };
-}
+const composeUrl = (subject: string) => `https://mail.google.com/mail/?view=cm&fs=1&to=${SUPPORT_EMAIL}&su=${encodeURIComponent(subject)}`;
+const COLLEGE_URL = composeUrl("SkillDARA for our college / institute");
 
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function SectionHead({ eyebrow, title, hl, text }: { eyebrow: string; title: string; hl: string; text?: string }) {
+  return (
+    <div className="lp-head">
+      <span className="lp-eyebrow">{eyebrow}</span>
+      <h2>{title} <em>{hl}</em></h2>
+      {text && <p>{text}</p>}
+    </div>
+  );
+}
+
 export default function LandingPage({ onLogin }: LandingPageProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-
-  const rootRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      setScrolled(el.scrollTop > 12);
-      const max = el.scrollHeight - el.clientHeight;
-      el.style.setProperty("--p", max > 0 ? String(el.scrollTop / max) : "0");
-    };
-    onScroll();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  const stageRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onMove = (e: globalThis.MouseEvent) => {
-      const st = stageRef.current;
-      if (!st) return;
-      const r = st.getBoundingClientRect();
-      const dx = (e.clientX - (r.left + r.width / 2)) / window.innerWidth;
-      const dy = (e.clientY - (r.top + r.height / 2)) / window.innerHeight;
-      st.style.setProperty("--ex", `${Math.max(-1, Math.min(1, dx * 3)) * 7}px`);
-      st.style.setProperty("--ey", `${Math.max(-1, Math.min(1, dy * 3)) * 5}px`);
-    };
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
-  }, []);
+  const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
 
   function go(id: string) {
-    setMenuOpen(false);
     scrollToId(id);
   }
 
-  const logo = logoOnLight;
+  useEffect(() => {
+    const id = sessionStorage.getItem("lp_scroll");
+    if (!id) return;
+    sessionStorage.removeItem("lp_scroll");
+    window.setTimeout(() => scrollToId(id), 60);
+  }, []);
+
+  const logo = document.documentElement.dataset.theme === "light" ? logoOnLight : logoOnDark;
 
   return (
-    <div className="lp" ref={rootRef}>
-      <header className={`lp-nav ${scrolled ? "is-scrolled" : ""}`}>
-        <div className="lp-progress" aria-hidden="true" />
-        <div className="lp-wrap lp-nav-inner">
-          <a className="lp-brand" href="/" aria-label="SkillDARA home">
-            <img src={logo} alt="SkillDARA" height={68} />
-          </a>
-          <nav className={`lp-links ${menuOpen ? "is-open" : ""}`} aria-label="Primary">
-            <button type="button" onClick={() => go("industries")}>Industries</button>
-            <button type="button" onClick={() => go("agents")}>Agents</button>
-            <button type="button" onClick={() => go("how-it-works")}>How it works</button>
-            <button type="button" onClick={() => go("faq")}>FAQ</button>
-          </nav>
-          <div className="lp-nav-actions">
-            <button type="button" className="lp-btn lp-btn-ghost" onClick={onLogin}>Login</button>
-            <button type="button" className="lp-btn lp-btn-primary lp-hide-sm" onClick={onLogin}>Get started free</button>
-            <button type="button" className="lp-icon-btn lp-burger" aria-label="Toggle menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
-              {menuOpen ? "✕" : "☰"}
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="lp">
+      <LandingNav logo={logo} onNavigate={go} onLogin={onLogin} onSignup={onLogin} />
 
       <main>
         <section className="lp-hero">
-          <div className="lp-orb lp-orb-a" aria-hidden="true" />
-          <div className="lp-orb lp-orb-b" aria-hidden="true" />
-          <div className="lp-orb lp-orb-c" aria-hidden="true" />
-          <ParticleBg />
           <div className="lp-wrap lp-hero-inner">
             <div className="lp-hero-copy">
-              <span className="lp-pill"><i /> AI agents for every industry, worldwide</span>
+              <span className="lp-pill">AI Agents for Students · Career-ready faster</span>
               <h1>
-                AI agents that do the work,<br />
-                <span className="lp-grad">for <Typewriter words={TYPE_WORDS} />.</span>
+                Your AI team for <span className="lp-grad">placements &amp; skills</span>
               </h1>
               <p className="lp-lead">
-                SkillDARA gives people and businesses specialized AI agents for learning, careers,
-                communication, travel, construction and more. Open a ready-made agent today, or have us build
-                one around your workflow.
+                Practice coding and aptitude, polish your communication, build your resume, rehearse interviews and find jobs. Eight specialized AI agents, one student account.
               </p>
               <div className="lp-cta-row">
-                <button type="button" className="lp-btn lp-btn-primary lp-btn-lg" onClick={onLogin}>Get started free →</button>
-                <button type="button" className="lp-btn lp-btn-outline lp-btn-lg" onClick={() => go("agents")}>Explore agents</button>
+                <button type="button" className="lp-btn lp-btn-primary lp-btn-lg" onClick={onLogin}>Start free →</button>
+                <button type="button" className="lp-btn lp-btn-outline lp-btn-lg" onClick={() => go("agents")}>Meet the agents</button>
               </div>
               <ul className="lp-trust">
-                <li>🌍 Built for users worldwide</li>
-                <li>🔒 Secure by design</li>
-                <li>⚡ Available 24/7</li>
+                <li>25 free coins on signup</li>
+                <li>No setup needed</li>
+                <li>Practice 24/7</li>
               </ul>
             </div>
-
-            <div className="lp-hero-visual" aria-hidden="true">
-              <div className="lp-bot-stage" ref={stageRef}>
-                <div className="lp-bot-ring lp-bot-ring-a" />
-                <div className="lp-bot-ring lp-bot-ring-b" />
-                <div className="lp-bot-bubble">
-                  <strong>Hi there! 👋</strong>
-                  <span>Welcome to SkillDARA</span>
-                </div>
-                <svg className="lp-bot" viewBox="0 0 400 440" role="img" aria-label="Friendly SkillDARA AI robot waving hello">
-                  <defs>
-                    <linearGradient id="bot-body" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0" stopColor="#7fa0ff" /><stop offset="1" stopColor="#2851d8" />
-                    </linearGradient>
-                    <linearGradient id="bot-head" x1="0" y1="0" x2="1" y2="1">
-                      <stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#c9d6ff" />
-                    </linearGradient>
-                    <radialGradient id="bot-eye" cx=".5" cy=".4" r=".7">
-                      <stop offset="0" stopColor="#c8fbff" /><stop offset="1" stopColor="#25c8f0" />
-                    </radialGradient>
-                    <filter id="bot-glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" /></filter>
-                  </defs>
-                  <ellipse className="lp-bot-shadow" cx="200" cy="415" rx="95" ry="12" fill="#000" opacity=".28" />
-                  <g className="lp-bot-float">
-                    <line x1="200" y1="92" x2="200" y2="122" stroke="#9db4ff" strokeWidth="6" strokeLinecap="round" />
-                    <circle className="lp-bot-antenna" cx="200" cy="82" r="11" fill="#f2a71b" />
-                    <circle cx="200" cy="82" r="18" fill="#f2a71b" opacity=".4" filter="url(#bot-glow)" />
-                    <g className="lp-bot-arm lp-bot-arm-left">
-                      <rect x="108" y="268" width="24" height="86" rx="12" fill="url(#bot-body)" />
-                      <circle cx="120" cy="360" r="16" fill="url(#bot-head)" />
-                    </g>
-                    <rect x="132" y="262" width="136" height="124" rx="38" fill="url(#bot-body)" />
-                    <rect x="158" y="288" width="84" height="56" rx="20" fill="#0b1740" opacity=".55" />
-                    <text x="200" y="326" textAnchor="middle" fontSize="34" fontWeight="900" fill="#fff" fontFamily="Inter, sans-serif">S</text>
-                    <circle className="lp-bot-led" cx="200" cy="362" r="6" fill="#4ade80" />
-                    <g className="lp-bot-arm lp-bot-arm-right">
-                      <rect x="268" y="268" width="24" height="86" rx="12" fill="url(#bot-body)" />
-                      <circle cx="280" cy="360" r="17" fill="url(#bot-head)" />
-                    </g>
-                    <circle cx="106" cy="188" r="16" fill="#9db4ff" /><circle cx="294" cy="188" r="16" fill="#9db4ff" />
-                    <rect x="112" y="122" width="176" height="140" rx="52" fill="url(#bot-head)" />
-                    <rect x="132" y="144" width="136" height="92" rx="34" fill="#0b1740" />
-                    <g className="lp-bot-look"><g className="lp-bot-eyes">
-                      <ellipse cx="170" cy="184" rx="14" ry="17" fill="url(#bot-eye)" />
-                      <ellipse cx="230" cy="184" rx="14" ry="17" fill="url(#bot-eye)" />
-                    </g></g>
-                    <path className="lp-bot-smile" d="M176 210 Q200 230 224 210" stroke="#25c8f0" strokeWidth="6" fill="none" strokeLinecap="round" />
-                    <circle cx="150" cy="208" r="7" fill="#fb7185" opacity=".5" /><circle cx="250" cy="208" r="7" fill="#fb7185" opacity=".5" />
-                  </g>
-                </svg>
-                <span className="lp-spark lp-spark-a">✦</span>
-                <span className="lp-spark lp-spark-b">✦</span>
-                <span className="lp-spark lp-spark-c">✦</span>
-              </div>
-              <span className="lp-float lp-float-a">✈️ Travel</span>
-              <span className="lp-float lp-float-b">🏗️ Construction</span>
-              <span className="lp-float lp-float-c">🎓 Education</span>
+            <div className="lp-hero-art">
+              <img src={heroImage} alt="A student practising with SkillDARA's AI agents on a laptop" width={1536} height={1024} fetchPriority="high" />
             </div>
           </div>
         </section>
 
-        <div className="lp-marquee" aria-hidden="true">
-          <div className="lp-marquee-track">
-            {[0, 1].map((k) => INDUSTRIES.concat(INDUSTRIES).map((it, i) => (
-              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}><AgentIcon name={it.icon} /> {it.name}</span>
-            )))}
-          </div>
-        </div>
-
-        <div className="lp-marquee lp-marquee-rev" aria-hidden="true">
-          <div className="lp-marquee-track">
-            {[0, 1].map((k) => AGENTS.concat(AGENTS).map((it, i) => (
-              <span key={`${k}-${i}`} style={{ "--c": it.color } as CSSProperties}><AgentIcon name={it.icon} /> {it.name}</span>
-            )))}
-          </div>
-        </div>
-
         <section className="lp-stats">
           <div className="lp-wrap lp-stats-grid">
-            {[
-              { i: "🤖", n: "8+", count: 8, l: "Live specialized agents" },
-              { i: "🏭", n: "Any industry", l: "Custom agents on request" },
-              { i: "⏱️", n: "24/7", l: "Always available" },
-              { i: "🌍", n: "Global", l: "Used by learners and teams" },
-            ].map((st, k) => (
-              <Reveal key={st.l} delay={k * 80}>
-                <div className="lp-stat"><span>{st.i}</span><strong>{st.count ? <CountUp to={st.count} suffix="+" /> : st.n}</strong><small>{st.l}</small></div>
-              </Reveal>
+            {STATS.map((st) => (
+              <div key={st.l} className="lp-stat"><strong>{st.n}</strong><small>{st.l}</small></div>
             ))}
           </div>
         </section>
 
-        <section id="industries" className="lp-section lp-bg-grid">
+        <section id="agents" className="lp-section">
           <div className="lp-wrap">
-            <SectionHead eyebrow="Industries" title="One platform. Agents for" hl="every kind of work." text="We are not only for students. SkillDARA builds AI agents for the industries where repetitive work slows people down." />
-            <div className="lp-grid lp-bento">
-              {INDUSTRIES.map((item, i) => (
-                <Reveal key={item.name} delay={i * 70} className={`zoom ${i === 0 || i === 5 ? "lp-span-2" : ""}`}>
-                  <article className="lp-card lp-card-ind" style={{ "--c": item.color } as CSSProperties} onMouseMove={spotlight} onMouseLeave={unspot} {...cardClick(onLogin)}>
-                    <span className="lp-card-no">{String(i + 1).padStart(2, "0")}</span>
-                    <span className="lp-card-icon"><AgentIcon name={item.icon} size="1.3em" /></span>
-                    <span className="lp-card-tag">{item.tag}</span>
-                    <h3>{item.name}</h3>
-                    <p>{item.text}</p>
-                  </article>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section id="agents" className="lp-section lp-section-alt lp-bg-glow">
-          <div className="lp-wrap">
-            <SectionHead eyebrow="Our agents" title="Ready-to-use AI agents," hl="live today." text="Each agent is purpose-built and works inside one account. More industry agents are on the way." />
+            <SectionHead eyebrow="Our AI agents" title="Eight agents. One goal:" hl="get you hired." text="Each agent is built for one job. Use them together or one at a time, all from a single account." />
             <div className="lp-grid lp-grid-4">
-              {AGENTS.map((item, i) => (
-                <Reveal key={item.name} delay={(i % 4) * 70}>
-                  <article className="lp-card lp-card-agent" style={{ "--c": item.color } as CSSProperties} onMouseMove={spotlight} onMouseLeave={unspot} {...cardClick(onLogin)}>
-                    <span className="lp-live"><i />Live</span>
+              {AGENTS.map((item) => (
+                <article key={item.name} className="lp-card" style={{ "--c": item.color } as CSSProperties}>
+                  <div className="lp-card-top">
                     <span className="lp-card-icon"><AgentIcon name={item.icon} size="1.3em" /></span>
-                    <h3>{item.name}</h3>
-                    <p>{item.text}</p>
-                    <span className="lp-card-link">Open agent <b>→</b></span>
-                  </article>
-                </Reveal>
-              ))}
-            </div>
-            <Reveal className="lp-center">
-              <button type="button" className="lp-btn lp-btn-primary lp-btn-lg" onClick={onLogin}>Try the agents free →</button>
-            </Reveal>
-          </div>
-        </section>
-
-        <section id="how-it-works" className="lp-section lp-bg-grid">
-          <div className="lp-wrap">
-            <SectionHead eyebrow="How it works" title="From sign-up to results in" hl="three steps." />
-            <div className="lp-grid lp-grid-3 lp-steps">
-              {STEPS.map((st, i) => (
-                <Reveal key={st.n} delay={i * 100}>
-                  <div className="lp-step">
-                    <span className="lp-step-n">{st.n}</span>
-                    <h3>{st.title}</h3>
-                    <p>{st.text}</p>
+                    <span className="lp-card-tag">{item.cat}</span>
                   </div>
-                </Reveal>
+                  <h3>{item.name}</h3>
+                  <p>{item.text}</p>
+                  <button type="button" className="lp-card-link" onClick={onLogin}>Try this agent →</button>
+                </article>
               ))}
             </div>
           </div>
         </section>
 
-        <section className="lp-section lp-section-alt">
-          <div className="lp-wrap lp-split">
-            <Reveal className="from-left">
-              <span className="lp-eyebrow"><i />Why SkillDARA<i /></span>
-              <h2>Built to be useful, trusted and <em>easy to adopt.</em></h2>
-              <ul className="lp-checks">
-                <li>One account for every agent, with chat history across devices</li>
-                <li>Specialized agents, not a single generic chatbot</li>
-                <li>Privacy-first: data export and account deletion built in</li>
-                <li>Custom agents designed around your own industry workflow</li>
-              </ul>
-            </Reveal>
-            <Reveal delay={120} className="from-right">
-              <div className="lp-cta-card">
-                <h3>Need an agent for your business?</h3>
-                <p>Tell us about your workflow in travel, construction, education or any other field, and we will build it with you.</p>
-                <a className="lp-btn lp-btn-primary" href={COMPOSE_URL} target="_blank" rel="noopener noreferrer">Talk to us</a>
+        <section id="journey" className="lp-section lp-section-alt">
+          <div className="lp-wrap lp-feature-split">
+            <div className="lp-art">
+              <img src={careerImage} alt="A student following the SkillDARA path from learning to getting placed, guided by an AI assistant" width={1536} height={1024} loading="lazy" />
+            </div>
+            <div className="lp-feature-copy">
+              <span className="lp-eyebrow">How it works</span>
+              <h2>Your path from classroom to <em>career.</em></h2>
+              <p className="lp-split-lead">Stop juggling five different apps. SkillDARA gives you one guided route, with an AI agent for every step.</p>
+              <ol className="lp-timeline">
+                {JOURNEY.map((st) => (
+                  <li key={st.n}>
+                    <span className="lp-timeline-n">{st.n}</span>
+                    <div>
+                      <h3>{st.title}</h3>
+                      <p>{st.text}</p>
+                      <small>{st.agents}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button type="button" className="lp-btn lp-btn-primary lp-btn-lg" onClick={onLogin}>Start your journey free →</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="compare" className="lp-section">
+          <div className="lp-wrap">
+            <SectionHead eyebrow="Why SkillDARA" title="A general AI chatbot is great for answers." hl="SkillDARA gets you results." text="Keep using a chatbot for quick questions. Use SkillDARA when you want to practise, get scored and track your progress." />
+            <div className="lp-compare" role="table" aria-label="SkillDARA compared with a general AI chatbot">
+              <div className="lp-compare-row lp-compare-head" role="row">
+                <span role="columnheader">What you need</span>
+                <span role="columnheader" className="is-us">SkillDARA</span>
+                <span role="columnheader">General AI chatbot</span>
               </div>
-            </Reveal>
+              {COMPARE.map((r) => (
+                <div key={r.need} className="lp-compare-row" role="row">
+                  <b role="rowheader">{r.need}</b>
+                  <span role="cell" className="is-us" data-label="SkillDARA"><i aria-hidden="true">✓</i>{r.us}</span>
+                  <span role="cell" data-label="General AI chatbot">{r.other}</span>
+                </div>
+              ))}
+            </div>
+            <div className="lp-center">
+              <button type="button" className="lp-btn lp-btn-primary lp-btn-lg" onClick={onLogin}>Try it free, no setup →</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="colleges" className="lp-section">
+          <div className="lp-wrap lp-split">
+            <div>
+              <span className="lp-eyebrow">For colleges &amp; institutes</span>
+              <h2>Make every student <em>placement-ready.</em></h2>
+              <p className="lp-split-lead">
+                Bring SkillDARA to your campus or training institute. Give every learner the agents, and give your staff the tools to measure progress.
+              </p>
+              <a className="lp-btn lp-btn-primary lp-btn-lg" href={COLLEGE_URL} target="_blank" rel="noopener noreferrer">Talk to us</a>
+            </div>
+            <div className="lp-feature-grid">
+              {COLLEGE_FEATURES.map((f) => (
+                <div key={f.title} className="lp-feature">
+                  <span className="lp-card-icon" style={{ "--c": "#4f46e5" } as CSSProperties}><AgentIcon name={f.icon} size="1.3em" /></span>
+                  <h3>{f.title}</h3>
+                  <p>{f.text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section id="pricing" className="lp-section lp-section-alt">
+          <div className="lp-wrap">
+            <SectionHead eyebrow="Pricing" title="Simple, one-time" hl="coin packs." text="Each agent request uses a few coins. Coins never expire. Prices are before GST." />
+            <div className="lp-grid lp-grid-4 lp-pricing">
+              {PLANS.map((p) => (
+                <article key={p.name} className={`lp-plan ${p.popular ? "is-popular" : ""}`}>
+                  {p.popular && <span className="lp-plan-badge">Most popular</span>}
+                  <h3>{p.name}</h3>
+                  <div className="lp-plan-price">{p.price}</div>
+                  <div className="lp-plan-coins">{p.coins}</div>
+                  <p>{p.text}</p>
+                  <button type="button" className={`lp-btn ${p.popular ? "lp-btn-primary" : "lp-btn-outline"}`} onClick={onLogin}>{p.cta}</button>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
         <section id="faq" className="lp-section">
           <div className="lp-wrap lp-faq-wrap">
-            <Reveal className="lp-head">
-              <span className="lp-eyebrow"><i />FAQ<i /></span>
-              <h2>Frequently asked <em>questions</em></h2>
-            </Reveal>
+            <SectionHead eyebrow="FAQ" title="Frequently asked" hl="questions." />
             <div className="lp-faq">
               {FAQS.map((f, i) => (
                 <div key={f.q} className={`lp-faq-item ${openFaq === i ? "is-open" : ""}`}>
@@ -511,7 +253,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                       {f.q}<span aria-hidden="true">{openFaq === i ? "−" : "+"}</span>
                     </button>
                   </h3>
-                  <div className="lp-faq-a"><p>{f.a}</p></div>
+                  {openFaq === i && <div className="lp-faq-a"><p>{f.a}</p></div>}
                 </div>
               ))}
             </div>
@@ -519,44 +261,58 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
         </section>
 
         <section className="lp-final">
-          <div className="lp-orb lp-orb-a" aria-hidden="true" /><div className="lp-orb lp-orb-b" aria-hidden="true" />
           <div className="lp-wrap">
-            <Reveal>
-              <h2>Put AI agents to work <em>today.</em></h2>
-              <p>Create your free account and open your first agent in minutes.</p>
-              <button type="button" className="lp-btn lp-btn-light lp-btn-lg" onClick={onLogin}>Get started free →</button>
-            </Reveal>
+            <h2>Start preparing smarter today.</h2>
+            <p>Create your free account, get 25 coins and open your first agent in minutes.</p>
+            <button type="button" className="lp-btn lp-btn-light lp-btn-lg" onClick={onLogin}>Get started free →</button>
           </div>
         </section>
       </main>
 
       <footer className="lp-footer">
         <div className="lp-wrap lp-footer-grid">
+          <div className="lp-footer-brand">
+            <img src={logo} alt="SkillDARA" height={40} />
+            <p>AI agents that help students practise, build, certify and get hired. One account, eight specialized agents.</p>
+            <a href={composeUrl("Support request")} target="_blank" rel="noopener noreferrer">{SUPPORT_EMAIL}</a>
+          </div>
           <div>
-            <img src={logo} alt="SkillDARA" height={68} />
-            <p>AI agents for every industry, built for users around the world.</p>
+            <h4>Agents</h4>
+            <button type="button" onClick={() => scrollToId("agents")}>Coding Practice</button>
+            <button type="button" onClick={() => scrollToId("agents")}>Aptitude Trainer</button>
+            <button type="button" onClick={() => scrollToId("agents")}>Communication Coach</button>
+            <button type="button" onClick={() => scrollToId("agents")}>Mock Interview</button>
+            <button type="button" onClick={() => scrollToId("agents")}>Resume Builder</button>
+            <button type="button" onClick={() => scrollToId("agents")}>Job Agent</button>
           </div>
           <div>
             <h4>Product</h4>
-            <button type="button" onClick={() => scrollToId("agents")}>Agents</button>
-            <button type="button" onClick={() => scrollToId("industries")}>Industries</button>
-            <button type="button" onClick={() => scrollToId("how-it-works")}>How it works</button>
-            <button type="button" onClick={onLogin}>Login / Sign up</button>
+            <button type="button" onClick={() => scrollToId("journey")}>How it works</button>
+            <button type="button" onClick={() => scrollToId("pricing")}>Pricing</button>
+            <button type="button" onClick={() => scrollToId("colleges")}>For Colleges</button>
+            <button type="button" onClick={onLogin}>Log in</button>
+            <button type="button" onClick={onLogin}>Sign up free</button>
+          </div>
+          <div>
+            <h4>Resources</h4>
+            <button type="button" onClick={() => scrollToId("faq")}>FAQ</button>
+            <a href={composeUrl("Support request")} target="_blank" rel="noopener noreferrer">Help &amp; support</a>
+            <a href={composeUrl("Bug report")} target="_blank" rel="noopener noreferrer">Report a bug</a>
           </div>
           <div>
             <h4>Company</h4>
-            <button type="button" onClick={() => scrollToId("faq")}>FAQ</button>
-          </div>
-          <div>
-            <h4>Get in touch</h4>
-            <a href={COMPOSE_URL} target="_blank" rel="noopener noreferrer">support@digidaraaiagents.com</a>
+            <a href={composeUrl("Contact DigiDARA Technologies")} target="_blank" rel="noopener noreferrer">Contact us</a>
+            <a href={COLLEGE_URL} target="_blank" rel="noopener noreferrer">Institution enquiries</a>
+            <button type="button" onClick={() => setLegalTab("terms")}>Terms of Service</button>
+            <button type="button" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>
           </div>
         </div>
         <div className="lp-wrap lp-footer-bottom">
           <span>© {new Date().getFullYear()} DigiDARA Technologies. All rights reserved.</span>
-          <span>SkillDARA</span>
+          <span className="lp-footer-badges"><b>Secure sessions</b><b>Privacy-first</b><b>Data export &amp; deletion</b></span>
         </div>
       </footer>
+      <LegalModal open={legalTab !== null} initialTab={legalTab ?? "terms"} onClose={() => setLegalTab(null)} />
     </div>
   );
 }

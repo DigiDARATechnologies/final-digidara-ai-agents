@@ -1,6 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { fetchLearningDashboard, type DashboardStatus, type LearningDashboardData } from "../lib/learnerApi";
+import AgentIcon from "./AgentIcon";
+import { LIVE_AGENTS } from "../data/agents";
 import "./LearningDashboard.css";
+
+type DashboardTarget = "readiness" | "assessments" | "courses" | "leaderboard";
+
+const QUICK_ACTIONS: { target: DashboardTarget; icon: string; title: string; text: string; tone: string }[] = [
+  { target: "readiness", icon: "bolt", title: "Check readiness", text: "See how job-ready you are today", tone: "indigo" },
+  { target: "courses", icon: "book", title: "Learn a course", text: "Short lessons, step by step", tone: "teal" },
+  { target: "assessments", icon: "file", title: "Take an assessment", text: "Tests from your college or company", tone: "orange" },
+  { target: "leaderboard", icon: "award", title: "See the leaderboard", text: "Compare with other learners", tone: "pink" },
+];
+
+interface LearningDashboardProps {
+  onBack?: () => void;
+  /** Learner's name for the greeting. */
+  userName?: string;
+  /** Jumps to another portal screen from the quick actions. */
+  onNavigate?: (target: DashboardTarget) => void;
+  /** Starts a chat with an agent from the "Practise with an agent" strip. */
+  onOpenAgent?: (agentId: string) => void;
+}
 
 const VIEW_LABELS: Record<string, string> = {
   me: "My learning", students: "My students", organization: "Organization", platform: "Whole platform",
@@ -27,9 +48,12 @@ function ago(iso: string | null): string {
   return days <= 0 ? "Today" : days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
-function Kpi({ label, value, note, progress, target }: { label: string; value: string; note: string; progress?: number | null; target?: number }) {
+function Kpi({ label, value, note, progress, target, icon, tone }: {
+  label: string; value: string; note: string; progress?: number | null; target?: number; icon?: string; tone?: string;
+}) {
   return (
-    <div className="ld-kpi">
+    <div className={`ld-kpi${tone ? ` tone-${tone}` : ""}`}>
+      {icon && <i className="ld-kpi-icon"><AgentIcon name={icon} size="1.25em" /></i>}
       <span>{label}</span>
       <strong>{value}</strong>
       {progress !== undefined && (
@@ -143,7 +167,7 @@ function HBars({ rows, max = 100, format = (v: number) => String(Math.round(v)) 
 }
 
 /** The learning dashboard: your own learning, or (staff, admins) your students'. */
-export default function LearningDashboard({ onBack }: { onBack?: () => void }) {
+export default function LearningDashboard({ onBack, userName, onNavigate, onOpenAgent }: LearningDashboardProps) {
   const [view, setView] = useState<string | undefined>(undefined);
   const [data, setData] = useState<LearningDashboardData | null>(null);
   const [error, setError] = useState("");
@@ -164,22 +188,48 @@ export default function LearningDashboard({ onBack }: { onBack?: () => void }) {
 
   const kpis = data?.kpis;
   const group = data && data.view !== "me";
+  const firstName = userName?.trim().split(/\s+/)[0];
+  const readiness = kpis?.readiness ?? null;
+  const noActivity = !!data && data.monthly.every((m) => m.requests === 0 && m.assigned === 0 && m.attempted === 0);
+  const noAssessments = !!data && Object.values(data.status).every((n) => !n);
+  const ringLength = 2 * Math.PI * 46;
   return (
     <div className="pv-page ld-page">
       <div className="pv-inner ld-inner">
         {onBack && <button className="hp-back" onClick={onBack}>← Back</button>}
-        <header className="ld-head">
-          <div>
+        <header className="ld-hero">
+          <div className="ld-hero-copy">
             <span className="ld-kicker">{group ? "Learning overview" : "Your progress"}</span>
             <h1>Learning Dashboard</h1>
-            <p>{data ? `${data.label}${group ? ` · ${data.people} learner${data.people === 1 ? "" : "s"}` : ""}` : "Your learning journey at a glance."}</p>
+            <p className="ld-hero-greet">
+              {group ? "Track how your learners are doing." : firstName ? `Hi ${firstName}, here is how your learning is going.` : "Here is how your learning is going."}
+            </p>
+            <p className="ld-hero-sub">{data ? `${data.label}${group ? ` · ${data.people} learner${data.people === 1 ? "" : "s"}` : ""}` : "Your learning journey at a glance."}</p>
+            {data && data.views.length > 1 && (
+              <div className="ld-switch" role="tablist" aria-label="Dashboard view">
+                {data.views.map((value) => (
+                  <button key={value} type="button" role="tab" aria-selected={data.view === value} className={data.view === value ? "on" : ""}
+                    onClick={() => setView(value)}>{VIEW_LABELS[value] ?? value}</button>
+                ))}
+              </div>
+            )}
+            {!group && onNavigate && (
+              <div className="ld-hero-cta">
+                <button type="button" className="ld-cta-main" onClick={() => onNavigate(readiness === null ? "readiness" : "courses")}>
+                  {readiness === null ? "Check my readiness →" : "Keep learning →"}
+                </button>
+                <button type="button" className="ld-cta-ghost" onClick={() => onNavigate("assessments")}>View assessments</button>
+              </div>
+            )}
           </div>
-          {data && data.views.length > 1 && (
-            <div className="ld-switch" role="tablist" aria-label="Dashboard view">
-              {data.views.map((value) => (
-                <button key={value} type="button" role="tab" aria-selected={data.view === value} className={data.view === value ? "on" : ""}
-                  onClick={() => setView(value)}>{VIEW_LABELS[value] ?? value}</button>
-              ))}
+          {data && (
+            <div className="ld-ring" role="img" aria-label={readiness === null ? "Readiness not checked yet" : `Readiness ${Math.round(readiness)} out of 100`}>
+              <svg viewBox="0 0 110 110">
+                <circle cx="55" cy="55" r="46" className="ld-ring-track" />
+                <circle cx="55" cy="55" r="46" className="ld-ring-fill"
+                  strokeDasharray={`${((readiness ?? 0) / 100) * ringLength} ${ringLength}`} />
+              </svg>
+              <div><strong>{readiness === null ? "—" : Math.round(readiness)}</strong><small>{readiness === null ? "not checked" : "ready score"}</small></div>
             </div>
           )}
         </header>
@@ -190,38 +240,71 @@ export default function LearningDashboard({ onBack }: { onBack?: () => void }) {
         {data && kpis && (
           <>
             <section className="ld-kpis">
-              <Kpi label={group ? "Average job readiness" : "Job readiness"} value={kpis.readiness === null ? "—" : `${Math.round(kpis.readiness)}`}
+              <Kpi icon="bolt" tone="indigo" label={group ? "Average job readiness" : "Job readiness"} value={kpis.readiness === null ? "—" : `${Math.round(kpis.readiness)}`}
                 note={kpis.readiness === null ? "Check your job readiness to get a score" : "out of 100"} progress={kpis.readiness} />
-              <Kpi label="Assessments" value={String(kpis.assessments)} note={`${kpis.submitted} submitted`}
+              <Kpi icon="file" tone="teal" label="Assessments" value={String(kpis.assessments)}
+                note={kpis.assessments ? `${kpis.submitted} submitted` : "None assigned yet"}
                 progress={kpis.assessments ? (100 * kpis.submitted) / kpis.assessments : 0} />
-              <Kpi label="Submission rate" value={kpis.submission_rate === null ? "—" : `${Math.round(kpis.submission_rate)}%`}
+              <Kpi icon="chart" tone="orange" label="Submission rate" value={kpis.submission_rate === null ? "—" : `${Math.round(kpis.submission_rate)}%`}
                 note="Target 85%" progress={kpis.submission_rate} target={85} />
-              <Kpi label="Average score" value={kpis.average_score === null ? "—" : `${Math.round(kpis.average_score)}%`}
+              <Kpi icon="award" tone="pink" label="Average score" value={kpis.average_score === null ? "—" : `${Math.round(kpis.average_score)}%`}
                 note="Target 80%" progress={kpis.average_score} target={80} />
-              <Kpi label={group ? `Active in ${kpis.active_days} days` : "Agent requests"}
+              <Kpi icon="sparkle" tone="blue" label={group ? `Active in ${kpis.active_days} days` : "Agent requests"}
                 value={group ? `${kpis.active_recently} / ${data.people}` : String(kpis.requests_30d)}
                 note={group ? "learners using SkillDARA" : "in the last 30 days"} />
             </section>
+
+            {!group && onNavigate && (
+              <section className="ld-section" aria-label="Quick actions">
+                <div className="ld-section-head"><h2>What would you like to do?</h2><span>Pick a step to move forward</span></div>
+                <div className="ld-actions">
+                  {QUICK_ACTIONS.map((a) => (
+                    <button key={a.target} type="button" className={`ld-action tone-${a.tone}`} onClick={() => onNavigate(a.target)}>
+                      <i><AgentIcon name={a.icon} size="1.3em" /></i>
+                      <span><b>{a.title}</b><small>{a.text}</small></span>
+                      <em aria-hidden="true">→</em>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {!group && onOpenAgent && (
+              <section className="ld-section" aria-label="Agents">
+                <div className="ld-section-head"><h2>Practise with an agent</h2><span>Each chat adds to your progress</span></div>
+                <div className="ld-agents">
+                  {LIVE_AGENTS.map((agent) => (
+                    <button key={agent.id} type="button" className="ld-agent" style={{ "--c": agent.color } as CSSProperties} onClick={() => onOpenAgent(agent.id)}>
+                      <i><AgentIcon name={agent.icon} size="1.2em" /></i>
+                      <span>{agent.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="ld-grid">
               <article className="ld-card ld-wide">
                 <div className="ld-card-head"><h2>Monthly assessment progress</h2><span>Last 6 months</span></div>
                 <MonthlyBars rows={data.monthly} />
+                {noActivity && <p className="ld-hint">Nothing to chart yet. Your assigned and attempted assessments will appear here month by month.</p>}
               </article>
               <article className="ld-card">
                 <div className="ld-card-head"><h2>Assessment status</h2></div>
                 <StatusDonut status={data.status} />
+                {noAssessments && <p className="ld-hint">No assessments yet. Join your college or company on the Organization page to get them.</p>}
               </article>
               <article className="ld-card">
                 <div className="ld-card-head"><h2>Agent activity</h2><span>Requests per month</span></div>
                 <ActivityBars rows={data.monthly} />
+                {noActivity && <p className="ld-hint">Chat with an agent and your activity shows up here.</p>}
                 {data.agents.length > 0 && <HBars rows={data.agents.map((a) => ({ key: a.agent, label: AGENT_LABELS[a.agent] ?? a.agent, value: a.requests }))}
                   max={1} />}
               </article>
               <article className="ld-card">
                 <div className="ld-card-head"><h2>Readiness by area</h2><span>out of 100</span></div>
                 {data.areas.length ? <HBars rows={data.areas.map((a) => ({ key: a.label, label: a.label, value: a.average }))} />
-                  : <p className="ld-empty">No area scores yet.</p>}
+                  : <p className="ld-empty">No area scores yet. Check your job readiness to see where you stand in each area.</p>}
               </article>
 
               {!group && (

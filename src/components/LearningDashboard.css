@@ -108,3 +108,83 @@
 .ma-main small { color: var(--tx-2); }
 .ma-side { display: flex; align-items: center; gap: 10px; }
 .ma-side strong { font-size: 22px; color: var(--tx-1); }
+
+/* ---- Redesign: hero, tinted stat cards, quick actions (UI only) ---- */
+.ld-page { font-family: "Plus Jakarta Sans Variable", Inter, system-ui, sans-serif; }
+.ld-page .ld-inner { max-width: 1180px; }
+.ld-hero { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap;
+  margin: 8px 0 22px; padding: 30px 34px; border-radius: 24px; color: #fff;
+  background:
+    radial-gradient(420px 260px at 92% 0%, rgb(255 255 255 / .22), transparent 70%),
+    radial-gradient(360px 240px at 0% 100%, rgb(139 123 255 / .55), transparent 70%),
+    linear-gradient(120deg, #2851d8 0%, #4a3fd0 55%, #7c4ddb 100%);
+  box-shadow: 0 24px 50px -28px rgb(60 60 200 / .7); }
+.ld-hero-copy { position: relative; z-index: 1; flex: 1 1 360px; min-width: 0; }
+.ld-hero .ld-kicker { border-color: rgb(255 255 255 / .4); color: #fff; background: rgb(255 255 255 / .14); }
+.ld-hero h1 { margin: 12px 0 6px; font-size: clamp(28px, 3.2vw, 40px); font-weight: 800; letter-spacing: -.035em; line-height: 1.08; color: #fff; }
+.ld-hero-greet { margin: 0; font-size: 17px; font-weight: 600; color: rgb(255 255 255 / .96); }
+.ld-hero-sub { margin: 4px 0 0; font-size: 14px; color: rgb(255 255 255 / .8); }
+.ld-hero .ld-switch { margin-top: 16px; border-color: rgb(255 255 255 / .35); background: rgb(255 255 255 / .1); }
+.ld-hero .ld-switch button { color: rgb(255 255 255 / .85); }
+.ld-hero .ld-switch button.on { background: #fff; color: #2b3fb8; }
+.ld-hero-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.ld-cta-main, .ld-cta-ghost { font: inherit; font-size: 14px; font-weight: 700; padding: 11px 20px; border-radius: 12px; cursor: pointer; }
+.ld-cta-main { border: 0; background: #fff; color: #2b3fb8; box-shadow: 0 10px 22px -12px rgb(0 0 0 / .5); }
+.ld-cta-ghost { border: 1px solid rgb(255 255 255 / .5); background: transparent; color: #fff; }
+.ld-cta-main:hover { transform: translateY(-1px); }
+.ld-cta-ghost:hover { background: rgb(255 255 255 / .14); }
+
+.ld-ring { position: relative; z-index: 1; width: 150px; height: 150px; flex: none; }
+.ld-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ld-ring-track { fill: none; stroke: rgb(255 255 255 / .22); stroke-width: 10; }
+.ld-ring-fill { fill: none; stroke: #fff; stroke-width: 10; stroke-linecap: round; }
+.ld-ring > div { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ld-ring strong { font-size: 36px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.ld-ring small { margin-top: 4px; font-size: 11.5px; font-weight: 600; opacity: .85; }
+
+.ld-kpis { gap: 14px; }
+.ld-kpi { position: relative; padding: 18px; border-radius: 18px; border: 1px solid color-mix(in srgb, var(--tone, #2851d8) 22%, var(--line-1));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tone, #2851d8) 9%, var(--surf-1)), var(--surf-1) 70%);
+  box-shadow: 0 14px 28px -22px color-mix(in srgb, var(--tone, #2851d8) 60%, transparent); }
+.ld-kpi strong { font-size: 30px; font-weight: 800; letter-spacing: -.03em; }
+.ld-kpi-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 12px; margin-bottom: 4px;
+  color: var(--tone, #2851d8); background: color-mix(in srgb, var(--tone, #2851d8) 15%, var(--surf-1)); }
+.tone-indigo { --tone: #5b4fe0; } .tone-teal { --tone: #12a37a; } .tone-orange { --tone: #ea7a1c; } .tone-pink { --tone: #dc4f8c; } .tone-blue { --tone: #2a78d6; }
+.ld-kpi.tone-indigo .ld-progress i { background: #5b4fe0; } .ld-kpi.tone-teal .ld-progress i { background: #12a37a; }
+.ld-kpi.tone-orange .ld-progress i { background: #ea7a1c; } .ld-kpi.tone-pink .ld-progress i { background: #dc4f8c; }
+
+.ld-section { margin-top: 26px; }
+.ld-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ld-section-head h2 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.02em; color: var(--tx-1); }
+.ld-section-head span { font-size: 13px; color: var(--tx-2); }
+.ld-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.ld-action { display: flex; align-items: center; gap: 14px; text-align: left; font: inherit; cursor: pointer; padding: 16px 18px; border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--tone) 22%, var(--line-1)); background: color-mix(in srgb, var(--tone) 7%, var(--surf-1)); color: var(--tx-1);
+  transition: transform .15s, box-shadow .15s; }
+.ld-action:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -20px color-mix(in srgb, var(--tone) 70%, transparent); }
+.ld-action i { flex: none; width: 46px; height: 46px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--tone); }
+.ld-action span { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ld-action b { font-size: 15px; font-weight: 700; }
+.ld-action small { font-size: 12.5px; color: var(--tx-2); }
+.ld-action em { font-style: normal; font-weight: 700; color: var(--tone); }
+
+.ld-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.ld-agent { display: flex; align-items: center; gap: 10px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-align: left;
+  padding: 10px 14px; border-radius: 14px; color: var(--tx-1); border: 1px solid color-mix(in srgb, var(--c) 28%, var(--line-1));
+  background: color-mix(in srgb, var(--c) 7%, var(--surf-1)); transition: transform .15s; }
+.ld-agent:hover { transform: translateY(-1px); border-color: var(--c); }
+.ld-agent i { flex: none; width: 32px; height: 32px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--c); background: color-mix(in srgb, var(--c) 16%, var(--surf-1)); }
+
+.ld-grid { margin-top: 26px; gap: 16px; }
+.ld-card { padding: 20px; border-radius: 20px; box-shadow: 0 14px 30px -26px rgb(40 60 120 / .5); }
+.ld-card-head h2 { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.ld-hint { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; color: var(--tx-2);
+  background: color-mix(in srgb, var(--ld-s1) 8%, var(--surf-1)); border: 1px dashed color-mix(in srgb, var(--ld-s1) 30%, var(--line-1)); }
+
+@media (max-width: 760px) {
+  .ld-hero { padding: 22px 20px; }
+  .ld-ring { width: 120px; height: 120px; }
+  .ld-ring strong { font-size: 28px; }
+}

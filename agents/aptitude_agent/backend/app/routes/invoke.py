@@ -100,20 +100,23 @@ def _personal_data(action: str, payload: dict):
 SUMMARY_RECENT_TESTS = 10
 
 
-# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
-# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
-# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
-# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
-# Beginner/Medium/Hard levels.
+# Phase 2 levels: progress at each difficulty, starting from 0. A session at
+# PASS_PERCENT or better counts in full, a lower one in proportion; progress is
+# the best LEVEL_SESSIONS sessions at that difficulty added up and divided by
+# LEVEL_SESSIONS. So it grows with every session, a weaker session never takes
+# it down, and LEVEL_SESSIONS passed sessions complete the level. The
+# orchestrator maps easy/medium/hard to the Beginner/Medium/Hard levels.
 LEVEL_SESSIONS = 5
+PASS_PERCENT = 80
 
 
 def level_scores(sessions):
-    """sessions: (difficulty, score 0-100) pairs, newest first."""
+    """sessions: (difficulty, score 0-100) pairs."""
     result = {}
     for difficulty in ("easy", "medium", "hard"):
-        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
-        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+        credits = sorted((min(100.0, max(0.0, float(score)) * 100 / PASS_PERCENT)
+                          for level, score in sessions if level == difficulty and score is not None), reverse=True)
+        result[difficulty] = round(sum(credits[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
     return result
 
 

@@ -106,6 +106,9 @@ class VivaAnswerRequest(BaseModel):
 
 class VivaTimeUpRequest(BaseModel):
     submission_id: str
+    # Proctoring ended the viva (too many warnings): the attempt closes even
+    # with time left. Only the learner's own attempt is lost by it.
+    ended_early: bool = False
 
 
 class SubmissionResultResponse(BaseModel):

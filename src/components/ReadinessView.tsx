@@ -58,12 +58,12 @@ export function ScoreRing({ score, band, size = 148 }: { score: number | null; b
 /** How each agent measures progress inside a level, in the learner's words. */
 const AREA_EXPLANATION: Record<string, string> = {
   codeforge_agent: "the problems you solved at your level's difficulty (Easy for Beginner, then Medium, then Hard), out of every such problem in the technologies you practise.",
-  mock_interview_agent: "your last 5 interviews at your level's difficulty: their overall scores (out of 10, shown out of 100) added up and divided by 5, so 5 perfect interviews complete the level.",
-  aptitude_agent: "your last 5 aptitude tests at your level's difficulty: their percentages added up and divided by 5, so 5 perfect tests complete the level.",
+  mock_interview_agent: "your best 5 interviews at your level's difficulty. An interview scoring 8/10 or more counts in full, a lower one in part (6/10 counts 75%); the 5 are added up and divided by 5, so 5 interviews at 8/10 complete the level. A weaker interview never lowers your progress.",
+  aptitude_agent: "your best 5 aptitude tests at your level's difficulty. A test at 80% or more counts in full, a lower one in part (60% counts 75%); the 5 are added up and divided by 5, so 5 tests at 80% complete the level. A weaker test never lowers your progress.",
   communication_agent: "the average of your writing, speaking and pronunciation scores from your latest sessions.",
   resume_builder_agent: "Resume has no levels: its area score is your best ATS score across your resumes. Run an ATS check to get one.",
   capstone_project_agent: "projects you passed: a project counts once its code grading AND its viva are passed. The first passed project completes Beginner, the second Medium, the third Hard, the fourth Professional. Code passed but viva still to do is half a level.",
-  certificate_agent: "your best exam score in each certification topic, averaged.",
+  certificate_agent: "your best 5 exams, scored by your answers to the questions at your level's difficulty (beginner questions for Beginner, intermediate for Medium, advanced for Hard). 80% or more of them right counts in full, less in part; the 5 are added up and divided by 5, so 5 exams at 80% complete the level. A weaker exam never lowers your progress.",
 };
 
 const METRIC_LABELS: Record<string, string> = {
@@ -122,7 +122,7 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
   if (area.status !== "assessed" || progress === null || progress === undefined) return null;
   const what = area.level_progress_basis !== "level" ? "(this agent uses its overall score for levels)"
     : area.agent_name === "codeforge_agent" ? `of ${LEVEL_DIFFICULTY[area.level]} problems solved`
-      : "from your last 5 sessions at this level";
+      : "from your best 5 sessions at this level";
   const next = area.next_level ? LEVEL_LABELS[area.next_level] : null;
   return (
     <div className="rd-progress">

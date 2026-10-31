@@ -11,7 +11,7 @@ jest.mock('../../src/lib/capstoneApi', () => ({
   topicIntakeTurn: jest.fn(),
   uploadSubmission: jest.fn(),
 }));
-import { handleCapstoneText, mergeCapstoneFiles, submitCapstoneFiles, VIVA_TIME_UP_ACTION, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
+import { handleCapstoneText, mergeCapstoneFiles, submitCapstoneFiles, VIVA_PROCTOR_END_ACTION, VIVA_TIME_UP_ACTION, type CapstoneFlowState } from '../../src/lib/capstoneFlow';
 import * as api from '../../src/lib/capstoneApi';
 import type { IntakeTurnResult } from '../../src/lib/capstoneApi';
 
@@ -726,12 +726,24 @@ describe('the 20-minute viva timer', () => {
       thread_id: 'thread', status: 'viva_retry', viva_rating: 'Bad', viva_attempt: 1, viva_attempts_left: 2, viva_attempts_total: 3, viva_timed_out: true,
     } as never);
     const result = await handleCapstoneText({ ...vivaState, vivaDeadlineAt: Date.now() }, VIVA_TIME_UP_ACTION);
-    expect(api.vivaTimeUp).toHaveBeenCalledWith('submission');
+    expect(api.vivaTimeUp).toHaveBeenCalledWith('submission', false);
     expect(api.submitVivaAnswer).not.toHaveBeenCalled();
     expect(api.askProjectQuestion).not.toHaveBeenCalled();
     expect(result.state.vivaRetryPending).toBe(true);
     expect(result.state.vivaDeadlineAt).toBeNull();
     expect(result.messages[0].text).toContain("Time's up");
+    expect(result.messages[0].options?.[0].label).toBe('Start viva attempt 2 of 3');
+  });
+
+  test('proctoring ends the attempt early on the server and offers the next attempt', async () => {
+    jest.mocked(api.vivaTimeUp).mockResolvedValue({
+      thread_id: 'thread', status: 'viva_retry', viva_rating: 'Bad', viva_attempt: 1, viva_attempts_left: 2, viva_attempts_total: 3, viva_timed_out: true,
+    } as never);
+    const result = await handleCapstoneText({ ...vivaState, vivaDeadlineAt: Date.now() + 600_000 }, VIVA_PROCTOR_END_ACTION);
+    expect(api.vivaTimeUp).toHaveBeenCalledWith('submission', true);
+    expect(api.submitVivaAnswer).not.toHaveBeenCalled();
+    expect(result.state.vivaRetryPending).toBe(true);
+    expect(result.messages[0].text).toContain('Proctoring ended viva attempt 1 of 3');
     expect(result.messages[0].options?.[0].label).toBe('Start viva attempt 2 of 3');
   });
 

@@ -1,7 +1,7 @@
 import React from "react";
-import logoIcon from "../assets/logo-icon.webp";
-import logoFull from "../assets/logo-full.webp";
-import logoDark from "../assets/logo-dark.webp";
+import logoIcon from "../assets/skilldara-icon.png";
+import logoFull from "../assets/skilldara-logo.png";
+import logoDark from "../assets/skilldara-logo-dark.png";
 
 export interface LogoProps {
   variant?: "full" | "icon" | "wordmark";

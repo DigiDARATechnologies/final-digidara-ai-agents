@@ -1,0 +1,73 @@
+/* Login page: light layout with the same top bar as the landing page (see LandingNav). Static, no animations. */
+.login-overlay.lp{
+  display:block; padding:0; overflow-y:auto; overflow-x:hidden;
+  background:
+    radial-gradient(640px 360px at 8% 0%,color-mix(in srgb,#4f46e5 18%,transparent),transparent 70%),
+    radial-gradient(560px 380px at 95% 40%,color-mix(in srgb,#06b6d4 14%,transparent),transparent 70%),
+    var(--lp-bg);
+}
+.login-overlay.lp::before{ display:none; }
+
+/* left copy */
+
+/* form card */
+.login-overlay .login-card{ width:100%; max-width:440px; padding:34px 32px; border-radius:20px; border:1px solid var(--lp-line); background:#fff; box-shadow:0 30px 70px -30px rgba(40,50,140,.35); color:#17154a; }
+.login-overlay .login-card h1{ font-size:clamp(30px,3vw,38px); font-weight:800; letter-spacing:-.04em; line-height:1.08; margin-bottom:8px; }
+.login-overlay .login-sub{ font-size:16px; line-height:1.55; margin-bottom:22px; }
+.login-overlay .field{ font-size:14.5px; font-weight:600; }
+.login-overlay .field input{ font-size:16px; font-weight:500; }
+.login-overlay .auth-divider{ font-size:13px; }
+.login-overlay .btn{ font-size:15px; font-weight:800; letter-spacing:.02em; }
+.login-overlay .btn-primary{ text-transform:uppercase; background:#2563eb; box-shadow:0 8px 22px rgba(37,99,235,.3); }
+.login-overlay .btn-primary:hover{ background:#1d4fd8; }
+.login-overlay .link-btn{ color:#4f46e5; }
+.login-overlay .login-switch{ font-size:14.5px; }
+.login-overlay .login-foot{ font-size:12.5px; }
+
+@media (max-width:900px){
+    }
+
+/* spacing + alignment under the submit button */
+.login-overlay.lp .login-card .link-btn{ color:#4f46e5; font-weight:700; text-decoration:none; }
+.login-overlay.lp .login-card .link-btn:hover{ color:#3730a3; text-decoration:underline; }
+.login-overlay.lp .login-card .login-form-row{ margin:-2px 0 18px; }
+.login-overlay.lp .login-card .login-form-row .link-btn{ font-size:13.5px; }
+.login-overlay.lp .login-card .login-switch{ margin:26px 0 0; padding-top:22px; border-top:1px solid var(--lp-line); font-size:15px; font-weight:600; text-align:center; color:var(--lp-dim); }
+.login-overlay.lp .login-card .login-foot{ margin:18px 0 0; padding:0 8px; font-size:13px; line-height:1.7; text-align:center; color:var(--lp-dim); }
+.login-overlay.lp .login-card .login-foot .link-btn{ font-weight:600; }
+
+/* split layout: agent showcase left, white form right */
+.login-overlay.lp.lp-force-light{ background:#fff; }
+.lg-main{ display:grid; grid-template-columns:1.05fr .95fr; min-height:calc(100vh - 76px); }
+.lg-copy{ position:relative; display:flex; flex-direction:column; justify-content:center; gap:34px; padding:48px 0; overflow:hidden; background:
+  radial-gradient(520px 360px at 10% 0%,color-mix(in srgb,#8b7bff 30%,transparent),transparent 70%),
+  radial-gradient(520px 380px at 100% 100%,color-mix(in srgb,#5ec8ff 30%,transparent),transparent 70%),
+  radial-gradient(420px 300px at 20% 100%,color-mix(in srgb,#ff8fc7 20%,transparent),transparent 70%),
+  #f3f5ff; }
+.lg-copy-head{ text-align:center; padding:0 32px; }
+.lg-copy-head h2{ font-size:clamp(32px,3.6vw,50px); line-height:1.08; letter-spacing:-.045em; font-weight:800; color:var(--lp-text); }
+.lg-copy-head p{ margin-top:12px; font-size:clamp(16px,1.5vw,19px); color:var(--lp-dim); }
+.lg-copy{ height:calc(100vh - 76px); min-height:560px; padding-bottom:0; }
+.lg-rows{ flex:1; min-height:0; display:grid; grid-template-columns:repeat(2,minmax(0,300px)); justify-content:center; gap:18px; padding:0 24px; }
+.lg-rows{ -webkit-mask-image:linear-gradient(to bottom,transparent,#000 8%,#000 92%,transparent); mask-image:linear-gradient(to bottom,transparent,#000 8%,#000 92%,transparent); }
+.lg-row{ overflow:hidden; padding:0 6px; }
+.lg-track{ display:flex; flex-direction:column; width:100%; animation:lg-run 26s linear infinite; }
+.lg-row-b{ margin-top:60px; }
+.lg-row-b .lg-track{ animation-direction:reverse; animation-duration:32s; }
+.lg-group{ display:flex; flex-direction:column; flex:none; gap:18px; padding-bottom:18px; }
+@keyframes lg-run{ from{ transform:translateY(0); } to{ transform:translateY(-50%); } }
+@media (prefers-reduced-motion:reduce){ .lg-track{ animation:none; } }
+.lg-card{ flex:none; width:100%; padding:18px 20px; border-radius:16px; background:#fff; border:1px solid color-mix(in srgb,var(--c) 22%,#e3e7f2); box-shadow:0 14px 30px -18px color-mix(in srgb,var(--c) 55%,transparent); }
+.lg-card-head{ display:flex; align-items:center; gap:12px; margin-bottom:10px; padding-bottom:12px; border-bottom:2px solid color-mix(in srgb,var(--c) 28%,transparent); }
+.lg-card-icon{ flex:none; width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:19px; color:var(--c); background:color-mix(in srgb,var(--c) 14%,#fff); }
+.lg-card h3{ margin:0; font-size:16px; font-weight:700; letter-spacing:-.015em; color:var(--lp-text); }
+.lg-card small{ font-size:12.5px; font-weight:600; color:var(--c); }
+.lg-card p{ margin:0; font-size:14px; line-height:1.55; color:var(--lp-dim); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.lg-note{ display:none; text-align:center; font-size:15px; font-weight:600; color:var(--lp-accent); }
+.lg-form-panel{ display:flex; align-items:center; justify-content:center; padding:40px 24px; background:#fff; }
+.login-overlay .login-card{ box-shadow:0 24px 60px -34px rgba(40,50,140,.35); }
+@media (max-width:900px){
+  .lg-main{ grid-template-columns:1fr; min-height:0; }
+  .lg-copy{ display:none; }
+  .lg-form-panel{ padding:28px 16px 48px; background:linear-gradient(180deg,#f3f5ff,#fff); }
+}

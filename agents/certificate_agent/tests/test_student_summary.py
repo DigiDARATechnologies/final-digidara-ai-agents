@@ -29,3 +29,28 @@ def test_best_score_per_topic_and_certified_topics():
 def test_chat_mode_certificate_without_an_exam_row_counts():
     body = build_student_summary([], [{"topic": "GenAI", "score_percentage": 90, "issued_at": None}])
     assert body["score"] == 90.0 and body["last_activity_at"] is None
+
+
+def test_each_exam_counts_at_every_level_it_asked_and_never_lowers_progress():
+    exams = [{"id": n, "topic": "Python", "score_percentage": 70, "completed_at": datetime(2026, 9, n)} for n in (1, 2)]
+    answers = [
+        {"exam_id": 1, "difficulty": "beginner", "correct": 9, "asked": 10},      # 90%: a pass, counts in full
+        {"exam_id": 1, "difficulty": "intermediate", "correct": 6, "asked": 10},  # 60%: counts 75
+        {"exam_id": 1, "difficulty": "advanced", "correct": 2, "asked": 2},       # too few questions to count
+        {"exam_id": 2, "difficulty": "beginner", "correct": 2, "asked": 10},      # a weak exam adds a little
+        {"exam_id": 9, "difficulty": "beginner", "correct": 10, "asked": 10},     # not a finished exam
+    ]
+    body = build_student_summary(exams, [], answers)
+    assert body["level_scores"] == {"easy": 25.0, "medium": 15.0, "hard": 0.0}
+
+
+def test_five_passed_exams_complete_a_level():
+    exams = [{"id": n, "topic": "SQL", "score_percentage": 85, "completed_at": datetime(2026, 9, n)} for n in range(1, 7)]
+    answers = [{"exam_id": n, "difficulty": "beginner", "correct": 8, "asked": 10} for n in range(1, 6)]
+    answers.append({"exam_id": 6, "difficulty": "beginner", "correct": 1, "asked": 10})
+    assert build_student_summary(exams, [], answers)["level_scores"]["easy"] == 100.0
+
+
+def test_without_answers_no_level_scores_are_sent():
+    body = build_student_summary([], [{"topic": "GenAI", "score_percentage": 90, "issued_at": None}])
+    assert "level_scores" not in body
