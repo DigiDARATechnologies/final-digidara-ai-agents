@@ -144,7 +144,7 @@ def test_landing_page_loads(driver):
 
     wait.until(EC.title_contains("SkillDARA"))
     h1 = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".lp h1")))
-    assert "AI agents" in h1.text
+    assert "Your AI team" in h1.text
     assert driver.find_element(By.CSS_SELECTOR, ".lp-nav-actions .lp-btn-ghost").text.strip() == "Login"
 
     save(driver, "landing")

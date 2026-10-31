@@ -10,7 +10,7 @@ openai>=1.109.1,<2
 python-dotenv==1.2.4
 waitress==3.0.2
 reportlab==5.1.0
-pypdf==6.21.2
+pypdf==6.21.4
 requests==2.34.2
 # Production/Docker process target — not used by waitress in local dev
 # (run.py), and doesn't run as a server on Windows.
