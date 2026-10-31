@@ -74,6 +74,12 @@ class ProfessionalAssessmentTests(unittest.TestCase):
         self.assertEqual(started.status_code, 201)
         self.assertEqual(started.json["assessment"]["minutes"], 75)
 
+    def test_every_practice_problem_of_a_language_solved_opens_its_assessment(self):
+        self.repo.technology_progress = {d: {"total": 2, "solved": 2} for d in ("Easy", "Medium", "Hard")}
+        self.assertEqual(self.invoke("start_assessment", {"technology_slug": "numpy"}, level="medium", difficulty="medium").status_code, 201)
+        self.repo.technology_progress = {**self.repo.technology_progress, "Hard": {"total": 2, "solved": 1}}
+        self.assertEqual(self.invoke("start_assessment", {"technology_slug": "numpy"}, level="medium", difficulty="medium").status_code, 403)
+
     def test_expert_content_runs_only_inside_the_attempt_and_its_score_is_kept(self):
         outside = self.invoke("submit_problem", {"problem_id": 9, "sourceCode": CODE})
         self.assertEqual(outside.status_code, 403)

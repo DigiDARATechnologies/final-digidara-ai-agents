@@ -15,6 +15,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from .errors import ApiError
 from .readiness import build_student_summary
+from .repository import technology_level
 from .role_periods import clean_periods, in_periods
 
 invoke_bp = Blueprint("invoke", __name__)
@@ -52,10 +53,14 @@ def _level_difficulty(body):
 ASSESSMENT_MINUTES = 75
 
 
-def _is_professional(body):
-    """Only a learner at the Professional level takes Professional assessments."""
+def _is_professional(body, student_id, technology_slug):
+    """Professional assessments in a technology open at the Professional
+    Coding level, or once every practice problem of that technology is solved
+    (a newer technology such as NumPy opens on its own progress)."""
     learner = body.get("learner")
-    return isinstance(learner, dict) and str(learner.get("level") or "").lower() == "professional"
+    if isinstance(learner, dict) and str(learner.get("level") or "").lower() == "professional":
+        return True
+    return bool(technology_slug) and repo().technology_level_by_slug(student_id, technology_slug) == "Professional"
 
 
 def _assessment_gate(student, problem):
@@ -73,12 +78,25 @@ def _locked(level, difficulty):
     return bool(level and difficulty) and DIFFICULTY_RANK.get(str(difficulty).capitalize(), 0) > DIFFICULTY_RANK[level]
 
 
-def _require_level(body, difficulty):
+def _open_level(level, own_level):
+    """The higher of the learner's Coding level and what they opened in this
+    technology by solving all of its problems below (own_level: Easy, Medium,
+    Hard or Professional, see repository.technology_level)."""
+    own = "Hard" if own_level == "Professional" else own_level
+    if not level or own not in DIFFICULTY_RANK:
+        return level
+    return own if DIFFICULTY_RANK[own] > DIFFICULTY_RANK[level] else level
+
+
+def _require_level(body, difficulty, student_id, technology_id):
     level = _level_difficulty(body)
-    if _locked(level, difficulty):
+    if not _locked(level, difficulty):
+        return
+    own = technology_level(repo().technology_counts(student_id, technology_id))
+    if _locked(_open_level(level, own), difficulty):
         raise ApiError(
             f"{difficulty} problems are locked. Your Coding level is {LEVEL_NAME[level]}: solve every "
-            f"{level} problem to unlock the next level.",
+            f"{level} problem of this language to unlock the next level.",
             403, "level_locked",
         )
 
@@ -192,12 +210,13 @@ def invoke():
 
     if action == "assessment_overview":
         overview = repo().assessment_overview(student["id"], payload.get("technology_slug"))
-        overview.update({"eligible": _is_professional(body), "minutes": ASSESSMENT_MINUTES})
+        overview.update({"eligible": _is_professional(body, student["id"], payload.get("technology_slug")),
+                         "minutes": ASSESSMENT_MINUTES})
         return jsonify(overview)
 
     if action == "start_assessment":
-        if not _is_professional(body):
-            raise ApiError("Professional assessments open at the Professional level: complete every Hard problem first.", 403, "level_locked")
+        if not _is_professional(body, student["id"], payload.get("technology_slug")):
+            raise ApiError("Professional assessments open at the Professional level: solve every Hard problem of this language first.", 403, "level_locked")
         return jsonify({"assessment": repo().start_assessment(student["id"], payload.get("technology_slug"), ASSESSMENT_MINUTES)}), 201
 
     if action == "assessment_problem":
@@ -212,6 +231,8 @@ def invoke():
         level = _level_difficulty(body) or "Easy"
         languages, selected, course_slug, problems = repo().problem_set(
             student["id"], payload.get("technology_slug"), payload.get("course_slug") or None)
+        current = next((lang for lang in languages if lang["slug"] == selected), None)
+        level = _open_level(level, technology_level(current["counts"]) if current else None)
         for problem in problems:
             problem["locked"] = _locked(level, problem["difficulty"])
         return jsonify({"level": level, "level_name": LEVEL_NAME[level], "languages": languages,
@@ -232,7 +253,7 @@ def invoke():
             payload.get("topic_slug"),
             payload.get("problem_slug"),
         )
-        _require_level(body, selected_problem.get("difficulty"))
+        _require_level(body, selected_problem.get("difficulty"), student["id"], selected_technology["id"])
         return jsonify({
             "course": selected_course,
             "technology": selected_technology,
@@ -245,7 +266,7 @@ def invoke():
         problem = repo().problem_for_evaluation(student["id"], problem_id)
         item = _assessment_gate(student, problem)
         if item is None:
-            _require_level(body, problem.get("difficulty"))
+            _require_level(body, problem.get("difficulty"), student["id"], problem.get("technology_id"))
         mode = "run" if action == "run_problem" else "submit"
         outcome = current_app.extensions["evaluation"].evaluate(
             student["id"], problem_id, payload.get("sourceCode"), mode
@@ -259,7 +280,7 @@ def invoke():
         problem = repo().problem_for_evaluation(student["id"], problem_id)
         item = _assessment_gate(student, problem)
         if item is None:
-            _require_level(body, problem.get("difficulty"))
+            _require_level(body, problem.get("difficulty"), student["id"], problem.get("technology_id"))
         selected_key = payload.get("selectedKey")
         if not isinstance(selected_key, str) or not selected_key:
             raise ApiError("selectedKey is required.", 400, "invalid_parameter")

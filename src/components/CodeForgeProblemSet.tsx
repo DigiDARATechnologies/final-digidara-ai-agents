@@ -42,7 +42,7 @@ function AssessmentPanel({ overview, busy, onStart }: { overview: AssessmentOver
           {overview.minutes} minutes · 3 problems (a Hard problem, an Expert problem, a real-world task) · no AI tutor ·
           {" "}{overview.pass_mark}/100 passes · <b>{Math.min(overview.passed, 3)} of 3 passed</b>
         </span>
-        {!overview.eligible && <span>Unlocks at the Professional level: solve every Hard problem first.</span>}
+        {!overview.eligible && <span>Unlocks at the Professional level, or once you solve every {name} problem (Easy, Medium and Hard).</span>}
       </div>
       {overview.eligible && (
         <button type="button" className="ps-assess-btn" disabled={busy} onClick={onStart}>
@@ -153,7 +153,7 @@ export default function CodeForgeProblemSet({ open, sessionToken, courseSlug, te
             <h2>Problems</h2>
             {data && (
               <p>
-                Your Coding level: <b>{data.level_name}</b> · {level} problems are open
+                {current ? `${current.name}: ` : ""}<b>{data.level_name}</b> level · {level} problems are open
                 {nextLevel && mine ? ` · solve all ${mine.total} of them (${mine.solved} done) to unlock ${nextLevel}` : ""}
                 {courseSlug ? " · languages of your course" : ""}
               </p>

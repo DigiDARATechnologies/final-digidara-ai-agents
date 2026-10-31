@@ -11,7 +11,8 @@ scored by the answers at that difficulty. A session at PASS_PERCENT or better
 counts in full, a lower one in proportion; a level's progress is its best
 LEVEL_SESSIONS sessions added up and divided by LEVEL_SESSIONS. So it grows
 with every exam, a weaker exam never takes it down, and LEVEL_SESSIONS passed
-ones complete the level.
+ones complete the level. Professional has no questions of its own: it is the
+advanced answers measured against PROFESSIONAL_PASS_PERCENT.
 """
 from typing import Iterable, Optional
 
@@ -21,6 +22,7 @@ from cert_app.services.role_periods import clean_periods, in_periods
 
 LEVEL_SESSIONS = 5
 PASS_PERCENT = 80
+PROFESSIONAL_PASS_PERCENT = 90
 # An exam counts at a difficulty only when it asked at least this many of its questions.
 MIN_LEVEL_QUESTIONS = 3
 QUESTION_LEVEL = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
@@ -28,17 +30,22 @@ QUESTION_LEVEL = {"beginner": "easy", "intermediate": "medium", "advanced": "har
 
 def level_scores(answers: Iterable[dict]) -> dict[str, float]:
     """answers: one row per (exam_id, difficulty) with `correct` and `asked`
-    counts. Progress (0-100) at easy/medium/hard."""
-    sessions: dict[str, list[float]] = {level: [] for level in QUESTION_LEVEL.values()}
+    counts. Progress (0-100) at easy/medium/hard and professional."""
+    percents: dict[str, list[float]] = {level: [] for level in QUESTION_LEVEL.values()}
     for row in answers:
         level = QUESTION_LEVEL.get(str(row.get("difficulty") or "").lower())
         asked = int(row.get("asked") or 0)
         if level is None or asked < MIN_LEVEL_QUESTIONS:
             continue
-        percent = 100.0 * float(row.get("correct") or 0) / asked
-        sessions[level].append(min(100.0, max(0.0, percent) * 100 / PASS_PERCENT))
-    return {level: round(sum(sorted(credits, reverse=True)[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
-            for level, credits in sessions.items()}
+        percents[level].append(100.0 * float(row.get("correct") or 0) / asked)
+
+    def progress(values, pass_percent):
+        credits = sorted((min(100.0, max(0.0, value) * 100 / pass_percent) for value in values), reverse=True)
+        return round(sum(credits[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+
+    result = {level: progress(values, PASS_PERCENT) for level, values in percents.items()}
+    result["professional"] = progress(percents["hard"], PROFESSIONAL_PASS_PERCENT)
+    return result
 
 
 def _date(value) -> Optional[str]:
