@@ -14,11 +14,11 @@ const graded: CapstoneFlowState = {
 beforeEach(() => mockDownload.mockReset());
 
 test('a graded project says its files were submitted, and a passed one shows no old revision request', () => {
-  const { container, rerender } = render(<AgentDashboard user={user} state={{ ...graded, revisionNotes: 'Fix the missing module.' } as CapstoneFlowState} agentKind="capstone" />);
+  const { container, rerender } = render(<AgentDashboard user={user} state={{ ...graded, revisionNotes: 'Fix the missing module.' } as CapstoneFlowState} onClose={jest.fn()} />);
   expect(screen.getByText('Submitted')).toBeTruthy();
   expect(screen.queryByText('Not uploaded')).toBeNull();
   expect(container.textContent).not.toContain('Revision Requested');
-  rerender(<AgentDashboard user={user} state={{ ...graded, passed: false, finalScore: 55, revisionNotes: 'Fix the missing module.' } as CapstoneFlowState} agentKind="capstone" />);
+  rerender(<AgentDashboard user={user} state={{ ...graded, passed: false, finalScore: 55, revisionNotes: 'Fix the missing module.' } as CapstoneFlowState} onClose={jest.fn()} />);
   expect(container.textContent).toContain('Revision Requested');
 });
 
