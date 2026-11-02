@@ -10,6 +10,9 @@ Who sees what:
   - an owner or admin: their organization's students and staff boards,
   - SkillDARA's platform admin: everything.
 
+A staff member's own job readiness is not part of their staff score; it comes
+back beside their rank (me.own_readiness) so they can see the two apart.
+
 Scores are each learner's latest readiness for their current target role,
 scored by today's rules (readiness_service.scored). Inside an organization a
 student appears only if they share their progress with it (their consent);
@@ -259,6 +262,8 @@ def board(viewer_id: str, scope: str = "auto", group: str | None = None) -> dict
 
     entries = [entry(i + 1, uid, score) for i, (uid, score, _) in enumerate(candidates[:LIST_LIMIT])]
     me = next(({"rank": i + 1, "score": round(score, 1)} for i, (uid, score, _) in enumerate(candidates) if uid == viewer_id), None)
+    if me and group == "staff" and viewer_id in scores:
+        me["own_readiness"] = round(scores[viewer_id][0], 1)
     return {
         "scope": scope, "group": group, "allowed_groups": groups, "allowed_scopes": scopes,
         "organization": viewer_org,

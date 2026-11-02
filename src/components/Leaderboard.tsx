@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchLeaderboard,
+  fetchReadiness,
   setLeaderboardHidden,
   type Leaderboard as Board,
   type LeaderboardEntry,
@@ -32,7 +33,7 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setBoard(await fetchLeaderboard(scope, group));
+      setBoard(await freshBoard(() => fetchLeaderboard(scope, group)));
       setError("");
     } catch (err) {
       const message = (err as Error).message;
@@ -167,7 +168,8 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
         <footer className="lb-foot">
           <span>
             {board.hidden ? "You are hidden from leaderboards."
-              : board.me ? <>Your rank: <b>#{board.me.rank}</b> of {board.total} · {Math.round(board.me.score)} readiness</>
+              : board.me ? <>Your rank: <b>#{board.me.rank}</b> of {board.total} · {Math.round(board.me.score)} {board.group === "staff" ? "staff score" : "readiness"}
+                {board.me.own_readiness !== undefined && <> · your own job readiness is {Math.round(board.me.own_readiness)} (not part of the staff score)</>}</>
                 : board.group === "students" && board.allowed_groups.length === 1 ? "Check your job readiness to get a rank." : `${board.total} ranked`}
           </span>
           {board.allowed_groups.length === 1 && (
@@ -186,6 +188,16 @@ function Avatar({ entry, className }: { entry: LeaderboardEntry; className: stri
       {entry.avatar ? <img src={entry.avatar} alt="" /> : entry.name.slice(0, 1).toUpperCase()}
     </span>
   );
+}
+
+/** The board, after making sure the viewer's own score is recent: practice in
+ * an agent only reaches the board once readiness is checked again (the server
+ * reuses a check for 10 minutes, so this does not ask every agent each time). */
+async function freshBoard(load: () => Promise<Board>) {
+  try {
+    await fetchReadiness();
+  } catch { /* The last known score still shows. */ }
+  return load();
 }
 
 function staffLine(staff: NonNullable<LeaderboardEntry["staff"]>): string {
@@ -222,7 +234,7 @@ export function TopPerformers({ onOpen }: { onOpen?: () => void }) {
   const [board, setBoard] = useState<Board | null>(null);
   useEffect(() => {
     let active = true;
-    fetchLeaderboard("auto").then((result) => { if (active) setBoard(result); }).catch(() => undefined);
+    freshBoard(() => fetchLeaderboard("auto")).then((result) => { if (active) setBoard(result); }).catch(() => undefined);
     return () => { active = false; };
   }, []);
   if (!board || board.top.length === 0) return null;

@@ -161,7 +161,7 @@ async function finish(state: MockInterviewFlowState): Promise<MockInterviewFlowR
       messages: [{ text: "Interview complete. Your scores and answer feedback are below. You can download your PDF report here.", options: restartOption }],
     };
   } catch (error) {
-    return { state: { ...state, step: "in_interview", question: undefined, error: errorText(error) }, messages: [{ text: `Your answers were saved, but the final report is still processing: ${errorText(error)}`, options: [{ label: "Retry final report", value: "retry_report" }] }] };
+    return { state: { ...state, step: "in_interview", question: undefined, error: errorText(error) }, messages: [{ text: `Your answers were saved, but the final report is still processing: ${errorText(error)}`, options: [{ label: "Retry final report", value: "retry_report" }, ...exitOption] }] };
   }
 }
 

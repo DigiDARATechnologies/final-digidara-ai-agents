@@ -49,6 +49,10 @@ class InterviewLifecyclePolicyTests(unittest.TestCase):
 
         self.assertTrue(completion_progress(rows, 2)["complete"])
 
+    def test_completion_allows_more_answers_than_required(self):
+        rows = [{"is_followup": False, "verdict": "correct"} for _ in range(6)]
+        self.assertTrue(completion_progress(rows, 5)["complete"])
+
     def test_exit_transition_reports_the_actual_current_state(self):
         self.assertEqual(exit_transition("in_progress"), "exit")
         self.assertEqual(exit_transition("exited"), "already_exited")

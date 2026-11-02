@@ -1,4 +1,4 @@
-jest.mock('../../src/lib/learnerApi', () => ({ fetchLeaderboard: jest.fn(), setLeaderboardHidden: jest.fn() }));
+jest.mock('../../src/lib/learnerApi', () => ({ fetchLeaderboard: jest.fn(), fetchReadiness: jest.fn().mockResolvedValue({}), setLeaderboardHidden: jest.fn() }));
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Leaderboard, { TopPerformers } from '../../src/components/Leaderboard';
@@ -41,7 +41,7 @@ test('shows the top 3 podium, the newcomer in the spotlight first, and my rank',
 
 test('a student switches between my organization and the whole platform', async () => {
   render(<Leaderboard />);
-  expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto', undefined);
+  await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto', undefined));
   fireEvent.click(await screen.findByRole('tab', { name: 'Whole platform' }));
   await waitFor(() => expect(api.fetchLeaderboard).toHaveBeenLastCalledWith('platform', undefined));
 });
@@ -69,6 +69,20 @@ test('the chat home shows the top 3 of my organization, and opens the leaderboar
   expect(api.fetchLeaderboard).toHaveBeenCalledWith('auto');
   fireEvent.click(within(card).getByRole('button', { name: 'View leaderboard →' }));
   expect(onOpen).toHaveBeenCalled();
+});
+
+test('a staff member sees their staff score apart from their own job readiness', async () => {
+  api.fetchLeaderboard.mockResolvedValue(board({
+    group: 'staff', allowed_groups: ['staff'], allowed_scopes: ['organization'], total: 2,
+    top: [entry(1, 'Rubiking', 33, { is_me: true, staff: { students: 1, average_readiness: 4, active_percent: 100 } })],
+    entries: [entry(1, 'Rubiking', 33, { is_me: true, staff: { students: 1, average_readiness: 4, active_percent: 100 } })],
+    me: { rank: 1, score: 33, own_readiness: 84 },
+  }));
+  const { container } = render(<Leaderboard />);
+  await waitFor(() => expect(container.querySelector('.lb-foot')).toHaveTextContent('33 staff score'));
+  const footer = container.querySelector('.lb-foot') as HTMLElement;
+  expect(footer).toHaveTextContent('your own job readiness is 84 (not part of the staff score)');
+  expect(footer).not.toHaveTextContent('33 readiness');
 });
 
 test('admins can switch between the students and staff boards', async () => {

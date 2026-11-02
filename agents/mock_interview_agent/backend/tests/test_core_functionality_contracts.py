@@ -112,9 +112,10 @@ class FakeCursor:
                 "question_order": 3,
                 "question": "Existing question?",
                 "is_followup": 0,
+                "answer": getattr(self.connection, "current_answer", None),
             }
         if "real_question_index" in self.last_sql:
-            return {"real_question_index": 3}
+            return {"real_question_index": getattr(self.connection, "main_questions", 3)}
         return None
 
     def close(self):
@@ -161,6 +162,23 @@ class AtomicInterviewCreationTests(unittest.TestCase):
             "INSERT INTO interviews" in sql
             for sql, _ in connection.cursor_instance.statements
         ))
+
+    def test_an_answered_latest_question_waits_for_the_report_only_when_all_are_asked(self):
+        create_or_resume = None
+        for main_questions, awaiting, needs_next in ((3, False, True), (5, True, False)):
+            connection = FakeConnection(active_session=True)
+            connection.current_answer = "An answer."
+            connection.main_questions = main_questions
+            create_or_resume = load_db_function("create_or_resume_interview", lambda: connection)
+            result = create_or_resume(1, "technical", "React", "advanced", 5, "Unused?")
+            self.assertEqual(result["awaiting_report"], awaiting)
+            self.assertEqual(result["needs_next_question"], needs_next)
+        # Still on an unanswered question: a plain resume.
+        connection = FakeConnection(active_session=True)
+        create_or_resume = load_db_function("create_or_resume_interview", lambda: connection)
+        result = create_or_resume(1, "technical", "React", "advanced", 5, "Unused?")
+        self.assertFalse(result["awaiting_report"])
+        self.assertFalse(result["needs_next_question"])
 
     def test_questionless_replacement_rolls_back_old_status_and_new_rows(self):
         connection = FakeConnection(
