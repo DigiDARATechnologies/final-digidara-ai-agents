@@ -3,7 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { Logo } from "./components/Logo";
 import type { Agent, Chat, ChatMessage, ChatOption, User, View } from "./types";
 import { DEFAULT_AGENT, CANNED_REPLIES, findAgent, findAgentByBackendName } from "./data/agents";
-import { newChatId, nowStr, removeLegacyAptitudeLanguagePrompt, useChats } from "./hooks/useChats";
+import { mergeAccountChats, newChatId, nowStr, removeLegacyAptitudeLanguagePrompt, useChats } from "./hooks/useChats";
 import { useAgentStatePersistence } from "./hooks/useAgentStatePersistence";
 import {
   handleCapstoneText,
@@ -153,6 +153,9 @@ function ScreenLoading() {
   return <div className="pv-page" role="status" aria-live="polite"><div className="pv-inner"><p className="rd-muted">Loading…</p></div></div>;
 }
 
+// A tab the learner came back to shows the account's chats at most this often.
+const CHAT_REFRESH_MS = 60_000;
+
 export default function App() {
   // SkillDARA has one theme: light (white). There is no dark mode to switch to.
   const theme: Theme = "light";
@@ -282,7 +285,7 @@ export default function App() {
   const certificateTimeoutQuestionRef = useRef<string | null>(null);
   const certificateTabFailureSessionRef = useRef<string | null>(null);
 
-  const { loadChats, loadAccountChats, saveChats } = useChats(user?.email);
+  const { loadChats, loadAccountChats, refreshAccountChats, saveChats } = useChats(user?.email);
 
   // Notifications the student dismissed (remembered per account in this browser).
   const dismissedKey = `digidara_dismissed_notifs:${user?.email ?? ""}`;
@@ -445,12 +448,22 @@ export default function App() {
       const localChats = localResult.chats;
       setChats(localChats);
       loadAccountChats(localChats).then((accountChats) => {
-        if (!active || !accountChats) return;
+        if (!active) return;
+        if (!accountChats) {
+          showToast("Some of your chat history could not load. It is safe; it will load when you come back to this tab.");
+          return;
+        }
         const accountResult = removeLegacyAptitudeLanguagePrompt(accountChats);
-        setChats(accountResult.chats);
-        // Persist the migration so the obsolete prompt is not restored on the
-        // next sign-in or device sync. No other agent history is touched.
-        if (accountResult.changed) saveChats(accountResult.chats);
+        // Whatever happened while it loaded stays; everything else comes from the account.
+        setChats((prev) => {
+          const merged = mergeAccountChats(prev, accountResult.chats, localChats);
+          // Persist the migration so the obsolete prompt is not restored on the
+          // next sign-in or device sync. No other agent history is touched.
+          if (accountResult.changed) {
+            saveChats(merged, [], false, accountResult.chats.filter((chat, index) => chat !== accountChats[index]).map((chat) => chat.id));
+          }
+          return merged;
+        });
       });
     } else {
       setChats([]);
@@ -463,6 +476,29 @@ export default function App() {
     }
     return () => {
       active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
+
+  // Back to this tab, or back online: show what the account has now (a chat from
+  // another device, or history that could not load earlier).
+  useEffect(() => {
+    if (!user) return;
+    let lastRefresh = Date.now();
+    const refresh = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefresh < CHAT_REFRESH_MS) return;
+      lastRefresh = Date.now();
+      let baseline: Chat[] = [];
+      setChats((prev) => { baseline = prev; return prev; });
+      void refreshAccountChats().then((account) => {
+        if (account) setChats((prev) => mergeAccountChats(prev, account, baseline));
+      });
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", refresh);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
@@ -616,9 +652,21 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [currentChatId, certificateStates]);
 
-  function persistChats(next: Chat[]) {
-    setChats(next);
-    saveChats(next);
+  /** Every change starts from the chats as they are now, never from the list of
+   * an earlier render: that one can be missing chats. */
+  function persistChats(update: (prev: Chat[]) => Chat[], rewrites: string[] = []) {
+    setChats((prev) => {
+      const next = update(prev);
+      saveChats(next, [], false, rewrites);
+      return next;
+    });
+  }
+
+  /** Adds a chat, or replaces it when it is already there. `edited`: the learner
+   * edited a message, so the chat may end up shorter than the saved one. */
+  function putChat(chat: Chat, edited = false) {
+    persistChats((prev) => (prev.some((c) => c.id === chat.id) ? prev.map((c) => (c.id === chat.id ? chat : c)) : [...prev, chat]),
+      edited ? [chat.id] : []);
   }
 
   // Name each agent chat after what it is about once that is known
@@ -630,15 +678,12 @@ export default function App() {
       aptitude: aptitudeStates, capstone: capstoneStates, certificate: certificateStates, codeforge: codeforgeStates,
       communication: communicationStates, mockInterview: mockInterviewStates, resumeBuilder: resumeBuilderStates,
     };
-    let changed = false;
-    const named = chats.map((chat) => {
+    const named = (chat: Chat) => {
       const agent = findAgent(chat.agentId);
       const update = nextChatTitle(chat, agent, autoChatTitle(agent, chat.id, states));
-      if (!update) return chat;
-      changed = true;
-      return { ...chat, ...update };
-    });
-    if (changed) persistChats(named);
+      return update ? { ...chat, ...update } : chat;
+    };
+    if (chats.some((chat) => named(chat) !== chat)) persistChats((prev) => prev.map(named));
     // persistChats is recreated each render; the effect reacts to the data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, aptitudeStates, capstoneStates, certificateStates, codeforgeStates, communicationStates, mockInterviewStates, resumeBuilderStates]);
@@ -646,11 +691,11 @@ export default function App() {
   function handleRenameChat(chatId: string, title: string) {
     const trimmed = title.trim();
     if (!trimmed) return;
-    persistChats(chats.map((c) => (c.id === chatId ? { ...c, title: trimmed, titleSource: "manual" as const, updatedAt: Date.now() } : c)));
+    persistChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title: trimmed, titleSource: "manual" as const, updatedAt: Date.now() } : c)));
   }
 
   function handleTogglePinChat(chatId: string) {
-    persistChats(chats.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned, updatedAt: Date.now() } : c)));
+    persistChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned, updatedAt: Date.now() } : c)));
   }
 
   async function handleDeleteChat(chatId: string) {
@@ -663,7 +708,11 @@ export default function App() {
         return;
       }
     }
-    persistChats(chats.filter((c) => c.id !== chatId));
+    setChats((prev) => {
+      const next = prev.filter((c) => c.id !== chatId);
+      saveChats(next, [chatId]);
+      return next;
+    });
     setResumeBuilderStates((prev) => {
       const next = { ...prev };
       delete next[chatId];
@@ -1085,7 +1134,7 @@ export default function App() {
       messages: [{ role: "agent", text: agent.greeting, time: nowStr() }],
       updatedAt: Date.now(),
     };
-    persistChats([...chats, chat]);
+    putChat(chat);
     setCurrentChatId(chat.id);
     setNewChatPending(false);
     setTyping(false);
@@ -1093,7 +1142,7 @@ export default function App() {
       const initialState = createInitialCapstoneState(user);
       const welcome = initialCapstoneMessage(user);
       chat.messages = [{ role: "agent", text: welcome.text, options: welcome.options, time: nowStr() }];
-      persistChats([...chats, chat]);
+      putChat(chat);
       setCapstoneStates((prev) => ({ ...prev, [chat.id]: initialState }));
       setDashboardOpen(false);
     } else if (agent.kind === "codeforge") {
@@ -1284,7 +1333,7 @@ export default function App() {
       updatedAt: Date.now(),
     };
     startVoiceGreeting();
-    persistChats([...chats, chat]);
+    putChat(chat);
     setCurrentChatId(chat.id);
     setNewChatPending(false);
     setTyping(false);
@@ -1300,7 +1349,7 @@ export default function App() {
       messages: [{ role: "user", text: trimmed, time: nowStr() }],
       updatedAt: Date.now(),
     };
-    persistChats([...chats, chat]);
+    putChat(chat);
     setCurrentChatId(chat.id);
     setNewChatPending(false);
     setTyping(true);
@@ -1448,7 +1497,8 @@ export default function App() {
         title: isFirstUserMsg ? (effectiveText.length > 42 ? effectiveText.slice(0, 42) + "…" : effectiveText) : c.title,
       };
     });
-    persistChats(withUserMsg);
+    const withMessage = withUserMsg.find((c) => c.id === chatId);
+    if (withMessage) putChat(withMessage, isEdit);
     setTyping(true);
 
     // The Conductor: when the learner types instead of tapping a choice, it
@@ -1921,7 +1971,10 @@ export default function App() {
         return;
       }
     }
-    persistChats([]);
+    setChats((prev) => {
+      saveChats([], prev.map((c) => c.id), true);
+      return [];
+    });
     setCapstoneStates({});
     setCodeforgeStates({});
     setAptitudeStates({});

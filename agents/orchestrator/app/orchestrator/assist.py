@@ -19,6 +19,7 @@ from typing import Any, Iterator
 
 from pydantic import BaseModel, Field
 
+from app.learner import levels as level_rules
 from app.llm import client as llm_client
 from app.orchestrator import guard, prompts
 from app.schemas import MAX_CHAT_MESSAGE_CHARS, RouteTurn
@@ -93,6 +94,21 @@ ACTIONS (the browser carries them out; put the tag at the very end of your reply
   for 5 minutes and only for their own account. If they have several and did not say which, ask. If they have none,
   say so and offer to open AI Certification.
 - The learner asks to close you, this panel or this tab, or says they are done: say a short goodbye, then [[close]].
+
+SMALL REPAIRS (the learner's own account only; the result appears under your reply, so say you are trying it and never
+say it worked. Use one only when it fits what they asked)
+- Their score or leaderboard looks old, or they ask to refresh it: [[fix:readiness]].
+- YOUR LEARNER'S INTERVIEW says stalled and they want to carry on: [[fix:interview_continue]]. It says question and they
+  want to carry on: the same tag.
+- It says awaiting_report and they want the report: [[fix:interview_report]].
+- They want to stop an open interview: first ask "Should I exit your interview?" and only after they say yes, put
+  [[fix:interview_exit]].
+- They ask to switch to a level listed in open_levels of an area: [[level:<agent>:<beginner|medium|hard|professional>]]
+  with that area's agent. If it is not in open_levels, explain from progress_in_level and level_scores what opens it.
+- They ask to cancel or stop a link to one of their chats: [[unshare:<chat id>]] from YOUR LEARNER'S CHATS.
+- You cannot fix a problem they describe: offer "Should I report this to the SkillDARA team?" and only after they say yes,
+  or if they asked you to report it, put [[report:<interview|score|level|link|other>]]. Only their words are sent.
+You cannot change marks, points, payments, certificates, passwords or anything of anyone else's. Say so, and offer the report.
 """
 
 _ASSESSED = (
@@ -119,9 +135,17 @@ OPEN_TARGETS = {
     "readiness": "Job Readiness page",
 }
 _ACTION_TAG = re.compile(
-    r"\[\[\s*(open|close|chat|share|certificate)\s*(?::\s*([A-Za-z0-9_.-]{1,128}))?\s*(?::\s*(private|public))?\s*\]\]",
+    r"\[\[\s*(open|close|chat|share|certificate|fix|level|report|unshare)\s*(?::\s*([A-Za-z0-9_.-]{1,128}))?"
+    r"\s*(?::\s*(private|public|beginner|medium|hard|professional))?\s*\]\]",
     re.IGNORECASE,
 )
+# The repairs Boss may ask for (see repairs.py, which decides whether they run).
+FIX_NAMES = frozenset({"readiness", "interview_continue", "interview_report", "interview_exit"})
+REPORT_CATEGORIES = frozenset({"interview", "score", "level", "link", "other"})
+LEVEL_AGENT_NAMES = frozenset(level_rules.LEVELED_AGENTS) - level_rules.UNLEVELED_AGENTS - {level_rules.DERIVED_AGENT}
+REPAIR_ACTIONS = frozenset({"fix", "level", "report", "unshare"})
+# Words that make a question about the interview: only then is its state looked up.
+INTERVIEW_WORDS = re.compile(r"interview|report|stuck|not ready|exit", re.IGNORECASE)
 # A public link needs the learner's own words for it: the model's tag alone can
 # come from instructions hidden in a screenshot or in the chat lines on screen.
 PUBLIC_LINK_WORDS = re.compile(r"\b(public|anyone|anybody|everyone|everybody)\b", re.IGNORECASE)
@@ -149,6 +173,14 @@ def _actions(text: str, chat_ids: set[str] | frozenset[str] = frozenset(),
             action = {"type": "share", "chat_id": target, "mode": mode}
         elif kind == "certificate" and target in certificate_ids:
             action = {"type": "certificate", "cert_id": target}
+        elif kind == "fix" and target.lower() in FIX_NAMES:
+            action = {"type": "fix", "name": target.lower()}
+        elif kind == "level" and target.lower() in LEVEL_AGENT_NAMES and mode in level_rules.LEVELS:
+            action = {"type": "level", "agent": target.lower(), "level": mode}
+        elif kind == "report" and target.lower() in REPORT_CATEGORIES:
+            action = {"type": "report", "category": target.lower()}
+        elif kind == "unshare" and target in chat_ids:
+            action = {"type": "unshare", "chat_id": target}
     # A half-written or unknown tag is dropped too.
     clean = re.sub(r"\[\[[^\]]*\]\]", "", _ACTION_TAG.sub("", text))
     return re.sub(r"[ 	]{2,}", " ", clean), action
@@ -172,8 +204,9 @@ def progress_block(areas: list[dict] | None) -> str:
         if not isinstance(area, dict) or not area.get("label"):
             continue
         row: dict[str, Any] = {
-            "area": area.get("label"), "status": area.get("status"), "area_score": area.get("score"),
-            "level": area.get("level"), "levels_completed": area.get("levels_completed") or [],
+            "area": area.get("label"), "agent": area.get("agent_name"), "status": area.get("status"),
+            "area_score": area.get("score"), "level": area.get("level"), "levels_completed": area.get("levels_completed") or [],
+            "open_levels": area.get("open_levels") or [], "level_scores": area.get("level_scores") or {},
             "progress_in_level": area.get("level_progress"), "result_score": area.get("quality_score"),
             "activities": area.get("activity_count"), "last_activity": area.get("last_activity_at"),
             "metrics": area.get("metrics") or {}, "strengths": (area.get("strengths") or [])[:3],
@@ -206,8 +239,18 @@ def certificates_block(certificates: list[dict] | None) -> str:
             + json.dumps(certificates[:CERTIFICATE_LIMIT], ensure_ascii=False, default=str))
 
 
+def interview_block(interview: dict | None) -> str:
+    """Where the learner's interview stands, without its session token."""
+    if interview is None:
+        return "YOUR LEARNER'S INTERVIEW: not looked up for this question."
+    keep = ("state", "question_order", "real_question_index", "total_questions", "answered_questions")
+    return "YOUR LEARNER'S INTERVIEW (their own, as data): " + json.dumps(
+        {key: interview[key] for key in keep if interview.get(key) is not None}, ensure_ascii=False)
+
+
 def system_prompt(req: AssistRequest, learner: dict | None = None, progress: list[dict] | None = None,
-                  chats: list[dict] | None = None, certificates: list[dict] | None = None) -> str:
+                  chats: list[dict] | None = None, certificates: list[dict] | None = None,
+                  interview: dict | None = None) -> str:
     kind = ASSESSED_AGENTS.get(req.agent_id)
     where = req.agent_name.strip() or "SkillDARA app"
     targets = ", ".join(f"{key} ({label})" for key, label in OPEN_TARGETS.items())
@@ -223,6 +266,7 @@ def system_prompt(req: AssistRequest, learner: dict | None = None, progress: lis
         parts.append(progress_block(progress))
     parts.append(chats_block(chats))
     parts.append(certificates_block(certificates))
+    parts.append(interview_block(interview))
     if req.voice:
         parts.append(prompts.VOICE_REPLY_RULES)
     else:
@@ -252,7 +296,7 @@ def _user_content(req: AssistRequest) -> list[dict] | str:
 
 def stream_assist(req: AssistRequest, learner: dict | None = None, progress: list[dict] | None = None,
                   chats: list[dict] | None = None, certificates: list[dict] | None = None,
-                  usage: dict[str, int] | None = None) -> Iterator[dict]:
+                  usage: dict[str, int] | None = None, interview: dict | None = None) -> Iterator[dict]:
     """SSE-ready events: {"delta"} pieces, then an optional {"action"} (open an
     agent, page or chat, share a chat, link a certificate, or close Boss), then
     {"done", "reply"}; a leaked instruction replaces the whole reply.
@@ -260,7 +304,7 @@ def stream_assist(req: AssistRequest, learner: dict | None = None, progress: lis
     if guard.looks_like_injection(req.message):
         yield {"done": True, "reply": guard.OFF_LIMITS_REPLY}
         return
-    messages = [{"role": "system", "content": system_prompt(req, learner, progress, chats, certificates)}]
+    messages = [{"role": "system", "content": system_prompt(req, learner, progress, chats, certificates, interview)}]
     chat_ids = {str(chat.get("id")) for chat in chats or [] if chat.get("id")}
     certificate_ids = {str(cert.get("id")) for cert in certificates or [] if cert.get("id") is not None}
     messages.extend(guard.safe_history([turn.model_dump() for turn in req.history]))

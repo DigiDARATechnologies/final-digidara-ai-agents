@@ -202,3 +202,42 @@ def test_the_org_assistant_changes_nothing_in_a_turn_that_read_a_learners_text(m
     asyncio.run(tools.call("read_learner_chat", {"learner": "L", "chat_title": "T"}))
     refused = asyncio.run(tools.call("create_join_code", {}))
     assert "Nothing was changed" in refused and done == ["created"]
+
+
+def test_only_repairs_from_the_list_become_actions():
+    _, action = assist._actions("Checking. [[fix:readiness]]")
+    assert action == {"type": "fix", "name": "readiness"}
+    _, action = assist._actions("[[level:codeforge_agent:hard]]")
+    assert action == {"type": "level", "agent": "codeforge_agent", "level": "hard"}
+    _, action = assist._actions("[[report:interview]]")
+    assert action == {"type": "report", "category": "interview"}
+    assert assist._actions("[[unshare:c1]]", {"c1"})[1] == {"type": "unshare", "chat_id": "c1"}
+    # Not on the list, or not this learner's: the tag is dropped and nothing happens.
+    for tag in ("[[fix:give_points]]", "[[fix:delete_account]]", "[[level:resume_builder_agent:hard]]",
+                "[[level:job_agent:hard]]", "[[level:codeforge_agent:public]]", "[[report:hack]]", "[[unshare:someone-elses]]"):
+        clean, action = assist._actions(f"Done {tag}", {"c1"})
+        assert action is None and "[[" not in clean
+
+
+def test_a_repair_runs_for_the_signed_in_learner_and_its_result_reaches_the_browser(api, monkeypatch):  # noqa: F811
+    from app.orchestrator import repairs
+
+    _mount(api)
+    seen = {}
+
+    async def fake_run(user, action, message, history, agent_id=""):
+        seen.update(user=user.id, action=action, message=message)
+        return {"type": "repair", "name": "readiness", "ok": True, "text": "Checked."}
+
+    monkeypatch.setattr(repairs, "run", fake_run)
+    monkeypatch.setattr(llm_client, "stream_plain", lambda *a, **k: iter(["Trying that now. ", "[[fix:readiness]]"]))
+    response = api.post("/chat/assist/stream", headers=auth(), json={"message": "My score looks old"})
+    events = _events(response)
+    assert seen == {"user": "learner", "action": {"type": "fix", "name": "readiness"}, "message": "My score looks old"}
+    assert {"action": {"type": "repair", "name": "readiness", "ok": True, "text": "Checked."}} in events
+    assert "[[" not in events[-1]["reply"]
+
+
+def test_the_interview_session_token_never_reaches_the_model():
+    block = assist.interview_block({"state": "stalled", "token": "secret-token", "answered_questions": 3, "total_questions": 5})
+    assert "secret-token" not in block and '"stalled"' in block

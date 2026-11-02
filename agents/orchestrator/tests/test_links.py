@@ -127,3 +127,36 @@ def test_an_unreported_usage_is_estimated_so_a_call_is_never_free():
     assert usage["tokens"] == 200
     llm_client.record_usage(usage, type("U", (), {"total_tokens": 50})(), [], "")
     assert usage["tokens"] == 250
+
+
+def test_a_public_link_expires_and_a_new_one_can_be_made_and_the_owner_can_cancel(api):  # noqa: F811
+    from datetime import timedelta
+
+    import pytest
+
+    from app import db
+    from app.models import ChatShareLink
+
+    _setup(api)
+    made = links_service.create_chat_link("learner", "chat-mine-1", "public")
+    token = made["path"].rsplit("/", 1)[1]
+    assert made["expires_at"] and links_service.read_shared_chat(token, "friend")["mode"] == "public"
+    # Only the owner can cancel, and someone else cannot tell the link exists.
+    with pytest.raises(links_service.LinkError) as refused:
+        links_service.cancel_chat_link(token, "friend")
+    assert refused.value.status == 404
+    # Past its days: closed to others, and asking again gives a fresh link.
+    session = db.get_session()
+    session.get(ChatShareLink, token).created_at -= timedelta(days=links_service.PUBLIC_LINK_DAYS + 1)
+    session.commit()
+    session.close()
+    with pytest.raises(links_service.LinkError) as expired:
+        links_service.read_shared_chat(token, "friend")
+    assert expired.value.status == 410
+    assert links_service.read_shared_chat(token, "learner")["is_owner"] is True
+    fresh = links_service.create_chat_link("learner", "chat-mine-1", "public")["path"].rsplit("/", 1)[1]
+    assert fresh != token and links_service.read_shared_chat(fresh, "friend")["mode"] == "public"
+    links_service.cancel_chat_link(fresh, "learner")
+    with pytest.raises(links_service.LinkError) as gone:
+        links_service.read_shared_chat(fresh, "friend")
+    assert gone.value.status == 404

@@ -37,6 +37,16 @@ def open_chat_link(token: str, request: Request, user_id: str = Depends(get_veri
         raise HTTPException(exc.status, exc.message) from exc
 
 
+@router.delete("/links/chat/{token}")
+@limiter.limit("20/minute")
+def cancel_chat_link(token: str, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:
+    try:
+        service.cancel_chat_link(token, user_id)
+    except service.LinkError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    return {"cancelled": True}
+
+
 @router.get("/links/certificate/{token}")
 @limiter.limit("30/minute")
 def check_certificate_link(token: str, request: Request, user_id: str = Depends(get_verified_user_id)) -> dict:

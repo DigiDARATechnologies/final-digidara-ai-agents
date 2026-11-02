@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { checkCertificateLink, downloadCertificateLink, openSharedChat, type SharedChat, type SharedLink } from "../lib/linksApi";
+import { cancelSharedChat, checkCertificateLink, downloadCertificateLink, openSharedChat, type SharedChat, type SharedLink } from "../lib/linksApi";
 import { renderMessageText } from "../lib/messageText";
 
 interface Props {
@@ -21,6 +21,7 @@ export default function SharedLinkView({ link, onClose, onOpenOwnChat }: Props) 
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -59,6 +60,16 @@ export default function SharedLinkView({ link, onClose, onOpenOwnChat }: Props) 
     }
   }
 
+  async function cancel() {
+    setError("");
+    try {
+      await cancelSharedChat(link.token);
+      setCancelled(true);
+    } catch (failure) {
+      setError((failure as Error).message);
+    }
+  }
+
   const title = link.kind === "certificate" ? "Your certificate" : chat?.title || "Shared chat";
   return (
     <div className="modal-overlay open" onClick={(event) => event.target === event.currentTarget && onClose()}>
@@ -83,8 +94,8 @@ export default function SharedLinkView({ link, onClose, onOpenOwnChat }: Props) 
           {chat && (
             <>
               <p className="shared-link-note">
-                {chat.is_owner
-                  ? chat.mode === "public" ? "Your chat, shared with a public link (any signed-in SkillDARA account can open it)."
+                {cancelled ? "This link is cancelled. It no longer opens for anyone." : chat.is_owner
+                  ? chat.mode === "public" ? `Your chat, shared with a public link (any signed-in SkillDARA account can open it${chat.expires_at ? ` until ${new Date(chat.expires_at).toLocaleDateString()}` : ""}).`
                     : "Your chat. This private link opens only for your account."
                   : `Shared by ${chat.owner_name || "a SkillDARA learner"}. Read only.`}
               </p>
@@ -97,6 +108,9 @@ export default function SharedLinkView({ link, onClose, onOpenOwnChat }: Props) 
                 ))}
                 {chat.messages.length === 0 && <p className="shared-link-note">This chat has no messages yet.</p>}
               </div>
+              {chat.is_owner && !cancelled && (
+                <button type="button" className="btn btn-outline" onClick={() => void cancel()}>Cancel this link</button>
+              )}
               {chat.is_owner && chat.chat_id && onOpenOwnChat && (
                 <button type="button" className="btn btn-primary" onClick={() => onOpenOwnChat(chat.chat_id!)}>Open this chat</button>
               )}

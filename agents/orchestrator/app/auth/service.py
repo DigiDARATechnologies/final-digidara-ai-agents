@@ -6,7 +6,7 @@ from app.billing.plans import points_for_tokens
 from app.agent_state import service as agent_state_service
 from app.chat_history import service as chat_history_service
 from app.db import get_session
-from app.models import Payment, User
+from app.models import BossIssueReport, Payment, User
 
 
 def get_by_email(email: str) -> User | None:
@@ -126,7 +126,19 @@ def _purge_phase2(user_id: str) -> None:
     session = get_session()
     try:
         session.query(A2ATask).filter_by(user_id=user_id).delete()
+        session.query(BossIssueReport).filter_by(user_id=user_id).delete()
         session.commit()
+    finally:
+        session.close()
+
+
+def _boss_reports(user_id: str) -> list[dict]:
+    """The problems this learner asked Boss to report to the team."""
+    session = get_session()
+    try:
+        rows = session.query(BossIssueReport).filter_by(user_id=user_id).order_by(BossIssueReport.created_at).all()
+        return [{"category": r.category, "agent_id": r.agent_id, "message": r.message, "created_at": r.created_at.isoformat()}
+                for r in rows]
     finally:
         session.close()
 
@@ -145,6 +157,7 @@ def _export_phase2(user_id: str) -> dict:
         "organization": org_service.export_data(user_id),
         "memory": memory_service.list_for(user_id),
         "boss_memory": boss_memory.export(user_id),
+        "boss_reports": _boss_reports(user_id),
         "career_plan": coach_service.get(user_id),
     }
 

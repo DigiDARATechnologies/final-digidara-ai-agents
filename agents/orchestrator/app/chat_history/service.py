@@ -1,3 +1,4 @@
+import logging
 import time
 from datetime import datetime
 
@@ -13,6 +14,12 @@ from app.models import ChatHistoryState, Conversation, ConversationArchive, Conv
 # simply retried from scratch -- neither side did anything wrong.
 _DEADLOCK_ERRNOS = {1205, 1213}
 _MAX_ATTEMPTS = 3
+# A learner deletes chats one at a time; clearing all of them says so (clear_all).
+# More in one sync than this is an out-of-date browser working out "deleted" from
+# a partial list, not a learner's choice, so it is ignored.
+MAX_DELETES_PER_SYNC = 5
+
+logger = logging.getLogger(__name__)
 
 
 def _is_retryable_deadlock(exc: OperationalError) -> bool:
@@ -76,7 +83,32 @@ def get_history(user_id: str) -> tuple[list[dict], bool]:
         session.close()
 
 
-def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _attempt: int = 1) -> list[dict]:
+def _archive(session, user_id: str, chat_id: str, title: str, stored: list[ConversationMessage]) -> None:
+    """Keeps a chat's messages before they are replaced or removed."""
+    session.add(ConversationArchive(
+        user_id=user_id, conversation_id=chat_id, title=title,
+        messages=[{**(m.message_metadata or {}), "role": m.role, "text": m.content,
+                   "time": m.display_time} for m in stored],
+    ))
+
+
+def _message_row(user_id: str, chat_id: str, position: int, message: dict) -> ConversationMessage:
+    return ConversationMessage(
+        conversation_id=chat_id,
+        user_id=user_id,
+        position=position,
+        role=message["role"],
+        content=message["text"],
+        display_time=message["time"],
+        message_metadata={key: value for key, value in message.items() if key not in {"role", "text", "time"}},
+    )
+
+
+def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, clear_all: bool = False,
+                 rewrites: frozenset[str] | set[str] = frozenset(), _attempt: int = 1) -> list[dict]:
+    if len(set(deleted_ids)) > MAX_DELETES_PER_SYNC and not clear_all:
+        logger.warning("chat sync: ignored %d deletions in one sync user=%s", len(set(deleted_ids)), user_id)
+        deleted_ids = []
     session = get_session()
     should_retry = False
     try:
@@ -112,6 +144,10 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
             else:
                 stored = stored_messages.get(chat_id, [])
                 stored_said, incoming_said = _said(stored), _said(chat["messages"])
+                # Every save sends every chat: an unchanged one is not written
+                # again (rewriting them all made saves slow and collide).
+                if incoming_updated_at == row.updated_at_ms and row.deleted_at is None and stored_said == incoming_said:
+                    continue
                 row.agent_id = chat["agentId"]
                 row.title = chat["title"]
                 row.pinned = bool(chat.get("pinned", False))
@@ -124,34 +160,26 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
                     # saved before a failed sync): it never cuts off the newer
                     # messages the server already has.
                     continue
+                if len(incoming_said) < len(stored_said) and chat_id not in rewrites:
+                    # An out-of-date copy that went on from an earlier point (a
+                    # second tab, or a browser with an old copy). Only an edit
+                    # says it rewrites a chat, so nothing here replaces the
+                    # server's messages: what it added goes after them.
+                    common = next((i for i, said in enumerate(incoming_said) if said != stored_said[i]), len(incoming_said))
+                    for offset, message in enumerate(chat["messages"][common:]):
+                        session.add(_message_row(user_id, chat_id, len(stored) + offset, message))
+                    continue
                 if stored_said[:len(stored_said)] != incoming_said[:len(stored_said)]:
                     # A rewrite (an edited message): the replaced messages are
                     # archived, never lost.
-                    session.add(ConversationArchive(
-                        user_id=user_id, conversation_id=chat_id, title=row.title,
-                        messages=[{**(m.message_metadata or {}), "role": m.role, "text": m.content,
-                                   "time": m.display_time} for m in stored],
-                    ))
+                    _archive(session, user_id, chat_id, row.title, stored)
                 session.query(ConversationMessage).filter_by(
                     conversation_id=chat_id,
                     user_id=user_id,
                 ).delete(synchronize_session=False)
 
             for position, message in enumerate(chat["messages"]):
-                metadata = {
-                    key: value
-                    for key, value in message.items()
-                    if key not in {"role", "text", "time"}
-                }
-                session.add(ConversationMessage(
-                    conversation_id=chat_id,
-                    user_id=user_id,
-                    position=position,
-                    role=message["role"],
-                    content=message["text"],
-                    display_time=message["time"],
-                    message_metadata=metadata,
-                ))
+                session.add(_message_row(user_id, chat_id, position, message))
 
         deleted_at = datetime.utcnow()
         deleted_at_ms = int(time.time() * 1000)
@@ -159,6 +187,9 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
             row = existing.get(chat_id)
             if row is None:
                 continue
+            # Kept, so a chat removed by mistake can still be brought back.
+            if stored_messages.get(chat_id):
+                _archive(session, user_id, chat_id, row.title, stored_messages[chat_id])
             row.deleted_at = deleted_at
             row.updated_at = deleted_at
             row.updated_at_ms = max(deleted_at_ms, row.updated_at_ms + 1)
@@ -188,7 +219,7 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, _at
     finally:
         session.close()
     if should_retry:
-        return sync_history(user_id, chats, deleted_ids, _attempt=_attempt + 1)
+        return sync_history(user_id, chats, deleted_ids, clear_all=clear_all, rewrites=rewrites, _attempt=_attempt + 1)
     return get_history(user_id)[0]
 
 

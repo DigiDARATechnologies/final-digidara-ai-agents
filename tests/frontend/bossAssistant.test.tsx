@@ -262,6 +262,30 @@ test('"close the tab" closes Boss, and "Hey Boss" opens it again', async () => {
   expect(screen.getByRole('dialog')).toBeTruthy();
 });
 
+test('a repair Boss tried shows its real result and can open where it leads', async () => {
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Trying that now.');
+    onAction({ type: 'repair', name: 'interview_continue', ok: false, text: 'I could not prepare your next question just now.' });
+    return 'Trying that now.';
+  });
+  openBoss();
+  await ask('continue my interview');
+  const note = await screen.findByRole('status');
+  expect(note.textContent).toBe('I could not prepare your next question just now.');
+  expect(note.className).toContain('failed');
+});
+
+test('a public link says until when it opens and that it can be cancelled', async () => {
+  mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
+    onText('Here is your public link.');
+    onAction({ type: 'link', kind: 'chat', mode: 'public', path: '/shared/chat/abcDEF1234567890', title: 'Practice', expires_at: Date.UTC(2026, 11, 2) });
+    return 'Here is your public link.';
+  });
+  openBoss();
+  await ask('make a public link');
+  expect(await screen.findByText(/Public link: anyone signed in to SkillDARA can open it until .*Ask me to cancel it any time\./)).toBeTruthy();
+});
+
 test('a link Boss makes shows with who can open it and a copy button', async () => {
   mockAssist.mockImplementationOnce(async (_r: unknown, onText: (t: string) => void, _s: unknown, onAction: (a: unknown) => void) => {
     onText('Here is your private link.');

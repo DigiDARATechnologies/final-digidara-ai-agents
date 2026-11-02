@@ -183,7 +183,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
           <div><dt>Requested Topic</dt><dd>{state.topicSeed ?? "Not set"}</dd></div>
           <div><dt>Topic</dt><dd>{state.chosenTopic?.title ?? "Not selected"}</dd></div>
           <div><dt>Deadline</dt><dd>{state.deadlineAt ? new Date(state.deadlineAt).toLocaleString() : "Not started"}</dd></div>
-          <div><dt>Files</dt><dd>{state.docxFile || state.zipFile ? `${state.docxFile ? "Report " : ""}${state.zipFile ? "Source" : ""}` : "Not uploaded"}</dd></div>
+          <div><dt>Files</dt><dd>{state.docxFile || state.zipFile ? `${state.docxFile ? "Report " : ""}${state.zipFile ? "Source" : ""}` : state.finalScore != null ? "Submitted" : "Not uploaded"}</dd></div>
         </dl>
       </div>
 
@@ -229,7 +229,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
           )}
         </div>
       )}
-      {state.revisionNotes && <div className="dashboard-alert"><strong>Revision Requested</strong><p>{state.revisionNotes}</p></div>}
+      {state.revisionNotes && !state.passed && <div className="dashboard-alert"><strong>Revision Requested</strong><p>{state.revisionNotes}</p></div>}
     </aside>
   );
 }

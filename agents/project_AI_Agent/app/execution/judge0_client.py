@@ -66,6 +66,24 @@ def _auth_headers() -> dict[str, str]:
     return headers
 
 
+def _python_launcher(code_files: dict[str, str], entry_point: str) -> str:
+    """Judge0 runs the program as /box/script.py, in the top folder. A project
+    whose entry is in a folder (src/main.py, as in our own example project) then
+    could not import the files beside it: every such project failed with
+    ModuleNotFoundError, however correct. This runs the entry as `python
+    src/main.py` would, from the project's own top folder."""
+    top = entry_point.split("/", 1)[0]
+    project = top if all(path.startswith(f"{top}/") for path in code_files) else ""
+    return (
+        "import os, runpy, sys\n"
+        f"entry = os.path.abspath({entry_point!r})\n"
+        "sys.path.insert(0, os.path.dirname(entry))\n"
+        f"os.chdir({project!r} or '.')\n"
+        "sys.argv = [entry]\n"
+        "runpy.run_path(entry, run_name='__main__')\n"
+    )
+
+
 def _run_submission(language_id: int, code_files: dict[str, str], entry_point: str, node: bool = False) -> dict:
     """Submits `entry_point` as the program and every other file as
     `additional_files` (Judge0 extracts these into the same working
@@ -126,7 +144,11 @@ def _run_submission(language_id: int, code_files: dict[str, str], entry_point: s
 
 
 def run_python_submission(code_files: dict[str, str], entry_point: str) -> dict:
-    result = _run_submission(PYTHON3_LANGUAGE_ID, code_files, entry_point)
+    if "/" in entry_point:
+        launcher = "__digidara_run__.py"
+        result = _run_submission(PYTHON3_LANGUAGE_ID, {**code_files, launcher: _python_launcher(code_files, entry_point)}, launcher)
+    else:
+        result = _run_submission(PYTHON3_LANGUAGE_ID, code_files, entry_point)
     result["entry_point"] = entry_point
     return result
 

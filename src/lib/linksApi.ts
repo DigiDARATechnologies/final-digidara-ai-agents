@@ -16,6 +16,8 @@ export interface SharedChat {
   owner_name: string;
   /** The owner's own chat id (only for the owner), to open it in their chat list. */
   chat_id: string | null;
+  /** Public links: when the link stops opening for others (ms since 1970). */
+  expires_at?: number | null;
   messages: Array<{ role: string; text: string; time: string }>;
 }
 
@@ -40,6 +42,11 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 
 export async function openSharedChat(token: string): Promise<SharedChat> {
   return (await request(`/links/chat/${encodeURIComponent(token)}`)).json();
+}
+
+/** The owner cancels a chat link: it no longer opens for anyone. */
+export async function cancelSharedChat(token: string): Promise<void> {
+  await request(`/links/chat/${encodeURIComponent(token)}`, { method: "DELETE" });
 }
 
 /** Whether this account can download with the certificate link (throws with the reason if not). */

@@ -244,9 +244,74 @@ def test_an_edited_chat_keeps_the_replaced_messages_in_the_archive(history_clien
                         {"role": "agent", "text": "first answer", "time": "10:00 AM"}]
     client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
     edited = {**chat, "messages": [{"role": "user", "text": "edited question", "time": "10:01 AM"}], "updatedAt": chat["updatedAt"] + 1}
-    saved = client.put("/chats/sync", json={"chats": [edited], "deleted_ids": []}).json()["chats"][0]
+    saved = client.put("/chats/sync", json={"chats": [edited], "deleted_ids": [], "rewrites": [chat["id"]]}).json()["chats"][0]
     assert [m["text"] for m in saved["messages"]] == ["edited question"]
     session = database()
     archived = session.query(ConversationArchive).filter_by(user_id=user_a_id, conversation_id=chat["id"]).one()
     session.close()
     assert [m["text"] for m in archived.messages] == ["first question", "first answer"]
+
+
+def _chats(count, updated=1000):
+    return [{**sample_chat(), "id": f"bulk-{n}", "title": f"Chat {n}", "updatedAt": updated} for n in range(count)]
+
+
+def test_an_out_of_date_browser_cannot_delete_many_chats_at_once(history_client):
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    chats = _chats(8)
+    client.put("/chats/sync", json={"chats": chats, "deleted_ids": []})
+    # An old tab that worked out "deleted" from a partial list.
+    left = client.put("/chats/sync", json={"chats": chats[:1], "deleted_ids": [c["id"] for c in chats[1:]]})
+    assert {c["id"] for c in left.json()["chats"]} == {c["id"] for c in chats}
+    # The learner's own "clear all history" still clears everything.
+    cleared = client.put("/chats/sync", json={"chats": [], "deleted_ids": [c["id"] for c in chats], "clear_all": True})
+    assert cleared.json()["chats"] == []
+
+
+def test_a_deleted_chat_keeps_its_messages_in_the_archive(history_client, database):
+    from app.models import ConversationArchive
+
+    client, _current_user, user_a_id, _user_b_id = history_client
+    chat = sample_chat()
+    chat["messages"] = [{"role": "user", "text": "keep me", "time": "10:00 AM"}]
+    client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
+    assert client.put("/chats/sync", json={"chats": [], "deleted_ids": [chat["id"]]}).json()["chats"] == []
+    session = database()
+    archived = session.query(ConversationArchive).filter_by(user_id=user_a_id, conversation_id=chat["id"]).one()
+    session.close()
+    assert [m["text"] for m in archived.messages] == ["keep me"]
+
+
+def test_saving_again_does_not_rewrite_an_unchanged_chat(history_client, database):
+    from app.models import ConversationMessage
+
+    client, _current_user, user_a_id, _user_b_id = history_client
+    chat = sample_chat()
+    client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
+    session = database()
+    before = [m.id for m in session.query(ConversationMessage).filter_by(user_id=user_a_id).all()]
+    session.close()
+    client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
+    session = database()
+    assert [m.id for m in session.query(ConversationMessage).filter_by(user_id=user_a_id).all()] == before
+    session.close()
+
+
+def test_a_partial_list_from_a_browser_never_removes_the_other_chats(history_client):
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    chats = _chats(3)
+    client.put("/chats/sync", json={"chats": chats, "deleted_ids": []})
+    left = client.put("/chats/sync", json={"chats": chats[:1], "deleted_ids": []})
+    assert {c["id"] for c in left.json()["chats"]} == {c["id"] for c in chats}
+
+
+def test_an_out_of_date_copy_with_a_newer_time_never_replaces_a_fuller_chat(history_client):
+    # A project finished in one place; an old copy of the chat, stopped at "start
+    # the timer", then saved from another: everything after it used to disappear.
+    client, _current_user, _user_a_id, _user_b_id = history_client
+    said = lambda *texts: [{"role": "agent", "text": text, "time": "4:18 PM"} for text in texts]
+    chat = {**sample_chat(), "messages": said("topics", "timer started", "uploaded", "viva", "score 70")}
+    client.put("/chats/sync", json={"chats": [chat], "deleted_ids": []})
+    stale = {**chat, "messages": said("topics", "already graded"), "updatedAt": chat["updatedAt"] + 1000}
+    saved = client.put("/chats/sync", json={"chats": [stale], "deleted_ids": []}).json()["chats"][0]
+    assert [m["text"] for m in saved["messages"]] == ["topics", "timer started", "uploaded", "viva", "score 70", "already graded"]
