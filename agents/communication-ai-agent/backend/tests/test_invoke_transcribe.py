@@ -8,7 +8,7 @@ from app.routes import speaking
 
 
 def invoke(client, action, payload):
-    return client.post("/api/invoke", json={"action": action, "payload": payload})
+    return client.post("/api/invoke", json={"action": action, "payload": payload}, headers={"X-DigiDARA-User-Id": "user-1"})
 
 
 @pytest.fixture()

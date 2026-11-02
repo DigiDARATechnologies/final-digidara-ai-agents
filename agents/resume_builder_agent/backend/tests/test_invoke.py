@@ -2,7 +2,8 @@ import io
 
 
 def invoke(client, action, payload=None):
-    return client.post("/api/invoke", json={"action": action, "payload": payload or {}})
+    return client.post("/api/invoke", json={"action": action, "payload": payload or {}},
+                       headers={"X-Digidara-User-Id": "digidara:test@example.com"} if action == "ensure_profile" else None)
 
 
 def test_health_and_missing_action(client):

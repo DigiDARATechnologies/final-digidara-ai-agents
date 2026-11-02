@@ -93,6 +93,8 @@ def invoke():
         from ..services.readiness import student_summary
         return jsonify(student_summary(gateway_user_id, payload.get("periods")))
     if action == "ensure_profile":
+        if not USER_ID_PATTERN.fullmatch((request.headers.get("X-Digidara-User-Id") or "").strip()):
+            return jsonify({"success": False, "message": "Verified SkillDARA identity is required"}), 401
         user_id = payload.get("user_id")
         name = payload.get("name")
         email = payload.get("email")

@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import threading
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
@@ -17,11 +16,11 @@ from app.links import service as links_service
 from app.llm import client as llm_client
 from app.llm import transcribe as speech
 from app.orchestrator import assist, boss_memory
-from app.orchestrator.graph import orchestrator_graph, route_message, route_message_stream
+from app.orchestrator.graph import route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
 from app.registry import service as registry_service
-from app.schemas import ChatRequest, ChatResponse, RoleProfileRequest, RoleProfileResponse, RouteRequest, RouteResponse
+from app.schemas import RoleProfileRequest, RoleProfileResponse, RouteRequest, RouteResponse
 
 logger = logging.getLogger("orchestrator.api")
 
@@ -51,26 +50,6 @@ def _charge(user_id: str, usage: dict[str, int], action: str) -> None:
         auth_service.settle_tokens(user_id, tokens, BOSS_USAGE_NAME, action)
     except Exception:
         logger.exception("could not charge %d Boss tokens to user=%s", tokens, user_id)
-
-
-@router.post("/chat", response_model=ChatResponse)
-@limiter.limit(_CHAT_RATE_LIMIT)
-def chat(req: ChatRequest, request: Request, user_id: str = Depends(get_verified_user_id)) -> ChatResponse:
-    require_english(req.message)
-    thread_id = req.thread_id or uuid.uuid4().hex
-    # Length only: a learner's message is personal data (DPDP Act 2023) and
-    # must not be copied into logs that outlive their account.
-    logger.info("=== POST /chat user=%s thread=%s message_chars=%d", user_id, thread_id, len(req.message))
-    try:
-        result = orchestrator_graph.invoke({"message": req.message})
-    except Exception:
-        logger.exception("orchestrator graph failed for thread=%s", thread_id)
-        raise HTTPException(
-            502,
-            "The orchestrator could not complete this turn (check LLM_MODEL / API key configuration). "
-            "Please retry.",
-        )
-    return ChatResponse(thread_id=thread_id, reply=result.get("reply", ""), agent_used=result.get("agent_used"))
 
 
 @router.post("/chat/route", response_model=RouteResponse)
@@ -142,7 +121,7 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
         try:
             for event in assist.stream_assist(req, learner, progress, chats, certificates, usage):
                 if "action" in event:
-                    event = {"action": _link_action(user_id, event["action"], certificates)}
+                    event = {"action": _link_action(user_id, event["action"], certificates, req.message)}
                     if event["action"] is None:
                         continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -248,11 +227,14 @@ def _own_certificates(user_id: str, req: assist.AssistRequest) -> list[dict] | N
         return None
 
 
-def _link_action(user_id: str, action: dict, certificates: list[dict] | None) -> dict | None:
+def _link_action(user_id: str, action: dict, certificates: list[dict] | None, message: str = "") -> dict | None:
     """Boss's action for the browser. Sharing a chat or a certificate becomes
     the link itself, made here for the signed-in learner only."""
     try:
         if action.get("type") == "share":
+            if action.get("mode") == "public" and not assist.PUBLIC_LINK_WORDS.search(message):
+                logger.warning("assist: public chat link refused, the learner did not ask for one user=%s", user_id)
+                return None
             return {"type": "link", **links_service.create_chat_link(user_id, action["chat_id"], action["mode"])}
         if action.get("type") == "certificate":
             cert = next((c for c in certificates or [] if c.get("id") == action["cert_id"]), {})

@@ -110,6 +110,13 @@ TOOLS = [
 ]
 
 
+# Tools that change something, and tools whose results carry text learners wrote
+# (a chat, a profile, memories). A learner could write instructions there, so
+# nothing is changed in a turn after reading it: the admin asks again.
+WRITE_TOOLS = frozenset({"create_join_code", "set_join_code_active", "set_learner_level", "update_learner_class", "remove_learner"})
+LEARNER_TEXT_TOOLS = frozenset({"learner_details", "read_learner_chat", "check_learner_readiness"})
+
+
 class AssistantError(RuntimeError):
     def __init__(self, status_code: int, message: str):
         super().__init__(message)
@@ -144,6 +151,7 @@ class _Tools:
         self._members: list[dict] | None = None
         # The learner the admin just confirmed removing (see _confirmed_removal), or None.
         self.confirmed_removal = confirmed_removal
+        self.read_learner_text = False
 
     def members(self) -> list[dict]:
         if self._members is None:
@@ -299,6 +307,10 @@ class _Tools:
         handler = getattr(self, name, None) if name in {t["function"]["name"] for t in TOOLS} else None
         if handler is None:
             return _compact({"error": f"Unknown tool {name}."})
+        if name in WRITE_TOOLS and self.read_learner_text:
+            return _compact({"error": "Nothing was changed: this turn read a learner's own text. Show the admin what "
+                                      "you found and ask them to request the change in a new message."})
+        self.read_learner_text = self.read_learner_text or name in LEARNER_TEXT_TOOLS
         try:
             result = handler(args)
             if hasattr(result, "__await__"):

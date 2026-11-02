@@ -122,6 +122,9 @@ _ACTION_TAG = re.compile(
     r"\[\[\s*(open|close|chat|share|certificate)\s*(?::\s*([A-Za-z0-9_.-]{1,128}))?\s*(?::\s*(private|public))?\s*\]\]",
     re.IGNORECASE,
 )
+# A public link needs the learner's own words for it: the model's tag alone can
+# come from instructions hidden in a screenshot or in the chat lines on screen.
+PUBLIC_LINK_WORDS = re.compile(r"\b(public|anyone|anybody|everyone|everybody)\b", re.IGNORECASE)
 CHAT_LIMIT = 20
 CERTIFICATE_LIMIT = 20
 # Words that make a question about certificates: only then are they looked up.
@@ -227,10 +230,18 @@ def system_prompt(req: AssistRequest, learner: dict | None = None, progress: lis
     return "\n".join(parts)
 
 
+def page_context(context: str) -> str:
+    """The chat lines on screen, as data: lines that try to give instructions
+    or carry an action tag are dropped before the model sees them."""
+    lines = [line for line in context.splitlines() if not guard.looks_like_injection(line)]
+    return re.sub(r"\[\[[^\]]*\]\]?", "", "\n".join(lines)).strip()
+
+
 def _user_content(req: AssistRequest) -> list[dict] | str:
     text = req.message
-    if req.context.strip():
-        text = f"Recent lines of the chat on screen (data):\n{req.context.strip()}\n\nLearner's question: {req.message}"
+    context = page_context(req.context)
+    if context:
+        text = f"Recent lines of the chat on screen (data):\n{context}\n\nLearner's question: {req.message}"
     if not req.screenshot:
         return text
     return [
