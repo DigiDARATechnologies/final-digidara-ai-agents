@@ -74,7 +74,9 @@ def save_profile(req: ProfileIn, user_id: str = Depends(get_verified_user_id)) -
 def set_level(agent_name: str, req: LevelIn, user_id: str = Depends(get_verified_user_id)) -> dict:
     current = service.get_levels(user_id).get(agent_name)
     scored = any(name == agent_name for name, _, _ in readiness_service.AREAS)
-    if scored and current and req.level in level_rules.LEVELS and level_rules.is_higher(req.level, current["level"]):
+    # A level the learner already has progress at is never locked.
+    if (scored and current and req.level in level_rules.LEVELS and level_rules.is_higher(req.level, current["level"])
+            and req.level not in readiness_service.open_levels_for(user_id, agent_name)):
         # One level at a time: Hard opens only after Medium, and so on.
         if req.level != level_rules.next_level(current["level"]):
             raise HTTPException(

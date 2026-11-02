@@ -826,7 +826,7 @@ def test_area_scores_follow_progress_in_every_level():
     # Aptitude 34% into Beginner, Projects done with Medium and half of Hard.
     interview = _area("mock_interview_agent", "medium", 0, {"beginner": 96, "medium": 0, "hard": 0, "professional": 0})
     aptitude = _area("aptitude_agent", "beginner", 34, {"beginner": 34, "medium": 0, "hard": 0, "professional": 0})
-    projects = _area("capstone_project_agent", "hard", 50, {"beginner": 100, "medium": 100, "hard": 50, "professional": 50})
+    projects = _area("capstone_project_agent", "hard", 50, {"beginner": 100, "medium": 100, "hard": 50, "professional": 0})
     assert readiness_service.level_score(interview) == 24.0
     assert readiness_service.level_score(aptitude) == 8.5
     assert readiness_service.level_score(projects) == 62.5
@@ -834,6 +834,41 @@ def test_area_scores_follow_progress_in_every_level():
     assert readiness_service.level_score(_area("certificate_agent", "medium", 40, basis="score")) == 35.0
     # A Professional score that copies Hard's is not counted twice below Professional.
     assert readiness_service.level_score(_area("aptitude_agent", "hard", 0, {"beginner": 100, "medium": 100, "hard": 0, "professional": 0})) == 50.0
+
+
+def test_progress_above_the_current_level_earns_points_and_stays_open():
+    # The screenshot that was wrong: Coding 20/100 at Beginner with 340 problems
+    # solved -- Medium 79%, Hard 78%, Professional 100%, all locked and worth nothing.
+    coding = _area("codeforge_agent", "beginner", 80, {"beginner": 80, "medium": 79, "hard": 78, "professional": 100})
+    assert readiness_service.level_score(coding) == 84.2
+    assert readiness_service.completed_levels(coding) == ["professional"]
+    assert readiness_service.open_levels(coding) == ["beginner", "medium", "hard", "professional"]
+    # Levels below the highest one with progress open too, even at 0%.
+    gap = _area("codeforge_agent", "beginner", 50, {"beginner": 50, "medium": 0, "hard": 10, "professional": 0})
+    assert readiness_service.open_levels(gap) == ["beginner", "medium", "hard"]
+    # No progress above: nothing extra opens or counts.
+    fresh = _area("codeforge_agent", "beginner", 80, {"beginner": 80, "medium": 0, "hard": 0, "professional": 0})
+    assert readiness_service.level_score(fresh) == 20.0 and readiness_service.open_levels(fresh) == ["beginner"]
+    # Interview Professional re-measures the Hard sessions: Hard counts once until the learner gets there.
+    interview = _area("mock_interview_agent", "beginner", 100, {"beginner": 100, "medium": 0, "hard": 100, "professional": 100})
+    assert readiness_service.level_score(interview) == 50.0
+    assert readiness_service.open_levels(interview) == ["beginner", "medium", "hard"]
+    # An agent without a measure per level is not credited above its level.
+    assert readiness_service.open_levels(_area("certificate_agent", "beginner", 20, basis="score")) == ["beginner"]
+
+
+def test_a_level_with_progress_can_be_chosen_directly(app_client, agents, monkeypatch):
+    monkeypatch.setitem(SUMMARY_EXTRA, "codeforge_agent", {"level_scores": {"easy": 80, "medium": 79, "hard": 78, "professional": 100}})
+    body = app_client.get("/learner/readiness?refresh=true", headers=auth()).json()
+    coding = next(a for a in body["areas"] if a["agent_name"] == "codeforge_agent")
+    assert coding["level"] == "beginner" and coding["score"] == 84.2
+    assert coding["open_levels"] == ["beginner", "medium", "hard", "professional"]
+    assert app_client.put("/learner/levels/codeforge_agent", headers=auth(), json={"level": "professional"}).status_code == 200
+    # Changing level changes no points.
+    monkeypatch.setattr(readiness_service, "REFRESH_MIN_AGE", timedelta(seconds=-5))
+    again = next(a for a in app_client.get("/learner/readiness?refresh=true", headers=auth()).json()["areas"]
+                 if a["agent_name"] == "codeforge_agent")
+    assert again["level"] == "professional" and again["score"] == 84.2
 
 
 def test_a_snapshot_saved_under_the_old_rules_is_shown_with_the_new_scores(app_client, agents, database):

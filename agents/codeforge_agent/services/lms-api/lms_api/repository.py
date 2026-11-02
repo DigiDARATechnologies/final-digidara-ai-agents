@@ -14,14 +14,17 @@ from .errors import ApiError
 def technology_level(counts):
     """What one technology's own progress opens: the first difficulty with an
     unsolved practice problem (Easy, Medium or Hard), or "Professional" once
-    every one is solved. counts: difficulty -> {"total", "solved"}."""
-    if not any(counts.get(d, {}).get("total") for d in ("Easy", "Medium", "Hard")):
+    every one is solved. A difficulty with a solved problem stays open, even if
+    new easier problems were added since. counts: difficulty -> {"total", "solved"}."""
+    difficulties = ("Easy", "Medium", "Hard")
+    if not any(counts.get(d, {}).get("total") for d in difficulties):
         return "Easy"
-    for difficulty in ("Easy", "Medium", "Hard"):
-        count = counts.get(difficulty) or {"total": 0, "solved": 0}
-        if count["solved"] < count["total"]:
-            return difficulty
-    return "Professional"
+    rows = [counts.get(d) or {"total": 0, "solved": 0} for d in difficulties]
+    unsolved = next((i for i, count in enumerate(rows) if count["solved"] < count["total"]), None)
+    if unsolved is None:
+        return "Professional"
+    worked = max((i for i, count in enumerate(rows) if count["solved"]), default=0)
+    return difficulties[max(unsolved, worked)]
 
 
 class MySqlRepository:
