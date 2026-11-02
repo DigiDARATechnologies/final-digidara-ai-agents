@@ -35,6 +35,8 @@ interface Turn {
   action?: string;
   /** A link Boss made (a chat or a certificate). */
   link?: BossLink;
+  /** How a small repair Boss tried went. */
+  repair?: { ok: boolean; text: string };
 }
 
 const HISTORY_TURNS = 6;
@@ -49,6 +51,7 @@ function actionTag(action: AssistAction): string {
   if (action.type === "close") return "[[close]]";
   if (action.type === "chat") return `[[chat:${action.chat_id}]]`;
   if (action.type === "open") return `[[open:${action.target}]]`;
+  if (action.type === "repair" && action.name === "readiness") return "[[fix:readiness]]";
   return "";
 }
 
@@ -60,7 +63,9 @@ function LinkCard({ link }: { link: BossLink }) {
   const url = `${window.location.origin}${link.path}`;
   const note = link.kind === "certificate"
     ? `Download link${link.expires_at ? `, works until ${new Date(link.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""} (5 minutes), only for your account`
-    : link.mode === "public" ? "Public link: anyone signed in to SkillDARA can open it" : "Private link: opens only for your account";
+    : link.mode === "public"
+      ? `Public link: anyone signed in to SkillDARA can open it${link.expires_at ? ` until ${new Date(link.expires_at).toLocaleDateString()}` : ""}. Ask me to cancel it any time.`
+      : "Private link: opens only for your account";
   async function copy() {
     try {
       await navigator.clipboard.writeText(url);
@@ -277,15 +282,19 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     let closing = false;
     let tag = "";
     let link: BossLink | undefined;
+    let repair: Turn["repair"];
     const act = (action: AssistAction) => {
       tag = actionTag(action);
       if (action.type === "close") closing = true;
       else if (action.type === "chat") onNavigate?.(`chat:${action.chat_id}`);
       else if (action.type === "link") {
         link = { kind: action.kind, path: action.path, title: action.title, mode: action.mode, expires_at: action.expires_at };
+      } else if (action.type === "repair") {
+        repair = { ok: action.ok, text: action.text };
+        if (action.open) onNavigate?.(action.open);
       } else onNavigate?.(action.target);
     };
-    const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text, action: tag || undefined, link }]);
+    const show = (text: string) => setTurns((previous) => [...previous.slice(0, -1), { role: "boss", text, action: tag || undefined, link, repair }]);
     try {
       const reply = await assistStream({
         message, history, agentId, agentName, context: getContext(), screenshot, voice: spoken,
@@ -394,6 +403,7 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
               <div key={index} className={`boss-turn ${turn.role}`}>
                 {turn.text || <span className="boss-dots" aria-label="Boss is answering"><i /><i /><i /></span>}
                 {turn.link && <LinkCard link={turn.link} />}
+                {turn.repair && <span className={`boss-repair${turn.repair.ok ? "" : " failed"}`} role="status">{turn.repair.text}</span>}
                 {turn.screen && <em>with your screen</em>}
               </div>
             ))}

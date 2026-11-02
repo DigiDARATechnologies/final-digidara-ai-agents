@@ -3,8 +3,9 @@ short-lived link to download one of their certificates.
 
 A chat link is a random token stored in chat_share_links. "private" opens only
 for the account that made it (the viewer must sign in as that account);
-"public" opens for any signed-in SkillDARA account. Either way the chat is
-shown read-only, as it is when the link is opened.
+"public" opens for any signed-in SkillDARA account, for PUBLIC_LINK_DAYS from
+when it was made. Either way the chat is shown read-only, as it is when the link
+is opened, and the owner can cancel the link at any time.
 
 A certificate link is a signed token (the platform's JWT secret) naming the
 owner and the certificate, valid for CERTIFICATE_LINK_SECONDS. Only the owner's
@@ -18,6 +19,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -33,6 +35,7 @@ from app.registry import service as registry_service
 logger = logging.getLogger("orchestrator.links")
 
 SHARE_MODES = ("private", "public")
+PUBLIC_LINK_DAYS = 30
 CERTIFICATE_LINK_SECONDS = 5 * 60
 CERTIFICATE_AGENT = "certificate_agent"
 _CERTIFICATE_LINK_TYPE = "certificate_link"
@@ -57,9 +60,25 @@ def certificate_link_path(token: str) -> str:
 
 # --- chat links --------------------------------------------------------------
 
+def _expires_at(link: ChatShareLink) -> datetime | None:
+    """When a public link stops opening (UTC); a private link does not expire."""
+    return link.created_at + timedelta(days=PUBLIC_LINK_DAYS) if link.mode == "public" else None
+
+
+def _expired(link: ChatShareLink) -> bool:
+    expires = _expires_at(link)
+    return expires is not None and datetime.utcnow() >= expires
+
+
+def _expires_ms(link: ChatShareLink) -> int | None:
+    expires = _expires_at(link)
+    return int(expires.replace(tzinfo=timezone.utc).timestamp() * 1000) if expires else None
+
+
 def create_chat_link(user_id: str, chat_id: str, mode: str) -> dict:
     """The link to one of the learner's own chats, for "private" or "public".
-    Asking again for the same chat and mode gives the same link."""
+    Asking again for the same chat and mode gives the same link, or a new one
+    when that link has expired."""
     if mode not in SHARE_MODES:
         raise LinkError(422, "A chat link is either private or public.")
     session = db.get_session()
@@ -70,11 +89,16 @@ def create_chat_link(user_id: str, chat_id: str, mode: str) -> dict:
             raise LinkError(404, "That chat was not found in your account.")
         link = (session.query(ChatShareLink)
                 .filter_by(user_id=user_id, conversation_id=chat_id, mode=mode).first())
+        if link is not None and _expired(link):
+            session.delete(link)
+            session.flush()
+            link = None
         if link is None:
             link = ChatShareLink(token=secrets.token_urlsafe(24), user_id=user_id, conversation_id=chat_id, mode=mode)
             session.add(link)
             session.commit()
-        return {"kind": "chat", "mode": mode, "title": chat.title, "path": chat_link_path(link.token)}
+        result = {"kind": "chat", "mode": mode, "title": chat.title, "path": chat_link_path(link.token)}
+        return {**result, "expires_at": _expires_ms(link)} if mode == "public" else result
     finally:
         session.close()
 
@@ -90,6 +114,9 @@ def read_shared_chat(token: str, viewer_id: str) -> dict:
         if link.mode == "private" and not is_owner:
             raise LinkError(403, "This chat link is private. Only the account that made it can open it: "
                                  "sign in with that account.")
+        if _expired(link) and not is_owner:
+            raise LinkError(410, f"This public chat link has expired (public links last {PUBLIC_LINK_DAYS} days). "
+                                 "Ask the person who shared it for a new one.")
         chat = (session.query(Conversation)
                 .filter_by(id=link.conversation_id, user_id=link.user_id, deleted_at=None).one_or_none())
         if chat is None:
@@ -106,8 +133,33 @@ def read_shared_chat(token: str, viewer_id: str) -> dict:
             "is_owner": is_owner,
             "owner_name": first_name,
             "chat_id": chat.id if is_owner else None,
+            "expires_at": _expires_ms(link),
             "messages": [{"role": row.role, "text": row.content, "time": row.display_time} for row in rows],
         }
+    finally:
+        session.close()
+
+
+def cancel_chat_link(token: str, user_id: str) -> None:
+    """The owner cancels one link. "Not yours" and "does not exist" look the same."""
+    session = db.get_session()
+    try:
+        link = session.get(ChatShareLink, token)
+        if link is None or link.user_id != user_id:
+            raise LinkError(404, "This chat link does not exist or was removed.")
+        session.delete(link)
+        session.commit()
+    finally:
+        session.close()
+
+
+def remove_chat_links(user_id: str, chat_id: str) -> int:
+    """Cancels every link to one of the learner's chats; how many there were."""
+    session = db.get_session()
+    try:
+        removed = session.query(ChatShareLink).filter_by(user_id=user_id, conversation_id=chat_id).delete()
+        session.commit()
+        return removed
     finally:
         session.close()
 

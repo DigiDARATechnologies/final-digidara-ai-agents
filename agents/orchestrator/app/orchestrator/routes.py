@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
@@ -15,7 +16,7 @@ from app.learner import service as learner_service
 from app.links import service as links_service
 from app.llm import client as llm_client
 from app.llm import transcribe as speech
-from app.orchestrator import assist, boss_memory
+from app.orchestrator import assist, boss_memory, guard, repairs
 from app.orchestrator.graph import route_message, route_message_stream
 from app.orchestrator.role_profiles import RoleProfileGenerationError, generate_role_profile
 from app.rate_limit import limiter
@@ -115,13 +116,20 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
     progress = await _own_progress(user_id)
     chats = await run_in_threadpool(_own_chats, user_id)
     certificates = await run_in_threadpool(_own_certificates, user_id, req)
+    user = await run_in_threadpool(auth_service.get_by_id, user_id)
+    interview = await _own_interview(user, req)
+    history = guard.safe_history([turn.model_dump() for turn in req.history])
 
     def events():
         usage: dict[str, int] = {}
         try:
-            for event in assist.stream_assist(req, learner, progress, chats, certificates, usage):
+            for event in assist.stream_assist(req, learner, progress, chats, certificates, usage, interview):
                 if "action" in event:
-                    event = {"action": _link_action(user_id, event["action"], certificates, req.message)}
+                    if event["action"]["type"] in assist.REPAIR_ACTIONS:
+                        # This generator runs in a worker thread; the repair runs on the app's event loop.
+                        event = {"action": anyio.from_thread.run(repairs.run, user, event["action"], req.message, history, req.agent_id)}
+                    else:
+                        event = {"action": _link_action(user_id, event["action"], certificates, req.message)}
                     if event["action"] is None:
                         continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -209,6 +217,18 @@ async def _own_progress(user_id: str) -> list[dict] | None:
         logger.warning("assist: readiness unavailable", exc_info=True)
         return None
     return [area for area in result.get("areas") or [] if isinstance(area, dict)]
+
+
+async def _own_interview(user, req: assist.AssistRequest) -> dict | None:
+    """Where the learner's interview stands, looked up only in Mock Interview or
+    when the question is about an interview; None when not looked up."""
+    if user is None or (req.agent_id != "mock-interview" and not assist.INTERVIEW_WORDS.search(req.message)):
+        return None
+    try:
+        return await repairs.interview_state(user)
+    except Exception:
+        logger.info("assist: interview state unavailable", exc_info=True)
+        return None
 
 
 def _own_certificates(user_id: str, req: assist.AssistRequest) -> list[dict] | None:

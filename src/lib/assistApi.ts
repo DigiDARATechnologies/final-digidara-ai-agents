@@ -24,14 +24,24 @@ export interface BossLink {
   path: string;
   title?: string;
   mode?: "private" | "public";
-  /** Certificate links: when the link stops working (ms since 1970). */
+  /** Certificate and public chat links: when the link stops working (ms since 1970). */
   expires_at?: number;
+}
+
+/** The result of a small repair Boss tried (see the orchestrator's repairs.py). */
+export interface BossRepair {
+  type: "repair";
+  name: string;
+  ok: boolean;
+  text: string;
+  /** Where to go next, from the server's own list. */
+  open?: string;
 }
 
 /** What Boss asked the browser to do: open an agent, page or chat, show a
  * link, or close Boss. The server only sends targets from its own list. */
 export type AssistAction = { type: "open"; target: string } | { type: "chat"; chat_id: string } | { type: "close" }
-  | ({ type: "link" } & BossLink);
+  | ({ type: "link" } & BossLink) | BossRepair;
 
 /** Boss guiding a learner on any screen (POST /chat/assist/stream): `onText`
  * gets the answer so far each time more of it arrives, `onAction` the action

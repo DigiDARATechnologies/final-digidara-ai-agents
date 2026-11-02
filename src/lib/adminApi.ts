@@ -78,4 +78,10 @@ export interface EnterpriseEnquiryRow {
   id: string; organization: string; organization_type: string; contact_name: string; email: string; phone: string;
   learners: number | null; city: string; message: string; emailed: boolean; created_at: string | null;
 }
+export interface BossReportRow {
+  id: string; category: string; agent_id: string; message: string; name: string; email: string; created_at: string | null;
+}
+export const fetchBossReports = () => get<{
+  repeated: { category: string; reports: number; learners: number }[]; reports: BossReportRow[];
+}>("/boss-reports");
 export const fetchEnterpriseEnquiries = () => get<{ total: number; enquiries: EnterpriseEnquiryRow[] }>("/enterprise-enquiries");

@@ -337,6 +337,29 @@ def list_payments(
         session.close()
 
 
+@router.get("/boss-reports")
+def boss_reports(limit: int = Query(100, ge=1, le=500), _admin: str = Depends(require_admin)) -> dict:
+    """Problems learners asked Boss to report, newest first, with how often each
+    kind came up in the last 30 days, so repeated problems stand out."""
+    from app.models import BossIssueReport
+
+    session = get_session()
+    try:
+        since = datetime.utcnow() - timedelta(days=30)
+        counts = (session.query(BossIssueReport.category, func.count(), func.count(func.distinct(BossIssueReport.user_id)))
+                  .filter(BossIssueReport.created_at >= since).group_by(BossIssueReport.category).all())
+        rows = (session.query(BossIssueReport, User.name, User.email).join(User, User.id == BossIssueReport.user_id)
+                .order_by(BossIssueReport.created_at.desc()).limit(limit).all())
+        return {
+            "repeated": sorted(({"category": category, "reports": reports, "learners": learners}
+                                for category, reports, learners in counts), key=lambda item: -item["reports"]),
+            "reports": [{"id": r.id, "category": r.category, "agent_id": r.agent_id, "message": r.message,
+                         "name": name, "email": email, "created_at": _iso(r.created_at)} for r, name, email in rows],
+        }
+    finally:
+        session.close()
+
+
 @router.get("/enterprise-enquiries")
 def enterprise_enquiries(limit: int = Query(100, ge=1, le=500), _admin: str = Depends(require_admin)) -> dict:
     """Enterprise plan enquiries from the billing page, newest first."""

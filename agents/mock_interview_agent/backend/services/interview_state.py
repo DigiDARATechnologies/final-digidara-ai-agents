@@ -150,7 +150,7 @@ def merge_topic_area_context(*topic_groups):
 def active_interview_payload(student_id):
     """Return the student's latest recoverable active session, if one exists."""
     interview, _ = db.query(
-        """SELECT id, round_type, interview_mode, role_name, resolved_subjects, difficulty, num_questions
+        """SELECT id, round_type, interview_mode, subject, role_name, resolved_subjects, difficulty, num_questions
            FROM interviews
            WHERE student_id = %s AND status = 'in_progress'
            ORDER BY started_at DESC, id DESC
@@ -172,9 +172,29 @@ def active_interview_payload(student_id):
         fetchone=True,
     )
     if not current:
+        # Every question asked so far is answered: either they all were, and the
+        # report is waiting, or the next question was never issued.
+        asked, _ = db.query(
+            "SELECT COUNT(*) AS main_questions FROM interview_details WHERE interview_id = %s AND is_followup = FALSE",
+            (interview["id"],),
+            fetchone=True,
+        )
+        main_questions = int((asked or {}).get("main_questions") or 0)
         return {
             "active": False,
             "orphaned_interview_id": interview["id"],
+            "interview_id": interview["id"],
+            "answered_questions": main_questions,
+            "total_questions": int(interview["num_questions"]),
+            "awaiting_report": main_questions >= int(interview["num_questions"]),
+            "needs_next_question": 0 < main_questions < int(interview["num_questions"]),
+            "round_type": interview["round_type"],
+            "interview_mode": interview.get("interview_mode", "course"),
+            "subject": interview.get("subject"),
+            "role_name": interview.get("role_name"),
+            "resolved_subjects": interview.get("resolved_subjects"),
+            "difficulty": interview["difficulty"],
+            "num_questions": int(interview["num_questions"]),
         }
     counts, _ = db.query(
         """SELECT COUNT(*) AS real_question_index

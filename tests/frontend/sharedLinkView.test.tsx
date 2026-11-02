@@ -1,8 +1,10 @@
 const mockOpenChat = jest.fn();
 const mockCheck = jest.fn();
 const mockDownload = jest.fn();
+const mockCancel = jest.fn();
 jest.mock('../../src/lib/linksApi', () => ({
   openSharedChat: (token: string) => mockOpenChat(token),
+  cancelSharedChat: (token: string) => mockCancel(token),
   checkCertificateLink: (token: string) => mockCheck(token),
   downloadCertificateLink: (token: string) => mockDownload(token),
 }));
@@ -25,6 +27,21 @@ test('a shared chat opens read-only with who shared it', async () => {
   expect(screen.getByText('Shared by Priya. Read only.')).toBeTruthy();
   expect(screen.getByText('Start a test')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Open this chat' })).toBeNull();
+});
+
+test('the owner can cancel a link; someone else sees no such button', async () => {
+  mockCancel.mockResolvedValue(undefined);
+  const shared = { title: 'Chat', agent_id: 'aptitude', mode: 'public', owner_name: 'Asha', chat_id: null, messages: [] };
+  mockOpenChat.mockResolvedValueOnce({ ...shared, is_owner: false });
+  const { unmount } = render(<SharedLinkView link={{ kind: 'chat', token: 't1' }} onClose={jest.fn()} />);
+  await screen.findByText(/Shared by Asha/);
+  expect(screen.queryByRole('button', { name: 'Cancel this link' })).toBeNull();
+  unmount();
+  mockOpenChat.mockResolvedValueOnce({ ...shared, is_owner: true });
+  render(<SharedLinkView link={{ kind: 'chat', token: 't1' }} onClose={jest.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel this link' }));
+  expect(await screen.findByText(/This link is cancelled/)).toBeTruthy();
+  expect(mockCancel).toHaveBeenCalledWith('t1');
 });
 
 test('a private link opened by another account shows why it cannot open', async () => {

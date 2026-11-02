@@ -617,6 +617,21 @@ class CareerPlan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
+class BossIssueReport(Base):
+    """A problem a learner asked Boss to report to the SkillDARA team. Only what
+    they chose to send is kept; the platform admin sees these grouped by kind,
+    so a problem that keeps coming back stands out."""
+
+    __tablename__ = "boss_issue_reports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(20), index=True)
+    agent_id: Mapped[str] = mapped_column(String(60), default="")
+    message: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+
+
 class ChatShareLink(Base):
     """A link to one of a learner's chats that Boss made on request. "private"
     opens only for the account that made it; "public" opens for any signed-in

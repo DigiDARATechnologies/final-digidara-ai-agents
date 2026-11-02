@@ -1014,7 +1014,7 @@ def active_interview(student_id):
         return jsonify({"active": False})
     if not payload["active"]:
         return jsonify({
-            "active": False,
+            **payload,
             "error": "The active interview has no recoverable question.",
         }), 409
     return jsonify(payload)
