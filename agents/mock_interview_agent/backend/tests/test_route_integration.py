@@ -81,6 +81,48 @@ class RouteIntegrationTests(unittest.TestCase):
             question_plan=None,
         )
 
+    def _resume_stalled_interview(self, issued, status=200):
+        # Q3 of 5 was answered but Q4 was never issued (generation failed, or the learner left).
+        creation = {
+            "student_exists": True, "created": False, "interview_id": 90, "question_order": 3,
+            "question": "Already answered?", "question_source": "ai_generated", "topic_area": "lists",
+            "is_followup": False, "difficulty": "beginner", "round_type": "technical",
+            "total_questions": 5, "real_question_index": 3,
+            "awaiting_report": False, "needs_next_question": True,
+        }
+        with (
+            patch("routes.interviews.db.query", return_value=({"id": 1}, 0)),
+            patch("routes.interviews.daily_answered_count", return_value=0),
+            patch("routes.interviews.active_interview_payload", return_value={"active": False, "orphaned_interview_id": 90}),
+            patch("routes.interviews.recent_questions_for_student", return_value=[]),
+            patch("routes.interviews.recent_topic_areas_for_student", return_value=[]),
+            patch("routes.interviews.get_recent_asked_history", return_value=(set(), [])),
+            patch("routes.interviews.groq_client.infer_role_skills", return_value=[]),
+            patch("routes.interviews.groq_client.generate_question", return_value={"topic_area": "x", "question": "Unused?"}),
+            patch("routes.interviews.db.create_or_resume_interview", return_value=creation),
+            patch("routes.interviews.issue_next_question_on_resume", return_value=(issued, status)) as issue,
+        ):
+            response = self.client.post("/api/start_interview", json={
+                "student_id": 1, "round_type": "technical", "subject": "Python",
+                "difficulty": "beginner", "num_questions": 5,
+            })
+        issue.assert_called_once_with(90, 3)
+        return response
+
+    def test_a_stalled_interview_continues_with_its_next_question_not_its_report(self):
+        response = self._resume_stalled_interview({"question_order": 4, "question": "What is a tuple?", "topic_area": "tuples", "done": False})
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["resumed_existing"])
+        self.assertFalse(payload["awaiting_report"])
+        self.assertEqual(payload["question"], "What is a tuple?")
+        self.assertEqual((payload["question_order"], payload["real_question_index"], payload["total_questions"]), (4, 4, 5))
+
+    def test_a_stalled_interview_can_retry_when_the_next_question_fails(self):
+        response = self._resume_stalled_interview({"error": "The next question could not be prepared. Retry to continue.", "retryable": True}, 503)
+        self.assertEqual(response.status_code, 503)
+        self.assertTrue(response.get_json()["retryable"])
+
     def test_role_start_schedules_search_without_waiting_for_it(self):
         creation = {"student_exists": True, "created": True, "interview_id": 77, "orphaned_interview_id": None}
         plan = [{"question": "What is a Python dictionary?", "topic_area": "Python fundamentals", "source": "ai_generated", "subject_tag": "python"}]

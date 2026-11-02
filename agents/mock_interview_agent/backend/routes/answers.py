@@ -516,6 +516,26 @@ def _submit_answer(data):
     )
 
 
+def issue_next_question_on_resume(interview_id, question_order):
+    """The next question of an interview whose next question was never issued
+    (it failed, or the learner left while it was being prepared). Returns the
+    response body and its status."""
+    interview_row, _ = db.query("SELECT * FROM interviews WHERE id = %s", (interview_id,), fetchone=True)
+    rows, _ = db.query(
+        "SELECT * FROM interview_details WHERE interview_id = %s ORDER BY question_order, id",
+        (interview_id,), fetch=True,
+    )
+    result = _issue_next_question(
+        interview_id,
+        interview_row,
+        question_order,
+        [r["question"] for r in rows],
+        [row.get("topic_area") for row in reversed(rows) if not row["is_followup"] and row.get("topic_area")],
+    )
+    response, status = result if isinstance(result, tuple) else (result, 200)
+    return response.get_json(), status
+
+
 def _issue_next_question(
     interview_id,
     interview_row,

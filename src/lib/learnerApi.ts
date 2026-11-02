@@ -222,7 +222,8 @@ export interface Leaderboard {
   scope: LeaderboardScope; group: LeaderboardGroup; allowed_groups: LeaderboardGroup[]; allowed_scopes: LeaderboardScope[];
   organization: { id: string; name: string } | null;
   top: LeaderboardEntry[]; entries: LeaderboardEntry[]; total: number;
-  me: { rank: number; score: number } | null; hidden: boolean;
+  /** own_readiness: on the staff board, the viewer's own job readiness (not part of their staff score). */
+  me: { rank: number; score: number; own_readiness?: number } | null; hidden: boolean;
 }
 /** "auto": the viewer's organization when they are in one, else the whole platform. */
 export const fetchLeaderboard = (scope: LeaderboardScope | "auto", group?: LeaderboardGroup) =>

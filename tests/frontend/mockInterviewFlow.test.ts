@@ -60,6 +60,29 @@ test('starting a new interview while a finished one waits for its report shows t
   expect(result.messages[0].text).toContain('previous interview was finished');
 });
 
+test('a report that cannot be made still offers a way out of the interview', async () => {
+  let result = await handleMockInterviewText(withSession(), user, 'technical');
+  result = await handleMockInterviewText(result.state, user, 'custom_topic');
+  result = await handleMockInterviewText(result.state, user, 'Excel');
+  mocked.startMockInterview.mockResolvedValue({ interview_id: 31, question_order: 3, question: 'Q3', total_questions: 5, resumed_existing: true, awaiting_report: true });
+  mocked.endMockInterview.mockRejectedValue(new Error('This interview is not ready to complete.'));
+  result = await handleMockInterviewText(result.state, user, '5');
+  expect(result.state.step).toBe('in_interview');
+  expect(result.messages[result.messages.length - 1].options?.map((o) => o.value)).toEqual(['retry_report', 'exit_interview']);
+});
+
+test('a resumed interview whose next question was just issued continues with it', async () => {
+  let result = await handleMockInterviewText(withSession(), user, 'technical');
+  result = await handleMockInterviewText(result.state, user, 'custom_topic');
+  result = await handleMockInterviewText(result.state, user, 'Excel');
+  mocked.endMockInterview.mockClear();
+  mocked.startMockInterview.mockResolvedValue({ interview_id: 32, question_order: 4, real_question_index: 4, question: 'What is a pivot table?', total_questions: 5, resumed_existing: true, awaiting_report: false });
+  result = await handleMockInterviewText(result.state, user, '5');
+  expect(mocked.endMockInterview).not.toHaveBeenCalled();
+  expect(result.state).toMatchObject({ step: 'in_interview', interviewId: 32, questionOrder: 4 });
+  expect(result.messages[1].text).toContain('What is a pivot table?');
+});
+
 test('opening the chat resumes an existing interview with its original difficulty', async () => {
   mocked.ensureMockInterviewSession.mockResolvedValue({ sessionToken: 'token', student_id: 1 });
   mocked.getActiveMockInterview.mockResolvedValue({ active: true, interview_id: 19, question_order: 3, real_question_index: 3, question: 'Describe an index.', total_questions: 10, difficulty: 'advanced', round_type: 'technical', interview_mode: 'role', role_name: 'Data Analyst' });

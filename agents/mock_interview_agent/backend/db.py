@@ -159,17 +159,19 @@ def create_or_resume_interview(
                 )
                 counts = cursor.fetchone()
                 conn.commit()
+                answered = current.get("answer") is not None or current.get("verdict") is not None or current.get("timed_out")
+                main_questions = int(counts["real_question_index"] or 1)
                 return {
                     "student_exists": True,
                     "created": False,
                     "interview_id": active["id"],
                     "question_order": current["question_order"],
                     "question": current["question"],
-                    # The last question is already answered: every answer is in and
-                    # the interview only waits for its report (it failed earlier).
-                    "awaiting_report": bool(
-                        current.get("answer") is not None or current.get("verdict") is not None or current.get("timed_out")
-                    ),
+                    # The latest question is already answered. With every question
+                    # asked, the interview only waits for its report (it failed
+                    # earlier); with fewer, its next question was never issued.
+                    "awaiting_report": bool(answered and main_questions >= int(active["num_questions"])),
+                    "needs_next_question": bool(answered and main_questions < int(active["num_questions"])),
                     "question_source": current.get("question_source"),
                     "topic_area": current.get("topic_area"),
                     "is_followup": bool(current["is_followup"]),

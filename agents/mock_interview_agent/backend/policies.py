@@ -32,7 +32,7 @@ def completion_progress(rows, required_main_questions):
     return {
         "answered_main_questions": completed_main_questions,
         "required_main_questions": int(required_main_questions),
-            "complete": completed_main_questions == int(required_main_questions),
+            "complete": completed_main_questions >= int(required_main_questions),
     }
 
 

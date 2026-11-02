@@ -16,6 +16,7 @@ import learner_context
 import scoring
 from http_context import log, set_log_context
 from policies import completion_progress, exit_transition
+from routes.answers import issue_next_question_on_resume
 from runtime_state import dashboard_cache
 from services.interview_state import (
     active_interview_payload,
@@ -495,6 +496,17 @@ def start_interview():
     if not creation["student_exists"]:
         return jsonify({"error": "Student not found."}), 404
     if not creation["created"]:
+        if creation.get("needs_next_question"):
+            issued, status = issue_next_question_on_resume(creation["interview_id"], creation["question_order"])
+            if status != 200:
+                return jsonify(issued), status
+            if issued.get("done") or not issued.get("question"):
+                return jsonify({"error": DAILY_LIMIT_MESSAGE, "message": DAILY_LIMIT_MESSAGE, **quota}), 429
+            creation = {
+                **creation, "question_order": issued["question_order"], "question": issued["question"],
+                "topic_area": issued.get("topic_area"), "is_followup": False,
+                "real_question_index": creation["real_question_index"] + 1,
+            }
         return jsonify({
             "active": True,
             "interview_id": creation["interview_id"],
