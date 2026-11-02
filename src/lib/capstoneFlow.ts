@@ -20,7 +20,7 @@ import {
   type ProjectDifficulty,
   type SyntaxErrorDetail,
   type TopicOption,
-} from "./capstoneApi";
+type RegradeOffer } from "./capstoneApi";
 import { displayRole, easyToProfessional, goalLine, learnerGoal } from "./learnerContext";
 
 /** A rough, deliberately over-inclusive heuristic: is this message the
@@ -555,6 +555,29 @@ async function handleTopicIntake(state: CapstoneFlowState, text: string): Promis
     }
   }
   return { ...result, state: rememberTurns(result.state, text, result.messages) };
+}
+
+/** The learner's project, open again for a second chance (see RegradeOffer). */
+export function reopenForRegrade(state: CapstoneFlowState, offer: RegradeOffer): CapstoneFlowState {
+  return {
+    ...state,
+    step: "awaiting_submission",
+    threadId: offer.thread_id,
+    chosenTopic: state.chosenTopic ?? offer.chosen_topic ?? undefined,
+    requirements: state.requirements ?? offer.requirements ?? undefined,
+    deadlineAt: state.deadlineAt ?? offer.deadline_at ?? undefined,
+    docxFile: undefined,
+    zipFile: undefined,
+    revisionNotes: null,
+  };
+}
+
+const chancesText = (count: number) => `${count} chance${count === 1 ? "" : "s"}`;
+
+/** What the chat says when the learner opens that second chance. */
+export function regradeMessage(offer: RegradeOffer): string {
+  const keep = offer.passed ? " Your earlier pass stays safe, whatever happens." : "";
+  return `We found a problem on our side: projects with code in a folder such as src/ could fail with a "module not found" error when we ran them, and that may have lowered your grade for ${offer.title}. It is fixed now.\n\nYou have ${chancesText(offer.chances_left)} to submit again, even if your 7-day window has closed.${keep} Upload your report (.docx) and your project (.zip) here when you are ready.`;
 }
 
 /** A chat saved before failed grades were made retryable can be sitting in
@@ -1103,6 +1126,7 @@ The timer starts only when you press Start viva, so take a moment to get ready.`
             finalScore: status.final_score,
             passed: status.passed,
             feedback: status.feedback,
+            vivaSubmissionId: status.kept_submission_id ?? state.vivaSubmissionId,
           },
           messages: [{
             text: `This project was already graded. Score: ${status.final_score ?? "-"}/100 - ${status.passed ? "Passed" : "Not passed"}\n\n${status.feedback ?? ""}\n\nStart a new chat to work on another capstone project.`,

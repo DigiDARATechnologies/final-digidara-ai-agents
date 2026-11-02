@@ -640,3 +640,61 @@ def test_answering_without_pressing_start_starts_the_clock(client, workflow, dat
     assert progress["viva_seconds_left"] >= viva.VIVA_TIME_LIMIT_SECONDS - 5
     with database() as session:
         assert session.get(Submission, submission_id).viva_started_at is not None
+
+
+def _hit_by_the_bug(database, assignment_status=None, score=70):
+    from app.api import regrade
+
+    with database() as session:
+        session.add(Submission(id="old", assignment_id="assignment", docx_path="d", zip_path="z", status=SubmissionStatus.graded,
+                               submitted_at=regrade.RUN_FIX_AT - timedelta(days=1), viva_passed=True,
+                               feedback_text="ModuleNotFoundError: No module named 'storage'",
+                               score_json={"final_score": score, "passed": True, "feedback": "old feedback"}))
+        assignment = session.get(ProjectAssignment, "assignment")
+        assignment.deadline_at = datetime.now(timezone.utc) - timedelta(days=30)
+        session.commit()
+
+
+def test_a_graded_project_hit_by_the_bug_can_be_submitted_again_past_its_deadline_three_times(client, workflow, state, database):
+    from app.db.models import ProjectRegrade
+
+    state["status"] = "graded"
+    _hit_by_the_bug(database)
+    for left in (2, 1, 0):
+        response = upload(client)
+        assert response.status_code == 200, response.text
+        with database() as session:
+            assert session.get(ProjectRegrade, "assignment").chances_left == left
+            for row in session.query(Submission).filter_by(status=SubmissionStatus.pending_viva).all():
+                row.status = SubmissionStatus.graded
+            session.commit()
+    # The fourth is refused: a graded project is closed again.
+    assert upload(client).status_code == 409
+
+
+def test_a_rejected_package_does_not_use_a_chance(client, workflow, state, database, monkeypatch):
+    from app.db.models import ProjectRegrade
+
+    state["status"] = "graded"
+    _hit_by_the_bug(database)
+    monkeypatch.setattr(routes, "_run_submission", lambda value: {"status": "needs_revision", "revision_notes": "Add a README."})
+    assert upload(client).status_code == 200
+    with database() as session:
+        assert session.get(ProjectRegrade, "assignment").chances_left == 3
+
+
+def test_a_passed_student_who_used_every_chance_gets_their_pass_back(client, workflow, state, database, monkeypatch):
+    from app.db.models import ProjectRegrade
+
+    state["status"] = "needs_revision"
+    _hit_by_the_bug(database)
+    upload_gate_grant = routes.regrade.upload_gate("assignment", "needs_revision")
+    assert upload_gate_grant == "open"
+    with database() as session:
+        session.get(ProjectRegrade, "assignment").chances_left = 0
+        session.commit()
+    restored = {}
+    monkeypatch.setattr(routes.compiled_graph, "update_state", lambda config, values: restored.update(values))
+    response = upload(client)
+    assert response.status_code == 409 and "earlier pass stands" in response.json()["detail"]
+    assert restored["status"] == "graded" and restored["final_score"] == 70 and restored["passed"] is True

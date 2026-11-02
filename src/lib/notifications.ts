@@ -1,5 +1,6 @@
 import { findAgent } from "../data/agents";
 import type { Chat } from "../types";
+import type { RegradeOffer } from "./capstoneApi";
 import type { CapstoneFlowState } from "./capstoneFlow";
 
 /** One "you have something pending" entry for the bell: which agent, what is waiting. */
@@ -71,6 +72,27 @@ function capstoneBody(state: CapstoneFlowState, now: number): string | null {
 
 /** What is waiting for the student in each agent, from the progress saved in their chats.
  * Only an agent's most recent chat counts, so an old abandoned chat never nags. */
+/** What the bell says about a project with second chances. */
+export function regradeNotice(offer: RegradeOffer): string {
+  const score = offer.score != null ? ` (${Math.round(offer.score)}/100)` : "";
+  const chances = `${offer.chances_left} chance${offer.chances_left === 1 ? "" : "s"}`;
+  return `${offer.title}${score}: a problem on our side may have lowered this grade. You have ${chances} to submit it again.`;
+}
+
+/** The projects with second chances (see RegradeOffer). `id` is the project's
+ * thread: a chat may no longer exist for it, so opening one finds or makes it. */
+export function regradeNotifications(offers: RegradeOffer[]): PendingNotification[] {
+  const agent = findAgent("capstone-project");
+  return offers.map((offer) => ({
+    key: `regrade:${offer.thread_id}:${offer.chances_left}`,
+    id: offer.thread_id,
+    chatId: "",
+    icon: agent?.icon ?? "",
+    agentName: agent?.name ?? "Capstone Project",
+    body: regradeNotice(offer),
+  }));
+}
+
 export function buildPendingNotifications(sources: NotificationSources, now: number = Date.now()): PendingNotification[] {
   const latest = new Map<string, Chat>();
   for (const chat of sources.chats) {

@@ -22,6 +22,7 @@ def _log_id(thread_id: str) -> str:
 
 from app import config
 from app.agentic.qa_agent import ProjectNotFound, ask_project_question
+from app.api import regrade
 from app.api.privacy import personal_data_action
 from app.api.schemas import (
     ConfigOut,
@@ -412,8 +413,15 @@ async def submission_upload(
     state = _get_state_values(thread_id)
     assignment_id = state["assignment_id"]
 
-    if state.get("status") == "graded":
+    gate = await run_in_threadpool(regrade.upload_gate, assignment_id, state.get("status"))
+    if gate == "closed":
         raise HTTPException(409, "This assignment has already been graded and cannot be resubmitted.")
+    if gate == "used_up":
+        earlier = await run_in_threadpool(regrade.earlier_result, assignment_id)
+        if earlier:
+            compiled_graph.update_state(_thread_config(thread_id), earlier)
+        raise HTTPException(409, f"You have used all {regrade.CHANCES} chances, so your earlier pass stands. "
+                                 "This assignment has already been graded and cannot be resubmitted.")
 
     if not docx_file.filename.lower().endswith(".docx"):
         raise HTTPException(400, "The report must be a .docx file.")
@@ -459,7 +467,7 @@ async def submission_upload(
         if in_flight is not None:
             raise HTTPException(409, "A previous submission for this project is still being graded. Please wait for that to finish before submitting again.")
         deadline = assignment.deadline_at
-        if deadline is not None:
+        if deadline is not None and gate != "open":
             # SQLite doesn't persist tzinfo on DateTime(timezone=True) columns —
             # values we wrote as UTC-aware come back naive. We only ever store
             # UTC here, so a naive value read back is safe to treat as UTC.
@@ -543,6 +551,10 @@ async def submission_upload(
             session.close()
         compiled_graph.update_state(_thread_config(thread_id), {"status": "error"})
         raise HTTPException(422, result.get("feedback", "Submission could not be processed."))
+
+    # Graded, whatever the result: a packaging rejection has no score and costs nothing.
+    if result.get("final_score") is not None:
+        await run_in_threadpool(regrade.use_chance, assignment_id)
 
     if result.get("status") == "needs_revision":
         compiled_graph.update_state(
@@ -943,6 +955,7 @@ def get_status(thread_id: str) -> StatusResponse:
         score_reasoning=values.get("score_reasoning"),
         code_quality_score=values.get("code_quality_score"),
         review_markdown=values.get("review_markdown"),
+        kept_submission_id=regrade.kept_submission_id(values.get("assignment_id")) if values.get("status") == "graded" else None,
     )
 
 
@@ -1319,6 +1332,11 @@ async def invoke(request: Request) -> JSONResponse:
         result = await run_in_threadpool(certificate_download_action, payload)
     elif action in {"export_user_data", "delete_user_data"}:
         result = await run_in_threadpool(personal_data_action, action, payload, request.headers.get("x-digidara-user-id"))
+    elif action == "regrade_offers":
+        # The gateway overwrites payload.email with the verified account's own address.
+        if not str(request.headers.get("x-digidara-user-id") or "").strip():
+            raise HTTPException(401, "Verified SkillDARA identity is required")
+        result = {"offers": await run_in_threadpool(regrade.offers, str(payload.get("email") or "").strip().lower())}
     elif action == "get_student_summary":
         # Phase 2 readiness. The orchestrator gateway overwrites payload.email
         # with the verified account's own address for this action.

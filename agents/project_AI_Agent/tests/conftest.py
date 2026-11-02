@@ -44,6 +44,8 @@ def database(monkeypatch, tmp_path):
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine)
     monkeypatch.setattr(routes, "get_session", factory)
+    from app.api import regrade
+    monkeypatch.setattr(regrade, "get_session", factory)
     monkeypatch.setattr(privacy, "get_session", factory)
     monkeypatch.setattr(nodes, "get_session", factory)
     monkeypatch.setattr(qa_agent, "get_session", factory)
