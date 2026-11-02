@@ -61,78 +61,147 @@ function serverOnly(email: string): boolean {
   }
 }
 
+/** Waits before asking again for the history (ms): a restart or a slow moment
+ * must not leave the learner looking at only part of it. */
+const LOAD_RETRY_MS = [2_000, 5_000, 15_000];
+const SAVE_RETRIES = 4;
+
+/**
+ * The account's history on screen without losing what happened while it was
+ * loading. `baseline` is what the screen showed when the load began: a chat new
+ * or changed since then is kept (its save is on the way), and anything else
+ * follows the server, which holds every chat.
+ */
+export function mergeAccountChats(current: Chat[], account: Chat[], baseline: Chat[]): Chat[] {
+  const before = new Map(baseline.map((chat) => [chat.id, chat.updatedAt]));
+  const changed = new Map(current
+    .filter((chat) => !before.has(chat.id) || chat.updatedAt > (before.get(chat.id) as number))
+    .map((chat) => [chat.id, chat]));
+  const merged = account.map((chat) => {
+    const mine = changed.get(chat.id);
+    changed.delete(chat.id);
+    return mine && mine.updatedAt >= chat.updatedAt ? mine : chat;
+  });
+  return [...merged, ...changed.values()];
+}
+
 export function useChats(email: string | undefined) {
   const mutationVersion = useRef(0);
-  const knownChatIds = useRef(new Set<string>());
   const syncQueue = useRef<Promise<unknown>>(Promise.resolve());
+  // Chats the learner deleted: a chat is deleted only by asking, never because
+  // it is missing from a list (a list on screen can be old or partial).
+  const pendingDeletes = useRef(new Set<string>());
+  const deletedHere = useRef(new Set<string>());
+  const clearing = useRef(false);
+  const latest = useRef<Chat[] | null>(null);
+  const saveRetries = useRef(0);
+  const retryTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     mutationVersion.current = 0;
-    knownChatIds.current = new Set();
     syncQueue.current = Promise.resolve();
+    pendingDeletes.current = new Set();
+    deletedHere.current = new Set();
+    clearing.current = false;
+    latest.current = null;
+    saveRetries.current = 0;
+    return () => window.clearTimeout(retryTimer.current);
   }, [email]);
 
   const loadChats = useCallback((): Chat[] => {
     if (!email) return [];
     try {
-      const chats = serverOnly(email) ? [] : JSON.parse(localStorage.getItem(chatsKey(email)) || "[]") as Chat[];
-      knownChatIds.current = new Set(chats.map((chat) => chat.id));
-      return chats;
+      return serverOnly(email) ? [] : JSON.parse(localStorage.getItem(chatsKey(email)) || "[]") as Chat[];
     } catch {
       try { localStorage.removeItem(chatsKey(email)); } catch { /* storage unavailable */ }
-      knownChatIds.current = new Set();
       return [];
     }
   }, [email]);
 
+  const upload = useCallback((token: string, snapshot: Chat[]) => {
+    syncQueue.current = syncQueue.current
+      .catch(() => undefined)
+      .then(() => {
+        const deletes = [...pendingDeletes.current];
+        const clearAll = clearing.current;
+        return (clearAll ? syncChatHistory(token, snapshot, deletes, true) : syncChatHistory(token, snapshot, deletes)).then(() => {
+          deletes.forEach((chatId) => pendingDeletes.current.delete(chatId));
+          if (clearAll) clearing.current = false;
+          saveRetries.current = 0;
+        });
+      })
+      .catch((error) => {
+        console.warn("Could not sync chat history; the local cache is retained.", error);
+        // A slow moment or a restart must not lose a save: send the newest copy again.
+        if (saveRetries.current >= SAVE_RETRIES) return;
+        saveRetries.current += 1;
+        window.clearTimeout(retryTimer.current);
+        retryTimer.current = window.setTimeout(() => {
+          const current = sessionToken();
+          if (current && latest.current) upload(current, latest.current);
+        }, 2_000 * 2 ** saveRetries.current);
+      });
+  }, []);
+
+  /** `deletedIds`: the chats the learner chose to delete with this save. `clearAll`: they cleared their whole history. */
   const saveChats = useCallback(
-    (chats: Chat[]) => {
+    (chats: Chat[], deletedIds: string[] = [], clearAll = false) => {
       if (!email) return;
       const serialized = JSON.stringify(chats);
       writeChatsCache(email, serialized);
       const snapshot = JSON.parse(serialized) as Chat[];
-      const nextIds = new Set(snapshot.map((chat) => chat.id));
-      const deletedIds = [...knownChatIds.current].filter((chatId) => !nextIds.has(chatId));
-      knownChatIds.current = nextIds;
+      deletedIds.forEach((chatId) => {
+        pendingDeletes.current.add(chatId);
+        deletedHere.current.add(chatId);
+      });
+      if (clearAll) clearing.current = true;
+      latest.current = snapshot;
       mutationVersion.current += 1;
 
       const token = sessionToken();
       if (!token) return;
-      syncQueue.current = syncQueue.current
-        .catch(() => undefined)
-        .then(() => syncChatHistory(token, snapshot, deletedIds))
-        .catch((error) => {
-          console.warn("Could not sync chat history; the local cache is retained.", error);
-        });
+      upload(token, snapshot);
     },
-    [email]
+    [email, upload]
   );
 
-  const loadAccountChats = useCallback(async (localChats: Chat[]): Promise<Chat[] | null> => {
+  /** The account's history (sending up what this browser has), asked for again
+   * if it fails; null when it still cannot be read. */
+  const loadAccountChats = useCallback(async (localChats: Chat[], retries: number[] = LOAD_RETRY_MS): Promise<Chat[] | null> => {
     if (!email) return [];
+    for (let attempt = 0; attempt <= retries.length; attempt += 1) {
+      const token = sessionToken();
+      if (!token) return null;
+      const versionAtStart = mutationVersion.current;
+      try {
+        const remote = await fetchChatHistory(token);
+        const accountChats = localChats.length || !remote.initialized
+          ? (await syncChatHistory(token, localChats, [])).chats
+          : remote.chats;
+        // Saved something meanwhile: that newer list stays in the browser's copy.
+        if (mutationVersion.current === versionAtStart) writeChatsCache(email, JSON.stringify(accountChats));
+        return accountChats.filter((chat) => !deletedHere.current.has(chat.id));
+      } catch (error) {
+        console.warn("Could not load account chat history; using the local cache.", error);
+        if (attempt < retries.length) await new Promise((resolve) => window.setTimeout(resolve, retries[attempt]));
+      }
+    }
+    return null;
+  }, [email]);
+
+  /** The account's history as it is now, for a tab the learner came back to. */
+  const refreshAccountChats = useCallback(async (): Promise<Chat[] | null> => {
     const token = sessionToken();
-    if (!token) return null;
-    const versionAtStart = mutationVersion.current;
-
+    if (!email || !token) return null;
     try {
-      const remote = await fetchChatHistory(token);
-      if (mutationVersion.current !== versionAtStart) return null;
-
-      const accountChats = localChats.length || !remote.initialized
-        ? (await syncChatHistory(token, localChats, [])).chats
-        : remote.chats;
-      if (mutationVersion.current !== versionAtStart) return null;
-
-      writeChatsCache(email, JSON.stringify(accountChats));
-      knownChatIds.current = new Set(accountChats.map((chat) => chat.id));
-      return accountChats;
+      return (await fetchChatHistory(token)).chats.filter((chat) => !deletedHere.current.has(chat.id));
     } catch (error) {
-      console.warn("Could not load account chat history; using the local cache.", error);
+      console.warn("Could not refresh account chat history.", error);
       return null;
     }
   }, [email]);
 
-  return { loadChats, loadAccountChats, saveChats };
+  return { loadChats, loadAccountChats, refreshAccountChats, saveChats };
 }
 
 export function nowStr() {

@@ -40,6 +40,7 @@ export async function syncChatHistory(
   token: string,
   chats: Chat[],
   deletedIds: string[],
+  clearAll = false,
 ): Promise<RemoteChatHistory> {
   const response = await fetch(`${ORCHESTRATOR_BASE}/chats/sync`, {
     method: "PUT",
@@ -47,7 +48,7 @@ export async function syncChatHistory(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ chats, deleted_ids: deletedIds }),
+    body: JSON.stringify({ chats, deleted_ids: deletedIds, ...(clearAll ? { clear_all: true } : {}) }),
   });
   return parseResponse(response);
 }

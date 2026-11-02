@@ -60,6 +60,8 @@ def _clean_chat(chat: Any) -> dict[str, Any] | None:
 class ChatHistorySync(BaseModel):
     chats: list[Any] = Field(max_length=MAX_CHATS)
     deleted_ids: list[Any] = Field(default_factory=list, max_length=MAX_CHATS)
+    # The learner chose "clear all history": only then may many chats go at once.
+    clear_all: bool = False
 
     @field_validator("chats")
     @classmethod
@@ -98,6 +100,6 @@ def sync_chat_history(
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     response.headers["Cache-Control"] = "no-store"
-    chats = service.sync_history(user_id, request.chats, request.deleted_ids)
+    chats = service.sync_history(user_id, request.chats, request.deleted_ids, clear_all=request.clear_all)
     agent_state_service.delete_for_chats(user_id, request.deleted_ids)
     return {"chats": chats, "initialized": True}
