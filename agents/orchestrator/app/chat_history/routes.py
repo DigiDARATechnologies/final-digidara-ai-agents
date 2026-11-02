@@ -62,6 +62,8 @@ class ChatHistorySync(BaseModel):
     deleted_ids: list[Any] = Field(default_factory=list, max_length=MAX_CHATS)
     # The learner chose "clear all history": only then may many chats go at once.
     clear_all: bool = False
+    # Chats the learner edited: only these may end up shorter than the server's copy.
+    rewrites: list[str] = Field(default_factory=list, max_length=MAX_CHATS)
 
     @field_validator("chats")
     @classmethod
@@ -100,6 +102,6 @@ def sync_chat_history(
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     response.headers["Cache-Control"] = "no-store"
-    chats = service.sync_history(user_id, request.chats, request.deleted_ids, clear_all=request.clear_all)
+    chats = service.sync_history(user_id, request.chats, request.deleted_ids, clear_all=request.clear_all, rewrites=set(request.rewrites))
     agent_state_service.delete_for_chats(user_id, request.deleted_ids)
     return {"chats": chats, "initialized": True}

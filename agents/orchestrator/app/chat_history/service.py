@@ -92,7 +92,20 @@ def _archive(session, user_id: str, chat_id: str, title: str, stored: list[Conve
     ))
 
 
-def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, clear_all: bool = False, _attempt: int = 1) -> list[dict]:
+def _message_row(user_id: str, chat_id: str, position: int, message: dict) -> ConversationMessage:
+    return ConversationMessage(
+        conversation_id=chat_id,
+        user_id=user_id,
+        position=position,
+        role=message["role"],
+        content=message["text"],
+        display_time=message["time"],
+        message_metadata={key: value for key, value in message.items() if key not in {"role", "text", "time"}},
+    )
+
+
+def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, clear_all: bool = False,
+                 rewrites: frozenset[str] | set[str] = frozenset(), _attempt: int = 1) -> list[dict]:
     if len(set(deleted_ids)) > MAX_DELETES_PER_SYNC and not clear_all:
         logger.warning("chat sync: ignored %d deletions in one sync user=%s", len(set(deleted_ids)), user_id)
         deleted_ids = []
@@ -147,6 +160,15 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, cle
                     # saved before a failed sync): it never cuts off the newer
                     # messages the server already has.
                     continue
+                if len(incoming_said) < len(stored_said) and chat_id not in rewrites:
+                    # An out-of-date copy that went on from an earlier point (a
+                    # second tab, or a browser with an old copy). Only an edit
+                    # says it rewrites a chat, so nothing here replaces the
+                    # server's messages: what it added goes after them.
+                    common = next((i for i, said in enumerate(incoming_said) if said != stored_said[i]), len(incoming_said))
+                    for offset, message in enumerate(chat["messages"][common:]):
+                        session.add(_message_row(user_id, chat_id, len(stored) + offset, message))
+                    continue
                 if stored_said[:len(stored_said)] != incoming_said[:len(stored_said)]:
                     # A rewrite (an edited message): the replaced messages are
                     # archived, never lost.
@@ -157,20 +179,7 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, cle
                 ).delete(synchronize_session=False)
 
             for position, message in enumerate(chat["messages"]):
-                metadata = {
-                    key: value
-                    for key, value in message.items()
-                    if key not in {"role", "text", "time"}
-                }
-                session.add(ConversationMessage(
-                    conversation_id=chat_id,
-                    user_id=user_id,
-                    position=position,
-                    role=message["role"],
-                    content=message["text"],
-                    display_time=message["time"],
-                    message_metadata=metadata,
-                ))
+                session.add(_message_row(user_id, chat_id, position, message))
 
         deleted_at = datetime.utcnow()
         deleted_at_ms = int(time.time() * 1000)
@@ -210,7 +219,7 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, cle
     finally:
         session.close()
     if should_retry:
-        return sync_history(user_id, chats, deleted_ids, clear_all=clear_all, _attempt=_attempt + 1)
+        return sync_history(user_id, chats, deleted_ids, clear_all=clear_all, rewrites=rewrites, _attempt=_attempt + 1)
     return get_history(user_id)[0]
 
 

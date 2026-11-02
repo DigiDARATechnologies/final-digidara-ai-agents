@@ -72,11 +72,22 @@ test('only a chat the learner deleted is sent as deleted, and it stays gone duri
   expect((await result.current.refreshAccountChats())?.map((c) => c.id)).toEqual(['a']);
 });
 
+test('an edited chat says so; no other save may shorten a chat', async () => {
+  const { result } = renderHook(() => useChats(EMAIL));
+  act(() => result.current.saveChats([chat('a')], [], false, ['a']));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(mocked.syncChatHistory).toHaveBeenLastCalledWith('token', [chat('a')], [], false, ['a']);
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+  act(() => result.current.saveChats([chat('a')]));
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  expect(mocked.syncChatHistory).toHaveBeenLastCalledWith('token', [chat('a')], []);
+});
+
 test('clearing all history says so, so the server allows it', async () => {
   const { result } = renderHook(() => useChats(EMAIL));
   act(() => result.current.saveChats([], ['a', 'b'], true));
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-  expect(mocked.syncChatHistory).toHaveBeenLastCalledWith('token', [], ['a', 'b'], true);
+  expect(mocked.syncChatHistory).toHaveBeenLastCalledWith('token', [], ['a', 'b'], true, []);
 });
 
 test('saving during a load no longer throws the account history away', async () => {

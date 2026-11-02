@@ -459,7 +459,9 @@ export default function App() {
           const merged = mergeAccountChats(prev, accountResult.chats, localChats);
           // Persist the migration so the obsolete prompt is not restored on the
           // next sign-in or device sync. No other agent history is touched.
-          if (accountResult.changed) saveChats(merged);
+          if (accountResult.changed) {
+            saveChats(merged, [], false, accountResult.chats.filter((chat, index) => chat !== accountChats[index]).map((chat) => chat.id));
+          }
           return merged;
         });
       });
@@ -652,17 +654,19 @@ export default function App() {
 
   /** Every change starts from the chats as they are now, never from the list of
    * an earlier render: that one can be missing chats. */
-  function persistChats(update: (prev: Chat[]) => Chat[]) {
+  function persistChats(update: (prev: Chat[]) => Chat[], rewrites: string[] = []) {
     setChats((prev) => {
       const next = update(prev);
-      saveChats(next);
+      saveChats(next, [], false, rewrites);
       return next;
     });
   }
 
-  /** Adds a chat, or replaces it when it is already there. */
-  function putChat(chat: Chat) {
-    persistChats((prev) => (prev.some((c) => c.id === chat.id) ? prev.map((c) => (c.id === chat.id ? chat : c)) : [...prev, chat]));
+  /** Adds a chat, or replaces it when it is already there. `edited`: the learner
+   * edited a message, so the chat may end up shorter than the saved one. */
+  function putChat(chat: Chat, edited = false) {
+    persistChats((prev) => (prev.some((c) => c.id === chat.id) ? prev.map((c) => (c.id === chat.id ? chat : c)) : [...prev, chat]),
+      edited ? [chat.id] : []);
   }
 
   // Name each agent chat after what it is about once that is known
@@ -1494,7 +1498,7 @@ export default function App() {
       };
     });
     const withMessage = withUserMsg.find((c) => c.id === chatId);
-    if (withMessage) putChat(withMessage);
+    if (withMessage) putChat(withMessage, isEdit);
     setTyping(true);
 
     // The Conductor: when the learner types instead of tapping a choice, it

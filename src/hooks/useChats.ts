@@ -93,6 +93,7 @@ export function useChats(email: string | undefined) {
   const pendingDeletes = useRef(new Set<string>());
   const deletedHere = useRef(new Set<string>());
   const clearing = useRef(false);
+  const pendingRewrites = useRef(new Set<string>());
   const latest = useRef<Chat[] | null>(null);
   const saveRetries = useRef(0);
   const retryTimer = useRef<number | undefined>(undefined);
@@ -103,6 +104,7 @@ export function useChats(email: string | undefined) {
     pendingDeletes.current = new Set();
     deletedHere.current = new Set();
     clearing.current = false;
+    pendingRewrites.current = new Set();
     latest.current = null;
     saveRetries.current = 0;
     return () => window.clearTimeout(retryTimer.current);
@@ -124,8 +126,12 @@ export function useChats(email: string | undefined) {
       .then(() => {
         const deletes = [...pendingDeletes.current];
         const clearAll = clearing.current;
-        return (clearAll ? syncChatHistory(token, snapshot, deletes, true) : syncChatHistory(token, snapshot, deletes)).then(() => {
+        const rewrites = [...pendingRewrites.current];
+        return (clearAll || rewrites.length
+          ? syncChatHistory(token, snapshot, deletes, clearAll, rewrites)
+          : syncChatHistory(token, snapshot, deletes)).then(() => {
           deletes.forEach((chatId) => pendingDeletes.current.delete(chatId));
+          rewrites.forEach((chatId) => pendingRewrites.current.delete(chatId));
           if (clearAll) clearing.current = false;
           saveRetries.current = 0;
         });
@@ -143,9 +149,11 @@ export function useChats(email: string | undefined) {
       });
   }, []);
 
-  /** `deletedIds`: the chats the learner chose to delete with this save. `clearAll`: they cleared their whole history. */
+  /** `deletedIds`: the chats the learner chose to delete with this save.
+   * `clearAll`: they cleared their whole history. `rewrites`: chats they edited,
+   * the only ones allowed to end up shorter than the server's copy. */
   const saveChats = useCallback(
-    (chats: Chat[], deletedIds: string[] = [], clearAll = false) => {
+    (chats: Chat[], deletedIds: string[] = [], clearAll = false, rewrites: string[] = []) => {
       if (!email) return;
       const serialized = JSON.stringify(chats);
       writeChatsCache(email, serialized);
@@ -155,6 +163,7 @@ export function useChats(email: string | undefined) {
         deletedHere.current.add(chatId);
       });
       if (clearAll) clearing.current = true;
+      rewrites.forEach((chatId) => pendingRewrites.current.add(chatId));
       latest.current = snapshot;
       mutationVersion.current += 1;
 
