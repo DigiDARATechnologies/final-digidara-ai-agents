@@ -47,17 +47,6 @@ MAX_CHAT_MESSAGE_CHARS = 2000
 MAX_HISTORY_TURN_CHARS = 3000
 
 
-class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
-    thread_id: str | None = None
-
-
-class ChatResponse(BaseModel):
-    thread_id: str
-    reply: str
-    agent_used: str | None = None
-
-
 class RouteTurn(BaseModel):
     # Only these two: a browser-supplied "system" turn would otherwise be sent
     # to the model as instructions.

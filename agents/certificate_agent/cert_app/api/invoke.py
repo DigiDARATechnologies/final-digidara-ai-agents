@@ -132,6 +132,8 @@ async def _invoke(request: Request) -> Response:
         return JSONResponse(get_usage_summary(request.headers.get("x-digidara-user-id")))
 
     if action in ("ensure_profile", "ensure_session"):
+        if not str(request.headers.get("x-digidara-user-id") or "").strip():
+            raise HTTPException(status_code=401, detail="Verified SkillDARA identity is required")
         return JSONResponse(_ensure_profile(payload))
 
     if action == "get_student_summary":

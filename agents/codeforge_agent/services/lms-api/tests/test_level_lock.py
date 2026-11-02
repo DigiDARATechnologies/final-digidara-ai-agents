@@ -89,6 +89,10 @@ class LevelLockTests(unittest.TestCase):
         self.assertEqual(self.invoke("submit_problem", {"problem_id": 2, "sourceCode": CODE}, "easy").status_code, 201)
         self.assertEqual(self.invoke("submit_problem", {"problem_id": 3, "sourceCode": CODE}, "easy").status_code, 403)
 
+    def test_a_session_needs_the_verified_user_on_the_call(self):
+        body = {"action": "ensure_session", "payload": {"name": "Someone", "email": "someone@example.test"}}
+        self.assertEqual(self.client.post("/api/invoke", json=body).status_code, 401)
+
     def test_a_difficulty_with_a_solved_problem_stays_open_when_easier_problems_are_added(self):
         from lms_api.repository import technology_level
         self.assertEqual(technology_level({"Easy": {"total": 12, "solved": 10}, "Medium": {"total": 5, "solved": 5},

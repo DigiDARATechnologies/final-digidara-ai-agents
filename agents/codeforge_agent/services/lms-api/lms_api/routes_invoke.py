@@ -127,6 +127,8 @@ def invoke():
         return jsonify({"status": "ok", "agent_name": "codeforge_agent"})
 
     if action == "ensure_session":
+        if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
+            raise ApiError("Verified SkillDARA identity is required.", 401, "unverified_identity")
         name = str(payload.get("name", "")).strip()
         email = str(payload.get("email", "")).strip().lower()
         if not name or not email:

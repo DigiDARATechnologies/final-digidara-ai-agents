@@ -244,6 +244,8 @@ def _invoke():
     if action == "health":
         return jsonify({"status": "ok", "agent_name": "communication_agent"})
     if action == "bridge_identity":
+        if not str(request.headers.get("X-DigiDARA-User-Id") or "").strip():
+            return _error("Verified SkillDARA identity is required.", "unverified_identity", 401)
         return _bridge_identity(payload)
     if action == "usage_summary":
         # Scoped to the verified SkillDARA identity the orchestrator gateway

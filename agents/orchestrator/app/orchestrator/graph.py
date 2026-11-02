@@ -1,9 +1,10 @@
-"""The orchestrator's LangGraph supervisor.
+"""How the general chat picks an agent.
 
-Four nodes, one conditional edge:
+    load_registry --> route --[tool chosen]--> the browser opens that agent's own flow
+                          \--[no tool / general chat]--> the reply
 
-    load_registry --> route --[tool chosen]--> invoke_agent --> summarize --> END
-                          \\--[no tool / general chat]--------------------> END
+This only decides. It never calls an agent itself: an agent is reached through
+the gateway, which signs the call for the verified learner and checks it.
 
 `load_registry` is what makes this "runtime service discovery" instead of a
 hardcoded router: it reads whichever agents are registered and heartbeating
@@ -14,24 +15,15 @@ here, only a new row in the registry (see agents/agent_template).
 Stateless per turn on purpose: the registry can change between any two user
 messages (an agent could restart, or agent #101 could come online mid
 conversation), so re-reading it every turn is a feature, not a wasted call.
-`thread_id` is accepted end-to-end purely so the frontend has a stable id to
-keep local chat history; the graph itself carries no memory of past turns.
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, TypedDict
 
-import httpx
-
-from langgraph.graph import END, StateGraph
-
-from app import config
-from app.auth.agent_signing import sign_headers
-from app.llm.client import call_text, call_with_tools, stream_with_tools
+from app.llm.client import call_with_tools, stream_with_tools
 from app.orchestrator import guard, prompts
-from app.orchestrator.tools import build_tools, endpoint_for
+from app.orchestrator.tools import build_tools
 from app.registry import service as registry_service
 
 logger = logging.getLogger("orchestrator.graph")
@@ -92,49 +84,6 @@ def route_node(state: OrchestratorState) -> dict:
         logger.warning("general chat: replaced a reply that leaked the instructions")
         reply = guard.OFF_LIMITS_REPLY
     return {"tool_name": None, "reply": reply}
-
-
-def _route_after_selection(state: OrchestratorState) -> str:
-    return "invoke_agent" if state.get("tool_name") else "done"
-
-
-# --- Node 3: call the chosen agent's own endpoint (deterministic) ----------
-
-def invoke_agent_node(state: OrchestratorState) -> dict:
-    tool_name = state["tool_name"]
-    endpoint = endpoint_for(state.get("agents") or [], tool_name)
-    if not endpoint:
-        # Registry changed between load_registry and here (agent deregistered
-        # mid-turn) — surface it as a normal chat reply, not a 500.
-        return {"agent_error": "this agent just went offline", "agent_used": tool_name}
-
-    try:
-        body = json.dumps(state.get("tool_args") or {}).encode()
-        resp = httpx.post(
-            endpoint,
-            content=body,
-            headers={"Content-Type": "application/json", **sign_headers(tool_name, "POST", endpoint, body)},
-            timeout=config.AGENT_CALL_TIMEOUT_SECONDS,
-        )
-        resp.raise_for_status()
-        return {"agent_result": resp.json(), "agent_used": tool_name}
-    except Exception as exc:  # noqa: BLE001 — any transport/HTTP failure becomes a clean chat reply, not a crash
-        logger.exception("agent call failed: name=%s endpoint=%s", tool_name, endpoint)
-        return {"agent_error": str(exc), "agent_used": tool_name}
-
-
-# --- Node 4: turn the raw agent result into a human-readable reply (LLM) ---
-
-def summarize_node(state: OrchestratorState) -> dict:
-    agent_used = state.get("agent_used") or "the agent"
-    if state.get("agent_error"):
-        return {"reply": prompts.error_reply(agent_used, state["agent_error"])}
-
-    reply = call_text(
-        system=prompts.summarize_system_prompt(agent_used),
-        user=f"Original user message: {state['message']}\n\nAgent result:\n{state.get('agent_result')}",
-    )
-    return {"reply": reply}
 
 
 def route_message(message: str, history: list[dict[str, str]] | None = None, learner_context: dict | None = None,
@@ -202,28 +151,3 @@ def route_message_stream(
     if sent < len(text):
         yield {"delta": text[sent:]}
     yield {"done": True, "agent_name": None, "reply": text.strip()}
-
-
-def build_orchestrator_graph():
-    graph = StateGraph(OrchestratorState)
-
-    graph.add_node("load_registry", load_registry_node)
-    graph.add_node("route", route_node)
-    graph.add_node("invoke_agent", invoke_agent_node)
-    graph.add_node("summarize", summarize_node)
-
-    graph.set_entry_point("load_registry")
-    graph.add_edge("load_registry", "route")
-    graph.add_conditional_edges(
-        "route",
-        _route_after_selection,
-        {"invoke_agent": "invoke_agent", "done": END},
-    )
-    graph.add_edge("invoke_agent", "summarize")
-    graph.add_edge("summarize", END)
-
-    return graph.compile()  # no checkpointer — each turn is independent, see module docstring
-
-
-# Single shared compiled graph for the app's lifetime.
-orchestrator_graph = build_orchestrator_graph()
