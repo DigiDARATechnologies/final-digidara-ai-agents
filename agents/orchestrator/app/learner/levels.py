@@ -92,6 +92,11 @@ def unlock_progress(agent_name: str) -> int:
 PROMOTE_PROGRESS = 100
 
 
+# Agents whose Professional level is measured on work of its own (Coding: passed
+# assessments; Capstone: passed Professional projects). The others measure it
+# on their Hard sessions.
+OWN_PROFESSIONAL_AGENTS = frozenset({"codeforge_agent", "capstone_project_agent"})
+
 # Which of an agent's easy/medium/hard results each level is measured on.
 # Professional has no question set of its own yet: it keeps the Hard results.
 LEVEL_DIFFICULTY = {"beginner": "easy", "medium": "medium", "hard": "hard", "professional": "hard"}

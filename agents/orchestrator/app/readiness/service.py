@@ -3,8 +3,8 @@
 Each of the four levels is worth LEVEL_POINTS (25) and earns them in
 proportion to how much of it is done, so every bit of progress raises the
 score: 34% of Beginner scores 8.5, Beginner done and 40% of Medium scores 35,
-all four levels done scores 100. Levels up to the learner's current one count
-(see level_credits). The Resume Builder has no levels: its area score is its
+all four levels done scores 100. Everything measured counts, whichever level
+the learner is on (see level_credits). The Resume Builder has no levels: its area score is its
 best ATS score. The overall score is the average over all seven areas. The
 agent's own result is kept as `quality_score`.
 
@@ -254,41 +254,51 @@ def _auto_promote(user, areas: list[dict], levels: dict) -> None:
 
 
 def completed_levels(area: dict) -> list[str]:
-    """The levels this area has completed (100% of the level done). A level
-    below the current one counts as completed when the agent does not
-    measure each level -- the learner moved past it."""
-    if area.get("status") != "assessed" or area.get("leveled") is False:
-        return []
-    current = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
-    measured = area.get("level_progress_basis") == "level"
-    scores = area.get("level_scores") or {}
-    done = []
-    for name in level_rules.LEVELS[:current]:
-        value = scores.get(name) if measured else None
-        if not measured or (isinstance(value, (int, float)) and value >= level_rules.PROMOTE_PROGRESS):
-            done.append(name)
-    progress = area.get("level_progress")
-    if isinstance(progress, (int, float)) and progress >= level_rules.PROMOTE_PROGRESS:
-        done.append(level_rules.LEVELS[current])
-    return done
+    """The levels this area has completed (100% of the level done), wherever
+    they are from the current level. A level below the current one counts as
+    completed when the agent does not measure each level -- the learner moved
+    past it."""
+    return [name for name, credit in level_credits(area).items() if credit * 100 >= level_rules.PROMOTE_PROGRESS]
 
 
 def level_credits(area: dict) -> dict[str, float]:
-    """How much (0-1) of each level up to the current one is done. The current
-    level counts its progress; a level below it counts what the agent measured
-    there, or all of it when the agent does not measure each level (the
-    learner moved past it). Levels above the current one count nothing yet."""
+    """How much (0-1) of each level is done. The current level counts its
+    progress; a level below it counts what the agent measured there, or all of
+    it when the agent does not measure each level (the learner moved past it).
+    A level above it counts what the agent measured there: a learner can get
+    ahead of their level (Coding opens each language on its own progress). A
+    Professional result that only re-measures the Hard sessions waits until
+    the learner is at Professional, so Hard is not counted twice."""
     if area.get("status") != "assessed" or area.get("leveled") is False:
         return {}
     current = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
     measured = area.get("level_progress_basis") == "level"
     scores = area.get("level_scores") or {}
     credits = {}
-    for index, name in enumerate(level_rules.LEVELS[:current + 1]):
+    for index, name in enumerate(level_rules.LEVELS):
+        if index > current and (not measured or (name == "professional"
+                                                 and area.get("agent_name") not in level_rules.OWN_PROFESSIONAL_AGENTS)):
+            continue
         value = area.get("level_progress") if index == current else scores.get(name) if measured else 100
         number = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
         credits[name] = min(1.0, max(0.0, number / 100))
     return credits
+
+
+def open_levels(area: dict) -> list[str]:
+    """The levels the learner can switch to: up to the current one, the next
+    one once it is unlocked, and up to the highest level they have progress
+    at -- a level they have already worked at is never locked."""
+    if area.get("leveled") is False:
+        return []
+    top = level_rules.LEVELS.index(level_rules.normalize(area.get("level")))
+    if area.get("can_level_up"):
+        top = min(top + 1, len(level_rules.LEVELS) - 1)
+    credits = level_credits(area)
+    for index, name in enumerate(level_rules.LEVELS):
+        if credits.get(name):
+            top = max(top, index)
+    return list(level_rules.LEVELS[:top + 1])
 
 
 def level_score(area: dict) -> float | None:
@@ -312,6 +322,7 @@ def rescore(stored_areas: list) -> list[dict]:
         area = dict(stored)
         if "quality_score" in area:
             area["levels_completed"] = completed_levels(area)
+            area["open_levels"] = open_levels(area)
             area["score"] = level_score(area)
         areas.append(area)
     return areas
@@ -347,6 +358,15 @@ def level_progress(user_id: str, agent_name: str, level: str) -> float | None:
             value = area["level_progress"] if "level_progress" in area else area.get("score")
             return float(value) if isinstance(value, (int, float)) else None
     return None
+
+
+def open_levels_for(user_id: str, agent_name: str) -> list[str]:
+    """open_levels from the learner's latest readiness snapshot."""
+    snapshot = latest(user_id)
+    for area in rescore((snapshot.areas or {}).get("areas") or []) if snapshot else []:
+        if area["agent_name"] == agent_name:
+            return open_levels(area)
+    return []
 
 
 def _next_steps(areas: list[dict]) -> list[str]:
@@ -409,6 +429,7 @@ async def compute(user) -> dict:
         if area["agent_name"] not in carried:
             area["quality_score"] = area["score"]
         area["levels_completed"] = completed_levels(area)
+        area["open_levels"] = open_levels(area)
         area["score"] = level_score(area)
     assessed = [a for a in areas if a["status"] == "assessed"]
     overall = overall_score(areas) if assessed else None

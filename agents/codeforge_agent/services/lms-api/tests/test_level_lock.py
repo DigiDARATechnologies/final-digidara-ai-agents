@@ -89,6 +89,13 @@ class LevelLockTests(unittest.TestCase):
         self.assertEqual(self.invoke("submit_problem", {"problem_id": 2, "sourceCode": CODE}, "easy").status_code, 201)
         self.assertEqual(self.invoke("submit_problem", {"problem_id": 3, "sourceCode": CODE}, "easy").status_code, 403)
 
+    def test_a_difficulty_with_a_solved_problem_stays_open_when_easier_problems_are_added(self):
+        from lms_api.repository import technology_level
+        self.assertEqual(technology_level({"Easy": {"total": 12, "solved": 10}, "Medium": {"total": 5, "solved": 5},
+                                           "Hard": {"total": 5, "solved": 1}}), "Hard")
+        self.assertEqual(technology_level({"Easy": {"total": 12, "solved": 10}, "Medium": {"total": 5, "solved": 0},
+                                           "Hard": {"total": 5, "solved": 0}}), "Easy")
+
     def test_the_problem_set_opens_a_level_finished_in_that_language(self):
         def solved_easy(*args, **kwargs):
             languages, selected, course, problems = LevelRepository.problem_set(self.repo, *args, **kwargs)

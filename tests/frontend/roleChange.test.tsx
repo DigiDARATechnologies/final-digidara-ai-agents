@@ -137,6 +137,29 @@ test('no switch button with only one role', async () => {
   expect(screen.queryByRole('button', { name: /Switch role/ })).toBeNull();
 });
 
+test('a level with progress is not locked, even above the current level', async () => {
+  const area = (extra: object) => ({
+    status: 'assessed', weight: 10, activity_count: 3, last_activity_at: null, strengths: [], gaps: [], metrics: {},
+    suggested_level: null, leveled: true, level: 'beginner', level_progress_basis: 'level', next_level: 'medium', can_level_up: false, unlock_at: 100, ...extra,
+  });
+  mocked.fetchReadiness.mockResolvedValue({
+    ...readiness, overall: 20, band: 'not_ready', coverage: { assessed: 2, total: 7 },
+    areas: [
+      area({ agent_name: 'codeforge_agent', label: 'Coding', score: 84.2, levels_completed: ['professional'], level_progress: 80,
+        level_scores: { beginner: 80, medium: 79, hard: 78, professional: 100 }, open_levels: ['beginner', 'medium', 'hard', 'professional'] }),
+      area({ agent_name: 'aptitude_agent', label: 'Aptitude', score: 5, levels_completed: [], level_progress: 20,
+        level_scores: { beginner: 20, medium: 0, hard: 0, professional: 0 }, open_levels: ['beginner'] }),
+    ],
+  } as unknown as Readiness);
+  render(<ReadinessView summary={summary('ai engineer')} onSummaryChange={jest.fn()} onBack={jest.fn()} onToast={jest.fn()} />);
+  const coding = (await screen.findByRole('heading', { name: 'Coding' })).closest('.rd-area') as HTMLElement;
+  expect(coding.querySelectorAll('.rd-level.locked')).toHaveLength(0);
+  expect(coding).toHaveTextContent('Medium is unlocked');
+  expect(coding.querySelector('.rd-area-score')).toHaveTextContent('84/100 · Beginner');
+  const aptitude = screen.getByRole('heading', { name: 'Aptitude' }).closest('.rd-area') as HTMLElement;
+  expect(aptitude.querySelectorAll('.rd-level.locked')).toHaveLength(3);
+});
+
 test('the Resume card has no levels and shows its own ATS score', async () => {
   const area = (extra: object) => ({
     status: 'assessed', weight: 10, activity_count: 3, last_activity_at: null, strengths: [], gaps: [], metrics: {},

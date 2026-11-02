@@ -93,6 +93,8 @@ export interface ReadinessArea {
   level_progress_basis?: "level" | "score";
   next_level?: LevelId | null;
   can_level_up?: boolean;
+  /** The levels the learner can switch to; a level they already have progress at is never locked. */
+  open_levels?: LevelId[];
   /** Progress (0-100) at which the next level unlocks: 100 for Coding, 50 elsewhere. */
   unlock_at?: number;
   /** Progress at every level (0-100), for agents that measure each level on its own results. */

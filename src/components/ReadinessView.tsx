@@ -87,17 +87,18 @@ function metricLine(metrics: ReadinessArea["metrics"]): string {
 const LEVEL_DIFFICULTY: Record<LevelId, string> = { beginner: "Easy", medium: "Medium", hard: "Hard", professional: "Hard" };
 
 /** The four levels. With `gated`, only the next level can be chosen, and only
- * once it is unlocked (50% of the current one); lower levels stay open.
+ * once it is unlocked (50% of the current one); lower levels and `openLevels`
+ * (those with progress already) stay open.
  * `scores` shows each level's own progress under its name. */
-function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, scores, unlockAt = 50 }: {
+function LevelPicker({ value, onChange, disabled, gated, nextUnlocked, openLevels, scores, unlockAt = 50 }: {
   value: LevelId; onChange: (level: LevelId) => void; disabled?: boolean;
-  gated?: boolean; nextUnlocked?: boolean; scores?: Partial<Record<LevelId, number>>; unlockAt?: number;
+  gated?: boolean; nextUnlocked?: boolean; openLevels?: LevelId[]; scores?: Partial<Record<LevelId, number>>; unlockAt?: number;
 }) {
   const current = LEVEL_IDS.indexOf(value);
   return (
     <div className="rd-levels" role="radiogroup" aria-label="Level">
       {LEVEL_IDS.map((level, index) => {
-        const locked = Boolean(gated) && (index > current + 1 || (index === current + 1 && !nextUnlocked));
+        const locked = Boolean(gated) && !openLevels?.includes(level) && (index > current + 1 || (index === current + 1 && !nextUnlocked));
         const reason = index > current + 1
           ? `Unlocks after ${LEVEL_LABELS[LEVEL_IDS[index - 1]]}`
           : unlockAt >= 100 ? `Complete all of ${LEVEL_LABELS[value]} to unlock` : `Complete ${unlockAt}% of ${LEVEL_LABELS[value]} to unlock`;
@@ -124,6 +125,7 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
     : area.agent_name === "codeforge_agent" ? `of ${LEVEL_DIFFICULTY[area.level]} problems solved`
       : "from your best 5 sessions at this level";
   const next = area.next_level ? LEVEL_LABELS[area.next_level] : null;
+  const nextOpen = area.can_level_up || (area.next_level ? area.open_levels?.includes(area.next_level) : false);
   return (
     <div className="rd-progress">
       <div className="rd-progress-head">
@@ -132,7 +134,7 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
       <div className="rd-bar thin"><span style={{ width: `${Math.min(100, progress)}%` }} /></div>
       <p className="rd-muted">
         {Math.round(progress)}% {what}.{" "}
-        {next ? (area.can_level_up ? `${next} is unlocked; at 100% you move up automatically.`
+        {next ? (nextOpen ? `${next} is unlocked; at 100% you move up automatically.`
           : (area.unlock_at ?? 50) >= 100 ? `Complete all of ${LEVEL_LABELS[area.level]} to unlock ${next}; you then move up automatically.`
             : `${area.unlock_at ?? 50}% unlocks ${next}; 100% moves you up automatically.`)
           : "This is the top level."}
@@ -168,7 +170,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         <p className="rd-promoted">🎉 You completed {LEVEL_LABELS[area.promoted_from]} and moved up to {LEVEL_LABELS[area.level]}.</p>
       )}
       {leveled && <>
-        <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} unlockAt={area.unlock_at}
+        <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} openLevels={area.open_levels} unlockAt={area.unlock_at}
           scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
         <LevelProgress area={area} />
       </>}
@@ -188,7 +190,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         <details className="rd-how">
           <summary>How this score works</summary>
           {leveled
-            ? <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level is worth 25 points and earns them as you progress: 40% of a level adds 10 points, a finished level adds 25 (all four finished = 100). Levels go one at a time: {(area.unlock_at ?? 50) >= 100 ? "finish your level (100%) to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
+            ? <p>Progress in your level: {AREA_EXPLANATION[area.agent_name]} Each level is worth 25 points and earns them as you progress: 40% of a level adds 10 points, a finished level adds 25 (all four finished = 100). Points count at every level, even one above your current level, and a level you already have progress at stays open. New levels open one at a time: {(area.unlock_at ?? 50) >= 100 ? "finish your level (100%) to unlock the next one, and you move up automatically." : `complete ${area.unlock_at ?? 50}% of your level to unlock the next one; at 100% you move up automatically.`}</p>
             : <p>{AREA_EXPLANATION[area.agent_name]}</p>}
         </details>
       )}
