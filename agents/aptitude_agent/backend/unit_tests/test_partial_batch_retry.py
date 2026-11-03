@@ -270,3 +270,28 @@ def test_a_filler_that_finds_nothing_keeps_the_original_failure(monkeypatch):
     app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
     with app.app_context(), pytest.raises(ValueError, match="question 2"):
         test_generation.generate_questions([SLOT] * 3, max_validation_attempts=3, fill_missing=lambda slots, keep: None)
+
+
+def test_a_repeat_never_survives_when_another_slot_stays_invalid(monkeypatch):
+    """The repeat check is skipped on an attempt with an invalid question, so with one
+    slot invalid to the end, two copies of a question both used to reach the learner."""
+    from backend.app.services.question_validation import validate_generated_item
+
+    provider = Provider([good(Q_MANAGER), bad(Q_CODE), good(Q_MANAGER), good(Q_CHAIRS), good(Q_AGES)])
+    asked = []
+
+    def fill(slots, keep):
+        asked.append((len(slots), list(keep)))
+        return [validate_generated_item(good(text), SLOT) for text in ("A pump fills one tank while a drain empties it. Which outcome follows for the level?",
+                                                                       "Three boxes are stacked with the red box lowest. Which box can be on top?")][:len(slots)]
+
+    monkeypatch.setattr(test_generation, "json_completion", provider)
+    app = Flask(__name__)
+    app.config.update(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model", ALLOW_DEMO_QUESTIONS=False)
+    with app.app_context():
+        questions, _model, _usage = test_generation.generate_questions(
+            [SLOT] * 5, max_validation_attempts=1, _rescue=False, allow_demo_fallback=False, fill_missing=fill,
+        )
+    texts = [question["question"] for question in questions]
+    assert texts.count(Q_MANAGER) == 1 and len(set(texts)) == 5
+    assert asked[0][0] == 2

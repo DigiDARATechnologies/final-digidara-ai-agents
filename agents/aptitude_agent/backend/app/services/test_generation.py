@@ -533,6 +533,17 @@ def _swap_topics(failed_slots,used_topics,rng=None):
     return swapped
 
 
+def _drop_repeats(accepted):
+    """Removes each accepted question that repeats an earlier one, in place."""
+    kept=[]
+    for index in sorted(accepted):
+        item=accepted[index]
+        if any(item["content_hash"]==other["content_hash"] or questions_are_near_duplicates(item["question"],other["question"]) for other in kept):
+            del accepted[index]
+        else:
+            kept.append(item)
+
+
 def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avoid_number_patterns,deadline,background,request_timeout):
     """Fill the few slots that failed every attempt with a question on another topic.
 
@@ -830,6 +841,10 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
                 return [last_minimal],last_model or current_app.config["OPENAI_MODEL"],accumulated_usage
+    # The repeat check above only runs on an attempt where every question is valid. If
+    # one slot stayed invalid to the end it never ran, so two questions that repeat each
+    # other could both be here. Free the later one: it is replaced with the others.
+    _drop_repeats(accepted)
     rescued=_rescue_failed_slots(
         slots,accepted,last_error,_rescue,
         avoid_questions=avoid_questions,avoid_number_patterns=avoid_number_patterns,
