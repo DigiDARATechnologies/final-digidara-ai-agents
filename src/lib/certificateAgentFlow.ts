@@ -1067,6 +1067,20 @@ export async function handleCertificateText(
       // answered (e.g. the timer's "Timeout" raced a click). Show nothing
       // and leave the newer state from the accepted answer untouched.
       if (turnRes.status?.stale) {
+        // The server is further on than this browser: a reply was lost. Catch up to
+        // the question it is really on, or the exam stops here for good.
+        const serverIndex = turnRes.status.current_question_index ?? 0;
+        const question = turnRes.messages.find((message) => message.role === "assistant");
+        if (question && serverIndex > (state.currentQuestionIndex ?? 0)) {
+          const choices = Array.isArray(question.metadata?.options)
+            ? question.metadata.options.map((option: string) => ({ label: option, value: option }))
+            : undefined;
+          return {
+            state: { ...state, currentQuestionIndex: serverIndex, questionDeadlineAt: Date.now() + 3 * 60 * 1000 },
+            messages: [{ text: question.content, options: choices }],
+            stale: true,
+          };
+        }
         return { state, messages: [], stale: true };
       }
 

@@ -86,7 +86,9 @@ class TestExamReportAndFixes(unittest.TestCase):
         self.assertEqual(first.current_question_index, 1)
         stale = chat_orchestrator.handle_message(sid, "Timeout", question_index=0)
         self.assertTrue(stale.stale)
-        self.assertEqual(stale.messages, [])
+        # It says where the exam really is, without recording anything.
+        self.assertIn("Question 2", stale.messages[0]["content"])
+        self.assertNotIn("correct_answer", stale.messages[0]["metadata"])
         self.assertEqual(chat_repository.get_session(sid)["current_question_index"], 1)
 
     def test_keep_chatting_continues_same_session(self):
