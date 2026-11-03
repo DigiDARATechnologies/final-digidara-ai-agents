@@ -3,7 +3,7 @@ COURSES = [
     ("Data Science", "data-science", "Develop a strong foundation for data preparation and scientific computing.", "data", 2),
     ("AI and Machine Learning", "ai-machine-learning", "Prepare the Python and numerical foundations used in machine learning.", "brain", 3),
     ("Generative AI and Agentic AI", "generative-agentic-ai", "Strengthen the Python foundations behind modern AI applications.", "spark", 4),
-    ("Python Full Stack Development", "python-full-stack", "Practice backend, database, and browser technologies used in full-stack projects.", "layers", 5),
+    ("Python Full Stack Development", "python-full-stack", "Go from HTML, CSS and JavaScript through Python and MySQL to Flask and React.js, ready for full stack projects.", "layers", 5),
 ]
 
 TECHNOLOGIES = [
@@ -14,6 +14,8 @@ TECHNOLOGIES = [
     ("JavaScript", "javascript", "Add browser behavior, data handling, events, and asynchronous workflows.", "JS", 5),
     ("Pandas", "pandas", "Clean, reshape, combine, and summarize tabular data in Python.", "PD", 6),
     ("NumPy", "numpy", "Work efficiently with numerical arrays, broadcasting, and matrix operations.", "NP", 7),
+    ("Flask", "flask", "Build Python web applications and APIs with routes, templates, and databases.", "FL", 8),
+    ("React.js", "react", "Build interactive browser interfaces with components, props, state, and hooks.", "RE", 9),
 ]
 
 COURSE_TECHNOLOGIES = {
@@ -21,10 +23,19 @@ COURSE_TECHNOLOGIES = {
     "data-science": ["python", "mysql", "pandas", "numpy"],
     "ai-machine-learning": ["python", "pandas", "numpy"],
     "generative-agentic-ai": ["python"],
-    "python-full-stack": ["python", "mysql", "html", "css", "javascript"],
+    # In the order they are learned, before the full stack projects.
+    "python-full-stack": ["html", "css", "javascript", "python", "mysql", "flask", "react"],
 }
 
 TOPICS = {
+    "flask": [
+        "Application Setup", "Routes and URL Variables", "Request Data", "Responses and JSON",
+        "Templates with Jinja", "Blueprints", "Databases with SQLAlchemy", "Sessions and Security",
+    ],
+    "react": [
+        "JSX and Components", "Props", "State with useState", "Events and Forms",
+        "Lists and Keys", "useEffect", "Lifting State and Context", "Routing and API Calls",
+    ],
     "python": [
         "Introduction and Syntax", "Print and Input", "Variables", "Data Types", "Type Conversion",
         "Operators", "Conditions", "Loops", "Strings", "Lists", "Tuples", "Sets", "Dictionaries",
