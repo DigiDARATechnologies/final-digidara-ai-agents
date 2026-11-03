@@ -1,3 +1,4 @@
+import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Agent, Chat, ChatOption, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
@@ -78,6 +79,8 @@ interface ChatViewProps {
   autoStopVoiceOnSilence?: boolean;
   /** For pronunciation: locks typing so the learner must use the microphone. */
   voiceOnly?: boolean;
+  /** Text to start the message box with (a paragraph being rewritten). */
+  composerSeed?: string;
   /** Server-side transcription for a recorded answer. When given, phones
    * record the answer and send it here instead of using the browser's live
    * speech recognition, which is unreliable on phones. */
@@ -160,6 +163,7 @@ export default function ChatView({
   immersiveSpeaking,
   autoStopVoiceOnSilence = false,
   voiceOnly = false,
+  composerSeed,
   transcribeAudio,
   previewAudio,
   alwaysRecordVoice = false,
@@ -222,6 +226,17 @@ export default function ChatView({
     });
   }, [isGeneralChat]);
 
+  useEffect(() => { if (composerSeed) setInput(composerSeed); }, [composerSeed]);
+
+  // Word practice is one short word at a time. Opening the microphone for each
+  // attempt lost the word's beginning while the device started up, so it was
+  // heard wrongly until the learner repeated it: it stays open during the practice.
+  useEffect(() => {
+    if (!voiceOnly) return;
+    warmMicrophone();
+    return releaseWarmMicrophone;
+  }, [voiceOnly]);
+
   function handleMicClick() {
     stopCoachAudio();
     setAgentSpeaking(false);
@@ -279,7 +294,8 @@ export default function ChatView({
     }, {
       autoStopOnSilence: autoStopVoiceOnSilence || speech.recordingMode,
       silenceMs: effectiveSilenceMs,
-      finalFromPreview: true,
+      // A short word needs the whole recording, not the latest live preview.
+      finalFromPreview: !voiceOnly,
       onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
         if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));

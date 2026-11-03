@@ -106,9 +106,9 @@ export function startWriting(
   });
 }
 
-export function respondWriting(authToken: string, sessionId: number, answer: string, finalizeAfterSubmission = false) {
+export function respondWriting(authToken: string, sessionId: number, answer: string, finalizeAfterSubmission = false, rewrite = false) {
   return invoke<WritingTurnResult>("writing_respond", {
-    authToken, session_id: sessionId, answer, finalize_after_submission: finalizeAfterSubmission,
+    authToken, session_id: sessionId, answer, finalize_after_submission: finalizeAfterSubmission, ...(rewrite ? { rewrite: true } : {}),
   });
 }
 

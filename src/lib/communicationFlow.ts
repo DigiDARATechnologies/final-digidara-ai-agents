@@ -56,6 +56,9 @@ export interface CommunicationFlowState {
   minimalPairResponses?: string[];
   activeModule?: "writing" | "speaking" | "pronunciation";
   writingMode?: "write" | "chat";
+  /** Write mode: the paragraph just scored, and the box's text while rewriting it. */
+  lastParagraph?: string;
+  rewriteDraft?: string;
   writingTopic?: string;
   writingTopicDescription?: string;
   writingChatHistory?: Array<{ role: "assistant" | "user"; text: string }>;
@@ -422,6 +425,12 @@ async function beginDailyWriting(state: CommunicationFlowState): Promise<{ state
   } catch (error) { return showMenu(state, `Could not start daily writing: ${(error as Error).message}`); }
 }
 
+const REWRITE_PARAGRAPH = "rewrite_paragraph";
+const WRITING_RESULT_OPTIONS = [
+  { label: "✍️ Rewrite and improve", value: REWRITE_PARAGRAPH, description: "Practise the same paragraph again and get a new score" },
+  { label: "End session", value: "end_session" },
+];
+
 async function beginWritingMode(state: CommunicationFlowState, writingMode: "write" | "chat"): Promise<{ state: CommunicationFlowState; messages: CommunicationFlowMessage[] }> {
   const topic = state.writingTopic;
   if (!topic) return showMenu(state, "Please enter a writing topic first.");
@@ -656,12 +665,12 @@ export async function handleCommunicationText(
     }
     try {
       const isWriteMode = state.writingMode === "write";
-      const result = await respondWriting(state.authToken!, state.sessionId!, trimmed, isWriteMode);
+      const result = await respondWriting(state.authToken!, state.sessionId!, trimmed, isWriteMode, Boolean(state.rewriteDraft));
       const feedback = result.feedback;
       if (isWriteMode) {
         return {
-          state: { ...state, step: "writing_result", lastScores: feedback?.scores, lastFeedback: feedback?.short_feedback || feedback?.feedback },
-          messages: [{ text: writingEvaluationResult(feedback || {}), options: [{ label: "End session", value: "end_session" }] }],
+          state: { ...state, step: "writing_result", lastParagraph: trimmed, rewriteDraft: undefined, lastScores: feedback?.scores, lastFeedback: feedback?.short_feedback || feedback?.feedback },
+          messages: [{ text: writingEvaluationResult(feedback || {}), options: WRITING_RESULT_OPTIONS }],
         };
       }
       const corrected = String(feedback?.corrected_answer || "").trim();
@@ -708,7 +717,13 @@ export async function handleCommunicationText(
         return showMenu(state, `Could not end the session: ${(error as Error).message}`);
       }
     }
-    return { state, messages: [{ text: "Your writing evaluation is complete. Choose End session when you are ready.", options: [{ label: "End session", value: "end_session" }] }] };
+    if (command === REWRITE_PARAGRAPH && state.lastParagraph) {
+      return {
+        state: { ...state, step: "writing_turn" as const, rewriteDraft: state.lastParagraph },
+        messages: [{ text: "Your paragraph is in the box below. Use the corrections above to improve it, then submit it for a new score. You can do this as many times as you like.", options: [{ label: "End session", value: "end_session" }] }],
+      };
+    }
+    return { state, messages: [{ text: "Your writing evaluation is complete. Rewrite your paragraph to improve it, or end the session.", options: WRITING_RESULT_OPTIONS }] };
   }
 
   if (state.step === "writing_chat_turn") {

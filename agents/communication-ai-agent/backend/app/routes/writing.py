@@ -932,6 +932,12 @@ def respond():
         if not session.turns:
             return _api_error("No active prompt found for this session.", "NO_ACTIVE_TURN", 400)
         current_turn = next((turn for turn in session.turns if not turn.user_response), None)
+        if current_turn is None and data.get("rewrite"):
+            # Practising the same paragraph again: another attempt at the same
+            # prompt, scored on its own. The earlier attempts stay in the report.
+            last_turn = max(session.turns, key=lambda turn: turn.turn_number)
+            current_turn = WritingTurn(session_id=session.id, turn_number=last_turn.turn_number + 1, ai_prompt=last_turn.ai_prompt)
+            db.session.add(current_turn)
         if current_turn is None:
             return _api_error("This prompt has already been submitted.", "TURN_ALREADY_SUBMITTED", 409)
         current_turn.user_response = answer
