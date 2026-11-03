@@ -248,3 +248,14 @@ describe('a previous interview whose report can never be made', () => {
     expect(result.messages.map((m) => m.text).join(' ')).toContain('still processing');
   });
 });
+
+test('one failed save is sent again by itself and the next question follows', async () => {
+  const live = { step: 'in_interview', sessionToken: 'token', interviewId: 9, question: 'Q1', questionOrder: 1, realQuestionIndex: 1, totalQuestions: 5 } as MockInterviewFlowState;
+  jest.mocked(api.submitMockInterviewAnswer)
+    .mockReset()
+    .mockRejectedValueOnce(new Error('502'))
+    .mockResolvedValueOnce({ question: 'Q2', question_order: 2, real_question_index: 2, total_questions: 5 } as never);
+  const result = await handleMockInterviewText(live, user, 'My answer');
+  expect(api.submitMockInterviewAnswer).toHaveBeenCalledTimes(2);
+  expect(result.state.question).toBe('Q2');
+});
