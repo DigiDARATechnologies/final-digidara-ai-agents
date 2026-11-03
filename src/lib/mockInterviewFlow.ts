@@ -304,7 +304,17 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
   }
 
   if (state.step === "in_interview" && state.interviewId && state.questionOrder) {
-    if (value === "retry_report") return finish(state);
+    if (value === "retry_report") {
+      const done = await finish(state);
+      // Retrying can never help this one: close it and let the learner start again.
+      if (done.state.step === "completed" || !/not ready to complete/i.test(done.state.error ?? "")) return done;
+      const exited = await exitMockInterview(state.sessionToken, state.interviewId, state.questionOrder).catch(() => null);
+      if (!exited) return done;
+      return {
+        state: { ...state, step: "completed", question: undefined, error: undefined },
+        messages: [{ text: `This interview could not be continued, so it was closed. ${exitScoreText(exited, state.totalQuestions)}`, options: restartOption }],
+      };
+    }
     if (value === "exit_interview" || value === "exit_interview_inactive") {
       try {
         const exited = await exitMockInterview(state.sessionToken, state.interviewId, state.questionOrder);
