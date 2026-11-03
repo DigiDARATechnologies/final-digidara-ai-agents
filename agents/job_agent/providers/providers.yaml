@@ -465,6 +465,13 @@ it_coverage:
     - Salesforce Developer
     - Business Analyst
     - Technical Support Engineer
+    - Mobile App Developer
+    # Learners also target these, and without a search they had no jobs at all.
+    - Digital Marketing Executive
+    - Sales Executive
+    - HR Executive
+    - Content Writer
+    - Accounts Executive
   # Adzuna: every role in each of these cities.
   cities:
     - Chennai
@@ -474,6 +481,8 @@ it_coverage:
     - Salem
     - Bengaluru
     - Hyderabad
+  # Adzuna: every role again as "<role> remote" here, or there would be few remote jobs.
+  remote_where: India
   # JSearch has a much smaller free quota, so it searches each role once,
   # as "<role> fresher in <region>".
   jsearch_region: Tamil Nadu

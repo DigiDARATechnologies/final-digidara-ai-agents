@@ -275,6 +275,7 @@ def get_it_coverage(config=None):
         "roles": _names(coverage.get("roles")),
         "cities": _names(coverage.get("cities")),
         "jsearch_region": str(coverage.get("jsearch_region") or "").strip(),
+        "remote_where": str(coverage.get("remote_where") or "").strip(),
     }
 
 
@@ -297,6 +298,8 @@ def get_adzuna_config(config=None):
         ]
     elif coverage["roles"] and coverage["cities"]:
         queries = [{"what": role, "where": city} for role in coverage["roles"] for city in coverage["cities"]]
+        if coverage["remote_where"]:
+            queries += [{"what": f"{role} remote", "where": coverage["remote_where"]} for role in coverage["roles"]]
     else:
         queries = list(DEFAULT_ADZUNA_QUERIES)
 

@@ -107,3 +107,12 @@ def test_retention_is_a_week_and_never_deletes_a_saved_or_applied_job():
 def test_the_daily_automation_prunes_after_a_week(_claim, prune, _adzuna, _jsearch, _record):
     automation.queue_due_automation(datetime(2026, 10, 1, 9, 0, tzinfo=ZoneInfo("Asia/Kolkata")))
     prune.assert_called_once_with(max_age_days=7)
+
+
+def test_the_catalogue_searches_other_careers_and_remote_jobs():
+    queries = get_adzuna_config(load_providers_config())["queries"]
+    for role in ("Digital Marketing Executive", "Sales Executive", "HR Executive", "Mobile App Developer"):
+        assert {"what": role, "where": "Chennai"} in queries
+        assert {"what": f"{role} remote", "where": "India"} in queries
+    assert {"what": "Data Analyst remote", "where": "India"} in queries
+
