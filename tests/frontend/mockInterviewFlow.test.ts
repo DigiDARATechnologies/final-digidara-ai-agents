@@ -259,3 +259,14 @@ test('one failed save is sent again by itself and the next question follows', as
   expect(api.submitMockInterviewAnswer).toHaveBeenCalledTimes(2);
   expect(result.state.question).toBe('Q2');
 });
+
+test('Retry on a report that can never be made closes the interview instead of failing again', async () => {
+  jest.mocked(api.endMockInterview).mockReset().mockRejectedValue(new Error('This interview is not ready to complete.'));
+  jest.mocked(api.exitMockInterview).mockReset().mockResolvedValue({ scorecard: [] } as never);
+  const stuck = { step: 'in_interview', sessionToken: 't', interviewId: 7, questionOrder: 5, totalQuestions: 5 } as MockInterviewFlowState;
+  const result = await handleMockInterviewText(stuck, user, 'retry_report');
+  expect(api.exitMockInterview).toHaveBeenCalledWith('t', 7, 5);
+  expect(result.state.step).toBe('completed');
+  expect(result.messages[0].text).toContain('could not be continued');
+  jest.mocked(api.endMockInterview).mockReset();
+});

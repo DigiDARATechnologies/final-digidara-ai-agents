@@ -77,3 +77,25 @@ def test_local_category_fixture_produces_five_unique_sample_questions(category):
     assert len(questions)==5
     assert len(fingerprints)==len(set(fingerprints))
     assert all("local practice" not in question["question"].casefold() for question in questions)
+
+
+def test_a_question_needs_the_passage_or_data_it_refers_to():
+    import pytest
+    from backend.app.services.question_validation import missing_material
+
+    for question in (
+        "What tone does the author use in the passage?",
+        "What is the main idea of the passage about climate change?",
+        "In the passage, the author emphasizes teamwork. What is the main idea?",
+        "Using the following table, which company grew fastest?",
+    ):
+        assert missing_material(question), question
+    for question in (
+        "Read the following passage: 'The cat sat on the mat. It was a sunny day.' What is the main idea?",
+        "Identify the tone of the following passage: 'The sun set behind the mountains, casting a golden hue.'",
+        "From the following table: Company A sold 120 units in Jan, 150 in Feb. Which grew?",
+        "If 'CAT' is coded as '3120', what is the code for 'DOG'?",
+        "Which of the following sentences uses the article correctly?",
+        "In a pie chart, if 40% of the chart represents sales, what is the angle?",
+    ):
+        assert not missing_material(question), question

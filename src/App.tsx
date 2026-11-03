@@ -233,6 +233,7 @@ export default function App() {
   const [communicationStates, setCommunicationStates] = useState<Record<string, CommunicationFlowState>>({});
   const [resumeBuilderStates, setResumeBuilderStates] = useState<Record<string, ResumeBuilderFlowState>>({});
   const [certificateStates, setCertificateStates] = useState<Record<string, CertificateFlowState>>({});
+  const certificateStatesRef = useRef(certificateStates);
   const [mockInterviewStates, setMockInterviewStates] = useState<Record<string, MockInterviewFlowState>>({});
   const [jobFetchStates, setJobFetchStates] = useState<Record<string, JobFetchFlowState>>({});
   const [jobFetchPendingFiles, setJobFetchPendingFiles] = useState<Record<string, File | null>>({});
@@ -280,6 +281,7 @@ export default function App() {
   const toastTimer = useRef<number | undefined>(undefined);
   const replyTimer = useRef<number | undefined>(undefined);
   const aptitudeTimeoutSubmissions = useRef(new Set<string>());
+  const certificateAnswersInFlight = useRef(0);
   const [proctorSlot, setProctorSlot] = useState<HTMLElement | null>(null);
   const aptitudeFinalizedAttempts = useRef(new Set<string>());
   // A timeout belongs to a particular question, not an entire session. A
@@ -1689,11 +1691,18 @@ export default function App() {
     if (agent?.kind === "certificate") {
       const flowState = certificateStates[chatId] ?? createInitialCertificateState();
       let nextExamText: string | undefined;
+      certificateAnswersInFlight.current += 1;
       handleCertificateText(flowState, text, user)
         .then(({ state, messages, openNewChat, stale }) => {
-          // A stale turn was ignored by the server; keep the newer state.
-          if (!stale) setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
-          appendAgentMessages(chatId, messages);
+          // A stale turn was ignored by the server; keep the newer state, unless
+          // this browser really is behind because an earlier reply was lost.
+          const live = certificateStatesRef.current[chatId];
+          const behind = stale && certificateAnswersInFlight.current === 1 && messages.length > 0
+            && (live?.currentQuestionIndex ?? 0) < (state.currentQuestionIndex ?? 0);
+          if (!stale || behind) {
+            setCertificateStates((prev) => ({ ...prev, [chatId]: state }));
+            appendAgentMessages(chatId, messages);
+          }
           nextExamText = openNewChat?.initialText;
         })
         .catch(() => {
@@ -1702,6 +1711,7 @@ export default function App() {
           }]);
         })
         .finally(() => {
+          certificateAnswersInFlight.current -= 1;
           setTyping(false);
           if (nextExamText !== undefined) void startNextCertificateExamChat(agent, nextExamText);
         });
@@ -2090,6 +2100,7 @@ export default function App() {
   const isJobFetchChat = currentAgent.kind === "job-fetch";
   const isMockInterviewChat = currentAgent.kind === "mock-interview";
   // The SkillDARA Assistant (general chat): voice goes to OpenAI transcription.
+  certificateStatesRef.current = certificateStates;
   const capstoneState = currentChat ? capstoneStates[currentChat.id] : undefined;
   // A viva question is waiting: answered in the viva panel (voice or typing).
   const capstoneVivaLive = isCapstoneChat && capstoneState?.step === "awaiting_viva_answer"

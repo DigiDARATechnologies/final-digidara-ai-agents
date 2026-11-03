@@ -25,6 +25,7 @@ from app.learner import levels as level_rules
 from app.learner import service as learner_service
 from app.links import service as links_service
 from app.models import BossIssueReport
+from app.monitoring import service as monitoring
 from app.readiness import service as readiness_service
 
 logger = logging.getLogger("orchestrator.boss.repairs")
@@ -38,7 +39,9 @@ REPORTS_PER_DAY = 5
 MAX_REPORT_CHARS = 500
 
 _YES = re.compile(r"^\s*(yes|yeah|yep|ok|okay|sure|confirm|please do|do it|go ahead)\b", re.IGNORECASE)
-_REPORT_WORDS = re.compile(r"\b(report|complain|complaint|support|tell (?:the|your) team)\b", re.IGNORECASE)
+_REPORT_WORDS = re.compile(r"\b(report|complain|complaint|support|team|escalate|contact (?:the|your|skilldara))\b", re.IGNORECASE)
+_REFUSAL = re.compile(r"^\s*(no|nope|not now|don'?t|do not|never mind|cancel|stop)\b", re.IGNORECASE)
+_SHORT_REPLY_WORDS = 4
 
 
 def _last_turn(history: list[dict], role: str) -> str:
@@ -161,13 +164,24 @@ def _switch_level(user, agent: str, level: str, message: str, history: list[dict
     return _result(name, True, f"Your {LEVEL_AGENTS[agent]} level is now {label}. Your points do not change.")
 
 
+def asks_to_report(message: str, history: list[dict]) -> bool:
+    """They asked for the team, or answered Boss's offer with anything short of no.
+    Spoken answers arrive as "Team." or "Mate.", and asking them again helps nobody."""
+    if _REFUSAL.match(message):
+        return False
+    if _REPORT_WORDS.search(message):
+        return True
+    offered = re.search(r"\breport\b|\bteam\b", _last_turn(history, "assistant"), re.IGNORECASE)
+    return bool(offered) and len(message.split()) <= _SHORT_REPLY_WORDS
+
+
 def _report(user, category: str, agent_id: str, message: str, history: list[dict]) -> dict:
     name = "report"
-    if not _REPORT_WORDS.search(message) and not _agreed(message, history, "team"):
+    if not asks_to_report(message, history):
         logger.warning("boss repair refused, the learner did not ask: %s user=%s", name, user.id)
         return _result(name, False, "Nothing was sent. Tell me if you want this reported to the SkillDARA team.")
-    # After a plain "yes", the problem itself is in what they said before it.
-    words = _last_turn(history, "user") if _YES.match(message) else message
+    # After a short answer, the problem itself is in what they said before it.
+    words = (_last_turn(history, "user") or message) if len(message.split()) <= _SHORT_REPLY_WORDS else message
     session = db.get_session()
     try:
         since = datetime.utcnow() - timedelta(days=1)
@@ -177,7 +191,12 @@ def _report(user, category: str, agent_id: str, message: str, history: list[dict
         session.commit()
     finally:
         session.close()
-    return _result(name, True, "I sent this to the SkillDARA team.")
+    try:
+        monitoring.report_to_team(user.name or "", user.email or "", category, agent_id[:60], words[:MAX_REPORT_CHARS])
+    except Exception:
+        # Their report is saved; a failure to pass it on is logged for the next check.
+        logger.exception("could not pass a learner's report to the team")
+    return _result(name, True, "I sent this to the SkillDARA team, with the recent errors for this agent. They will see it right away.")
 
 
 def _cancel_links(user, chat_id: str) -> dict:

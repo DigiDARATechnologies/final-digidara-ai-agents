@@ -90,6 +90,21 @@ def _find_current_question_meta(history: List[Dict], question_index: int) -> Opt
     return None
 
 
+def _current_question_message(session_id: str, history: List[Dict], question_index: int, total: int) -> List[Dict]:
+    """The current question for the client, from the session's question bank."""
+    bank = next((m["metadata"]["questions_bank"] for m in reversed(history)
+                 if isinstance(m.get("metadata"), dict) and m["metadata"].get("questions_bank")), [])
+    if question_index >= len(bank):
+        return []
+    question = bank[question_index]
+    return [_sanitize_message_for_client({
+        "session_id": session_id, "role": "assistant",
+        "content": f"Question {question_index + 1} of {total or len(bank)}:\n{question['question']}",
+        "message_type": "mcq_question" if question.get("options") else "freetext_question",
+        "metadata": {"question_index": question_index, "phase": "exam", "options": question.get("options", [])},
+    })]
+
+
 def _clean_topic_name(raw_topic: str) -> str:
     return raw_topic.strip()
 
@@ -658,8 +673,11 @@ def _handle_message(
         # An answer to a question that was already answered (double click,
         # or the timer's "Timeout" racing a real answer) must be ignored —
         # otherwise that question is graded twice and the next one repeated.
+        # It also carries the question the exam is really on. When a reply is lost
+        # (a slow moment or a restart) the browser is still on the old question, and
+        # without this every answer it sent was ignored and the exam never went on.
         stale_result = ChatTurnResult(
-            messages=[],
+            messages=_current_question_message(session_id, history, current_idx, session.get("total_questions", 0)),
             session_status="in_exam",
             current_question_index=current_idx,
             total_questions=session.get("total_questions", 0),

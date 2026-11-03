@@ -559,6 +559,9 @@ const chancesText = (count: number) => `${count} chance${count === 1 ? "" : "s"}
 /** What the chat says when the learner opens that second chance. */
 export function regradeMessage(offer: RegradeOffer): string {
   const keep = offer.passed ? " Your earlier pass stays safe, whatever happens." : "";
+  if (offer.reason === "viva_proctoring") {
+    return `We found a problem on our side: the proctoring screen wrongly counted each answer in your viva as a page reload, and that ended your viva for ${offer.title}. It is fixed now, and the false warnings have been removed.\n\nYou have ${offer.chances_left} chance${offer.chances_left === 1 ? "" : "s"} to submit your project again and take a new viva, even if your 7-day window has closed.${keep}`;
+  }
   return `We found a problem on our side: projects with code in a folder such as src/ could fail with a "module not found" error when we ran them, and that may have lowered your grade for ${offer.title}. It is fixed now.\n\nYou have ${chancesText(offer.chances_left)} to submit again, even if your 7-day window has closed.${keep} Upload your report (.docx) and your project (.zip) here when you are ready.`;
 }
 

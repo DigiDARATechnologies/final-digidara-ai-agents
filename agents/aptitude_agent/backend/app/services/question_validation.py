@@ -540,6 +540,20 @@ def _validate_explicit_arithmetic_answer(question, options, answer):
         raise ValueError("question has multiple options matching its calculable result")
 
 
+# A question that points at something it does not include: "What tone does the
+# author use in the passage?" with no passage cannot be answered.
+_NEEDS_MATERIAL = re.compile(
+    r"\b(?:passage|paragraph|excerpt)\b"
+    r"|\b(?:following|given|above|below)\s+(?:table|chart|graph|diagram|figure|data|dataset|code|snippet|text|image)\b",
+    re.IGNORECASE,
+)
+_HAS_MATERIAL = re.compile(r"`|\n|['\"‘“][^'\"’”]{20,}['\"’”]|:\s*\S.{29,}", re.DOTALL)
+
+
+def missing_material(question):
+    return bool(_NEEDS_MATERIAL.search(question or "")) and not _HAS_MATERIAL.search(question or "")
+
+
 def validate_generated_item(item, slot, internal_values=()):
     selected_language=str(slot.get("technical_language") or "python").lower()
     if not isinstance(item, dict):
@@ -548,6 +562,8 @@ def validate_generated_item(item, slot, internal_values=()):
     item=apply_structured_code_fields(item,slot["category"],selected_language)
     required = {"question","options","correct_answer","explanation","category","topic","difficulty"}
     if not isinstance(item, dict) or not required.issubset(item): raise ValueError("missing required fields")
+    if missing_material(item["question"]):
+        raise ValueError("question refers to a passage, table or data it does not include; put it in the question, or ask something self-contained")
     options = item["options"]
     if not isinstance(options, dict) or set(options) != {"A","B","C","D"}: raise ValueError("options must be A-D")
     technical=slot["category"]=="Technical Aptitude"

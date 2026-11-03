@@ -35,3 +35,11 @@ test('the message promises a passed student their pass, and only them', () => {
   expect(regradeMessage({ ...offer, passed: false })).not.toContain('Your earlier pass');
   expect(regradeMessage(offer)).toContain('even if your 7-day window has closed');
 });
+
+test('a viva ended by false warnings says what happened, not the run bug', () => {
+  const message = regradeMessage({ ...offer, reason: 'viva_proctoring' });
+  expect(message).toContain('wrongly counted each answer');
+  expect(message).toContain('take a new viva');
+  expect(message).not.toContain('module not found');
+  expect(message).toContain('Your earlier pass stays safe');
+});

@@ -206,3 +206,12 @@ def test_mixed_technical_schedule_repeats_only_saved_skill_topics_for_extra_slot
     ))
     assert len(schedule) == 8
     assert set(schedule) <= skill_topics
+
+
+def test_a_non_coding_skill_is_not_also_told_to_use_a_coding_language():
+    from backend.app.services.test_generation import _slot
+
+    power_bi = _slot("Technical Aptitude", "Power BI & Data Visualization", "Medium", "SQL", None, "Data Analyst", ["Power BI"], "Power BI")
+    assert power_bi["technical_skill"] == "Power BI" and "technical_language" not in power_bi
+    sql = _slot("Technical Aptitude", "SQL Queries & Joins", "Medium", "SQL", None, "Data Analyst", ["SQL"], "SQL")
+    assert sql["technical_language"] == "SQL"

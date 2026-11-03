@@ -153,6 +153,8 @@ class ProjectRegrade(Base):
     original_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     original_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     chances_left: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Why: None for the run fix, "viva_proctoring" for app/api/viva_chances.py.
+    reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

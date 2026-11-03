@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.api import regrade
+from app.api import regrade, viva_chances
 from app.db.models import ProjectAssignment, ProjectRegrade, Student, Submission, SubmissionStatus
 
 BEFORE = regrade.RUN_FIX_AT - timedelta(days=1)
@@ -15,6 +15,7 @@ ERROR = "ModuleNotFoundError: No module named 'storage'"
 @pytest.fixture
 def db(database, monkeypatch):
     monkeypatch.setattr(regrade, "get_session", database)
+    monkeypatch.setattr(viva_chances, "get_session", database)
     return database
 
 
@@ -85,3 +86,28 @@ def test_offers_need_the_verified_user(client, db):
     body = {"action": "regrade_offers", "payload": {"email": _email(db)}}
     assert client.post("/api/invoke", json=body).status_code == 401
     assert client.post("/api/invoke", json=body, headers=HEADERS).json() == {"offers": []}
+
+
+def test_a_viva_ended_by_false_warnings_gets_new_chances_once(db):
+    from app.api.viva_chances import REASON, grant
+
+    _submission(db, "s1", status=SubmissionStatus.needs_revision, passed=True, viva=False, feedback="Good work.")
+    assert grant(["s1"], apply=False) == 1
+    assert regrade.offers(_email(db)) == []
+    assert grant(["s1"], apply=True) == 1
+    offers = regrade.offers(_email(db))
+    assert offers[0]["chances_left"] == regrade.CHANCES and offers[0]["reason"] == REASON
+    regrade.use_chance("assignment")
+    assert grant(["s1"], apply=True) == 0
+    assert regrade.offers(_email(db))[0]["chances_left"] == regrade.CHANCES - 1
+
+
+def test_a_student_who_passed_keeps_the_pass_with_the_new_chances(db):
+    from app.api.viva_chances import grant
+
+    _submission(db, "s1", feedback="Good work.")
+    _submission(db, "s2", status=SubmissionStatus.needs_revision, passed=True, viva=False, feedback="Good work.", at=AFTER)
+    assert grant(["s2"], apply=True) == 1
+    offer = regrade.offers(_email(db))[0]
+    assert offer["passed"] is True
+    assert regrade.kept_submission_id("assignment") == "s1"

@@ -131,3 +131,17 @@ def test_a_failing_repair_says_so_and_never_raises(monkeypatch):
 
     monkeypatch.setattr(repairs, "_interview_call", broken)
     assert _run({"type": "fix", "name": "interview_continue"})["ok"] is False
+
+
+def test_any_agreement_to_a_report_sends_it_and_only_no_stops_it():
+    from app.orchestrator.repairs import asks_to_report
+
+    offered = [{"role": "user", "content": "My test will not start"},
+               {"role": "assistant", "content": "Would you like me to report this to the SkillDARA team?"}]
+    for said in ("yes", "Team.", "Mate.", "for the SkillDARA team.", "okay do it"):
+        assert asks_to_report(said, offered), said
+    assert asks_to_report("please contact the SkillDARA team about this", [])
+    for said in ("no", "No thanks", "don't report it", "not now"):
+        assert not asks_to_report(said, offered), said
+    assert not asks_to_report("why is this slow?", [])
+    assert not asks_to_report("what is a mixed test?", [{"role": "assistant", "content": "Choose a test."}])

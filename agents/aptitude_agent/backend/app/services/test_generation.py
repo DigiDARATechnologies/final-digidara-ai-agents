@@ -254,6 +254,9 @@ def _balanced_seeded_topics(definitions, count, seed):
     return [ordered[index % len(ordered)] for index in range(count)]
 
 
+CODING_SKILLS=frozenset({"sql","mysql","python","java","c"})
+
+
 def _slot(category,topic,difficulty,technical_language=None,rigor=None,technical_role=None,technical_skills=(),technical_skill=None):
     row={"category":category,"topic":topic,"difficulty":difficulty}
     if rigor:row["rigor"]=rigor
@@ -269,6 +272,11 @@ def _slot(category,topic,difficulty,technical_language=None,rigor=None,technical
             row["technical_role_terms"]=list(context["terms"])
             if technical_skill:
                 row["technical_skill"]=str(technical_skill).strip()
+                # "Power BI, written in SQL" cannot be met: told to use the language
+                # the model writes SQL, and the check then rejects it for not being
+                # about Power BI, on every attempt, and the whole test fails.
+                if row["technical_skill"].casefold() not in CODING_SKILLS:
+                    row.pop("technical_language",None)
     return row
 
 
@@ -445,6 +453,7 @@ Quality:
 - Non-quantitative reason must be one or two full sentences (at least 8 words) explaining why correct_option is right; never leave it empty.
 - Every Quantitative Aptitude question must have a calculable numeric correct_option. calculation_step_1 and calculation_step_2 must show numeric calculations with digits; calculation_step_2 must explicitly derive and contain the exact complete correct_option text. Example: correct_option "50", step 1 "20% of 250 = 50", step 2 "Final value = 50". Never use only number words, a letter, or a rounded value.
 - Use fresh scenarios and numbers; do not repeat concepts from recent questions.
+- Every question must be answerable from its own text. Never refer to a passage, table, chart or data that is not written out in the question: quote a short passage inside it, or ask something else.
 - Every question in this batch must be a different problem. Never reuse a problem with other numbers or nouns, even across topics: at most one "x like tea, y like coffee, z like both" question, one "a train travels" question, one "arrange n books" question, one "all cats are mammals" question.
 - Never mention private metadata, seeds, Batch ID, or prompt field names.
 - For Technical Aptitude, prefer a conceptual question. If code is essential, keep prose code-free and put raw code only in question_code, correct_option_code, or the matching distractor_codes entry. Use the slot's selected technical_language only when one is present; for generic roles, do not assume a language and avoid language-specific syntax. The application converts raw code fields to labelled Markdown fences; never put multiline code directly in prose or options.
@@ -532,6 +541,23 @@ def _swap_topics(failed_slots,used_topics,rng=None):
     return swapped
 
 
+def _fundamentals_slots(failed_slots,used_topics):
+    """The same slots as plain Computer Fundamentals questions."""
+    plain=[{"category":"Computer Fundamentals","topic":"","difficulty":slot["difficulty"],**({"rigor":slot["rigor"]} if slot.get("rigor") else {})} for slot in failed_slots]
+    return _swap_topics(plain,used_topics)
+
+
+def _drop_repeats(accepted):
+    """Removes each accepted question that repeats an earlier one, in place."""
+    kept=[]
+    for index in sorted(accepted):
+        item=accepted[index]
+        if any(item["content_hash"]==other["content_hash"] or questions_are_near_duplicates(item["question"],other["question"]) for other in kept):
+            del accepted[index]
+        else:
+            kept.append(item)
+
+
 def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avoid_number_patterns,deadline,background,request_timeout):
     """Fill the few slots that failed every attempt with a question on another topic.
 
@@ -566,23 +592,32 @@ def _rescue_failed_slots(slots,accepted,last_error,enabled,*,avoid_questions,avo
         # A Technical Aptitude slot can be tied to a saved skill that does not
         # fit its topic (e.g. Excel for "OOP Four Pillars"); the model then
         # writes about another skill (SQL) and the slot fails every attempt,
-        # failing the whole test with a 503. Last try: the same slots as a
-        # general technical question for the learner's role, without the skill.
-        if not isinstance(exc,ValueError) or not any(slot.get("technical_skill") for slot in swapped):
+        # failing the whole test with a 503. Next: the same slots as a general
+        # technical question for the learner's role, without the skill. Last: a
+        # Computer Fundamentals question. One question in another category is far
+        # better than a learner who cannot start a test at all.
+        if not isinstance(exc,ValueError):
             return None
-        if deadline is not None and time.monotonic()>=deadline:
-            return None
-        general=[{key:value for key,value in slot.items() if key!="technical_skill"} for slot in swapped]
-        current_app.logger.warning("Batch generation retrying %s slot(s) without the saved skill",len(general))
-        try:
-            questions,model,usage=generate_questions(
-                general,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
-                allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
-                background=background,request_timeout=request_timeout,_rescue=False,
-                _lenient_history=False,
-            )
-        except (ValueError,TimeoutError) as retry_exc:
-            current_app.logger.warning("Batch generation general rescue failed: %s",str(retry_exc)[:200])
+        fallbacks=[]
+        if any(slot.get("technical_skill") for slot in swapped):
+            fallbacks.append([{key:value for key,value in slot.items() if key!="technical_skill"} for slot in swapped])
+        if any(slot["category"]=="Technical Aptitude" for slot in swapped):
+            fallbacks.append(_fundamentals_slots(swapped,[slot["topic"] for slot in slots]))
+        for fallback in fallbacks:
+            if deadline is not None and time.monotonic()>=deadline:
+                return None
+            current_app.logger.warning("Batch generation retrying %s slot(s) as %s",len(fallback),fallback[0]["category"])
+            try:
+                questions,model,usage=generate_questions(
+                    fallback,avoid_questions=keep,avoid_number_patterns=avoid_number_patterns,
+                    allow_demo_fallback=False,deadline=deadline,max_validation_attempts=2,
+                    background=background,request_timeout=request_timeout,_rescue=False,
+                    _lenient_history=False,
+                )
+                break
+            except (ValueError,TimeoutError) as retry_exc:
+                current_app.logger.warning("Batch generation fallback failed: %s",str(retry_exc)[:200])
+        else:
             return None
     # The questions already in this test went in as "avoid" text, and on its
     # last attempt generate_questions accepts a question that resembles one to
@@ -829,6 +864,10 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 current_app.logger.warning("Batch generation validation deadline reached; using minimally-safe candidate")
                 accumulated_usage["validation_attempt_count"]=attempt
                 return [last_minimal],last_model or current_app.config["OPENAI_MODEL"],accumulated_usage
+    # The repeat check above only runs on an attempt where every question is valid. If
+    # one slot stayed invalid to the end it never ran, so two questions that repeat each
+    # other could both be here. Free the later one: it is replaced with the others.
+    _drop_repeats(accepted)
     rescued=_rescue_failed_slots(
         slots,accepted,last_error,_rescue,
         avoid_questions=avoid_questions,avoid_number_patterns=avoid_number_patterns,

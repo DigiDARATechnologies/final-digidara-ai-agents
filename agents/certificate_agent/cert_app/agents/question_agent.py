@@ -199,6 +199,30 @@ def _protect_inline_code(text: str) -> str:
 
 
 
+# A question that points at something it does not include: "What tone does the
+# author use in the passage?" with no passage cannot be answered.
+_NEEDS_MATERIAL = re.compile(
+    r"\b(?:passage|paragraph|excerpt)\b"
+    r"|\b(?:following|given|above|below)\s+(?:table|chart|graph|diagram|figure|data|dataset|code|snippet|text|image)\b",
+    re.IGNORECASE,
+)
+_HAS_MATERIAL = re.compile(r"`|\n|['\"‘“][^'\"’”]{20,}['\"’”]|:\s*\S.{29,}", re.DOTALL)
+_NAMED_TABLE = re.compile(r"\b\w+\s+table\b", re.IGNORECASE)
+_ASKS_FOR_A_VALUE = re.compile(r"^\s*(?:what\s+is\s+the\s+(?:average|total|sum|maximum|minimum|highest|lowest|count)|how\s+many)\b", re.IGNORECASE)
+
+
+def _missing_material(q: dict) -> bool:
+    """True when the question cannot be answered from what it shows."""
+    text = str(q.get("question", ""))
+    if _HAS_MATERIAL.search(text):
+        return False
+    if _NEEDS_MATERIAL.search(text):
+        return True
+    # "What is the average salary in the employees table?" needs the table's rows.
+    numeric = all(re.fullmatch(r"[\d.,\s$%₹-]+", str(option).strip()) for option in q.get("options", []) or ["x"])
+    return bool(_NAMED_TABLE.search(text) and _ASKS_FOR_A_VALUE.search(text) and numeric)
+
+
 def _validate_question(q: dict, source: str = '') -> bool:
     """Return True if the question is structurally sound and safe to ship.
 
@@ -211,6 +235,9 @@ def _validate_question(q: dict, source: str = '') -> bool:
     quality drift over time; the caller's backfill loop regenerates whatever
     gets discarded here.
     """
+    if _missing_material(q):
+        logger.warning(f"[QValidation] {source} refers to material it does not include — discarding: {str(q.get('question', ''))[:80]!r}")
+        return False
     opts = [str(o).strip() for o in q.get('options', [])]
     ca = str(q.get('correct_answer', '')).strip()
     if len(opts) != 4 or any(not o for o in opts) or len(set(opts)) != len(opts):
@@ -252,12 +279,20 @@ class QuestionDeduper:
 
     _FUZZY_MIN_LEN = 50
     _FUZZY_RATIO = 0.9
+    # The same question reworded: nearly all its meaningful words, and its numbers, match.
+    _WORD_OVERLAP = 0.8
+    _WORD_MIN = 4
 
     def __init__(self, seed: Optional[Iterable[str]] = None):
         self._exact: set = set()
         self._fuzzy: List[tuple] = []
+        self._worded: List[tuple] = []
         for text in seed or []:
             self.add(text)
+
+    @staticmethod
+    def _words(norm: str) -> set:
+        return {word for word in re.findall(r'[a-z_]+', norm) if word not in _STOPWORDS}
 
     def is_duplicate(self, text: str) -> bool:
         norm = normalize_question_text(text)
@@ -265,6 +300,11 @@ class QuestionDeduper:
             return True
         if norm in self._exact:
             return True
+        words = self._words(norm)
+        if len(words) >= self._WORD_MIN:
+            for other, other_digits in self._worded:
+                if other_digits == re.findall(r'\d+', norm) and len(words & other) / len(words | other) >= self._WORD_OVERLAP:
+                    return True
         if len(norm) < self._FUZZY_MIN_LEN:
             return False
         digits = re.findall(r'\d+', norm)
@@ -283,6 +323,7 @@ class QuestionDeduper:
             return False
         norm = normalize_question_text(text)
         self._exact.add(norm)
+        self._worded.append((self._words(norm), re.findall(r'\d+', norm)))
         if len(norm) >= self._FUZZY_MIN_LEN:
             self._fuzzy.append((norm, re.findall(r'\d+', norm)))
         return True
@@ -394,6 +435,8 @@ Important rules:
 - Provide exactly 4 distinct options.
 - The 'correct_answer' must perfectly match one of the strings in the 'options' array.
 - Do NOT hallucinate formatting, only valid JSON.
+- Every question must be answerable from its own text. Never refer to a passage, table, dataset or code that is not written out in the question: include the sample rows or code, or ask something else.
+- Each question must test a different thing. Do not ask the same thing twice in other words.
 
 Topic: {topic}{avoid_str}
 
