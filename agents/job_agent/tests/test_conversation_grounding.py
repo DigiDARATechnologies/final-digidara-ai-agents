@@ -131,3 +131,14 @@ def test_preferred_location_question_is_answered_without_provider_dependency():
     assert result["reply"] == "Your preferred location is **Tiruchirappalli**."
     assert result["show_jobs"] is False
     post.assert_not_called()
+
+
+def test_saved_roles_limit_jobs_when_the_message_did_not_ask_for_a_role():
+    from job_agent.chat_service import _matches_target_role, _role_scope
+
+    profile = {"preferred_titles": ["Data Analyst"]}
+    scope = _role_scope([], profile)
+    assert _matches_target_role("Data Analyst", scope)
+    assert not _matches_target_role("Python Developer", scope)
+    assert _role_scope(["Backend Developer"], profile) == ["Backend Developer"]
+    assert _role_scope([], {}) == []

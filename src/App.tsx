@@ -2470,6 +2470,7 @@ export default function App() {
                 immersiveSpeaking={isCommunicationChat && communicationState?.step === "speaking_turn"}
                 autoStopVoiceOnSilence={isCommunicationChat && communicationState?.step === "pronunciation_turn"}
                 voiceOnly={isCommunicationChat && communicationState?.step === "pronunciation_turn"}
+                composerSeed={isCommunicationChat && communicationState?.step === "writing_turn" ? communicationState.rewriteDraft : undefined}
                 certificateExamInstructions={isCertificateChat && certificateState?.step === "exam_instructions"
                   ? {
                       topic: certificateState.topic || "Certification",

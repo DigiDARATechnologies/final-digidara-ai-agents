@@ -285,6 +285,14 @@ def _normalise_role_text(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9+#.]+", (value or "").lower()))
 
 
+def _role_scope(requested_titles: List[str], profile: Dict[str, Any]) -> List[str]:
+    """The roles a reply may show: what was asked for, or else the learner's saved
+    roles. Any job shown must fit them, whether or not the message said "jobs":
+    the model can choose to show jobs too, and without this a Data Analyst with
+    Python skills was shown Python Developer jobs."""
+    return list(requested_titles or profile.get("preferred_titles") or [])
+
+
 def _matches_target_role(job_title: str, target_titles: List[str]) -> bool:
     """Return True only for an explicit title or approved title alias.
 
@@ -3184,8 +3192,8 @@ def _chat_with_job_agent(
                 location_filter=requested_locations if is_explicit_location_query else None,
                 strict_location=is_explicit_location_query,
                 work_mode_filter=requested_mode if is_explicit_location_query else None,
-                title_filter=requested_titles or None,
-                strict_titles=bool(search_requested and requested_titles),
+                title_filter=_role_scope(requested_titles, profile) or None,
+                strict_titles=bool(_role_scope(requested_titles, profile)),
             )
         is_company_hq_query = "company" in message.lower() and any(
             word in message.lower() for word in ["base", "based", "headquarter", "hq"]
@@ -3352,8 +3360,8 @@ def _chat_with_job_agent(
                     location_filter=requested_locations if is_explicit_location_query else None,
                     strict_location=is_explicit_location_query,
                     work_mode_filter=requested_mode if is_explicit_location_query else None,
-                    title_filter=requested_titles or None,
-                    strict_titles=bool(requested_titles and not allow_related_roles),
+                    title_filter=_role_scope(requested_titles, profile) or None,
+                    strict_titles=bool(_role_scope(requested_titles, profile) and not allow_related_roles),
                 )
 
         # Determine whether to display job cards

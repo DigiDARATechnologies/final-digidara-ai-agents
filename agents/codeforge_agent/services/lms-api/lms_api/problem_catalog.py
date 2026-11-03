@@ -1,3 +1,5 @@
+from .full_stack_catalog import FULL_STACK_PROBLEMS
+
 PROBLEMS = [
     {
         "technology": "python", "topic": "print-and-input", "name": "Add Two Numbers", "slug": "add-two-numbers",
@@ -625,4 +627,5 @@ def _shuffle_mcq_options(problems):
         problem["mcq_correct_key"] = keys[values.index(correct_text)]
 
 
+PROBLEMS += FULL_STACK_PROBLEMS
 _shuffle_mcq_options(PROBLEMS)
