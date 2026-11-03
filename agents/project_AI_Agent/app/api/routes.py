@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -774,7 +775,7 @@ def _close_viva_attempt(session, submission, questions, answers, thread_id, time
         f"\n\nViva result: {rating} "
         f"({'passed' if passed_now else f'not passed after {VIVA_ATTEMPTS} attempts'})."
     )
-    combined_feedback = (code_result.get("feedback") or "") + viva_note
+    combined_feedback = final_feedback(code_result.get("feedback") or "", code_passed, overall_passed, code_result.get("final_score")) + viva_note
 
     compiled_graph.update_state(
         _thread_config(thread_id),
@@ -807,6 +808,15 @@ def _close_viva_attempt(session, submission, questions, answers, thread_id, time
         viva_attempts_total=VIVA_ATTEMPTS,
         viva_timed_out=timed_out,
     )
+
+
+def final_feedback(code_feedback: str, code_passed: bool, overall_passed: bool, score) -> str:
+    """The code review was written before the viva and says the project passed.
+    When the viva then decides it has not, that must not be what the student reads."""
+    if overall_passed or not code_passed:
+        return code_feedback
+    review = re.sub(r"^.*?\bpassed\b[^.!\n]*[.!]\s*", "", code_feedback, count=1, flags=re.IGNORECASE | re.DOTALL)
+    return f"Your code scored {score}/100, but the viva was not passed, so the capstone is not complete yet.\n\nThe code review:\n\n{review}"
 
 
 def viva_time_up(req: VivaTimeUpRequest) -> SubmissionResultResponse:

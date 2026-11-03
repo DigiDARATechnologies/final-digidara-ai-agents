@@ -57,7 +57,8 @@ def run(lines, label: str) -> None:
         if name != "orchestrator" or severity == service.ERROR and message.startswith("Container"):
             service.save("logs", severity, message, agent=name)
     service.send_alerts(label)
-    service.send_daily_report(label)
+    if label == "production":
+        service.send_daily_report(label)
 
 
 if __name__ == "__main__":
