@@ -122,9 +122,11 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
 
     def events():
         usage: dict[str, int] = {}
+        reported = False
         try:
             for event in assist.stream_assist(req, learner, progress, chats, certificates, usage, interview):
                 if "action" in event:
+                    reported = reported or event["action"]["type"] == "report"
                     if event["action"]["type"] in assist.REPAIR_ACTIONS:
                         # This generator runs in a worker thread; the repair runs on the app's event loop.
                         event = {"action": anyio.from_thread.run(repairs.run, user, event["action"], req.message, history, req.agent_id)}
@@ -133,6 +135,10 @@ async def chat_assist_stream(req: assist.AssistRequest, request: Request,
                     if event["action"] is None:
                         continue
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            # They asked and the model only talked about it: the report still goes.
+            if not reported and repairs.asks_to_report(req.message, history):
+                action = anyio.from_thread.run(repairs.run, user, {"type": "report", "category": "other"}, req.message, history, req.agent_id)
+                yield f"data: {json.dumps({'action': action}, ensure_ascii=False)}\n\n"
         except Exception:
             logger.exception("assist turn failed")
             yield 'data: {"error": "Boss could not answer just now. Please try again."}\n\n'

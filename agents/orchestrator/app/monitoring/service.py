@@ -32,7 +32,8 @@ logger = logging.getLogger("app.monitoring")
 ERROR = "error"
 WARNING = "warning"
 # Everyday refusals (a test that already ended) are only a problem when they keep happening.
-WARNING_REPORT_COUNT = 5
+# The owner asked to hear about everything, small or big, so one is enough.
+WARNING_REPORT_COUNT = 1
 MAX_MESSAGE = 500
 ALERT_GAP = timedelta(minutes=30)
 REMIND_AFTER = timedelta(hours=6)
@@ -60,7 +61,8 @@ def is_monitor(user: User | None) -> bool:
 
 def recipients(session) -> list[str]:
     admins = session.query(User.email).filter(User.is_admin.is_(True)).all()
-    return sorted(monitor_emails() | {email.lower() for (email,) in admins if email})
+    support = os.environ.get("ISSUE_EMAIL", "support@digidaratechnologies.com").strip().lower()
+    return sorted(monitor_emails() | {support} | {email.lower() for (email,) in admins if email})
 
 
 def scrub(text: str) -> str:
@@ -302,6 +304,27 @@ def _email_lines(issues: list[SystemIssue]) -> str:
         return (f"[{issue.severity.upper()}] {where}\n  {issue.message}\n"
                 f"  {issue.count} time(s), first {issue.first_seen:%d %b %H:%M} UTC, last {issue.last_seen:%d %b %H:%M} UTC")
     return "\n\n".join(line(issue) for issue in issues)
+
+
+def report_to_team(name: str, email: str, category: str, agent: str, words: str) -> None:
+    """A learner asked Boss to tell the team: it goes on the record the admins see,
+    and by email straight away with the same agent's recent errors. Never blocks."""
+    save("report", ERROR, words, agent=agent or "boss", action=category)
+
+    def send() -> None:
+        session = get_session()
+        try:
+            recent = [issue for issue in _newest(session, datetime.utcnow() - FIRST_BRIEFING_WINDOW)
+                      if issue.agent == agent and issue.source != "report"]
+            logs = f"\n\nRecent errors on this agent:\n\n{_email_lines(recent)}" if recent else "\n\nNo errors recorded on this agent in the last 24 hours."
+            _send_email(recipients(session), f"[SkillDARA] A learner reported a problem: {agent or category}",
+                        f"From: {name} <{email}>\nAgent: {agent or '-'}\nType: {category}\n\nThey said:\n{words}{logs}\n")
+        except Exception as exc:  # noqa: BLE001 - the report itself is already saved
+            logger.warning("the report email could not be sent: %s", type(exc).__name__)
+        finally:
+            session.close()
+
+    threading.Thread(target=send, name="report-email", daemon=True).start()
 
 
 def send_alerts(label: str, now: datetime | None = None) -> int:

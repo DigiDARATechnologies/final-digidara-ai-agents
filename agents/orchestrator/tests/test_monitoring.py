@@ -79,11 +79,8 @@ def test_boss_says_a_problem_once_then_again_only_when_it_returns(people):
     assert service.briefing(monitor)["issues"][0]["count"] == 2
 
 
-def test_an_everyday_refusal_is_reported_only_when_it_keeps_happening(people):
+def test_even_an_everyday_refusal_is_reported(people):
     monitor = people[0]
-    for _ in range(service.WARNING_REPORT_COUNT - 1):
-        service.save("agent", service.WARNING, "Test not active", agent="aptitude_agent", status=409)
-    assert service.briefing(monitor)["issues"] == []
     service.save("agent", service.WARNING, "Test not active", agent="aptitude_agent", status=409)
     assert len(service.briefing(monitor)["issues"]) == 1
 
@@ -92,7 +89,7 @@ def test_alerts_email_both_accounts_once_and_not_too_often(people, emails):
     service.save("agent", service.ERROR, "Broke", agent="aptitude_agent", status=500)
     now = datetime.utcnow() + timedelta(seconds=1)
     assert service.send_alerts("production", now) == 1
-    assert emails[0][0] == sorted([MONITOR, "boss-admin@example.com"])
+    assert emails[0][0] == sorted([MONITOR, "boss-admin@example.com", "support@digidaratechnologies.com"])
     assert "[SkillDARA production]" in emails[0][1] and "Broke" in emails[0][2]
     assert service.send_alerts("production", now + timedelta(hours=1)) == 0
     service.save("agent", service.ERROR, "New one", agent="job_agent", status=500)
@@ -238,3 +235,23 @@ def test_the_morning_report_gives_yesterdays_jobs(people, emails):
     service.save_job_day("2026-11-03", [2, 0, 50, 10, 40, 0])
     assert service.send_daily_report("production", datetime(2026, 11, 4, 3, 40)) is True
     assert "50 jobs yesterday" in emails[0][2]
+
+
+def test_a_learners_report_reaches_the_team_with_the_agents_errors(people, emails, monkeypatch):
+    monitor = people[0]
+
+    class Now:
+        def __init__(self, target, **_):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(service.threading, "Thread", Now)
+    service.save("logs", service.ERROR, "ValueError: could not prepare", agent="aptitude_agent")
+    service.report_to_team("Rubi", "rubi@example.com", "other", "aptitude_agent", "My test will not start")
+    to, subject, body = emails[0]
+    assert "support@digidaratechnologies.com" in to and MONITOR in to
+    assert "aptitude_agent" in subject and "rubi@example.com" in body
+    assert "My test will not start" in body and "could not prepare" in body
+    assert any("My test will not start" in issue["message"] for issue in service.briefing(monitor)["issues"])
