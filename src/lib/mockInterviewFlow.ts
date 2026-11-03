@@ -102,7 +102,7 @@ function questionMessage(question: string, order: number, total?: number, realIn
   return { text: `${heading}:\n\n${question}`, options: exitOption };
 }
 
-async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "intermediate" | "advanced", questionCount: 5 | 10 | 15 = 10): Promise<MockInterviewFlowResult> {
+async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "intermediate" | "advanced", questionCount: 5 | 10 | 15 = 10, closedPrevious = false): Promise<MockInterviewFlowResult> {
   try {
     const q: MockInterviewQuestion = await startMockInterview(state.sessionToken!, {
       round_type: state.roundType!,
@@ -127,6 +127,15 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
       // Every answer of the previous interview is in; only its report failed.
       // Finish it now instead of showing its last question again.
       const done = await finish(next);
+      if (!closedPrevious && done.state.step !== "completed" && /not ready to complete/i.test(done.state.error ?? "")) {
+        // That report can never be made, and it must not block the learner: close
+        // the old interview (its answers stay scored) and start the one they asked for.
+        const exited = await exitMockInterview(state.sessionToken!, q.interview_id, q.question_order).catch(() => null);
+        if (exited) {
+          const fresh = await begin(state, difficulty, questionCount, true);
+          return { ...fresh, messages: [{ text: `Your previous interview could not be continued, so it was closed. ${exitScoreText(exited, q.total_questions)}` }, ...fresh.messages] };
+        }
+      }
       return { ...done, messages: [{ text: "Your previous interview was finished but its report wasn't ready. Here it is; you can start a new interview after it." }, ...done.messages] };
     }
     const intro = q.resumed_existing ? "Resuming your interview in progress." : "Your interview has started. The question will be read aloud; you can speak or type your answer.";
