@@ -141,6 +141,21 @@ class OfferedTopic(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class ProjectRegrade(Base):
+    """Extra submissions for a project graded before the run fix (app/api/regrade.py)."""
+
+    __tablename__ = "project_regrades"
+
+    assignment_id: Mapped[str] = mapped_column(String(32), ForeignKey("project_assignments.id"), primary_key=True)
+    student_id: Mapped[str] = mapped_column(String(32), ForeignKey("students.id"), nullable=False, index=True)
+    # The submission a student keeps: their pass, or else the one that was hit.
+    submission_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    original_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    original_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    chances_left: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Submission(Base):
     __tablename__ = "submissions"
 

@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from flask import current_app
 from .ai_service import AIProviderError, empty_usage, json_completion, merge_usage
 ProviderError = AIProviderError
-from .question_validation import content_hash, structural_hash, numeric_pattern, validate_generated_item, questions_are_near_duplicates, INTERNAL_TOKEN_PATTERN, _validate_slot_metadata
+from .question_validation import content_hash, structural_hash, numeric_pattern, validate_generated_item, questions_are_near_duplicates, questions_share_template, INTERNAL_TOKEN_PATTERN, _validate_slot_metadata
 from ..utils.security import clean_text
 from ..utils.explanation import normalize_explanation
 from ..utils.code_formatting import apply_structured_code_fields, canonicalize_unlabelled_fences, normalize_fenced_text, validate_fenced_code
@@ -445,6 +445,7 @@ Quality:
 - Non-quantitative reason must be one or two full sentences (at least 8 words) explaining why correct_option is right; never leave it empty.
 - Every Quantitative Aptitude question must have a calculable numeric correct_option. calculation_step_1 and calculation_step_2 must show numeric calculations with digits; calculation_step_2 must explicitly derive and contain the exact complete correct_option text. Example: correct_option "50", step 1 "20% of 250 = 50", step 2 "Final value = 50". Never use only number words, a letter, or a rounded value.
 - Use fresh scenarios and numbers; do not repeat concepts from recent questions.
+- Every question in this batch must be a different problem. Never reuse a problem with other numbers or nouns, even across topics: at most one "x like tea, y like coffee, z like both" question, one "a train travels" question, one "arrange n books" question, one "all cats are mammals" question.
 - Never mention private metadata, seeds, Batch ID, or prompt field names.
 - For Technical Aptitude, prefer a conceptual question. If code is essential, keep prose code-free and put raw code only in question_code, correct_option_code, or the matching distractor_codes entry. Use the slot's selected technical_language only when one is present; for generic roles, do not assume a language and avoid language-specific syntax. The application converts raw code fields to labelled Markdown fences; never put multiline code directly in prose or options.
 - For Technical Aptitude slots with technical_role context, make the question relevant to that role and its listed role terms. Do not introduce an unrelated language or framework merely because the formatter has an internal fallback language.
@@ -459,12 +460,16 @@ Ordered slots ({count} total): {json.dumps(prompt_slots,separators=(',',':'))}
 Return all {count} questions in one complete response."""
 
 
+TEMPLATE_REPEAT_REASON="same problem with other numbers"
+
+
 def _offender_message(reason):
     return {
         "duplicate wording":"response contains duplicate question wording",
         "structurally duplicate numeric questions":"response contains structurally duplicate numeric questions",
         "near-duplicate question concepts":"response contains near-duplicate question concepts",
         "repeats a recent or in-test question concept":"response repeats a recent or in-test question concept",
+        TEMPLATE_REPEAT_REASON:"response reuses one problem with other numbers or nouns; write a different kind of problem",
     }[reason]
 
 
@@ -500,6 +505,8 @@ def _cross_check_offenders(validated,fresh,forbidden_questions,*,return_reasons=
         for earlier in range(index):
             if questions_are_near_duplicates(item["question"],validated[earlier]["question"]):
                 blame(earlier,index,"near-duplicate question concepts")
+            elif questions_share_template(item["question"],validated[earlier]["question"]):
+                blame(earlier,index,TEMPLATE_REPEAT_REASON)
     for index,item in enumerate(validated):
         if index in offenders:continue
         if any(questions_are_near_duplicates(item["question"],seen) for seen in forbidden_questions):
@@ -743,15 +750,17 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
                 raise first_failure
             validated=[accepted[index] for index in range(count)]
             offenders,reason,offender_reasons=_cross_check_offenders(validated,set(new_items),forbidden_questions,return_reasons=True)
-            only_resembles_history=bool(offenders) and all(offender_reasons.get(index)==RECENT_REPEAT_REASON for index in offenders)
-            if offenders and only_resembles_history and attempt==max_validation_attempts and _lenient_history:
+            offender_kinds={offender_reasons.get(index) for index in offenders}
+            # Only a reused template (always) or a resemblance to history (when allowed) is left.
+            acceptable_at_last_attempt=bool(offenders) and offender_kinds<={TEMPLATE_REPEAT_REASON,*([RECENT_REPEAT_REASON] if _lenient_history else [])}
+            if acceptable_at_last_attempt and attempt==max_validation_attempts:
                 # Resembling a question the learner saw before is a soft preference, not a
                 # defect: these questions are valid and differ from every other question in
                 # this test. With a long history the model can fail to avoid all of it on every
                 # attempt, and that used to fail the whole test ("We could not prepare a quality
                 # assessment") -- so on the last attempt they are accepted instead.
                 current_app.logger.warning(
-                    "Batch generation accepting %s question(s) that resemble a recent question after %s attempts (history=%s)",
+                    "Batch generation accepting %s question(s) that resemble another question after %s attempts (history=%s)",
                     len(offenders),attempt,len(forbidden_questions),
                 )
                 offenders=set()

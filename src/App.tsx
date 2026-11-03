@@ -11,6 +11,8 @@ import {
   createInitialCapstoneState,
   initialCapstoneMessage,
   mergeCapstoneFiles,
+  regradeMessage,
+  reopenForRegrade,
   submitCapstoneFiles,
   VIVA_PROCTOR_END_ACTION,
   VIVA_TIME_UP_ACTION,
@@ -45,7 +47,7 @@ import RatingPrompt from "./components/RatingPrompt";
 import { fetchBillingSummary } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
-import { buildPendingNotifications } from "./lib/notifications";
+import { buildPendingNotifications, regradeNotifications } from "./lib/notifications";
 import StoreView from "./components/StoreView";
 import NewChatLanding from "./components/NewChatLanding";
 import BossAssistant from "./components/BossAssistant";
@@ -95,7 +97,7 @@ import { markFreshSession, mockInterviewProctored, setAssessmentLaunch, vivaProc
 import KnowledgeTestView from "./components/KnowledgeTestView";
 import type { ProctoredAgent } from "./lib/proctorApi";
 import AgentDetailsModal from "./components/AgentDetailsModal";
-import { checkCapstoneHealth } from "./lib/capstoneApi";
+import { checkCapstoneHealth, fetchRegradeOffers, type RegradeOffer } from "./lib/capstoneApi";
 import { checkCodeForgeHealth } from "./lib/codeforgeApi";
 import { checkAptitudeHealth } from "./lib/aptitudeApi";
 import { checkCommunicationHealth, getDailyChallengeToday, previewCommunicationAudio, transcribeCommunicationAudio } from "./lib/communicationApi";
@@ -238,6 +240,7 @@ export default function App() {
   const [jobFetchPendingFiles, setJobFetchPendingFiles] = useState<Record<string, File | null>>({});
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [capstoneOnline, setCapstoneOnline] = useState(false);
+  const [regradeOffers, setRegradeOffers] = useState<RegradeOffer[]>([]);
   const [codeforgeOnline, setCodeforgeOnline] = useState(false);
   const [aptitudeOnline, setAptitudeOnline] = useState(false);
   const [communicationOnline, setCommunicationOnline] = useState(false);
@@ -477,6 +480,18 @@ export default function App() {
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.email]);
+
+  // Projects graded before the run fix, with chances to submit them again.
+  useEffect(() => {
+    if (!user) {
+      setRegradeOffers([]);
+      return;
+    }
+    let active = true;
+    fetchRegradeOffers().then((offers) => { if (active) setRegradeOffers(offers); }).catch(() => undefined);
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
@@ -1385,6 +1400,32 @@ export default function App() {
     if (link) setSharedLink(link);
   }, [user]);
 
+  /** Opens a project's second chance in its chat, or a new chat if it has none any more. */
+  function openRegrade(threadId: string) {
+    const offer = regradeOffers.find((item) => item.thread_id === threadId);
+    const agent = findAgent("capstone-project");
+    if (!offer || !agent || !user) return;
+    const chatId = Object.keys(capstoneStates).find((id) => capstoneStates[id]?.threadId === threadId
+      && chats.some((chat) => chat.id === id));
+    if (chatId) {
+      setCapstoneStates((prev) => ({ ...prev, [chatId]: reopenForRegrade(prev[chatId], offer) }));
+      appendAgentMessages(chatId, [{ text: regradeMessage(offer) }]);
+      openChatById(chatId);
+    } else {
+      const chat: Chat = {
+        id: newChatId(), agentId: agent.id, title: `Capstone · ${offer.title}`, titleSource: "default",
+        messages: [{ role: "agent", text: regradeMessage(offer), time: nowStr() }], updatedAt: Date.now(),
+      };
+      setCapstoneStates((prev) => ({ ...prev, [chat.id]: reopenForRegrade(createInitialCapstoneState(user), offer) }));
+      putChat(chat);
+      setCurrentChatId(chat.id);
+      setNewChatPending(false);
+      setTyping(false);
+      setDashboardOpen(false);
+      switchView("chat");
+    }
+  }
+
   function openChatById(chatId: string) {
     const chat = chats.find((c) => c.id === chatId);
     if (!chat) return;
@@ -1805,7 +1846,7 @@ export default function App() {
     const chatId = currentChat.id;
     const flowState = aptitudeStates[chatId];
     if (!flowState || flowState.step !== "awaiting_question" || !flowState.question) return;
-    const timeoutKey = `${flowState.testId || ""}:${flowState.question.sequence}`;
+    const timeoutKey = `${flowState.testId || ""}:${flowState.question.sequence}:${flowState.question.deadline_at_ms || ""}`;
     // This guard lives above the question panel, so moving/remounting that
     // panel after a chat update can never submit the same timeout twice.
     if (aptitudeTimeoutSubmissions.current.has(timeoutKey)) return;
@@ -1896,6 +1937,7 @@ export default function App() {
         setTyping(true);
         submitCapstoneFiles(mergedState).then(({ state: finalState, messages: finalMessages }) => {
           setCapstoneStates((prev) => ({ ...prev, [chatId]: finalState }));
+          void fetchRegradeOffers().then(setRegradeOffers).catch(() => undefined);
           appendAgentMessages(chatId, finalMessages);
           setTyping(false);
           // Grading can take a few minutes: say so even if they looked away.
@@ -2238,11 +2280,15 @@ export default function App() {
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
             onDismissNotification={(notification) => dismissNotification(notification.key)}
-            notifications={buildPendingNotifications({
+            notifications={[...regradeNotifications(regradeOffers), ...buildPendingNotifications({
               chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
               resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
-            }).filter((notification) => !dismissedNotifs.includes(notification.key))}
-            onOpenNotification={(notification) => { setOpenMenu(null); openChatById(notification.chatId); }}
+            })].filter((notification) => !dismissedNotifs.includes(notification.key))}
+            onOpenNotification={(notification) => {
+              setOpenMenu(null);
+              if (notification.chatId) openChatById(notification.chatId);
+              else openRegrade(notification.id);
+            }}
             onToggleMobileMenu={() => setMobileOpen((v) => !v)}
             onToggleNotif={(e) => {
               e.stopPropagation();

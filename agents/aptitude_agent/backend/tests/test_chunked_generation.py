@@ -108,3 +108,40 @@ def test_a_repeat_that_comes_back_on_its_topic_is_replaced_on_another_topic(app,
     assert [q["question"] for q in questions].count("Same question") == 1
     assert calls[-2] == ["Topic 15"]          # first repair: same topic, same question again
     assert calls[-1][0] not in {"Topic 3", "Topic 15"}  # second repair: another topic
+
+
+TEA = "In a group of 100 people, 60 like tea, 40 like coffee, and 10 like both. How many like only tea?"
+CHOCOLATE = "In a group of 150 people, 90 like chocolate, 70 like vanilla, and 30 like both. How many like only vanilla?"
+
+
+def template_generator(calls, *, fail_repair=False):
+    def generate(slots, avoid_questions=None, **_):
+        calls.append([s["topic"] for s in slots])
+        if len(slots) == 1 and fail_repair:
+            raise ValueError("could not write a replacement")
+        texts = {"Topic 0": TEA, "Topic 5": CHOCOLATE}
+        repaired = len(slots) == 1
+        questions = [item(wording(s["topic"]) if repaired else texts.get(s["topic"], wording(s["topic"]))) for s in slots]
+        return questions, "gpt-test", {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
+    return generate
+
+
+def test_the_same_problem_in_two_chunks_is_replaced(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(service, "generate_questions", template_generator(calls))
+    with app.app_context():
+        app.config["QUESTION_GENERATION_CHUNK_SIZE"] = 5
+        questions, _, _ = service.generate_question_set(
+            [slot(i) for i in range(10)], avoid_questions=[], deadline=time.monotonic() + 30)
+    assert ["Topic 5"] in calls
+    assert TEA in [q["question"] for q in questions]
+    assert CHOCOLATE not in [q["question"] for q in questions]
+
+
+def test_a_failed_template_repair_keeps_the_question_and_the_test(app, monkeypatch):
+    monkeypatch.setattr(service, "generate_questions", template_generator([], fail_repair=True))
+    with app.app_context():
+        app.config["QUESTION_GENERATION_CHUNK_SIZE"] = 5
+        questions, _, _ = service.generate_question_set(
+            [slot(i) for i in range(10)], avoid_questions=[], deadline=time.monotonic() + 30)
+    assert CHOCOLATE in [q["question"] for q in questions]

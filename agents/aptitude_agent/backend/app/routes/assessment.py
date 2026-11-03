@@ -37,6 +37,9 @@ bp=Blueprint("assessment",__name__,url_prefix="/api/aptitude")
 
 RECOMMENDATION_FALLBACK="We couldn't generate a personalized recommendation this time. Review your incorrect answers to see where to focus."
 MAX_RECOMMENDATION_ATTEMPTS=3
+# A browser's timer can finish just before the server's. Any earlier than this
+# and its "time is up" is wrong (a skewed clock), and must not end the test.
+CLIENT_TIMEOUT_GRACE_SECONDS=5
 
 
 def log_timing(endpoint,test_id,step,started):
@@ -438,15 +441,21 @@ def answer(test_id):
     log_timing("answer",test_id,"owned_test_query",step_started)
     if test.status!="in_progress":raise APIError("This assessment is not active",409,"test_not_active")
     ensure_overall_timer(test)
-    step_started=time.perf_counter();item=db.session.query(AptitudeTestQuestion).filter_by(test_id=test.id,sequence_no=test.current_sequence).with_for_update().first();log_timing("answer",test_id,"current_question_query",step_started)
-    if not item or (not item.visited and not item.question_started_at):raise APIError("Fetch the current question before submitting",409,"question_not_started")
-    step_started=time.perf_counter();existing_answer=AptitudeAnswer.query.filter_by(question_id=item.id).first();log_timing("answer",test_id,"existing_answer_query",step_started)
-    if existing_answer:raise APIError("Answer already submitted",409,"already_answered")
     body=request.get_json(silent=True) or {}
     if not isinstance(body,dict):raise APIError("Request body must be a JSON object",400,"invalid_request")
+    remaining_seconds=overall_remaining_seconds(test)
+    # The server's clock decides when a test ends: this one answer closes the whole attempt.
+    if body.get("timed_out") and remaining_seconds>CLIENT_TIMEOUT_GRACE_SECONDS:raise APIError("Time remains on this assessment",409,"time_remaining")
+    timed_out=remaining_seconds<=0 or bool(body.get("timed_out"))
+    step_started=time.perf_counter();item=db.session.query(AptitudeTestQuestion).filter_by(test_id=test.id,sequence_no=test.current_sequence).with_for_update().first();log_timing("answer",test_id,"current_question_query",step_started)
+    if not item or (not timed_out and not item.visited and not item.question_started_at):raise APIError("Fetch the current question before submitting",409,"question_not_started")
+    step_started=time.perf_counter();existing_answer=AptitudeAnswer.query.filter_by(question_id=item.id).first();log_timing("answer",test_id,"existing_answer_query",step_started)
+    if existing_answer and not timed_out:raise APIError("Answer already submitted",409,"already_answered")
+    # Time ran out while the learner was reviewing an answered question.
+    if existing_answer:item=AptitudeTestQuestion.query.filter_by(test_id=test.id).filter(~AptitudeTestQuestion.answer.has()).order_by(AptitudeTestQuestion.sequence_no).with_for_update().first()
     selected=str(body.get("selected_answer") or "").upper()
     if selected not in {"","A","B","C","D"}:raise APIError("selected_answer must be A, B, C or D",400,"invalid_answer")
-    elapsed=elapsed_seconds(item);timed_out=overall_remaining_seconds(test)<=0 or bool(body.get("timed_out"))
+    elapsed=elapsed_seconds(item)
     if not selected and not timed_out:raise APIError("Select an answer before submitting",400,"answer_required")
     step_started=time.perf_counter();verdict,source=(False,"timeout") if timed_out else evaluate_answer(item,selected);log_timing("answer",test_id,"evaluate_answer",step_started)
     submitted=AptitudeAnswer(id=str(uuid.uuid4()),test_id=test.id,student_id=g.student.id,question_id=item.id,selected_answer=selected or None,correct_answer=item.correct_answer,is_correct=verdict,timed_out=timed_out,time_taken_seconds=min(elapsed,item.allowed_time_seconds),evaluation_source=source)

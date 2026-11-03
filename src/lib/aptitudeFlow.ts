@@ -103,6 +103,24 @@ export const initialAptitudeMessage = (user: User): AptitudeFlowMessage => ({ te
   ? `Hi ${user.name.split(" ")[0]}! Aptitude rounds are a common first filter for ${displayRole(learnerGoal()!.targetRole)} roles. Start with a test built for your role, or choose your own.`
   : `Hi ${user.name.split(" ")[0]}! What would you like to practice?`, options: [...roleStartOptions(), ...MODE_OPTIONS] });
 
+const isTimeExpired = (error: unknown) => /assessment time has expired/i.test((error as Error)?.message || "");
+const isTestEnded = (error: unknown) => /assessment is not active/i.test((error as Error)?.message || "");
+const isTimeRemaining = (error: unknown) => /time remains on this assessment/i.test((error as Error)?.message || "");
+const downloadReportOption = { label: "Download PDF report", value: "download report" };
+
+/** A test only ends early when its whole clock runs out: say that plainly. */
+function timeUpMessage(results: Record<string, any>, state: AptitudeFlowState): AptitudeFlowMessage {
+  const total = results.total_questions ?? results.total ?? state.totalQuestions;
+  const answered = Math.max(0, Number(results.answered_count ?? 0) - Number(results.timed_out ?? 0));
+  return { text: `Time is up for this test, so it has ended. You answered ${answered} of ${total} questions; the rest count as not answered.\n\nYour score is ${results.score ?? "-"}/${total}.`, options: [downloadReportOption] };
+}
+
+async function finishExpiredTest(state: AptitudeFlowState) {
+  await submitAptitudeAnswer(state.sessionToken!, state.testId!, "", true);
+  const results = await getAptitudeResults(state.sessionToken!, state.testId!);
+  return { state: { ...state, step: "completed" as const, question: undefined, score: Number(results.score ?? 0) }, messages: [timeUpMessage(results, state)] };
+}
+
 function questionMessage(question: AptitudeQuestion): AptitudeFlowMessage {
   const priority = question.topic_is_starred ? " ★ Priority topic" : "";
   const state = question.status === "answered" ? "Answered" : question.status === "timed_out" ? "Timed out" : "Unanswered";
@@ -252,7 +270,7 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
         const question = await skipAptitudeQuestion(state.sessionToken!, state.testId!);
         return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined, hintError: undefined }, messages: [{ text: `Question ${state.question?.sequence} skipped. You can return to it from the question navigator.` }, questionMessage(question)] };
       }
-      if (state.question?.status && state.question.status !== "unanswered") return { state, messages: [{ text: "This question is already submitted. Choose another question from the navigator." }] };
+      if (value !== "__aptitude_timeout__" && state.question?.status && state.question.status !== "unanswered") return { state, messages: [{ text: "This question is already submitted. Choose another question from the navigator." }] };
       if (value.toLowerCase() === "hint") {
         try {
           const result = await requestAptitudeHint(state.sessionToken!, state.testId!);
@@ -270,14 +288,24 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
       const timedOut = value === "__aptitude_timeout__";
       const selected = timedOut ? "" : value.match(/^(?:option\s*)?([ABCD])(?:[.)])?$/i)?.[1]?.toUpperCase() || "";
       if (!selected && !timedOut) return { state, messages: [{ text: "Select an answer option, or use the optional hint button above the question.", options: optionMap(state.question!.options) }] };
-      const result = await submitAptitudeAnswer(state.sessionToken!, state.testId!, selected, timedOut);
-      const verdict = result.timed_out ? "Time expired." : result.is_correct ? "Correct!" : "Not quite.";
-      if (result.complete) { const results = await getAptitudeResults(state.sessionToken!, state.testId!); return { state: { ...state, step: "completed" as const, question: undefined, score: Number(results.score ?? 0) }, messages: [{ text: `${verdict}\nCorrect answer: ${result.correct_answer}\n\n${result.explanation}\n\nTest complete. Your score is ${results.score ?? "-"}/${results.total_questions ?? state.totalQuestions}.`, options: [{ label: "Download PDF report", value: "download report" }] }] }; }
+      let result: Awaited<ReturnType<typeof submitAptitudeAnswer>>;
+      try {
+        result = await submitAptitudeAnswer(state.sessionToken!, state.testId!, selected, timedOut);
+      } catch (error) {
+        if (!timedOut || !isTimeRemaining(error)) throw error;
+        // This device's timer finished early. The test goes on, on the server's time.
+        const question = await getAptitudeQuestion(state.sessionToken!, state.testId!);
+        return { state: { ...state, question, hintsRemaining: question.hints_remaining, hintText: question.hint || undefined, hintError: undefined }, messages: [questionMessage(question)] };
+      }
+      const verdict = result.is_correct ? "Correct!" : "Not quite.";
+      if (result.complete) { const results = await getAptitudeResults(state.sessionToken!, state.testId!); return { state: { ...state, step: "completed" as const, question: undefined, score: Number(results.score ?? 0) }, messages: [result.timed_out ? timeUpMessage(results, state) : { text: `${verdict}\nCorrect answer: ${result.correct_answer}\n\n${result.explanation}\n\nTest complete. Your score is ${results.score ?? "-"}/${results.total_questions ?? state.totalQuestions}.`, options: [downloadReportOption] }] }; }
       const feedback = `${verdict}\nCorrect answer: ${result.correct_answer}\n\n${result.explanation}`;
       try {
         const nextQuestion = await getAptitudeQuestion(state.sessionToken!, state.testId!);
         return { state: { ...state, question: nextQuestion, hintsRemaining: nextQuestion.hints_remaining, hintText: undefined, hintError: undefined }, messages: [{ text: feedback }, questionMessage(nextQuestion)] };
       } catch (error) {
+        // That answer used the last of the time: nothing is left to load.
+        if (isTimeExpired(error)) return await finishExpiredTest(state);
         // The answer is already committed. Clear the old question so its
         // answer buttons cannot be submitted again while Question N+1 is
         // being recovered.
@@ -294,6 +322,16 @@ export async function handleAptitudeText(state: AptitudeFlowState, text: string,
   } catch (error) {
     if (isTokenInterruption(error) && state.testId && state.question) {
       return { state: { ...state, tokenInterrupted: true }, messages: [{ text: "You don't have enough points. Top up your points, then continue this test to restore the current question and timer.", options: resumeOptions }] };
+    }
+    // Neither of these clears on retry, so don't leave the learner clicking on a dead test.
+    if (state.testId && isTimeExpired(error)) {
+      try { return await finishExpiredTest(state); } catch { /* reported below */ }
+    }
+    if (state.testId && isTestEnded(error)) {
+      return {
+        state: { step: "awaiting_mode" as const, sessionToken: state.sessionToken },
+        messages: [{ text: "This test has already ended, for example because a new test was started. You can start a new Category or Mixed Test.", options: [{ label: "Mixed Test", value: "mixed" }, { label: "Category Practice", value: "category_practice" }] }],
+      };
     }
     return { state, messages: [{ text: `Aptitude request failed: ${(error as Error).message}` }] };
   }

@@ -12,7 +12,7 @@ from ..models import AptitudeTest, AptitudeTestQuestion, RecentQuestionHash
 from .audit_service import record_event
 from .question_timing import question_time_seconds
 from .ai_service import empty_usage, merge_usage
-from .question_validation import questions_are_near_duplicates, validate_generated_item
+from .question_validation import questions_are_near_duplicates, questions_share_template, validate_generated_item
 from .test_generation import _swap_topics, generate_questions
 from .usage_service import record_usage
 
@@ -25,12 +25,13 @@ def _chunks(items, size):
     return [items[start:start + size] for start in range(0, len(items), size)]
 
 
-def _cross_chunk_duplicates(generated):
-    """Positions of questions repeating an earlier one from another chunk."""
+def _cross_chunk_duplicates(generated, *, templates=False):
+    """Positions of questions repeating an earlier one from another chunk;
+    with templates, also the same problem with other numbers or nouns."""
     duplicates = []
     for index, item in enumerate(generated):
         for earlier in generated[:index]:
-            if item["content_hash"] == earlier["content_hash"] or questions_are_near_duplicates(item["question"], earlier["question"]):
+            if item["content_hash"] == earlier["content_hash"] or questions_are_near_duplicates(item["question"], earlier["question"]) or (templates and questions_share_template(item["question"], earlier["question"])):
                 duplicates.append(index)
                 break
     return duplicates
@@ -94,13 +95,20 @@ def generate_question_set(slots, *, avoid_questions, deadline, fill_missing=None
     # From the second round the slot moves to another topic of its category:
     # the same topic tends to produce the same question again.
     for repair_round in range(3):
-        duplicates = _cross_chunk_duplicates(generated)
+        duplicates = _cross_chunk_duplicates(generated, templates=True)
         if not duplicates or time.monotonic() >= deadline:
             break
+        exact = set(_cross_chunk_duplicates(generated))
         for index in duplicates:
             others = [item["question"] for position, item in enumerate(generated) if position != index]
             slot = slots[index] if repair_round == 0 else _swap_topics([slots[index]], [item["topic"] for item in generated])[0]
-            replacement, _, repair_usage = run([slot], list(avoid_questions) + others)
+            try:
+                replacement, _, repair_usage = run([slot], list(avoid_questions) + others)
+            except Exception as exc:  # noqa: BLE001 - a reused template alone never fails a test
+                if index in exact:
+                    raise
+                current_app.logger.warning("Could not replace a question reusing a template (%s); keeping it", exc)
+                continue
             generated[index] = replacement[0]
             usage = merge_usage(usage, repair_usage)
     if _cross_chunk_duplicates(generated):

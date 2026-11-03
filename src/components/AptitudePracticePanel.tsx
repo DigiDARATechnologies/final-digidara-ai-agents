@@ -123,8 +123,11 @@ export default function AptitudePracticePanel({ state, onChoose, onExpire, hintP
 
   useEffect(() => {
     const activeDeadline = deadlineRef.current;
-    if (state.step !== "awaiting_question" || state.question?.status !== "unanswered" || seconds > 0 || !state.question || activeDeadline.questionKey !== questionKey || Date.now() < activeDeadline.at || expiredQuestionRef.current === questionKey) return;
-    expiredQuestionRef.current = questionKey;
+    const expiryKey = `${questionKey}:${activeDeadline.at}`;
+    // Any question, answered or not: the clock is the whole test's, and a learner
+    // reviewing an answered question when it ends would otherwise be left stranded.
+    if (state.step !== "awaiting_question" || seconds > 0 || !state.question || activeDeadline.questionKey !== questionKey || Date.now() < activeDeadline.at || expiredQuestionRef.current === expiryKey) return;
+    expiredQuestionRef.current = expiryKey;
     onExpire();
   }, [onExpire, questionKey, seconds, state.question, state.step]);
 

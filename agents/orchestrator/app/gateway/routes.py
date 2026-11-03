@@ -70,7 +70,7 @@ TOKEN_COST_PER_CALL = int(os.environ.get("TOKEN_COST_PER_CALL", "100"))
 # LLM. Only genuine agent interactions get billed.
 FREE_ACTIONS = {
     "ensure_session", "usage_summary", "list_courses", "list_languages",
-    "ensure_profile", "get_thread_status", "getThreadStatus",
+    "ensure_profile", "get_thread_status", "getThreadStatus", "regrade_offers",
     # Communication Coach's identity bridge, like the others: opening the
     # agent costs nothing and works with no points left.
     "bridge_identity",
@@ -121,7 +121,7 @@ FREE_ACTIONS = {
 # payload would otherwise give any signed-in user another learner's session
 # just for their email (AI Certification's and Resume Builder's
 # `ensure_profile`, Communication Coach's `bridge_identity`).
-IDENTITY_ACTIONS = frozenset({"ensure_session", "ensure_profile", "bridge_identity", "get_student_summary"})
+IDENTITY_ACTIONS = frozenset({"ensure_session", "ensure_profile", "bridge_identity", "get_student_summary", "regrade_offers"})
 
 
 def _resolve_agent(agent_name: str):

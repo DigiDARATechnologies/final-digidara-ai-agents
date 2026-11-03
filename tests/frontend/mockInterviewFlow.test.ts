@@ -66,6 +66,8 @@ test('a report that cannot be made still offers a way out of the interview', asy
   result = await handleMockInterviewText(result.state, user, 'Excel');
   mocked.startMockInterview.mockResolvedValue({ interview_id: 31, question_order: 3, question: 'Q3', total_questions: 5, resumed_existing: true, awaiting_report: true });
   mocked.endMockInterview.mockRejectedValue(new Error('This interview is not ready to complete.'));
+  // Closing it failed too, so the learner is offered the way out.
+  mocked.exitMockInterview.mockRejectedValueOnce(new Error('offline'));
   result = await handleMockInterviewText(result.state, user, '5');
   expect(result.state.step).toBe('in_interview');
   expect(result.messages[result.messages.length - 1].options?.map((o) => o.value)).toEqual(['retry_report', 'exit_interview']);
@@ -206,5 +208,43 @@ describe('with a target role', () => {
     mocked.startMockInterview.mockResolvedValue({ interview_id: 12, question_order: 1, question: 'What is an ORM?', total_questions: 5 });
     result = await handleMockInterviewText(result.state, user, '5');
     expect(mocked.startMockInterview).toHaveBeenCalledWith('token', { round_type: 'technical', interview_mode: 'custom_topic', subject: 'Django', difficulty: 'advanced', num_questions: 5 });
+  });
+});
+
+describe('a previous interview whose report can never be made', () => {
+  const resumed = { interview_id: 7, question: 'Old question', question_order: 5, total_questions: 5, resumed_existing: true, awaiting_report: true };
+  const fresh = { interview_id: 8, question: 'New question', question_order: 1, total_questions: 5 };
+  const choosing = { step: 'choose_question_count', sessionToken: 'token', roundType: 'technical', interviewMode: 'custom_topic', subject: 'SQL', difficulty: 'beginner' } as const;
+
+  test('is closed, and the interview the learner asked for starts', async () => {
+    jest.mocked(api.startMockInterview).mockResolvedValueOnce(resumed as never).mockResolvedValueOnce(fresh as never);
+    jest.mocked(api.endMockInterview).mockRejectedValueOnce(new Error('This interview is not ready to complete. Answer all main questions or exit the interview instead.'));
+    jest.mocked(api.exitMockInterview).mockResolvedValueOnce({ scorecard: [] } as never);
+    const result = await handleMockInterviewText(choosing as never, user, '5');
+    expect(api.exitMockInterview).toHaveBeenCalledWith('token', 7, 5);
+    expect(result.state.step).toBe('in_interview');
+    expect(result.state.interviewId).toBe(8);
+    expect(result.messages[0].text).toContain('could not be continued');
+  });
+
+  test('never loops when the same interview keeps coming back', async () => {
+    jest.mocked(api.exitMockInterview).mockClear();
+    jest.mocked(api.startMockInterview).mockResolvedValue(resumed as never);
+    jest.mocked(api.endMockInterview).mockRejectedValue(new Error('This interview is not ready to complete.'));
+    jest.mocked(api.exitMockInterview).mockResolvedValue({ scorecard: [] } as never);
+    const result = await handleMockInterviewText(choosing as never, user, '5');
+    expect(api.exitMockInterview).toHaveBeenCalledTimes(1);
+    expect(result.state.step).toBe('in_interview');
+    jest.mocked(api.startMockInterview).mockReset();
+    jest.mocked(api.endMockInterview).mockReset();
+  });
+
+  test('a report that is only delayed is not closed', async () => {
+    jest.mocked(api.exitMockInterview).mockClear();
+    jest.mocked(api.startMockInterview).mockResolvedValueOnce(resumed as never);
+    jest.mocked(api.endMockInterview).mockRejectedValueOnce(new Error('Interview evaluation is temporarily unavailable.'));
+    const result = await handleMockInterviewText(choosing as never, user, '5');
+    expect(api.exitMockInterview).not.toHaveBeenCalled();
+    expect(result.messages.map((m) => m.text).join(' ')).toContain('still processing');
   });
 });

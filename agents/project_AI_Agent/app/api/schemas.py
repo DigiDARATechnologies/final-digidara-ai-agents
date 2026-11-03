@@ -155,6 +155,8 @@ class SubmissionResultResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     thread_id: str
+    # The submission whose certificate and report a student keeps after second chances.
+    kept_submission_id: str | None = None
     status: str | None = None
     deadline_at: str | None = None
     next_step: str

@@ -9,7 +9,7 @@ python-dotenv==1.2.4
 groq==0.37.1
 httpx==0.28.1
 Werkzeug==3.1.9
-pytest==9.1.1
+pytest==9.2.0
 requests==2.34.2
 # Production process manager target (see ecosystem.config.js) — not used by
 # the Flask dev server in local dev, and doesn't run as a server on Windows.

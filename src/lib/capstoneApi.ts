@@ -194,8 +194,26 @@ export interface SubmissionResult {
   viva_timed_out?: boolean | null;
 }
 
+/** A project graded before the run fix, with chances left to submit it again. */
+export interface RegradeOffer {
+  thread_id: string;
+  title: string;
+  chosen_topic: TopicOption | null;
+  requirements: Record<string, unknown> | null;
+  deadline_at: string | null;
+  score: number | null;
+  passed: boolean;
+  chances_left: number;
+}
+
+export async function fetchRegradeOffers(): Promise<RegradeOffer[]> {
+  return (await invoke<{ offers: RegradeOffer[] }>("regrade_offers")).offers;
+}
+
 export interface ThreadStatus {
   thread_id: string;
+  /** The submission whose certificate and report the student keeps. */
+  kept_submission_id?: string | null;
   status?: string | null;
   final_score?: number | null;
   passed?: boolean | null;

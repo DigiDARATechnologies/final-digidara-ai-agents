@@ -315,3 +315,19 @@ def test_an_out_of_date_copy_with_a_newer_time_never_replaces_a_fuller_chat(hist
     stale = {**chat, "messages": said("topics", "already graded"), "updatedAt": chat["updatedAt"] + 1000}
     saved = client.put("/chats/sync", json={"chats": [stale], "deleted_ids": []}).json()["chats"][0]
     assert [m["text"] for m in saved["messages"]] == ["topics", "timer started", "uploaded", "viva", "score 70", "already graded"]
+
+
+def test_a_save_can_skip_sending_the_whole_history_back(history_client):
+    client, *_ = history_client
+    chat = {"id": "c1", "agentId": "general", "title": "t", "updatedAt": 1, "messages": [{"role": "user", "text": "hi", "time": ""}]}
+    saved = client.put("/chats/sync", json={"chats": [chat], "deleted_ids": [], "return_history": False})
+    assert saved.status_code == 200
+    assert saved.json()["chats"] == []
+    assert [c["id"] for c in client.get("/chats").json()["chats"]] == ["c1"]
+
+
+def test_a_history_over_the_old_limit_is_accepted_not_refused(history_client):
+    client, *_ = history_client
+    chat = {"id": "big", "agentId": "general", "title": "t", "updatedAt": 1,
+            "messages": [{"role": "user", "text": "x" * 26_000_000, "time": ""}]}
+    assert client.put("/chats/sync", json={"chats": [chat], "deleted_ids": [], "return_history": False}).status_code == 200

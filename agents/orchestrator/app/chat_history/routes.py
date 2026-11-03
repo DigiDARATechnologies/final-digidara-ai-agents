@@ -15,7 +15,9 @@ router = APIRouter(prefix="/chats", tags=["chat-history"])
 
 MAX_CHATS = 5000
 MAX_MESSAGES = 10_000
-MAX_HISTORY_BYTES = 25_000_000
+# One request. A browser sends changed chats in small batches, but one still on
+# the old page sends its whole history, and refusing that loses its new chats.
+MAX_HISTORY_BYTES = 100_000_000
 ROLES = {"user", "agent"}
 
 
@@ -64,6 +66,8 @@ class ChatHistorySync(BaseModel):
     clear_all: bool = False
     # Chats the learner edited: only these may end up shorter than the server's copy.
     rewrites: list[str] = Field(default_factory=list, max_length=MAX_CHATS)
+    # A browser that only saves does not need the whole history sent back.
+    return_history: bool = True
 
     @field_validator("chats")
     @classmethod
@@ -102,6 +106,6 @@ def sync_chat_history(
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     response.headers["Cache-Control"] = "no-store"
-    chats = service.sync_history(user_id, request.chats, request.deleted_ids, clear_all=request.clear_all, rewrites=set(request.rewrites))
+    chats = service.sync_history(user_id, request.chats, request.deleted_ids, clear_all=request.clear_all, rewrites=set(request.rewrites), return_history=request.return_history)
     agent_state_service.delete_for_chats(user_id, request.deleted_ids)
     return {"chats": chats, "initialized": True}

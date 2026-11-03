@@ -19,7 +19,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, field_validator
 
 from app.db.database import get_session
-from app.db.models import Certificate, Course, Enrollment, ProjectAssignment, Student, Submission
+from app.db.models import Certificate, Course, Enrollment, ProjectAssignment, ProjectRegrade, Student, Submission
 
 logger = logging.getLogger("capstone.privacy")
 
@@ -144,6 +144,7 @@ def erase_my_data(req: PrivacyRequest, x_digidara_user_id: str | None = Header(d
         for assignment in assignments:
             assignment.qa_conversation_json = None
             assignment.about_markdown = None
+            session.query(ProjectRegrade).filter_by(assignment_id=assignment.id).delete()
             for submission in session.query(Submission).filter_by(assignment_id=assignment.id).all():
                 submission.feedback_text = None
                 submission.review_markdown = None
