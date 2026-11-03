@@ -65,6 +65,33 @@ function serverOnly(email: string): boolean {
  * must not leave the learner looking at only part of it. */
 const LOAD_RETRY_MS = [2_000, 5_000, 15_000];
 const SAVE_RETRIES = 4;
+/** The most chat data one save request carries (characters). */
+const SYNC_BATCH_CHARS = 4_000_000;
+
+/** A short fingerprint of a chat, to tell whether it changed since it was saved. */
+function chatFingerprint(serialized: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash = Math.imul(hash ^ serialized.charCodeAt(index), 0x01000193);
+  }
+  return `${serialized.length}:${hash >>> 0}`;
+}
+
+/** Chats split into requests of a safe size; a chat is never split. */
+export function batchChats(chats: Chat[], limit = SYNC_BATCH_CHARS): Chat[][] {
+  const batches: Chat[][] = [];
+  let size = 0;
+  for (const chat of chats) {
+    const length = JSON.stringify(chat).length;
+    if (!batches.length || size + length > limit) {
+      batches.push([]);
+      size = 0;
+    }
+    batches[batches.length - 1].push(chat);
+    size += length;
+  }
+  return batches;
+}
 
 /**
  * The account's history on screen without losing what happened while it was
@@ -97,6 +124,10 @@ export function useChats(email: string | undefined) {
   const latest = useRef<Chat[] | null>(null);
   const saveRetries = useRef(0);
   const retryTimer = useRef<number | undefined>(undefined);
+  // What the server already has, so a save sends only what changed. Sending the
+  // whole history every time meant one large history refused every save, and new
+  // chats were lost on reload.
+  const savedFingerprints = useRef(new Map<string, string>());
 
   useEffect(() => {
     mutationVersion.current = 0;
@@ -107,6 +138,7 @@ export function useChats(email: string | undefined) {
     pendingRewrites.current = new Set();
     latest.current = null;
     saveRetries.current = 0;
+    savedFingerprints.current = new Map();
     return () => window.clearTimeout(retryTimer.current);
   }, [email]);
 
@@ -123,18 +155,32 @@ export function useChats(email: string | undefined) {
   const upload = useCallback((token: string, snapshot: Chat[]) => {
     syncQueue.current = syncQueue.current
       .catch(() => undefined)
-      .then(() => {
+      .then(async () => {
         const deletes = [...pendingDeletes.current];
         const clearAll = clearing.current;
         const rewrites = [...pendingRewrites.current];
-        return (clearAll || rewrites.length
-          ? syncChatHistory(token, snapshot, deletes, clearAll, rewrites)
-          : syncChatHistory(token, snapshot, deletes)).then(() => {
-          deletes.forEach((chatId) => pendingDeletes.current.delete(chatId));
-          rewrites.forEach((chatId) => pendingRewrites.current.delete(chatId));
-          if (clearAll) clearing.current = false;
-          saveRetries.current = 0;
-        });
+        const fingerprints = new Map(snapshot.map((chat) => [chat.id, chatFingerprint(JSON.stringify(chat))]));
+        const changed = snapshot.filter((chat) => savedFingerprints.current.get(chat.id) !== fingerprints.get(chat.id));
+        const batches = batchChats(changed);
+        if (!batches.length && (deletes.length || clearAll)) batches.push([]);
+        // One request that fails does not stop the others: every chat that can
+        // be saved is saved, and the failed ones go again on the retry below.
+        let failure: unknown;
+        for (const [index, batch] of batches.entries()) {
+          try {
+            await syncChatHistory(token, batch, index === 0 ? deletes : [], index === 0 && clearAll, rewrites, false);
+            batch.forEach((chat) => savedFingerprints.current.set(chat.id, fingerprints.get(chat.id) as string));
+            if (index === 0) {
+              deletes.forEach((chatId) => pendingDeletes.current.delete(chatId));
+              if (clearAll) clearing.current = false;
+            }
+          } catch (error) {
+            failure = failure ?? error;
+          }
+        }
+        if (failure) throw failure;
+        rewrites.forEach((chatId) => pendingRewrites.current.delete(chatId));
+        saveRetries.current = 0;
       })
       .catch((error) => {
         console.warn("Could not sync chat history; the local cache is retained.", error);
@@ -184,9 +230,14 @@ export function useChats(email: string | undefined) {
       const versionAtStart = mutationVersion.current;
       try {
         const remote = await fetchChatHistory(token);
-        const accountChats = localChats.length || !remote.initialized
-          ? (await syncChatHistory(token, localChats, [])).chats
-          : remote.chats;
+        let accountChats = remote.chats;
+        if (localChats.length || !remote.initialized) {
+          // Each answer holds the whole history, so the last one is up to date.
+          for (const batch of localChats.length ? batchChats(localChats) : [[]]) {
+            accountChats = (await syncChatHistory(token, batch, [])).chats;
+          }
+        }
+        savedFingerprints.current = new Map(accountChats.map((chat) => [chat.id, chatFingerprint(JSON.stringify(chat))]));
         // Saved something meanwhile: that newer list stays in the browser's copy.
         if (mutationVersion.current === versionAtStart) writeChatsCache(email, JSON.stringify(accountChats));
         return accountChats.filter((chat) => !deletedHere.current.has(chat.id));

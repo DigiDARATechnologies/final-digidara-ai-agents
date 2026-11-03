@@ -105,7 +105,8 @@ def _message_row(user_id: str, chat_id: str, position: int, message: dict) -> Co
 
 
 def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, clear_all: bool = False,
-                 rewrites: frozenset[str] | set[str] = frozenset(), _attempt: int = 1) -> list[dict]:
+                 rewrites: frozenset[str] | set[str] = frozenset(), return_history: bool = True,
+                 _attempt: int = 1) -> list[dict]:
     if len(set(deleted_ids)) > MAX_DELETES_PER_SYNC and not clear_all:
         logger.warning("chat sync: ignored %d deletions in one sync user=%s", len(set(deleted_ids)), user_id)
         deleted_ids = []
@@ -219,8 +220,9 @@ def sync_history(user_id: str, chats: list[dict], deleted_ids: list[str], *, cle
     finally:
         session.close()
     if should_retry:
-        return sync_history(user_id, chats, deleted_ids, clear_all=clear_all, rewrites=rewrites, _attempt=_attempt + 1)
-    return get_history(user_id)[0]
+        return sync_history(user_id, chats, deleted_ids, clear_all=clear_all, rewrites=rewrites,
+                            return_history=return_history, _attempt=_attempt + 1)
+    return get_history(user_id)[0] if return_history else []
 
 
 def purge_history(user_id: str) -> None:
