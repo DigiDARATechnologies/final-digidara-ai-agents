@@ -7,5 +7,6 @@ set -uo pipefail
 cd /opt/digidara-agents
 {
   docker compose ps -a --format '@ps {{.Service}} {{.State}} {{.Health}}'
+  docker compose exec -T job-agent python -m job_agent.fetch_report
   docker compose logs --since 11m --no-color --tail 5000
 } 2>/dev/null | docker compose exec -T orchestrator python -m app.monitoring.cycle --label "${1:-server}"

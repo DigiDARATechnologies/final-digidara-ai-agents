@@ -61,7 +61,20 @@ def read_logs(lines) -> list[tuple[str, str, str]]:
     return found
 
 
+def job_days(lines) -> list[tuple[str, list[int]]]:
+    """(day, counts) from the Job Agent's `@jobs` lines (job_agent/fetch_report.py)."""
+    days = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) == 8 and parts[0] == "@jobs" and all(part.isdigit() for part in parts[2:]):
+            days.append((parts[1], [int(part) for part in parts[2:]]))
+    return days
+
+
 def run(lines, label: str) -> None:
+    lines = list(lines)
+    for day, counts in job_days(lines):
+        service.save_job_day(day, counts)
     for severity, name, message in read_logs(lines):
         # The orchestrator's own errors are already recorded as they happen.
         if name != "orchestrator" or severity == service.ERROR and message.startswith("Container"):
@@ -69,6 +82,7 @@ def run(lines, label: str) -> None:
     service.send_alerts(label)
     if label == "production":
         service.send_daily_report(label)
+        service.send_jobs_report(label)
 
 
 if __name__ == "__main__":
