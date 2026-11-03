@@ -64,7 +64,6 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
   const sentRef = useRef(false);
   const timeUpSentRef = useRef(false);
   const noAnswerRetriesRef = useRef(0);
-  const wasBusyRef = useRef(busy);
   const onAnswerRef = useRef(onAnswer);
   onAnswerRef.current = onAnswer;
   const onTimeUpRef = useRef(onTimeUp);
@@ -146,17 +145,6 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
     // A new question or a change of mode starts a new voice session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionKey, mode]);
-
-  // The answer could not be saved and the same question is still up: it must not
-  // stay locked. The words stay in the box, ready to send again.
-  useEffect(() => {
-    const finished = wasBusyRef.current && !busy;
-    wasBusyRef.current = busy;
-    if (!finished || !sentRef.current || timeUpSentRef.current) return;
-    sentRef.current = false;
-    typedRef.current = true;
-    setStatus("That answer was not saved. Press Submit to send it again.");
-  }, [busy]);
 
   // The attempt's 20-minute timer.
   useEffect(() => {

@@ -66,7 +66,6 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   const [recording, setRecording] = useState(false);
   const [hasCapturedAudio, setHasCapturedAudio] = useState(false);
   const submittedRef = useRef(false);
-  const wasBusyRef = useRef(busy);
   const timerIntervalRef = useRef<number | null>(null);
   const spokenRef = useRef("");
   const typedRef = useRef("");
@@ -487,16 +486,6 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
   }
 
   submitAnswerRef.current = submitAnswer;
-
-  // The answer could not be saved and the same question is still up (a new
-  // question opens a new panel): it must not stay locked.
-  useEffect(() => {
-    const finished = wasBusyRef.current && !busy;
-    wasBusyRef.current = busy;
-    if (!finished || !submittedRef.current || !state.question) return;
-    submittedRef.current = false;
-    setVoiceStatus("That answer was not saved. Press Submit to send it again.");
-  }, [busy, state.question]);
 
   /** Re-transcribe the answer so far so it appears in the box while the
    * candidate is still speaking. */

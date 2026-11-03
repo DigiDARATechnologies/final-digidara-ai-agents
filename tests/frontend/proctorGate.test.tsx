@@ -80,3 +80,23 @@ test('a camera that is blocked is explained and the test does not start', async 
   expect(screen.getByRole('alert')).toHaveTextContent(/Camera access was blocked/);
   expect(screen.queryByText('Viva Q')).toBeNull();
 });
+
+describe('inside a chat, where the place it is drawn comes and goes', () => {
+  const tree = (slot: HTMLElement | null) => <ProctorGate agentName="capstone_project_agent" refId="s:1" label="Capstone viva" onTerminate={jest.fn()} slot={slot}><p>Question 1</p></ProctorGate>;
+
+  test('consent is asked once: it stays live between questions', async () => {
+    const first = document.body.appendChild(document.createElement('div'));
+    const { rerender } = render(tree(first));
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: /start/i }));
+    await screen.findByText('Question 1');
+    const asked = jest.mocked(navigator.mediaDevices.getUserMedia).mock.calls.length;
+    rerender(tree(null)); // The answer was sent: no agent message is the latest.
+    expect(screen.queryByText('Question 1')).not.toBeInTheDocument();
+    const second = document.body.appendChild(document.createElement('div'));
+    rerender(tree(second)); // The next question arrived.
+    expect(await screen.findByText('Question 1')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(jest.mocked(navigator.mediaDevices.getUserMedia).mock.calls.length).toBe(asked);
+  });
+});

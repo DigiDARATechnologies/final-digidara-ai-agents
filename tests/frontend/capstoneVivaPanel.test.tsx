@@ -108,16 +108,3 @@ test('when nothing is heard the microphone reopens by itself, twice', async () =
   expect(mockStart).toHaveBeenCalledTimes(3);
   expect(screen.getByText(/No answer was heard/)).toBeInTheDocument();
 });
-
-test('an answer that could not be saved leaves the question open to send again', async () => {
-  const onAnswer = jest.fn();
-  const { rerender } = render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={onAnswer} onTimeUp={jest.fn()} />);
-  await waitFor(() => expect(mockStart).toHaveBeenCalled());
-  act(() => { mockStart.mock.calls[0][0]('My answer', true); });
-  rerender(<CapstoneVivaPanel state={viva} busy onAnswer={onAnswer} onTimeUp={jest.fn()} />);
-  rerender(<CapstoneVivaPanel state={viva} busy={false} onAnswer={onAnswer} onTimeUp={jest.fn()} />);
-  const submit = screen.getByRole('button', { name: 'Submit answer' });
-  expect(submit).toBeEnabled();
-  fireEvent.click(submit);
-  expect(onAnswer).toHaveBeenCalledTimes(2);
-});

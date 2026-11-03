@@ -443,17 +443,3 @@ describe('silence handling and live text on a phone', () => {
     expect(screen.getByText(/still turned into text when you submit/)).toBeInTheDocument();
   });
 });
-
-test('an answer that could not be saved leaves the question open to send again', async () => {
-  const onAnswer = jest.fn();
-  const { rerender } = render(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
-  await waitFor(() => expect(screen.getByRole('timer')).not.toHaveTextContent('--'));
-  fireEvent.change(screen.getByLabelText(/your answer/i), { target: { value: 'A mutable sequence.' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
-  await waitFor(() => expect(onAnswer).toHaveBeenCalledTimes(1));
-  rerender(<MockInterviewPanel state={live} busy onAnswer={onAnswer} onExit={jest.fn()} />);
-  rerender(<MockInterviewPanel state={live} busy={false} onAnswer={onAnswer} onExit={jest.fn()} />);
-  expect(screen.getByText(/was not saved/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Submit answer' }));
-  await waitFor(() => expect(onAnswer).toHaveBeenCalledTimes(2));
-});

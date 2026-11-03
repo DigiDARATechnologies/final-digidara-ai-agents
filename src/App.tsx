@@ -122,13 +122,6 @@ const isGoogleOAuthCallback = () => window.location.pathname === GOOGLE_OAUTH_CA
 
 interface ProctorWrap { key: string; agentName: ProctoredAgent; refId: string; sessionId?: string; label: string; onTerminate: () => void }
 
-/** A Hard/Professional interview or viva, or an assessment, runs inside the proctoring screen. */
-function withProctoring(wrap: ProctorWrap | null, panel: ReactNode): ReactNode {
-  if (!wrap) return panel;
-  const { key, ...props } = wrap;
-  return <ProctorGate key={key} {...props}>{panel}</ProctorGate>;
-}
-
 function loadUser(): User | null {
   const saved = JSON.parse(localStorage.getItem("digidara_user") || "null") as User | null;
   return saved?.id ? saved : null;
@@ -282,6 +275,7 @@ export default function App() {
   const toastTimer = useRef<number | undefined>(undefined);
   const replyTimer = useRef<number | undefined>(undefined);
   const aptitudeTimeoutSubmissions = useRef(new Set<string>());
+  const [proctorSlot, setProctorSlot] = useState<HTMLElement | null>(null);
   const aptitudeFinalizedAttempts = useRef(new Set<string>());
   // A timeout belongs to a particular question, not an entire session. A
   // single session contains 30 questions, each with its own three minutes.
@@ -2102,6 +2096,34 @@ export default function App() {
   const certificateState = currentChat ? certificateStates[currentChat.id] : undefined;
   const jobFetchState = currentChat ? jobFetchStates[currentChat.id] : undefined;
   const mockInterviewState = currentChat ? mockInterviewStates[currentChat.id] : undefined;
+  const liveInterview = isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary));
+  // A Hard/Professional interview or viva, or an assessment, runs inside the
+  // proctoring screen. It lives outside the chat: the panel is drawn in the latest
+  // agent message, which changes with every answer, and being redrawn there closed
+  // the camera and full screen and asked for consent again on each question.
+  const proctorWrap: ProctorWrap | null = currentChat && liveInterview && mockInterviewState?.step === "in_interview" && mockInterviewState.interviewId
+    && (mockInterviewProctored(mockInterviewState.difficulty) || Boolean(mockInterviewState.proctorSessionId))
+    ? {
+      key: `proctor:${currentChat.id}:${mockInterviewState.interviewId}`, agentName: "mock_interview_agent",
+      refId: String(mockInterviewState.interviewId), sessionId: mockInterviewState.proctorSessionId,
+      label: mockInterviewState.assessmentTitle || "Hard / Professional mock interview",
+      onTerminate: () => sendMessage("exit_interview", undefined, false, "Test ended by proctoring"),
+    }
+    : currentChat && capstoneVivaLive && capstoneState && vivaProctored(capstoneState.difficulty) && capstoneState.vivaSubmissionId
+      ? {
+        key: `proctor:${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
+        agentName: "capstone_project_agent",
+        refId: `${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
+        label: "Capstone viva",
+        onTerminate: () => sendMessage(VIVA_PROCTOR_END_ACTION, undefined, false, "Viva ended by proctoring"),
+      }
+      : null;
+  const livePanel: ReactNode = currentChat && liveInterview && mockInterviewState
+    ? <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview", undefined, false, "Exit interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />
+    : currentChat && capstoneVivaLive && capstoneState
+      ? <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />
+      : undefined;
+  const liveProctoredPanel: ReactNode = proctorWrap ? <div ref={setProctorSlot} /> : livePanel;
 
   const pendingFiles = isJobFetchChat && currentChat && jobFetchPendingFiles[currentChat.id]
     ? [jobFetchPendingFiles[currentChat.id]!]
@@ -2437,31 +2459,9 @@ export default function App() {
                 connectorDifficultyPicker={connectorDifficultyPicker}
                 hideLatestContextMessage={isAptitudeChat && aptitudeState?.step === "awaiting_question"}
                 contextPanel={isAptitudeChat && aptitudeState && aptitudeState.step !== "awaiting_next_question" && aptitudeState.step !== "completed" ? <AptitudePracticePanel state={aptitudeState} onChoose={chooseAptitude} onExpire={expireAptitudeQuestion} hintPending={typing && aptitudeState.step === "awaiting_question" && currentChat.messages.at(-1)?.role === "user" && ["hint", "get a hint"].includes(currentChat.messages.at(-1)?.text.trim().toLowerCase() ?? "")} exitPending={typing} /> : isMockInterviewChat && mockInterviewState && (mockInterviewState.step === "in_interview" || (mockInterviewState.step === "completed" && mockInterviewState.summary))
-                  ? withProctoring(
-                    mockInterviewState.step === "in_interview" && mockInterviewState.interviewId
-                      && (mockInterviewProctored(mockInterviewState.difficulty) || Boolean(mockInterviewState.proctorSessionId))
-                      ? {
-                        key: `proctor:${currentChat.id}:${mockInterviewState.interviewId}`, agentName: "mock_interview_agent",
-                        refId: String(mockInterviewState.interviewId), sessionId: mockInterviewState.proctorSessionId,
-                        label: mockInterviewState.assessmentTitle || "Hard / Professional mock interview",
-                        onTerminate: () => sendMessage("exit_interview", undefined, false, "Test ended by proctoring"),
-                      }
-                      : null,
-                    <MockInterviewPanel key={`${currentChat.id}:${mockInterviewState.interviewId}:${mockInterviewState.questionOrder}:${mockInterviewState.step}`} state={mockInterviewState} busy={typing} onAnswer={(answer, timing) => sendMessage(answer || "Time expired without an answer", undefined, false, undefined, { answer, timing })} onExit={(reason) => reason === "inactive" ? sendMessage("exit_interview_inactive", undefined, false, "No answer - interview ended") : sendMessage("exit_interview", undefined, false, "Exit interview")} onPracticeWeakTopics={handlePracticeWeakTopics} />,
-                  )
+                  ? liveProctoredPanel
                   : capstoneVivaLive && capstoneState
-                    ? withProctoring(
-                      vivaProctored(capstoneState.difficulty) && capstoneState.vivaSubmissionId
-                        ? {
-                          key: `proctor:${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
-                          agentName: "capstone_project_agent",
-                          refId: `${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt ?? 1}`,
-                          label: "Capstone viva",
-                          onTerminate: () => sendMessage(VIVA_PROCTOR_END_ACTION, undefined, false, "Viva ended by proctoring"),
-                        }
-                        : null,
-                      <CapstoneVivaPanel key={`${currentChat.id}:${capstoneState.vivaSubmissionId}:${capstoneState.vivaAttempt}`} state={capstoneState} busy={typing} onAnswer={(answer) => sendMessage(answer)} onTimeUp={() => sendMessage(VIVA_TIME_UP_ACTION, undefined, false, "Time's up")} />,
-                    )
+                    ? liveProctoredPanel
                     : undefined}
                 connectorQuickActions={connectorQuickActions}
                 onConnectorQuickAction={sendMessage}
@@ -2507,6 +2507,11 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {proctorWrap && (() => {
+        const { key, ...props } = proctorWrap;
+        return <ProctorGate key={key} {...props} slot={proctorSlot}>{livePanel}</ProctorGate>;
+      })()}
 
       {user && (
         <BossAssistant
