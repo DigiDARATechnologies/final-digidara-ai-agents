@@ -30,12 +30,8 @@ async def lifespan(_app: FastAPI):
     try:
         init_db()
     except SQLAlchemyError:
-        # gunicorn boots multiple workers (-w 4) without --preload, so every
-        # worker runs this schema check independently — two workers racing
-        # to add the same column raise a duplicate-column error here. It
-        # only takes one worker to succeed, so log and keep booting instead
-        # of crashing every worker's startup over a race that already
-        # resolved itself.
+        # A database that cannot be changed right now should not stop the
+        # agent from booting; the failure is in the log for monitoring.
         logger.exception("Database schema check failed during startup")
     await registry_client.start()
     yield

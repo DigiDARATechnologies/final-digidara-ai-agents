@@ -16,6 +16,21 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
+    """Every gunicorn worker runs this at startup. One at a time: racing on the same
+    table fails with MySQL 1684, and the worker that lost skipped the changes after
+    it, so a new column could stay missing until the next restart."""
+    if engine.dialect.name != "mysql":
+        _apply_schema()
+        return
+    with engine.connect() as lock:
+        lock.execute(text("SELECT GET_LOCK('capstone_schema', 120)"))
+        try:
+            _apply_schema()
+        finally:
+            lock.execute(text("SELECT RELEASE_LOCK('capstone_schema')"))
+
+
+def _apply_schema() -> None:
     from app.db import models  # noqa: F401  (register models on Base.metadata)
 
     Base.metadata.create_all(bind=engine)

@@ -138,8 +138,23 @@ def test_logs_become_issues_without_the_noise():
     assert len(found) == 4
 
 
-def test_the_cycle_records_and_emails(people, emails, monkeypatch):
-    monkeypatch.setattr(cycle, "init_db", lambda: None)
+def test_a_retried_heartbeat_is_not_a_failure():
+    logs = [
+        "job-agent-1  | job_agent heartbeat failed",
+        "job-agent-1  | Traceback (most recent call last):",
+        'job-agent-1  |   File "x.py", line 1, in y',
+        "job-agent-1  | TimeoutError: timed out",
+        "job-agent-1  | ",
+        "job-agent-1  | The above exception was the direct cause of the following exception:",
+        "job-agent-1  | requests.exceptions.ReadTimeout: read timed out",
+        "job-agent-1  | 10:01 INFO back to normal",
+        "job-agent-1  | Traceback (most recent call last):",
+        "job-agent-1  | ValueError: a real one",
+    ]
+    assert cycle.read_logs(logs) == [(service.ERROR, "job-agent", "ValueError: a real one")]
+
+
+def test_the_cycle_records_and_emails(people, emails):
     cycle.run(["@ps job-agent running unhealthy\n"], "production")
     assert issues()[0].agent == "job-agent"
     assert "unhealthy" in emails[0][2]

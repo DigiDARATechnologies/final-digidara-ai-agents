@@ -8,7 +8,6 @@ import argparse
 import re
 import sys
 
-from app.db import init_db
 from app.monitoring import service
 
 # Application services only: the databases and Judge0 log their own routine "errors".
@@ -19,6 +18,10 @@ _ERROR = re.compile(r'\b(?:ERROR|CRITICAL|FATAL)\b|"(?:level|severity)"\s*:\s*"(
 _EXCEPTION = re.compile(r"^(?:[\w.]+\.)?\w*(?:Error|Exception|Timeout|Refused)\b.*")
 # Logged as errors, handled by retrying, and not a failure the learner sees.
 _EXPECTED = re.compile(r"Question validation failed|sqlalche\.me/")
+# A heartbeat that fails during a deploy's restart, and is simply sent again next
+# time: its message and whole traceback are not a failure.
+_RETRIED = re.compile(r"heartbeat failed")
+_TRACEBACK_LINE = re.compile(r"^(?:Traceback \(|During handling|The above exception|$)")
 
 
 def read_logs(lines) -> list[tuple[str, str, str]]:
@@ -26,6 +29,7 @@ def read_logs(lines) -> list[tuple[str, str, str]]:
     output and each unwell container in the `@ps` lines before it."""
     found: list[tuple[str, str, str]] = []
     in_traceback: set[str] = set()
+    retried: set[str] = set()
     for raw in lines:
         line = raw.rstrip("\n")
         if line.startswith("@ps "):
@@ -39,6 +43,13 @@ def read_logs(lines) -> list[tuple[str, str, str]]:
         if not match or match["service"] not in SERVICES:
             continue
         name, text = match["service"], match["text"].strip()
+        if _RETRIED.search(text):
+            retried.add(name)
+            continue
+        if name in retried:
+            if match["text"].startswith((" ", "	")) or _TRACEBACK_LINE.match(text) or _EXCEPTION.match(text):
+                continue
+            retried.discard(name)
         if "Traceback (most recent call last)" in text:
             in_traceback.add(name)
         elif name in in_traceback and _EXCEPTION.match(text):
@@ -51,7 +62,6 @@ def read_logs(lines) -> list[tuple[str, str, str]]:
 
 
 def run(lines, label: str) -> None:
-    init_db()
     for severity, name, message in read_logs(lines):
         # The orchestrator's own errors are already recorded as they happen.
         if name != "orchestrator" or severity == service.ERROR and message.startswith("Container"):
