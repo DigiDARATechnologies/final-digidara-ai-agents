@@ -366,3 +366,70 @@ def test_the_organization_list_shows_its_own_students_only(api, database):
     assert [row["user_id"] for row in rows] == ["learner"]
     assert rows[0]["agent_name"] == "capstone_project_agent"
     assert api.get(f"/organizations/{org_id}/proctoring", headers=auth("learner")).status_code in {403, 404}
+
+
+def _false_warnings(database, **fields):
+    """A viva hit by the bug: `resumes` false warnings, plus `real` real ones."""
+    from app.models import ProctorEvent
+    from app.proctoring import repair_false_warnings as repair
+
+    before = repair.FIXED_AT - timedelta(hours=1)
+    with database() as session:
+        sitting = ProctorSession(user_id="learner", agent_name=fields.get("agent", "capstone_project_agent"), ref="sub1:1",
+                                 settings=dict(service.FULL_SETTINGS), status=fields.get("status", "terminated"),
+                                 warnings=fields["resumes"] + fields.get("real", 0),
+                                 integrity=100 - 5 * (fields["resumes"] + fields.get("real", 0)))
+        session.add(sitting)
+        session.flush()
+        for _ in range(fields["resumes"]):
+            session.add(ProctorEvent(session_id=sitting.id, kind="session_resumed", detail="The page was reloaded or reopened.", penalty=5, created_at=before))
+        for _ in range(fields.get("real", 0)):
+            session.add(ProctorEvent(session_id=sitting.id, kind="focus_lost", detail="Switched.", penalty=5, created_at=before))
+        session.commit()
+        return sitting.id
+
+
+def test_the_repair_previews_first_and_changes_nothing(api, database):
+    from app.proctoring.repair_false_warnings import repair
+
+    sitting_id = _false_warnings(database, resumes=4)
+    assert repair(apply=False)["vivas"] == ["sub1"]
+    with database() as session:
+        sitting = session.get(ProctorSession, sitting_id)
+        assert sitting.status == "terminated" and sitting.warnings == 4 and sitting.integrity == 80
+
+
+def test_the_repair_restores_a_test_ended_only_by_false_warnings(api, database):
+    from app.models import ProctorEvent
+    from app.proctoring.repair_false_warnings import repair
+
+    sitting_id = _false_warnings(database, resumes=4)
+    result = repair(apply=True)
+    assert result["events"] == 4 and result["ended_vivas"] == 1 and result["vivas"] == ["sub1"]
+    with database() as session:
+        sitting = session.get(ProctorSession, sitting_id)
+        assert sitting.status == "completed" and sitting.warnings == 0 and sitting.integrity == 100
+        assert sitting.result["ended_by_system_error"] is True
+        events = session.query(ProctorEvent).filter_by(session_id=sitting_id).all()
+        assert len(events) == 4 and all(event.penalty == 0 and "not counted" in event.detail for event in events)
+    again = repair(apply=True)
+    assert again["events"] == 0 and again["vivas"] == []
+
+
+def test_real_warnings_stay_and_can_still_have_ended_the_test(api, database):
+    from app.proctoring.repair_false_warnings import repair
+
+    sitting_id = _false_warnings(database, resumes=2, real=4)
+    assert repair(apply=True)["vivas"] == []
+    with database() as session:
+        sitting = session.get(ProctorSession, sitting_id)
+        assert sitting.status == "terminated" and sitting.warnings == 4 and sitting.integrity == 80
+
+
+def test_a_reload_after_the_fix_and_knowledge_tests_are_left_alone(api, database):
+    from app.proctoring.repair_false_warnings import FIXED_AT, repair
+
+    _false_warnings(database, resumes=2, agent="knowledge_test_agent")
+    assert repair(apply=True)["events"] == 0
+    _false_warnings(database, resumes=2)
+    assert repair(apply=True, fixed_at=FIXED_AT - timedelta(days=1))["events"] == 0

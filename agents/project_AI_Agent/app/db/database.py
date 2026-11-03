@@ -37,6 +37,9 @@ def _apply_schema() -> None:
     # create_all does not add columns to existing tables, or alter existing
     # ones. Keep this small compatibility migration until the project
     # adopts Alembic.
+    if "reason" not in {column["name"] for column in inspect(engine).get_columns("project_regrades")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE project_regrades ADD COLUMN reason VARCHAR(32)"))
     student_columns = {column["name"]: column for column in inspect(engine).get_columns("students")}
     if "email" not in student_columns:
         with engine.begin() as connection:

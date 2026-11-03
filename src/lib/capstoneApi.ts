@@ -196,6 +196,8 @@ export interface SubmissionResult {
 
 /** A project graded before the run fix, with chances left to submit it again. */
 export interface RegradeOffer {
+  /** Why it was given: empty for the run fix. */
+  reason?: string | null;
   thread_id: string;
   title: string;
   chosen_topic: TopicOption | null;

@@ -89,6 +89,8 @@ export interface ProctorResult {
   percent?: number;
   label?: string | null;
   passed?: boolean;
+  /** Ended only by false warnings that were later removed: not the learner's doing. */
+  ended_by_system_error?: boolean;
 }
 
 export interface Assessment {

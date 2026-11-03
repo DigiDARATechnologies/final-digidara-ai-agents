@@ -87,6 +87,7 @@ def offers(email: str) -> list[dict]:
                     "score": row.original_score,
                     "passed": row.original_passed,
                     "chances_left": row.chances_left,
+                    "reason": row.reason,
                 })
         session.commit()
         return result

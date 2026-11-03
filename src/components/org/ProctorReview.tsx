@@ -8,6 +8,8 @@ import "../Proctor.css";
 const AGENT_TEXT: Record<string, string> = { mock_interview_agent: "Mock interview", capstone_project_agent: "Capstone viva", knowledge_test_agent: "Knowledge test" };
 const STATUS_TEXT: Record<string, string> = { active: "In progress", completed: "Finished", terminated: "Ended: too many warnings" };
 
+const SYSTEM_ERROR_TEXT = "Ended by a system error, not the student";
+
 export function Integrity({ score }: { score: number }) {
   return <span className={`integrity integrity-${integrityBand(score)}`} title="Integrity score out of 100">{score}</span>;
 }
@@ -30,7 +32,7 @@ export function ProctorTable({ rows, showPerson, showTest = !showPerson, onOpen 
             <tr key={row.session_id}>
               {showPerson && <td><b>{row.name || "-"}</b><br /><span className="assess-sub">{row.email}</span></td>}
               {showTest && <td>{AGENT_TEXT[row.agent_name] ?? row.agent_name}</td>}
-              <td>{STATUS_TEXT[row.status] ?? row.status}</td>
+              <td>{row.result?.ended_by_system_error ? SYSTEM_ERROR_TEXT : STATUS_TEXT[row.status] ?? row.status}</td>
               <td>{resultText(row.result)}</td>
               <td><Integrity score={row.integrity} /></td>
               <td>{row.warnings}</td>
@@ -97,7 +99,7 @@ export function ProctorReport({ orgId, sessionId, onClose }: { orgId: string; se
           <>
             <p className="assess-org">{detail.name} · {detail.email} · {AGENT_TEXT[detail.agent_name] ?? detail.agent_name}</p>
             <div className="assess-facts">
-              <div className="assess-fact"><span>Status</span><strong>{STATUS_TEXT[detail.status] ?? detail.status}</strong></div>
+              <div className="assess-fact"><span>Status</span><strong>{detail.result?.ended_by_system_error ? SYSTEM_ERROR_TEXT : STATUS_TEXT[detail.status] ?? detail.status}</strong></div>
               <div className="assess-fact"><span>Result</span><strong>{resultText(detail.result)}</strong></div>
               <div className="assess-fact"><span>Integrity</span><strong><Integrity score={detail.integrity} /> / 100</strong></div>
               <div className="assess-fact"><span>Warnings</span><strong>{detail.warnings} of {detail.settings.max_warnings}</strong></div>
