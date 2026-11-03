@@ -97,9 +97,11 @@ def test_the_month_plan_fits_the_free_limits_and_mixes_roles_and_cities():
 
 def test_every_role_reaches_every_city_within_days():
     seen = set()
-    for day in upcoming_plan(4, date(2026, 10, 1)):
+    # 38 roles in 7 cities, and each once as a remote search, at 70 a day. Well inside
+    # the 7 days a job is kept, so jobs do not expire before their search comes round.
+    for day in upcoming_plan(5, date(2026, 10, 1)):
         seen.update((role, city["city"]) for city in day["adzuna"] for role in city["roles"])
-    assert len(seen) == 224
+    assert len(seen) == 38 * 8
 
 
 def test_a_short_quota_day_runs_fewer_without_shifting_the_rotation():
