@@ -154,6 +154,8 @@ export const fetchAssessmentAttempts = (orgId: string, assessmentId: string) =>
   request<ProctorSummary[]>(`/organizations/${orgId}/assessments/${assessmentId}/attempts`);
 export const fetchMemberProctoring = (orgId: string, memberId: string) =>
   request<ProctorSummary[]>(`/organizations/${orgId}/members/${memberId}/proctoring`);
+export const fetchOrganizationProctoring = (orgId: string) =>
+  request<ProctorSummary[]>(`/organizations/${orgId}/proctoring`);
 export const fetchProctorDetail = (orgId: string, sessionId: string) =>
   request<ProctorDetail>(`/organizations/${orgId}/proctoring/${sessionId}`);
 

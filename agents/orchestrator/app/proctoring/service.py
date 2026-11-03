@@ -755,10 +755,31 @@ def member_sessions(user_id: str, org_id: str, member_user_id: str) -> list[dict
         _admin(session, user_id, org_id)
         org_assessments = {a.id for a in session.query(Assessment.id).filter_by(organization_id=org_id).all()}
         rows = (session.query(ProctorSession).filter_by(user_id=member_user_id)
-                .order_by(ProctorSession.started_at.desc()).limit(100).all())
+                .order_by(ProctorSession.started_at.desc()).all())
         user = session.get(User, member_user_id)
         return [_summary_row(ps, user) for ps in rows
                 if ps.assessment_id is None or ps.assessment_id in org_assessments]
+    finally:
+        session.close()
+
+
+def organization_sessions(user_id: str, org_id: str) -> list[dict]:
+    """Every proctored sitting of this organization's own students, newest first:
+    their attempts at its links, and practice sittings of those who agreed to share."""
+    session = db.get_session()
+    try:
+        _admin(session, user_id, org_id)
+        students = session.query(OrganizationMember).filter_by(organization_id=org_id, role="member").all()
+        sharing = {member.user_id for member in students if member.progress_shared_at is not None}
+        org_assessments = {a.id for a in session.query(Assessment.id).filter_by(organization_id=org_id).all()}
+        ids = [member.user_id for member in students]
+        if not ids:
+            return []
+        rows = (session.query(ProctorSession, User).outerjoin(User, User.id == ProctorSession.user_id)
+                .filter(ProctorSession.user_id.in_(ids))
+                .order_by(ProctorSession.started_at.desc()).all())
+        return [_summary_row(ps, user) for ps, user in rows
+                if ps.assessment_id in org_assessments or (ps.assessment_id is None and ps.user_id in sharing)]
     finally:
         session.close()
 

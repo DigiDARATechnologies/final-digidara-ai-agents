@@ -355,3 +355,14 @@ def test_learners_see_their_organizations_assessments_and_staff_ones_only_for_th
     assert not preview["can_start"] and "another staff member" in preview["reason"]
     assert api.get(f"/assessments/{token}", headers=auth()).json()["can_start"]
     assert owner_test["id"]
+
+
+def test_the_organization_list_shows_its_own_students_only(api, database):
+    org_id, code = _make_org(api)
+    api.post("/organizations/join", headers=auth(), json={"join_code": code})
+    for user in ("learner", "other"):
+        api.post("/proctoring/sessions", headers=auth(user), json={"agent_name": "capstone_project_agent", "ref": f"{user}:1", "consent": True})
+    rows = api.get(f"/organizations/{org_id}/proctoring", headers=auth("admin")).json()
+    assert [row["user_id"] for row in rows] == ["learner"]
+    assert rows[0]["agent_name"] == "capstone_project_agent"
+    assert api.get(f"/organizations/{org_id}/proctoring", headers=auth("learner")).status_code in {403, 404}

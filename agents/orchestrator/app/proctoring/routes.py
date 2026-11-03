@@ -141,6 +141,11 @@ def member_sessions(org_id: str, member_id: str, user_id: str = Depends(get_veri
     return _run(service.member_sessions, user_id, org_id, member_user_id)
 
 
+@router.get("/organizations/{org_id}/proctoring")
+def organization_sessions(org_id: str, user_id: str = Depends(get_verified_user_id)) -> list[dict]:
+    return _run(service.organization_sessions, user_id, org_id)
+
+
 @router.get("/organizations/{org_id}/proctoring/{session_id}")
 def session_detail(org_id: str, session_id: str, user_id: str = Depends(get_verified_user_id)) -> dict:
     return _run(service.session_detail, user_id, org_id, session_id)
