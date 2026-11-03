@@ -157,13 +157,13 @@ input{font-family:inherit;}
 ::selection{background:var(--accent-soft);}
 
 /* scrollbars */
+/* One mid grey, visible on the light and the dark pages alike. Chrome uses
+   scrollbar-color when it is set, and inherits it into every scrolling area. */
+html{ scrollbar-color:#8a94a6 transparent; }
 ::-webkit-scrollbar{width:8px;height:8px;}
-::-webkit-scrollbar-thumb{background:#e2eceb;border-radius:8px;}
-::-webkit-scrollbar-thumb:hover{background:#cfdddc;}
+::-webkit-scrollbar-thumb{background:#8a94a6;border-radius:8px;}
+::-webkit-scrollbar-thumb:hover{background:#667085;}
 .main ::selection, .sidebar ::selection{ background:rgba(127,160,242,.35); }
-.main ::-webkit-scrollbar-thumb, .sidebar ::-webkit-scrollbar-thumb{ background:var(--ov-2); }
-.main ::-webkit-scrollbar-thumb:hover, .sidebar ::-webkit-scrollbar-thumb:hover{ background:var(--ov-3); }
-.main, .sidebar{ scrollbar-color:var(--ov-2) transparent; }
 
 .muted{color:var(--text-dim);font-weight:400;}
 .grad-text{

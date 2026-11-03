@@ -7,6 +7,8 @@ import type { CapstoneFlowState } from "../lib/capstoneFlow";
 /** A pause this long after the student has spoken sends the answer. */
 const VIVA_SILENCE_SUBMIT_MS = 5_000;
 const MODE_KEY = "digidara_viva_mode";
+/** Times the microphone reopens by itself when nothing was heard. */
+const NO_ANSWER_RETRIES = 2;
 
 type VivaMode = "voice" | "typing";
 
@@ -61,6 +63,8 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
   const typedRef = useRef(false);
   const sentRef = useRef(false);
   const timeUpSentRef = useRef(false);
+  const noAnswerRetriesRef = useRef(0);
+  const wasBusyRef = useRef(busy);
   const onAnswerRef = useRef(onAnswer);
   onAnswerRef.current = onAnswer;
   const onTimeUpRef = useRef(onTimeUp);
@@ -101,6 +105,9 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
         setAnswer(text);
         setStatus("Sending your answer...");
         send(text);
+      } else if (noAnswerRetriesRef.current < NO_ANSWER_RETRIES) {
+        noAnswerRetriesRef.current += 1;
+        startListening();
       } else {
         setStatus("No answer was heard. Tap Start microphone and answer the question, or type it below.");
       }
@@ -120,6 +127,7 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
     let active = true;
     sentRef.current = false;
     typedRef.current = false;
+    noAnswerRetriesRef.current = 0;
     setAnswer("");
     setCountdown(null);
     if (mode !== "voice") {
@@ -138,6 +146,17 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
     // A new question or a change of mode starts a new voice session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionKey, mode]);
+
+  // The answer could not be saved and the same question is still up: it must not
+  // stay locked. The words stay in the box, ready to send again.
+  useEffect(() => {
+    const finished = wasBusyRef.current && !busy;
+    wasBusyRef.current = busy;
+    if (!finished || !sentRef.current || timeUpSentRef.current) return;
+    sentRef.current = false;
+    typedRef.current = true;
+    setStatus("That answer was not saved. Press Submit to send it again.");
+  }, [busy]);
 
   // The attempt's 20-minute timer.
   useEffect(() => {
@@ -189,12 +208,13 @@ export default function CapstoneVivaPanel({ state, busy, onAnswer, onTimeUp }: P
         <span>Time left</span><strong>{clock(secondsLeft)}</strong>
       </div>}
     </div>
-    <div className="capstone-viva-mode" role="radiogroup" aria-label="How do you want to answer?">
+    {/* Chosen once, on the first question: the rest follow without asking again. */}
+    {current <= 1 && <div className="capstone-viva-mode" role="radiogroup" aria-label="How do you want to answer?">
       <button type="button" role="radio" aria-checked={mode === "voice"} className={`btn ${mode === "voice" ? "btn-primary" : "btn-outline"}`}
         disabled={locked} onClick={() => chooseMode("voice")}>Answer by voice</button>
       <button type="button" role="radio" aria-checked={mode === "typing"} className={`btn ${mode === "typing" ? "btn-primary" : "btn-outline"}`}
         disabled={locked} onClick={() => chooseMode("typing")}>Answer by typing</button>
-    </div>
+    </div>}
     <div className="mock-interview-question">
       {current > 0 && <span className="mock-interview-question-number" aria-hidden="true">{current}.</span>}
       <span>{question}</span>

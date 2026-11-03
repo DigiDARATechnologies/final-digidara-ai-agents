@@ -109,37 +109,12 @@ describe('resubmitting after a failed grade', () => {
   });
 });
 
-describe('mid-viva question/dispute detection', () => {
-  test('a genuine question is answered via the Q&A agent, not submitted as the viva answer', async () => {
-    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'localStorage keeps data between sessions.', tools_used: [] });
-    const result = await handleCapstoneText(vivaState, 'why did you say localStorage?');
-    expect(api.askProjectQuestion).toHaveBeenCalledWith('thread', 'why did you say localStorage?');
-    expect(api.submitVivaAnswer).not.toHaveBeenCalled();
-    expect(result.messages[0].text).toBe('localStorage keeps data between sessions.');
-    expect(result.messages[1].text).toContain('Why did you choose localStorage?');
-    // The viva question slot itself is untouched.
-    expect(result.state.vivaQuestionId).toBe(1);
-  });
-
-  test('a message that opens with "hey" is also treated as a question, not an answer', async () => {
-    jest.mocked(api.askProjectQuestion).mockResolvedValue({ answer: 'Sure, go ahead.', tools_used: [] });
-    await handleCapstoneText(vivaState, 'hey i have one question about the project');
-    expect(api.askProjectQuestion).toHaveBeenCalled();
-    expect(api.submitVivaAnswer).not.toHaveBeenCalled();
-  });
-
+describe('an answer in the viva', () => {
   test('a plain answer is still submitted as the literal viva answer', async () => {
     jest.mocked(api.submitVivaAnswer).mockResolvedValue({ thread_id: 'thread', status: 'pending_viva', viva_question: { id: 2, question: 'Next?' }, viva_progress: '3 of 10' });
     await handleCapstoneText(vivaState, 'Because it persists data without a backend.');
     expect(api.submitVivaAnswer).toHaveBeenCalledWith('submission', 1, 'Because it persists data without a backend.');
     expect(api.askProjectQuestion).not.toHaveBeenCalled();
-  });
-
-  test('if the Q&A call itself fails, the text still gets submitted as the viva answer rather than silently dropped', async () => {
-    jest.mocked(api.askProjectQuestion).mockRejectedValue(new Error('offline'));
-    jest.mocked(api.submitVivaAnswer).mockResolvedValue({ thread_id: 'thread', status: 'pending_viva', viva_question: { id: 2, question: 'Next?' }, viva_progress: '3 of 10' });
-    await handleCapstoneText(vivaState, 'why does this matter?');
-    expect(api.submitVivaAnswer).toHaveBeenCalledWith('submission', 1, 'why does this matter?');
   });
 });
 
@@ -756,3 +731,16 @@ describe('the 20-minute viva timer', () => {
     expect(result.state.vivaDeadlineAt).toBeGreaterThan(Date.now() + 1_190_000);
   });
 });
+
+test.each(['Actually I used localStorage for the cart.', 'I have added JWT login in the auth module', 'No, the data is stored in MySQL', 'It keeps data on the client?'])(
+  'a viva answer is always an answer, and the next question follows: %s', async (answer) => {
+    jest.mocked(api.submitVivaAnswer).mockResolvedValueOnce({ status: 'pending_viva', viva_question: { id: 2, question: 'Next one' }, viva_progress: '2 of 10' } as never);
+    jest.mocked(api.askProjectQuestion).mockClear();
+    const state = { step: 'awaiting_viva_answer', name: 'L', email: 'l@example.test', phone: '', difficulty: 'easy', threadId: 'thread', vivaSubmissionId: 'sub', vivaQuestionId: 1, vivaQuestionText: 'Why?', vivaProgress: '1 of 10' } as CapstoneFlowState;
+    const result = await handleCapstoneText(state, answer);
+    expect(api.submitVivaAnswer).toHaveBeenCalledWith('sub', 1, answer);
+    expect(api.askProjectQuestion).not.toHaveBeenCalled();
+    expect(result.state.vivaQuestionId).toBe(2);
+    expect(result.messages[0].text).not.toMatch(/shall we continue/i);
+  },
+);
