@@ -142,3 +142,17 @@ def test_saved_roles_limit_jobs_when_the_message_did_not_ask_for_a_role():
     assert not _matches_target_role("Python Developer", scope)
     assert _role_scope(["Backend Developer"], profile) == ["Backend Developer"]
     assert _role_scope([], {}) == []
+
+
+def test_a_role_in_other_words_is_the_same_role():
+    from job_agent.chat_service import _matches_target_role as matches
+
+    assert matches("Python Backend Developer", ["Python Developer"])
+    assert matches("Developer - Python", ["Python Developer"])
+    assert matches("Python Engineer", ["Python Developer"])
+    assert matches("Mobile Application Engineer", ["Mobile App Developer"])
+    assert matches("Full-Stack Developer", ["Full Stack Developer"])
+    assert matches("Front End Developer", ["Frontend Developer"])
+    assert not matches("Python Developer", ["Data Analyst"])
+    assert not matches("JavaScript Developer", ["Java Developer"])
+    assert not matches("Sales Manager", ["Sales Executive"])

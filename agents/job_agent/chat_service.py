@@ -293,6 +293,19 @@ def _role_scope(requested_titles: List[str], profile: Dict[str, Any]) -> List[st
     return list(requested_titles or profile.get("preferred_titles") or [])
 
 
+# Words employers use for the same thing in a title.
+_ROLE_WORD_SYNONYMS = {
+    "developer": "engineer", "programmer": "engineer", "dev": "engineer", "application": "app", "apps": "app",
+    "frontend": "front-end", "backend": "back-end", "fullstack": "full-stack",
+}
+_ROLE_WORD_FILLERS = {"and", "of", "the", "in", "for", "a", "an", "at"}
+
+
+def _role_words(normalised_title: str) -> set:
+    joined = normalised_title.replace("front end", "frontend").replace("back end", "backend").replace("full stack", "fullstack")
+    return {_ROLE_WORD_SYNONYMS.get(word, word) for word in joined.split() if word not in _ROLE_WORD_FILLERS}
+
+
 def _matches_target_role(job_title: str, target_titles: List[str]) -> bool:
     """Return True only for an explicit title or approved title alias.
 
@@ -302,10 +315,16 @@ def _matches_target_role(job_title: str, target_titles: List[str]) -> bool:
     normalised_job = _normalise_role_text(job_title)
     if not target_titles:
         return True
+    job_words = _role_words(normalised_job)
     for target in target_titles:
         normalised_target = _normalise_role_text(target)
         aliases = ROLE_ALIASES.get(normalised_target, {normalised_target})
         if any(re.search(rf"\b{re.escape(alias)}\b", normalised_job) for alias in aliases if alias):
+            return True
+        # The same words in another order or with words between them: "Python
+        # Backend Developer" and "Developer - Python" are Python Developer jobs.
+        target_words = _role_words(normalised_target)
+        if target_words and target_words <= job_words:
             return True
     return False
 

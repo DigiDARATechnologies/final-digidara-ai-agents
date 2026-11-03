@@ -118,7 +118,10 @@ interface ChatViewProps {
  * sends the answer by itself. */
 const PHONE_AUTO_SEND_SILENCE_MS = 7_000;
 /** Word pronunciation practice: stop quickly after the word is spoken (1.5s). */
-const PRONUNCIATION_SILENCE_MS = 1_500;
+// Long enough to take a breath in a sentence without the recording ending there.
+const PRONUNCIATION_SILENCE_MS = 2_500;
+/** A second tap this soon is a double tap, not "stop recording". */
+const MIC_DOUBLE_TAP_MS = 500;
 /** Speaking Practice: a pause this long after speaking sends the answer
  * (unless the learner asked for more time: "just a minute"). */
 const SPEAKING_AUTO_SEND_MS = 3_000;
@@ -194,6 +197,7 @@ export default function ChatView({
   const sendOnFinalRef = useRef(false);
   // Seconds before a pause sends the answer (phone recording), for the hint.
   const [autoSendIn, setAutoSendIn] = useState<number | null>(null);
+  const lastMicTapRef = useRef(0);
   // Speaking Practice: the learner said "just a minute"; still listening.
   const [holding, setHolding] = useState(false);
   // Recognition is `continuous: true`, so it keeps listening in the
@@ -228,6 +232,23 @@ export default function ChatView({
 
   useEffect(() => { if (composerSeed) setInput(composerSeed); }, [composerSeed]);
 
+  // Ctrl+V of a screenshot or a copied file does what the paperclip does, wherever
+  // the cursor is. Text is left to paste as usual.
+  const attachRef = useRef({ attachEnabled, onAttachFiles, onAttachDisabled, hideComposer });
+  attachRef.current = { attachEnabled, onAttachFiles, onAttachDisabled, hideComposer };
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const files = event.clipboardData?.files;
+      const { attachEnabled: enabled, onAttachFiles: attach, onAttachDisabled: refuse, hideComposer: hidden } = attachRef.current;
+      if (!files?.length || hidden) return;
+      event.preventDefault();
+      if (enabled) attach(files);
+      else refuse();
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, []);
+
   // Word practice is one short word at a time. Opening the microphone for each
   // attempt lost the word's beginning while the device started up, so it was
   // heard wrongly until the learner repeated it: it stays open during the practice.
@@ -238,6 +259,9 @@ export default function ChatView({
   }, [voiceOnly]);
 
   function handleMicClick() {
+    const now = Date.now();
+    if (voiceOnly && now - lastMicTapRef.current < MIC_DOUBLE_TAP_MS) return;
+    lastMicTapRef.current = now;
     stopCoachAudio();
     setAgentSpeaking(false);
     if (speech.transcribing) return;
@@ -296,6 +320,7 @@ export default function ChatView({
       silenceMs: effectiveSilenceMs,
       // A short word needs the whole recording, not the latest live preview.
       finalFromPreview: !voiceOnly,
+      requireSpeech: voiceOnly,
       onSilenceCountdown: setAutoSendIn,
       onAudioLevel: (lvl) => {
         if (orbRef.current) orbRef.current.style.setProperty("--voice-level", lvl.toFixed(2));
@@ -949,7 +974,7 @@ export default function ChatView({
       )}
       {!codeMode && !multilineMode && speech.recordingMode && speech.listening && (
         <div className="voice-capture-status" role="status">{autoSendIn !== null
-          ? `Sending your answer in ${autoSendIn}s – keep talking to continue.`
+          ? voiceOnly ? `Stopping the recording in ${autoSendIn}s – keep talking to continue.` : `Sending your answer in ${autoSendIn}s – keep talking to continue.`
           : (voiceOnly ? "Listening… say the word and it will capture automatically." : "Recording… stop talking for 7 seconds (or tap the microphone) and your answer is sent.")}</div>
       )}
       {!codeMode && !multilineMode && speech.transcribing && (
