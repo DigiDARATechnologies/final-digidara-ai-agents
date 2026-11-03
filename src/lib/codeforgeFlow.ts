@@ -282,6 +282,10 @@ function formatResult(result: EvaluationResult): string {
       else if (test.compileOutput) lines.push(`  Compile error: ${test.compileOutput.trim()}`);
     }
   }
+  // A hidden test shows nothing by design, so say what kind of thing to look for.
+  if (result.tests.some((test) => test.hidden && !test.passed) && result.tests.filter((test) => !test.hidden).every((test) => test.passed)) {
+    lines.push("\nYour code passes the public tests, so it is close. A hidden test checks another case: try small values such as 0, 1 and negatives, an empty list, and exact output with no extra text.");
+  }
   return lines.join("\n");
 }
 
@@ -491,7 +495,7 @@ export async function submitCodeForgeCode(
     const problems = accepted ? withSolved(state) : state.problems;
     const nextOptions: ChatOption[] = accepted
       ? afterProblemOptions({ ...state, problems })
-      : [{ label: "Explain this error", value: "explain_error" }];
+      : [{ label: "Explain this error", value: "explain_error" }, ...afterProblemOptions(state)];
     const levelUp = accepted ? await levelUpMessage(problems) : null;
     return {
       state: { ...state, problems, step: accepted ? "awaiting_problem" : "awaiting_code", lastResult: result, lastGuidance: undefined },
