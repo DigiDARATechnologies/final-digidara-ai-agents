@@ -75,3 +75,28 @@ class TestQuestionAgentWebSearch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_questions_must_include_what_they_refer_to():
+    from cert_app.agents.question_agent import _validate_question
+
+    def question(text, options=("A one", "B two", "C three", "D four")):
+        return {"question": text, "options": list(options), "correct_answer": options[0]}
+
+    assert not _validate_question(question("What is the main idea of the passage?"))
+    assert not _validate_question(question("What is the average salary in the employees table?", ("5000", "6000", "7000", "8000")))
+    assert not _validate_question(question("How many rows are in the orders table?", ("1", "2", "3", "4")))
+    assert _validate_question(question("Which SQL clause groups rows in the employees table?", ("GROUP BY", "ORDER BY", "HAVING", "WHERE")))
+    assert _validate_question(question("Table employees has rows: (1, 5000), (2, 7000). What is the average salary?", ("6000", "5000", "7000", "8000")))
+    assert _validate_question(question("What does the SELECT statement do in SQL?"))
+
+
+def test_the_same_question_reworded_is_a_duplicate():
+    from cert_app.agents.question_agent import QuestionDeduper
+
+    deduper = QuestionDeduper()
+    assert deduper.add("What is the purpose of a primary key in SQL databases?")
+    assert not deduper.add("In SQL databases, what is the purpose of the primary key?")
+    assert deduper.add("What is the purpose of a foreign key constraint in joins?")
+    assert deduper.add("What is the output of print(2 ** 3) in Python?")
+    assert deduper.add("What is the output of print(3 ** 2) in Python?")
