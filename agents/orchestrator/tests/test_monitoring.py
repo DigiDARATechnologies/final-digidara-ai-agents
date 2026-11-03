@@ -196,3 +196,45 @@ def test_the_routes_answer_each_account_for_itself(people):
     assert client.post("/platform-admin/monitoring/seen", json={"as_of": briefing["as_of"]}).status_code == 200
     assert client.get("/platform-admin/monitoring/briefing").json()["issues"] == []
     assert client.post("/platform-admin/monitoring/seen", json={"as_of": "not a time"}).status_code == 400
+
+
+def test_boss_says_todays_jobs_once_a_day_and_whenever_asked(people):
+    monitor, learner, _ = people
+    today = service.today_in_india()
+    service.save_job_day(today, [12, 1, 1240, 86, 1100, 54])
+    first = service.briefing(monitor)
+    assert "1,240 jobs" in first["text"] and "86 new" in first["text"] and "1 run failed" in first["text"]
+    service.mark_seen(monitor, first["as_of"])
+    assert service.briefing(monitor)["text"] == ""
+    assert "1,240 jobs" in service.briefing(monitor, recent=True)["jobs_text"]
+    assert "jobs_text" not in service.briefing(learner)
+
+
+def test_a_day_without_a_fetch_says_so(people):
+    monitor = people[0]
+    assert "no job fetch recorded" in service.briefing(monitor)["text"]
+    service.save_job_day(service.today_in_india(), [0, 0, 0, 0, 0, 0])
+    assert "no job fetch ran" in service.briefing(monitor)["text"]
+
+
+def test_the_cycle_keeps_the_job_counts_and_ignores_bad_lines():
+    days = cycle.job_days(["@jobs 2026-11-03 2 0 50 10 40 0\n", "@jobs broken\n", "@jobs 2026-11-03 a b c d e f\n", "job-agent-1  | hello\n"])
+    assert days == [("2026-11-03", [2, 0, 50, 10, 40, 0])]
+
+
+def test_the_jobs_email_goes_once_each_night_to_both_accounts(people, emails):
+    night = datetime(2026, 11, 3, 18, 10)
+    service.save_job_day("2026-11-03", [2, 0, 50, 10, 40, 0])
+    assert service.send_jobs_report("production", night.replace(hour=12)) is False
+    assert service.send_jobs_report("production", night) is True
+    assert MONITOR in emails[0][0] and "boss-admin@example.com" in emails[0][0]
+    assert "50 jobs" in emails[0][2] and "**" not in emails[0][2]
+    assert service.send_jobs_report("production", night.replace(minute=20)) is False
+    assert service.send_jobs_report("production", night.replace(minute=40)) is False  # Tomorrow, in India.
+    assert len(emails) == 1
+
+
+def test_the_morning_report_gives_yesterdays_jobs(people, emails):
+    service.save_job_day("2026-11-03", [2, 0, 50, 10, 40, 0])
+    assert service.send_daily_report("production", datetime(2026, 11, 4, 3, 40)) is True
+    assert "50 jobs yesterday" in emails[0][2]

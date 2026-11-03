@@ -43,6 +43,7 @@ interface Turn {
 const HISTORY_TURNS = 6;
 const BRIEFING_CHECK_MS = 5 * 60_000;
 /** "Any issues today?", "show the bugs": answered from the records, not by the model. */
+const JOBS_QUESTION = /\b(?:how many|count|number of)\b.*\bjobs?\b|\bjobs?\b.*\b(?:fetched|collected|today)\b/i;
 const ISSUES_QUESTION = /\b(?:any|what|which|show|list|tell|today'?s?|are there)\b.*\b(?:issues?|bugs?|defects?|errors?|problems?|failures?)\b/i;
 const WAKE_KEY = "digidara.heyBoss";
 // A pause this long after the learner has spoken sends what they said.
@@ -282,12 +283,14 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     setError("");
     setInput("");
     stopSpeaking();
-    if (monitorRef.current && ISSUES_QUESTION.test(message)) {
+    const asksJobs = JOBS_QUESTION.test(message);
+    if (monitorRef.current && (asksJobs || ISSUES_QUESTION.test(message))) {
       setTurns((previous) => [...previous, { role: "user", text: message }]);
       try {
         const briefing = await fetchBriefing(true);
-        setTurns((previous) => [...previous, { role: "boss", text: briefing.text }]);
-        if (spoken) void speakNatural(briefing.text.replace(/\*\*/g, ""), { speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true).catch(() => undefined);
+        const answer = (asksJobs && briefing.jobs_text) || briefing.text;
+        setTurns((previous) => [...previous, { role: "boss", text: answer }]);
+        if (spoken) void speakNatural(answer.replace(/\*\*/g, ""), { speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true).catch(() => undefined);
       } catch {
         setError("I could not read the issues just now.");
       }

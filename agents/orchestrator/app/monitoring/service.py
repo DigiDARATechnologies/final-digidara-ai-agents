@@ -40,6 +40,8 @@ FIRST_BRIEFING_WINDOW = timedelta(hours=24)
 BRIEFING_LINES = 5
 DAILY_REPORT_HOUR_UTC = 3  # 03:30 UTC is 9 in the morning in India.
 DAILY_REPORT_MINUTE_UTC = 30
+JOBS_REPORT_HOUR_UTC = 18  # 11:30 at night in India: the day's totals are nearly final.
+IST = timedelta(hours=5, minutes=30)
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 _SECRET = re.compile(r"(?i)\b(bearer\s+|sk-|token[\"'=:\s]+|password[\"'=:\s]+|api[_-]?key[\"'=:\s]+|authorization[\"'=:\s]+)[^\s\"',;]+")
@@ -153,6 +155,31 @@ def install_log_handler() -> None:
         root.addHandler(handler)
 
 
+def today_in_india(now: datetime | None = None) -> str:
+    return ((now or datetime.utcnow()) + IST).date().isoformat()
+
+
+def save_job_day(day: str, counts: list[int]) -> None:
+    """counts: runs, failed runs, fetched, new, updated, rejected."""
+    session = get_session()
+    try:
+        _write_state(session, f"jobs:{day}", ",".join(str(count) for count in counts))
+        session.commit()
+    finally:
+        session.close()
+
+
+def jobs_text(session, day: str, when: str = "today") -> str:
+    saved = _read_state(session, f"jobs:{day}")
+    if not saved:
+        return f"Job Agent: no job fetch recorded {when} yet."
+    runs, failed, fetched, new, updated, rejected = (int(part) for part in saved.split(","))
+    if not runs:
+        return f"Job Agent: no job fetch ran {when}."
+    text = f"Job Agent fetched **{fetched:,} jobs** {when}: {new:,} new, {updated:,} updated, {rejected:,} rejected, in {runs:,} run{'' if runs == 1 else 's'}."
+    return text + (f" {failed:,} run{' failed' if failed == 1 else 's failed'}." if failed else "")
+
+
 def _reportable(issue: SystemIssue) -> bool:
     return issue.severity == ERROR or issue.count >= WARNING_REPORT_COUNT
 
@@ -219,9 +246,15 @@ def briefing(user_id: str, *, recent: bool = False) -> dict:
         since = now - FIRST_BRIEFING_WINDOW if recent or not seen else datetime.fromisoformat(seen)
         newest = _newest(session, since)
         issues = [describe(issue) for issue in newest]
+        today = today_in_india(now)
+        jobs = jobs_text(session, today)
         # Up to the newest one told, so anything after it is still news.
         as_of = max((issue.last_seen for issue in newest), default=now)
-        return {"allowed": True, "issues": issues, "text": spoken_summary(issues, recent=recent), "as_of": as_of.isoformat()}
+        text = spoken_summary(issues, recent=recent)
+        # Once a day, Boss opens with the day's job fetching.
+        if not recent and _read_state(session, f"jobs_told:{user_id}") != today:
+            text = f"{jobs}\n\n{text}" if text else jobs
+        return {"allowed": True, "issues": issues, "text": text, "jobs_text": jobs, "as_of": as_of.isoformat()}
     finally:
         session.close()
 
@@ -231,6 +264,7 @@ def mark_seen(user_id: str, as_of: str) -> None:
     try:
         if is_monitor(session.get(User, user_id)):
             _write_state(session, f"seen:{user_id}", datetime.fromisoformat(as_of).isoformat())
+            _write_state(session, f"jobs_told:{user_id}", today_in_india())
             session.commit()
     finally:
         session.close()
@@ -308,12 +342,35 @@ def send_daily_report(label: str, now: datetime | None = None) -> bool:
         if _read_state(session, "daily_report_on") == today:
             return False
         issues = _newest(session, now - timedelta(hours=24))
-        body = (f"Boss's report for {label}, last 24 hours:\n\n{_email_lines(issues)}\n" if issues
-                else f"Boss's report for {label}: no problems in the last 24 hours.\n")
+        yesterday = (now + IST - timedelta(days=1)).date().isoformat()
+        jobs = jobs_text(session, yesterday, "yesterday").replace("**", "")
+        body = (f"Boss's report for {label}, last 24 hours:\n\n{jobs}\n\n{_email_lines(issues)}\n" if issues
+                else f"Boss's report for {label}: no problems in the last 24 hours.\n\n{jobs}\n")
         subject = f"[SkillDARA {label}] Daily report: {f'{len(issues)} problem(s)' if issues else 'all clear'}"
         if not _send_email(recipients(session), subject, body):
             return False
         _write_state(session, "daily_report_on", today)
+        session.commit()
+        return True
+    finally:
+        session.close()
+
+
+def send_jobs_report(label: str, now: datetime | None = None) -> bool:
+    """Every night, the day's job fetching, to the same people as the other reports."""
+    now = now or datetime.utcnow()
+    # Only before midnight in India (18:30 UTC): later, "today" is already tomorrow.
+    if now.hour != JOBS_REPORT_HOUR_UTC or now.minute >= 30:
+        return False
+    today = today_in_india(now)
+    session = get_session()
+    try:
+        if _read_state(session, "jobs_report_on") == today:
+            return False
+        text = jobs_text(session, today).replace("**", "")
+        if not _send_email(recipients(session), f"[SkillDARA {label}] Jobs fetched today ({today})", f"{text}\n"):
+            return False
+        _write_state(session, "jobs_report_on", today)
         session.commit()
         return True
     finally:
