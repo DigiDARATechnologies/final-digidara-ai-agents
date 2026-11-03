@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { fetchBriefing, markBriefingSeen } from "../lib/monitoringApi";
 import useSpeechRecognition from "../hooks/useSpeechRecognition";
 import { assistStream, type AssistAction, type BossLink } from "../lib/assistApi";
 import { refersToScreen, withoutWakeWords } from "../lib/assistText";
 import { CLOSE_PHRASE, openingLine, parseBossCommand } from "../lib/bossCommands";
 import { transcribeGeneralAudio } from "../lib/orchestratorApi";
 import { captureScreenshot, SCREENSHOT_HIDE_ATTRIBUTE } from "../lib/screenCapture";
-import { createSpeechQueue, stopSpeaking } from "../lib/voiceEngine";
+import { createSpeechQueue, speakNatural, stopSpeaking } from "../lib/voiceEngine";
 import { readyToSpeak } from "../lib/voiceText";
 import { recognitionLocale } from "../lib/voicePrefs";
 import { audioRecordingSupported } from "../lib/voiceCapture";
@@ -40,6 +41,9 @@ interface Turn {
 }
 
 const HISTORY_TURNS = 6;
+const BRIEFING_CHECK_MS = 5 * 60_000;
+/** "Any issues today?", "show the bugs": answered from the records, not by the model. */
+const ISSUES_QUESTION = /\b(?:any|what|which|show|list|tell|today'?s?|are there)\b.*\b(?:issues?|bugs?|defects?|errors?|problems?|failures?)\b/i;
 const WAKE_KEY = "digidara.heyBoss";
 // A pause this long after the learner has spoken sends what they said.
 const PAUSE_MS = 1_500;
@@ -122,6 +126,8 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
   // startConversation only reads refs and setters.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => setBossPanelOpener(() => startConversation()), []);
+  // The accounts that look after the platform: Boss tells them what went wrong.
+  const monitorRef = useRef(false);
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const voiceSupported = audioRecordingSupported();
   const wakeSupported = wakeWordSupported();
@@ -134,6 +140,30 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
   // The loop runs from callbacks made on earlier renders: it calls the newest functions.
   const askRef = useRef<(raw: string, spoken: boolean) => Promise<void>>(async () => {});
   const listenRef = useRef<() => void>(() => {});
+
+  // On sign-in and while they work. Never over a conversation or on a hidden tab:
+  // it waits, and what was not shown is still there next time.
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      if (conversationRef.current || abortRef.current || document.hidden) return;
+      try {
+        const briefing = await fetchBriefing();
+        if (!active) return;
+        monitorRef.current = briefing.allowed;
+        if (!briefing.allowed || !briefing.text || !briefing.as_of) return;
+        tell(briefing.text);
+        void markBriefingSeen(briefing.as_of).catch(() => undefined);
+      } catch {
+        // Boss has nothing to say this time.
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), BRIEFING_CHECK_MS);
+    return () => { active = false; window.clearInterval(timer); };
+    // tell() only reads refs and setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
@@ -178,6 +208,18 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     } catch {
       // The choice lasts for this visit only.
     }
+  }
+
+  /** Boss speaking first. A browser can refuse sound before a first click; the words still show. */
+  function tell(text: string) {
+    setOpen(true);
+    openRef.current = true;
+    setTurns((previous) => [...previous, { role: "boss", text }]);
+    void speakNatural(text.replace(/\*\*/g, ""), {
+      speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE,
+      onStart: () => setSpeaking(true),
+      onEnd: () => setSpeaking(false),
+    }, true).catch(() => undefined);
   }
 
   function startConversation(rest = "") {
@@ -240,6 +282,17 @@ export default function BossAssistant({ agentId, agentName, getContext, onNaviga
     setError("");
     setInput("");
     stopSpeaking();
+    if (monitorRef.current && ISSUES_QUESTION.test(message)) {
+      setTurns((previous) => [...previous, { role: "user", text: message }]);
+      try {
+        const briefing = await fetchBriefing(true);
+        setTurns((previous) => [...previous, { role: "boss", text: briefing.text }]);
+        if (spoken) void speakNatural(briefing.text.replace(/\*\*/g, ""), { speed: BOSS_VOICE_SPEED, pace: BOSS_VOICE_PACE }, true).catch(() => undefined);
+      } catch {
+        setError("I could not read the issues just now.");
+      }
+      return;
+    }
     const wantsScreen = lookAtScreen || refersToScreen(message);
     const command = parseBossCommand(message);
     if (command?.type === "close") {

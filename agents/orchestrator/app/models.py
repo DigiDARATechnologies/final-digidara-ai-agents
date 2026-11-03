@@ -816,3 +816,29 @@ class KnowledgeAttempt(Base):
     max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SystemIssue(Base):
+    """One kind of failure on the platform, with how often it happened (app/monitoring)."""
+    __tablename__ = "system_issues"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
+    source: Mapped[str] = mapped_column(String(16))
+    severity: Mapped[str] = mapped_column(String(16))
+    agent: Mapped[str] = mapped_column(String(64), default="")
+    action: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    alerted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MonitorState(Base):
+    """Small facts for monitoring: when each account was last told, the last email."""
+    __tablename__ = "monitor_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(64))

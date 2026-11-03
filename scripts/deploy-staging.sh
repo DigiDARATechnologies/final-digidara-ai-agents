@@ -145,3 +145,8 @@ if [ "$HEALTH_OK" = false ]; then
 fi
 
 echo "Staging deploy successful: $NEW_COMMIT is live on $SITE_URL."
+
+# Boss's regular check of the agents' logs and health (app/monitoring). It only
+# reads, and a failure to install it never fails a deploy.
+printf 'PATH=/usr/local/bin:/usr/bin:/bin\n*/10 * * * * root bash /opt/digidara-agents/scripts/server/monitor-cycle.sh staging >/dev/null 2>&1\n' \
+  > /etc/cron.d/skilldara-monitor 2>/dev/null || echo "Could not install the monitoring cron job."

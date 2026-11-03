@@ -30,11 +30,15 @@ from app.links.routes import router as links_router  # noqa: E402
 from app.proctoring.routes import router as proctoring_router  # noqa: E402
 from app.knowledge.routes import router as knowledge_router  # noqa: E402
 from app.courses.routes import router as courses_router  # noqa: E402
+from app.monitoring import service as monitoring_service  # noqa: E402
+from app.monitoring.middleware import IssueMiddleware  # noqa: E402
+from app.monitoring.routes import router as monitoring_router  # noqa: E402
 
 app = FastAPI(title="SkillDARA Orchestrator", version="1.0.0")
 
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(IssueMiddleware)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -78,6 +82,7 @@ app.include_router(links_router)
 app.include_router(proctoring_router)
 app.include_router(knowledge_router)
 app.include_router(courses_router)
+app.include_router(monitoring_router)
 
 
 @app.on_event("startup")
@@ -99,6 +104,7 @@ def on_startup() -> None:
 
     boss_memory.warm_up()
     auth_service.seed_admin_from_env()
+    monitoring_service.install_log_handler()
 
 
 @app.get("/health")
