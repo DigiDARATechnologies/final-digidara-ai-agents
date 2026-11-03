@@ -277,7 +277,7 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
         ("RIGHTPADDING",(0,0),(-1,-1),9),("TOPPADDING",(0,0),(-1,-1),7),
         ("BOTTOMPADDING",(0,0),(-1,-1),7),
     ]))
-    story.extend([summary_table,Spacer(1,5*mm),Paragraph("Priority Topics to Improve",style["question_title"]),HRFlowable(width="100%",thickness=1,color=PURPLE),Spacer(1,3*mm)])
+    story.extend([summary_table,Spacer(1,5*mm),Paragraph("Priority Topics",style["question_title"]),HRFlowable(width="100%",thickness=1,color=PURPLE),Spacer(1,3*mm)])
     priority_topics=[]
     seen_topics=set()
     for question in test.questions:
@@ -285,18 +285,21 @@ def generate_test_results_pdf(test,student,fallback_timezone=None):
         topic=str(question.topic or "").strip()
         answer=question.answer
         key=(category.casefold(),topic.casefold())
-        # "Priority Topics to Improve" is a performance result, not the
-        # configured topic-selection weighting. Only an answered, incorrect
-        # response should put a starred topic in this section.
-        if (
-            category and topic and key not in seen_topics and topic_is_starred(category,topic)
-            and answer and not answer.timed_out and not answer.is_correct
-        ):
-            priority_topics.append((category,topic));seen_topics.add(key)
+        # The same priority topics the test history marks with a star, each with
+        # how it went: a topic stays "to improve" if any question on it missed.
+        if not (category and topic and topic_is_starred(category,topic)):
+            continue
+        missed=not (answer and answer.is_correct)
+        if key not in seen_topics:
+            seen_topics.add(key)
+            priority_topics.append({"key":key,"category":category,"topic":topic,"missed":missed})
+        elif missed:
+            next(item for item in priority_topics if item["key"]==key)["missed"]=True
     if priority_topics:
-        for category,topic in priority_topics:
+        for item in priority_topics:
+            result="To improve" if item["missed"] else "Answered correctly"
             story.append(Paragraph(
-                f"<font color='#7657F6'><b>PRIORITY</b></font> &nbsp; {_html(category)} - {_html(topic)}",
+                f"<font color='#7657F6'><b>PRIORITY</b></font> &nbsp; {_html(item['category'])} - {_html(item['topic'])} &nbsp; ({result})",
                 style["body"],
             ))
     else:

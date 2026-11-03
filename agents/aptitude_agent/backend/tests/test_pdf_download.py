@@ -149,7 +149,7 @@ def test_pdf_priority_topics_branding_metadata_and_attempt_timezone(app,client,a
     text="\n".join(page.extract_text() or "" for page in reader.pages)
     assert "12 Sep 2026" in text
     assert "12:24 PM IST" in text
-    assert "Priority Topics to Improve" in text
+    assert "Priority Topics" in text
     assert "PRIORITY" in text
     assert "Quantitative Aptitude - Profit & Loss" in text
     assert "AptiDARA" not in text
@@ -237,3 +237,17 @@ def test_technical_pdf_decodes_literal_newlines_and_preserves_code_lines(app,cli
     assert "#include <stdio.h>" in text
     assert "int main()" in text
     assert "\\n\\n#include" not in text
+
+
+def test_pdf_lists_priority_topics_answered_correctly_too(app,client,auth_headers):
+    with app.app_context():
+        student=Student.query.filter_by(email="learner@example.com").one()
+        test_id=_completed_test(student.id)
+        test=db.session.get(AptitudeTest,test_id)
+        test.questions[0].category="Quantitative Aptitude"
+        test.questions[0].topic="Profit & Loss"
+        test.questions[0].answer.is_correct=True
+        db.session.commit()
+    text=_pdf_text(client.get(f"/api/aptitude/tests/{test_id}/download",headers=auth_headers))
+    assert "Quantitative Aptitude - Profit & Loss" in text
+    assert "Answered correctly" in text
