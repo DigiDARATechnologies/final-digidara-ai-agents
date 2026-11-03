@@ -23,23 +23,6 @@ import {
 type RegradeOffer } from "./capstoneApi";
 import { displayRole, easyToProfessional, goalLine, learnerGoal } from "./learnerContext";
 
-/** A rough, deliberately over-inclusive heuristic: is this message the
- * student asking something or disputing a finding, rather than a plain
- * answer/instruction-following action (a viva answer, or just re-attaching
- * files)? Covers two shapes seen in practice: a genuine question ("what
- * does X mean?"), and a dispute/objection ("already have the approach
- * section", "that's wrong", "no I did include that"). False positives (a
- * genuine answer misread as one of these) just cost one extra turn where
- * the student re-sends their answer — cheap. False negatives (a real
- * question/dispute silently consumed as a literal viva answer, or dropped
- * with a canned reminder) are the actual bug this exists to prevent, so
- * this errs toward catching more, not fewer. */
-function looksLikeQuestionOrDispute(text: string): boolean {
-  const trimmed = text.trim();
-  if (/\?\s*$/.test(trimmed)) return true;
-  return /^(hey|hi|hello|wait|excuse me|sorry|actually|no[,]?\s|already|i (already )?(have|wrote|did|add(ed)?|includ(e|ed)|do have)|that'?s (wrong|not right|incorrect)|this is (already|not)|i don'?t (think|agree)|question|quick question|one (question|sec|moment)|i have (a|one) question|i want(ed)? to ask|can i ask|could i ask)\b/i.test(trimmed);
-}
-
 /** Every step from awaiting_topic_choice onward has a real thread_id (a
  * project/assignment already exists), so a doubt there can be routed through
  * askProjectQuestion for a real, grounded answer. At awaiting_topic_request
@@ -50,8 +33,7 @@ function looksLikeQuestionOrDispute(text: string): boolean {
  * a short explanation of what this chat does instead of being fed into
  * clarifyTopicRequest as if they were one. Deliberately narrow: a real
  * request that happens to end in "?" (e.g. "can I get a python project?")
- * must NOT match this, so it can't reuse the broad looksLikeQuestionOrDispute
- * heuristic above. */
+ * must NOT match this. */
 const OFF_TOPIC_SMALL_TALK = /^(hi|hello+|hey|yo|thanks|thank you|ok(ay)?|who (is|are|was)|what('s| is) your name|how are you|how('s| is) it going|good (morning|afternoon|evening))\b/i;
 
 /** Once a project's requirements are shown it is locked in: a request to
@@ -748,21 +730,9 @@ export async function handleCapstoneText(
       if (!state.vivaSubmissionId || state.vivaQuestionId == null) {
         return { state, messages: [{ text: "I lost track of the viva session. Please resubmit your project." }] };
       }
-      if (!timeUp && state.threadId && looksLikeQuestionOrDispute(trimmed)) {
-        try {
-          const qa = await askProjectQuestion(state.threadId, trimmed);
-          return {
-            state,
-            messages: [
-              { text: qa.answer },
-              { text: `Shall we continue the viva? Here's the question again —\n\nQuestion ${state.vivaProgress}:\n\n${state.vivaQuestionText}` },
-            ],
-          };
-        } catch {
-          // Q&A itself failed (e.g. thread expired) — fall through and treat
-          // the text as a literal viva answer rather than silently dropping it.
-        }
-      }
+      // What comes from the viva panel is always the answer, and the next question
+      // follows at once. An answer opening with "actually" or "I have", or spoken
+      // with a question's tone, used to stop the viva to ask "shall we continue?".
       try {
         const result = timeUp
           ? await vivaTimeUp(state.vivaSubmissionId, endedByProctoring)

@@ -53,7 +53,7 @@ test('typing takes over from the microphone and is sent with Submit', async () =
 
 test('typing mode neither speaks nor listens', () => {
   localStorage.setItem('digidara_viva_mode', 'typing');
-  render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  render(<CapstoneVivaPanel state={{ ...viva, vivaProgress: '1 of 10' }} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
   expect(mockSpeak).not.toHaveBeenCalled();
   expect(mockStart).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('radio', { name: 'Answer by voice' }));
@@ -80,4 +80,44 @@ test('the words appear in the answer box while the student is speaking', async (
   act(() => { mockStart.mock.calls[0][0]('It keeps data', false); });
   expect(screen.getByLabelText(/Your answer/)).toHaveValue('It keeps data');
   expect(onAnswer).not.toHaveBeenCalled();
+});
+
+test('the voice or typing choice is asked on the first question only', () => {
+  const { rerender } = render(<CapstoneVivaPanel state={{ ...viva, vivaProgress: '1 of 10' }} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+  rerender(<CapstoneVivaPanel state={{ ...viva, vivaQuestionId: 2, vivaProgress: '2 of 10' }} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+});
+
+test('the next question is read and the microphone opens with nothing to press', async () => {
+  const { rerender } = render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
+  act(() => { mockStart.mock.calls[0][0]('First answer', true); });
+  rerender(<CapstoneVivaPanel state={{ ...viva, vivaQuestionId: 2, vivaQuestionText: 'Next question?', vivaProgress: '3 of 10' }} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  expect(mockSpeak).toHaveBeenLastCalledWith('Next question?', expect.anything(), true);
+  await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(2));
+});
+
+test('when nothing is heard the microphone reopens by itself, twice', async () => {
+  render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={jest.fn()} onTimeUp={jest.fn()} />);
+  await waitFor(() => expect(mockStart).toHaveBeenCalledTimes(1));
+  act(() => { mockStart.mock.calls[0][0]('', true); });
+  act(() => { mockStart.mock.calls[1][0]('', true); });
+  expect(mockStart).toHaveBeenCalledTimes(3);
+  act(() => { mockStart.mock.calls[2][0]('', true); });
+  expect(mockStart).toHaveBeenCalledTimes(3);
+  expect(screen.getByText(/No answer was heard/)).toBeInTheDocument();
+});
+
+test('an answer that could not be saved leaves the question open to send again', async () => {
+  const onAnswer = jest.fn();
+  const { rerender } = render(<CapstoneVivaPanel state={viva} busy={false} onAnswer={onAnswer} onTimeUp={jest.fn()} />);
+  await waitFor(() => expect(mockStart).toHaveBeenCalled());
+  act(() => { mockStart.mock.calls[0][0]('My answer', true); });
+  rerender(<CapstoneVivaPanel state={viva} busy onAnswer={onAnswer} onTimeUp={jest.fn()} />);
+  rerender(<CapstoneVivaPanel state={viva} busy={false} onAnswer={onAnswer} onTimeUp={jest.fn()} />);
+  const submit = screen.getByRole('button', { name: 'Submit answer' });
+  expect(submit).toBeEnabled();
+  fireEvent.click(submit);
+  expect(onAnswer).toHaveBeenCalledTimes(2);
 });
