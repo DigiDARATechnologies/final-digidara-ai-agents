@@ -723,6 +723,15 @@ def end_interview():
 
     progress = completion_progress(rows, interview_row["num_questions"])
     if not progress["complete"]:
+        # Should not happen when every question is finished: this says why it did
+        # (each row's order, whether it has an answer, verdict, timeout and status).
+        shape = [
+            (row["question_order"], "F" if row["is_followup"] else "M", int(row.get("answer") is not None),
+             row.get("verdict"), int(bool(row.get("timed_out"))), row.get("processing_status"))
+            for row in rows
+        ]
+        log(logging.ERROR, "interview_not_ready_to_complete",
+            f"Report refused: {progress['answered_main_questions']} of {progress['required_main_questions']} done; rows={shape}")
         return jsonify({
             "error": (
                 "This interview is not ready to complete. Answer all main "

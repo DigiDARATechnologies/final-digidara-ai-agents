@@ -4,6 +4,7 @@ import ClassSelect from "./ClassSelect";
 import StudentDrawer from "./StudentDrawer";
 import OrgAssessments from "./OrgAssessments";
 import OrgKnowledgeTests from "./OrgKnowledgeTests";
+import OrgProctoring from "./OrgProctoring";
 import StaffPanel from "./StaffPanel";
 import Leaderboard from "../Leaderboard";
 import StudentListPanel from "./StudentListPanel";
@@ -433,7 +434,7 @@ function AccessLog({ entries }: { entries: AccessEntry[] }) {
 
 /** The organization admin's dashboard; SkillDARA's platform admin opens the same one for any organization. */
 export default function OrgDashboard({ org, onToast, extraTabs = [], headerAction }: Props) {
-  const tabs = useMemo(() => ["Overview", "Students", "Leaderboard", "Student list", "Assessments", "Knowledge tests", "Join codes",
+  const tabs = useMemo(() => ["Overview", "Students", "Leaderboard", "Student list", "Assessments", "Proctoring", "Knowledge tests", "Join codes",
     ...(org.role === "staff" ? [] : ["Staff"]), ...extraTabs.map((t) => t.name), "Access log"], [extraTabs, org.role]);
   const [tab, setTab] = useState("Overview");
   // A knowledge test the admin chose to share: preselected on the Assessments tab.
@@ -523,6 +524,7 @@ export default function OrgDashboard({ org, onToast, extraTabs = [], headerActio
         <Students org={org} members={members} analytics={analytics} staff={staff} onOpen={setOpenId} onReload={() => void loadData()} onToast={onToast} />
       )}
       {tab === "Assessments" && <OrgAssessments orgId={org.id} onToast={onToast} presetTestId={linkTestId} />}
+      {tab === "Proctoring" && <OrgProctoring orgId={org.id} />}
       {tab === "Knowledge tests" && <OrgKnowledgeTests orgId={org.id} onToast={onToast} onCreateLink={(testId) => { setLinkTestId(testId); setTab("Assessments"); }} />}
       {tab === "Leaderboard" && <Leaderboard defaultScope="organization" onToast={onToast} />}
       {tab === "Student list" &&<StudentListPanel orgId={org.id} orgName={org.name} staff={staff} onChanged={() => void loadData()} onToast={onToast} />}

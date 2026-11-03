@@ -145,6 +145,7 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
   }
 }
 
+const SAVE_RETRY_MS = 1_500;
 const VERDICT_LABEL: Record<string, string> = { correct: "Correct", partial: "Partly correct", wrong: "Incorrect" };
 
 /** The score for the questions answered before an exit, one line each. */
@@ -318,7 +319,13 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
     }
     if (!text && !timing?.timedOut) return { state, messages: [{ text: "Speak or type an answer before submitting." }] };
     try {
-      const result = await submitMockInterviewAnswer(state.sessionToken, state.interviewId, state.questionOrder, text, timing?.timeTakenSec, timing?.timedOut);
+      const submit = () => submitMockInterviewAnswer(state.sessionToken!, state.interviewId!, state.questionOrder!, text, timing?.timeTakenSec, timing?.timedOut);
+      // One slow moment must not stop the interview. The server keeps an answer
+      // once, so sending it again is safe.
+      const result = await submit().catch(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, SAVE_RETRY_MS));
+        return submit();
+      });
       // Evaluation is performed in the final batch. Keep every turn's UI
       // consistent even if an older backend happens to return an immediate
       // verdict for one answer.

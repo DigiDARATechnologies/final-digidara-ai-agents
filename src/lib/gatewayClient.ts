@@ -24,6 +24,8 @@ async function extractErrorDetail(response: Response): Promise<string> {
   } catch {
     // Keep the HTTP status text when an upstream response is not JSON.
   }
+  // HTTP/2 has no status text, so a bare 502 during a restart used to show nothing.
+  if (!detail) detail = `The service is busy or restarting (HTTP ${response.status}). Please try again in a minute.`;
   return detail;
 }
 

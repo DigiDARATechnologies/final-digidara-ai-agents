@@ -11,11 +11,16 @@ jest.mock('../../src/lib/orchestratorApi', () => ({ transcribeGeneralAudio: jest
 const mockPushed: string[] = [];
 let mockQueueHandlers: { onEnd?: () => void; onStart?: () => void; speed?: number; pace?: string } = {};
 jest.mock('../../src/lib/voiceEngine', () => ({
+  speakNatural: jest.fn(() => Promise.resolve(true)),
   stopSpeaking: jest.fn(),
   createSpeechQueue: (handlers: typeof mockQueueHandlers) => {
     mockQueueHandlers = handlers;
     return { started: Promise.resolve(true), push: (text: string) => mockPushed.push(text), end: jest.fn() };
   },
+}));
+jest.mock('../../src/lib/monitoringApi', () => ({
+  fetchBriefing: jest.fn(() => Promise.resolve({ allowed: false, issues: [], text: '' })),
+  markBriefingSeen: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('../../src/lib/voiceActivity', () => ({ watchForSpeech: () => jest.fn() }));
 let mockWake: ((rest: string) => void) | null = null;
@@ -31,6 +36,7 @@ jest.mock('../../src/hooks/useSpeechRecognition', () => ({
   default: () => ({ supported: true, listening: false, transcribing: false, error: '', start: mockStart, stop: jest.fn(), cancel: jest.fn() }),
 }));
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import * as monitoringApi from '../../src/lib/monitoringApi';
 import BossAssistant, { CLOSE_PHRASE } from '../../src/components/BossAssistant';
 import { refersToScreen, withoutWakeWords } from '../../src/lib/assistText';
 import { setBossVoiceOpener, setVoiceConversationOpen } from '../../src/lib/voiceReply';
@@ -298,4 +304,27 @@ test('a link Boss makes shows with who can open it and a copy button', async () 
   expect(link.getAttribute('href')).toBe(`${window.location.origin}/shared/chat/abcDEF1234567890`);
   expect(screen.getByText('Private link: opens only for your account')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Copy link' })).toBeTruthy();
+});
+
+describe('Boss telling the monitoring accounts what went wrong', () => {
+  const fetchBriefing = jest.mocked(monitoringApi.fetchBriefing);
+  const markBriefingSeen = jest.mocked(monitoringApi.markBriefingSeen);
+
+  beforeEach(() => { markBriefingSeen.mockClear(); });
+  afterEach(() => { fetchBriefing.mockImplementation(() => Promise.resolve({ allowed: false, issues: [], text: '' })); });
+
+  test('opens by itself and says it, once', async () => {
+    fetchBriefing.mockResolvedValue({ allowed: true, issues: [{}], text: '1 problem need your attention.\n\n**Aptitude**: Broke - 1 time.', as_of: '2026-11-03T10:00:00' });
+    render(<BossAssistant agentId="" agentName="Home" getContext={() => ''} />);
+    expect(await screen.findByText(/need your attention/)).toBeInTheDocument();
+    expect(markBriefingSeen).toHaveBeenCalledWith('2026-11-03T10:00:00');
+  });
+
+  test('stays closed and silent for a learner', async () => {
+    fetchBriefing.mockResolvedValue({ allowed: false, issues: [], text: '' });
+    render(<BossAssistant agentId="" agentName="Home" getContext={() => ''} />);
+    await waitFor(() => expect(fetchBriefing).toHaveBeenCalled());
+    expect(markBriefingSeen).not.toHaveBeenCalled();
+    expect(screen.queryByText(/attention/)).not.toBeInTheDocument();
+  });
 });

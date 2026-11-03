@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   fetchProctorState, sendProctorEvents, sendProctorSnapshot, startProctoring,
   type ProctoredAgent, type ProctorEventKind, type ProctorSettings, type ProctorState,
@@ -26,6 +27,9 @@ interface Props {
   /** Too many warnings: end the interview or viva. */
   onTerminate: () => void;
   children: ReactNode;
+  /** Where to draw it, when that place comes and goes (the latest chat message).
+   * The camera, full screen and the watching carry on while there is none. */
+  slot?: HTMLElement | null;
 }
 
 function fullscreenSupported(): boolean {
@@ -71,7 +75,7 @@ async function openCamera(): Promise<MediaStream> {
  * finding is sent to the server, which keeps the score and decides when too
  * many warnings end the test.
  */
-export default function ProctorGate({ agentName, refId, sessionId, label, onTerminate, children }: Props) {
+export default function ProctorGate({ agentName, refId, sessionId, label, onTerminate, children, slot }: Props) {
   const [phase, setPhase] = useState<"consent" | "starting" | "live">("consent");
   const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState("");
@@ -256,9 +260,11 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
     }
   }
 
+  const place = (screen: ReactNode) => (slot === undefined ? screen : slot ? createPortal(screen, slot) : null);
+
   if (phase !== "live") {
     const lines = ruleLines(settings);
-    return (
+    return place(
       <div className="proctor-consent" role="dialog" aria-labelledby="proctor-consent-title">
         <span className="proctor-badge">Proctored test</span>
         <h3 id="proctor-consent-title">{label}</h3>
@@ -278,13 +284,13 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
         <button type="button" className="btn btn-primary" disabled={phase === "starting" || (!agreed && !presetRef.current)} onClick={() => void start()}>
           {phase === "starting" ? "Starting…" : settings.fullscreen ? "Start in full screen" : "Start test"}
         </button>
-      </div>
+      </div>,
     );
   }
 
   const ended = session?.terminated;
   const needFullscreen = settings.fullscreen && fullscreenSupported() && !isFullscreen && !ended;
-  return (
+  return place(
     <div className="proctor-live">
       <div className="proctor-bar" aria-live="polite">
         <span className="proctor-dot" aria-hidden="true" />
@@ -311,6 +317,6 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
           </div>
         </div>
       )}
-    </div>
+    </div>,
   );
 }

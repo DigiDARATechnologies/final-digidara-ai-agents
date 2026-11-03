@@ -13,21 +13,23 @@ export function Integrity({ score }: { score: number }) {
 }
 
 /** Proctored sittings as a table; "View" opens the report. */
-export function ProctorTable({ rows, showPerson, onOpen }: { rows: ProctorSummary[]; showPerson: boolean; onOpen: (id: string) => void }) {
+export function ProctorTable({ rows, showPerson, showTest = !showPerson, onOpen }: { rows: ProctorSummary[]; showPerson: boolean; showTest?: boolean; onOpen: (id: string) => void }) {
   if (!rows.length) return <p className="org-empty">No proctored tests yet.</p>;
   return (
     <div className="assess-table-wrap">
       <table className="assess-table">
         <thead>
           <tr>
-            {showPerson ? <th>Learner</th> : <th>Test</th>}
+            {showPerson && <th>Learner</th>}
+            {showTest && <th>Test</th>}
             <th>Status</th><th>Result</th><th>Integrity</th><th>Warnings</th><th>Started</th><th />
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.session_id}>
-              <td>{showPerson ? <><b>{row.name || "-"}</b><br /><span className="assess-sub">{row.email}</span></> : AGENT_TEXT[row.agent_name] ?? row.agent_name}</td>
+              {showPerson && <td><b>{row.name || "-"}</b><br /><span className="assess-sub">{row.email}</span></td>}
+              {showTest && <td>{AGENT_TEXT[row.agent_name] ?? row.agent_name}</td>}
               <td>{STATUS_TEXT[row.status] ?? row.status}</td>
               <td>{resultText(row.result)}</td>
               <td><Integrity score={row.integrity} /></td>
@@ -40,6 +42,11 @@ export function ProctorTable({ rows, showPerson, onOpen }: { rows: ProctorSummar
       </table>
     </div>
   );
+}
+
+/** A photo the check flagged: nobody, more than one person, or a phone. */
+export function isWarningPhoto(shot: { faces: number | null; note: string }): boolean {
+  return (shot.faces != null && shot.faces !== 1) || /phone|second screen/i.test(shot.note || "");
 }
 
 function Snapshot({ orgId, sessionId, shot }: { orgId: string; sessionId: string; shot: ProctorDetail["snapshots"][number] }) {
@@ -57,7 +64,7 @@ function Snapshot({ orgId, sessionId, shot }: { orgId: string; sessionId: string
   return (
     <figure>
       {url ? <img src={url} alt={`Camera photo at ${when(shot.at)}`} /> : <div className="org-skeleton" style={{ height: 82 }} />}
-      <figcaption>{new Date(shot.at ?? "").toLocaleTimeString()}{faces ? ` · ${faces}` : ""}</figcaption>
+      <figcaption>{new Date(shot.at ?? "").toLocaleTimeString()}{faces ? ` · ${faces}` : ""}{isWarningPhoto(shot) && shot.note ? ` · ${shot.note}` : ""}</figcaption>
     </figure>
   );
 }
@@ -120,7 +127,18 @@ export function ProctorReport({ orgId, sessionId, onClose }: { orgId: string; se
                 <p className="assess-sub">Deleted {detail.retention_days} days after they were taken. Opening this report is recorded in the access log.</p>
                 {detail.snapshots.length === 0
                   ? <p className="assess-sub">No photos (deleted, or none were taken).</p>
-                  : <div className="proctor-shots">{detail.snapshots.map((shot) => <Snapshot key={shot.id} orgId={orgId} sessionId={detail.session_id} shot={shot} />)}</div>}
+                  : (
+                    <>
+                      {detail.snapshots.some(isWarningPhoto) && (
+                        <>
+                          <h4 style={{ margin: "10px 0 2px", fontSize: 13.5 }}>Warning photos</h4>
+                          <div className="proctor-shots">{detail.snapshots.filter(isWarningPhoto).map((shot) => <Snapshot key={shot.id} orgId={orgId} sessionId={detail.session_id} shot={shot} />)}</div>
+                          <h4 style={{ margin: "14px 0 2px", fontSize: 13.5 }}>Other photos</h4>
+                        </>
+                      )}
+                      <div className="proctor-shots">{detail.snapshots.filter((shot) => !isWarningPhoto(shot)).map((shot) => <Snapshot key={shot.id} orgId={orgId} sessionId={detail.session_id} shot={shot} />)}</div>
+                    </>
+                  )}
               </>
             )}
           </>

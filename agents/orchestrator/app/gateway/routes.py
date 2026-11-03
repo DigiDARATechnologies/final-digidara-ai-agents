@@ -16,6 +16,7 @@ from app.auth.verified import ensure_verified
 from app.english_only import ENGLISH_ONLY_MESSAGE, contains_non_english
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
+from app.monitoring import service as monitoring
 from app.proctoring import service as proctoring_service
 from app.registry import service as registry_service
 
@@ -343,6 +344,22 @@ def _after_call(upstream: httpx.Response, agent_name: str, envelope, user_id, ac
             logger.warning("proctoring result not recorded: agent=%s action=%s", agent_name, action_name, exc_info=True)
 
 
+def _report_failure(agent_name: str, action_name, status: int, upstream: httpx.Response | None = None, reason: str = "") -> None:
+    """Tells monitoring about a call that failed. A 409 or 422 is often an everyday
+    refusal, so it counts as a warning; the rest of the 4xx are learners' own
+    (signed out, out of points, not found)."""
+    if status < 500 and status not in {409, 422}:
+        return
+    if upstream is not None:
+        try:
+            answer = upstream.json()
+            reason = next((str(answer[key]) for key in ("error", "detail", "message") if isinstance(answer, dict) and answer.get(key)), "")
+        except ValueError:
+            pass
+    monitoring.record("agent", monitoring.ERROR if status >= 500 else monitoring.WARNING, reason or f"HTTP {status}",
+                      agent=agent_name, action=str(action_name or ""), status=status)
+
+
 async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_type: str | None, accept: str | None) -> Response:
     prepared = await run_in_threadpool(_prepare, agent_name, body, envelope, user, content_type, accept)
     user_id, action_name, payer_id, is_free_action, is_billable, is_multipart, headers, body = prepared
@@ -381,12 +398,15 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
                 logger.warning("gateway signature refused by %s (agent busy?); re-signing once: action=%s", agent_name, action_name)
                 upstream = await client.post(agent.endpoint, content=body, headers=signed())
     except httpx.TimeoutException as exc:
+        _report_failure(agent_name, action_name, 504, reason=f"Did not answer within {timeout_seconds} seconds")
         logger.exception("gateway call timed out: agent=%s action=%s endpoint=%s timeout_seconds=%s", agent_name, action_name, agent.endpoint, timeout_seconds)
         raise HTTPException(504, f"Agent {agent_name!r} did not complete {action_name!r} before the gateway timeout.") from exc
     except httpx.HTTPError as exc:
+        _report_failure(agent_name, action_name, 502, reason="Agent could not be reached")
         logger.exception("gateway call failed: agent=%s endpoint=%s", agent_name, agent.endpoint)
         raise HTTPException(502, f"Registered agent {agent_name!r} could not be reached.") from exc
 
+    _report_failure(agent_name, action_name, upstream.status_code, upstream)
     await run_in_threadpool(_after_call, upstream, agent_name, envelope, user_id, action_name, payer_id, is_free_action, is_billable)
 
     response_headers: dict[str, str] = {}
