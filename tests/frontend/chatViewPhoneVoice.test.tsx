@@ -212,3 +212,72 @@ test('pronunciation practice never sends by itself: the learner checks the text 
   expect(onSend).not.toHaveBeenCalled();
   expect(screen.getByDisplayValue('Playing soccer helps improve teamwork skills.')).toBeInTheDocument();
 });
+
+describe('pasting a screenshot or a file', () => {
+  const paste = (files: File[]) => {
+    const event = new Event('paste', { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'clipboardData', { value: { files } });
+    document.body.dispatchEvent(event);
+    return event;
+  };
+  const view = (attachEnabled: boolean) => {
+    const onAttachFiles = jest.fn();
+    const onAttachDisabled = jest.fn();
+    render(
+      <ChatView
+        chat={chat} agent={agent} user={user} typing={false}
+        onBack={jest.fn()} onSend={jest.fn()} onChooseOption={jest.fn()}
+        attachEnabled={attachEnabled} pendingFiles={[]} onAttachFiles={onAttachFiles} onAttachDisabled={onAttachDisabled}
+        transcribeAudio={jest.fn()}
+      />,
+    );
+    return { onAttachFiles, onAttachDisabled };
+  };
+
+  test('attaches it like the paperclip does, wherever the cursor is', () => {
+    const { onAttachFiles } = view(true);
+    const image = new File(['x'], 'image.png', { type: 'image/png' });
+    expect(paste([image]).defaultPrevented).toBe(true);
+    expect(onAttachFiles).toHaveBeenCalledWith([image]);
+  });
+
+  test('says so where this agent takes no files', () => {
+    const { onAttachFiles, onAttachDisabled } = view(false);
+    paste([new File(['x'], 'report.zip')]);
+    expect(onAttachDisabled).toHaveBeenCalled();
+    expect(onAttachFiles).not.toHaveBeenCalled();
+  });
+
+  test('plain text pastes as usual', () => {
+    const { onAttachFiles } = view(true);
+    expect(paste([]).defaultPrevented).toBe(false);
+    expect(onAttachFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe('the microphone in word practice', () => {
+  const practice = () => render(
+    <ChatView
+      chat={chat} agent={agent} user={user} typing={false}
+      onBack={jest.fn()} onSend={jest.fn()} onChooseOption={jest.fn()}
+      attachEnabled={false} pendingFiles={[]} onAttachFiles={jest.fn()} onAttachDisabled={jest.fn()}
+      transcribeAudio={jest.fn()} voiceOnly autoStopVoiceOnSilence
+    />,
+  );
+  const mic = () => screen.getByTitle('Click to speak your pronunciation');
+
+  test('uses the whole recording, and needs someone to have spoken', () => {
+    practice();
+    fireEvent.click(mic());
+    expect(mockStart.mock.calls[0][1]).toMatchObject({ requireSpeech: true, finalFromPreview: false, silenceMs: 2500 });
+  });
+
+  test('a double tap does not start and stop it', () => {
+    practice();
+    fireEvent.click(mic());
+    fireEvent.click(mic());
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockCancel).not.toHaveBeenCalled();
+    expect(mockStop).not.toHaveBeenCalled();
+  });
+});

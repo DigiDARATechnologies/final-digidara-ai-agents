@@ -120,6 +120,11 @@ const GOOGLE_OAUTH_CALLBACK_PATH = "/auth/google/callback";
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
 const isGoogleOAuthCallback = () => window.location.pathname === GOOGLE_OAUTH_CALLBACK_PATH;
 
+/** Tells the speech model the language, and nothing about the words expected. Giving
+ * it the sentence made it fill in words the learner never said, and "hear" the
+ * sentence in silence, so they scored for words they did not speak. */
+const PRONUNCIATION_HINT = "A learner is practising English pronunciation.";
+
 interface ProctorWrap { key: string; agentName: ProctoredAgent; refId: string; sessionId?: string; label: string; onTerminate: () => void }
 
 function loadUser(): User | null {
@@ -2435,7 +2440,7 @@ export default function App() {
                   ? (audio) => transcribeCommunicationAudio(
                       communicationState.authToken!,
                       audio,
-                      communicationState.step === "pronunciation_turn" ? communicationState.currentItemText : undefined
+                      communicationState.step === "pronunciation_turn" ? PRONUNCIATION_HINT : undefined
                     )
                   : transcribeGeneralAudio}
                 alwaysRecordVoice
@@ -2444,7 +2449,7 @@ export default function App() {
                   ? (audio) => previewCommunicationAudio(
                       communicationState.authToken!,
                       audio,
-                      communicationState.step === "pronunciation_turn" ? communicationState.currentItemText : undefined
+                      communicationState.step === "pronunciation_turn" ? PRONUNCIATION_HINT : undefined
                     )
                   : transcribeGeneralAudio}
                 multilineMode={isCommunicationChat && communicationState?.step === "writing_turn" && communicationState.writingMode === "write"}

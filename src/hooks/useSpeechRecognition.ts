@@ -55,6 +55,9 @@ type VoiceCaptureOptions = {
   onAudioLevel?: (level: number) => void;
   /** How long a pause (after some speech) ends the recording. Default 7s. */
   silenceMs?: number;
+  /** Nothing is transcribed unless the level meter heard someone speak: a tap
+   * tap on the microphone must not produce an answer from silence. */
+  requireSpeech?: boolean;
   /** Recording mode: whole seconds left before a pause ends the recording
    * (only in its last 3 seconds), or null once speech resumes. */
   onSilenceCountdown?: (seconds: number | null) => void;
@@ -290,6 +293,11 @@ export default function useSpeechRecognition(locale = "en-US", transcribe?: Audi
 
         const coversEverything = (takenAt: number) => lastLoudAt > 0 && takenAt >= lastLoudAt + 400;
         const deliverRecording = async () => {
+          if (options.requireSpeech && meterRunning() && !speechDetected) {
+            setError("I couldn't hear you. Tap the microphone and say it again.");
+            onResult("", true);
+            return;
+          }
           if (options.finalFromPreview && latestPreview && coversEverything(latestPreview.takenAt)) {
             onResult(latestPreview.text, true);
             return;
