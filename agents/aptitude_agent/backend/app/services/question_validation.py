@@ -31,6 +31,10 @@ CONCEPT_PATTERNS={
 
 
 CONCEPT_MAX_CONTENT_WORDS=8
+TEMPLATE_GENERIC_WORDS=STOP_WORDS|{"many","much","following","primary","main","purpose","function","common","best","true","correct","statement","you","if","there","will","each","their","they","all","some","into","at","has","have","was","were","who","not","find","number","total","value","question","given"}
+NUMBER_SERIES_PATTERN=re.compile(r"\d+\s*,\s*\d+\s*,\s*\d+")
+TEMPLATE_RATIO=.72
+TEMPLATE_WORD_OVERLAP=.6
 
 _PLACEHOLDER_PATTERN = re.compile(
     r"(?:\[\s*(?:x|y|z|value|number|blank)\s*\]|\.{3,}|\?{2,}|\b(?:something|somebody|etc\.?|as follows)\b)",
@@ -259,6 +263,31 @@ def questions_are_near_duplicates(left,right,threshold=.86):
     if len(first_words)<=CONCEPT_MAX_CONTENT_WORDS and len(second_words)<=CONCEPT_MAX_CONTENT_WORDS:
         return any(pattern.search(first) and pattern.search(second) for pattern in CONCEPT_PATTERNS.values())
     return False
+
+
+def _template_text(text):
+    return re.sub(r"\d+","#",normalize_question_text(text))
+
+
+def _template_word(word):
+    for suffix in ("ing","ed","es","s"):
+        if word.endswith(suffix) and len(word)-len(suffix)>=3:return word[:-len(suffix)]
+    return word
+
+
+def questions_share_template(left,right):
+    """The same problem with other numbers or nouns ("4 books on a shelf" / "5 books
+    on a shelf"), which a learner reads as the same question. Softer than
+    questions_are_near_duplicates: worth replacing, not worth failing a test over."""
+    # Code questions share boilerplate, and a number series question is always worded alike.
+    if any("`" in text or NUMBER_SERIES_PATTERN.search(text) for text in (left,right)):return False
+    first,second=_template_text(left),_template_text(right)
+    first_words={_template_word(word) for word in first.split() if word not in TEMPLATE_GENERIC_WORDS and word!="#"}
+    second_words={_template_word(word) for word in second.split() if word not in TEMPLATE_GENERIC_WORDS and word!="#"}
+    shared=len(first_words&second_words)
+    if shared<2:return False
+    if "#" in first.split() and "#" in second.split() and SequenceMatcher(None,first,second).ratio()>=TEMPLATE_RATIO:return True
+    return shared>=3 and shared/min(len(first_words),len(second_words))>=TEMPLATE_WORD_OVERLAP
 
 
 def numeric_pattern(text):

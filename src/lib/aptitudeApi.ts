@@ -38,13 +38,14 @@ export function getAptitudeQuestion(sessionToken: string, testId: string, sequen
       overall_remaining_seconds: remainingSeconds,
       total_duration_seconds: Number(raw.total_duration_seconds ?? 0),
       expires_at: raw.expires_at,
-      // Use the server deadline when available so navigation cannot reset it.
-      deadline_at_ms: raw.expires_at ? Date.parse(raw.expires_at) : Date.now() + Math.max(0, remainingSeconds) * 1000,
+      // The server's remaining time, not its expires_at: a device whose clock is
+      // wrong would otherwise see the test end early. Navigation can't reset this.
+      deadline_at_ms: Date.now() + Math.max(0, remainingSeconds) * 1000,
     } as AptitudeQuestion;
   });
 }
 export function submitAptitudeAnswer(sessionToken: string, testId: string, selected_answer: string, timed_out = false) { return invoke<AptitudeAnswerResult>("answer", { sessionToken, test_id: testId, selected_answer, timed_out }); }
-export function skipAptitudeQuestion(sessionToken: string, testId: string) { return invoke<Record<string, any>>("skip", { sessionToken, test_id: testId }).then((raw) => ({ ...raw, test_id: String(raw.test_id ?? testId), total_questions: Number(raw.total ?? 0), allowed_time_seconds: Number(raw.allowed_seconds ?? 0), overall_remaining_seconds: Number(raw.overall_remaining_seconds ?? raw.remaining_seconds ?? 0), remaining_seconds: Number(raw.overall_remaining_seconds ?? raw.remaining_seconds ?? 0), deadline_at_ms: raw.expires_at ? Date.parse(raw.expires_at) : Date.now() + Number(raw.remaining_seconds ?? 0) * 1000 } as AptitudeQuestion)); }
+export function skipAptitudeQuestion(sessionToken: string, testId: string) { return invoke<Record<string, any>>("skip", { sessionToken, test_id: testId }).then((raw) => ({ ...raw, test_id: String(raw.test_id ?? testId), total_questions: Number(raw.total ?? 0), allowed_time_seconds: Number(raw.allowed_seconds ?? 0), overall_remaining_seconds: Number(raw.overall_remaining_seconds ?? raw.remaining_seconds ?? 0), remaining_seconds: Number(raw.overall_remaining_seconds ?? raw.remaining_seconds ?? 0), deadline_at_ms: Date.now() + Number(raw.overall_remaining_seconds ?? raw.remaining_seconds ?? 0) * 1000 } as AptitudeQuestion)); }
 export function requestAptitudeHint(sessionToken: string, testId: string) { return invoke<{ hint: string; hints_remaining: number }>("hint", { sessionToken, test_id: testId }); }
 export function abandonAptitudeTest(sessionToken: string, testId: string) { return invoke<{ test_id: string; status: string; abandoned: boolean; answered_count?: number; correct_count?: number; total_questions?: number }>("abandon", { sessionToken, test_id: testId }); }
 export function getAptitudeResults(sessionToken: string, testId: string) { return invoke<Record<string, any>>("results", { sessionToken, test_id: testId }); }

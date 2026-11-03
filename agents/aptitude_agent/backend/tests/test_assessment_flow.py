@@ -431,6 +431,10 @@ def test_exit_and_timeout_race_persists_only_one_final_state(
     test_id = created.get_json()["test_id"]
     url = f"/api/aptitude/tests/{test_id}"
     assert client.get(f"{url}/question", headers=auth_headers).status_code == 200
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        test.expires_at = utcnow() - timedelta(seconds=1)
+        db.session.commit()
     barrier = threading.Barrier(2)
 
     def send(action):
@@ -451,6 +455,73 @@ def test_exit_and_timeout_race_persists_only_one_final_state(
         test = db.session.get(AptitudeTest, test_id)
         assert test.status in {"abandoned", "completed"}
         assert (test.status == "completed") == (test.completed_at is not None)
+
+
+def _started_category_test(client, auth_headers, monkeypatch, name):
+    _install_batch_generator(monkeypatch, [], name)
+    created = client.post(
+        "/api/aptitude/tests", headers=auth_headers,
+        json={"mode": "category_practice", "category": "Logical Reasoning", "level": "Beginner"},
+    )
+    assert created.status_code == 201, created.get_json()
+    test_id = created.get_json()["test_id"]
+    url = f"/api/aptitude/tests/{test_id}"
+    assert client.get(f"{url}/question", headers=auth_headers).status_code == 200
+    return test_id, url
+
+
+def test_a_browser_timer_cannot_end_a_test_with_time_left(app, client, auth_headers, monkeypatch):
+    test_id, url = _started_category_test(client, auth_headers, monkeypatch, "skewed-clock")
+    early = client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "", "timed_out": True})
+    assert early.status_code == 409
+    assert early.get_json()["code"] == "time_remaining"
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        assert test.status == "in_progress"
+        assert test.timed_out_count == 0
+    assert client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "A"}).status_code == 200
+
+
+def test_time_up_while_reviewing_an_answered_question_ends_the_test(app, client, auth_headers, monkeypatch):
+    test_id, url = _started_category_test(client, auth_headers, monkeypatch, "review-expiry")
+    assert client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "A"}).status_code == 200
+    assert client.get(f"{url}/question?sequence=1", headers=auth_headers).status_code == 200
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        test.expires_at = utcnow() - timedelta(seconds=1)
+        db.session.commit()
+    ended = client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "", "timed_out": True})
+    assert ended.status_code == 200, ended.get_json()
+    assert ended.get_json()["complete"] is True
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        assert test.status == "completed"
+        assert test.timed_out_count == 1
+
+
+def test_time_up_before_the_next_question_loaded_ends_the_test(app, client, auth_headers, monkeypatch):
+    test_id, url = _started_category_test(client, auth_headers, monkeypatch, "next-expiry")
+    assert client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "A"}).status_code == 200
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        test.expires_at = utcnow() - timedelta(seconds=1)
+        db.session.commit()
+    assert client.get(f"{url}/question", headers=auth_headers).status_code == 409
+    ended = client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "", "timed_out": True})
+    assert ended.status_code == 200, ended.get_json()
+    assert ended.get_json()["complete"] is True
+
+
+def test_a_long_think_does_not_abandon_a_test_with_time_left(app, client, auth_headers, monkeypatch):
+    test_id, url = _started_category_test(client, auth_headers, monkeypatch, "long-think")
+    with app.app_context():
+        test = db.session.get(AptitudeTest, test_id)
+        test.last_activity_at = utcnow() - timedelta(seconds=app.config["ABANDON_AFTER_SECONDS"] + 60)
+        db.session.commit()
+    assert client.get("/api/aptitude/dashboard", headers=auth_headers).status_code == 200
+    with app.app_context():
+        assert db.session.get(AptitudeTest, test_id).status == "in_progress"
+    assert client.post(f"{url}/answer", headers=auth_headers, json={"selected_answer": "A"}).status_code == 200
 
 
 def test_generation_provider_failure_stores_no_partial_questions(

@@ -68,3 +68,15 @@ test('technical code is formatted in the live question before answering', () => 
   expect(renderedCode).not.toBeNull();
   expect(renderedCode?.textContent).toBe(code);
 });
+
+test('the clock ending while reviewing an answered question still expires the test', () => {
+  jest.useFakeTimers().setSystemTime(new Date('2026-09-17T12:00:00Z'));
+  const onExpire = jest.fn();
+  const state = activeState('mixed', 5);
+  state.question = { ...state.question!, status: 'answered' };
+  render(<AptitudePracticePanel state={state} onChoose={jest.fn()} onExpire={onExpire} />);
+  act(() => jest.advanceTimersByTime(59_000));
+  expect(onExpire).not.toHaveBeenCalled();
+  act(() => jest.advanceTimersByTime(2_000));
+  expect(onExpire).toHaveBeenCalledTimes(1);
+});

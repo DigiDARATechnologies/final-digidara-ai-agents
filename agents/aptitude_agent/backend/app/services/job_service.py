@@ -1,6 +1,7 @@
 from datetime import timedelta
 import uuid
 from flask import current_app
+from sqlalchemy import or_
 from ..extensions import db
 from ..models import AptitudeTest, BackgroundJob, WorkerHeartbeat
 from ..models.base import utcnow
@@ -81,7 +82,9 @@ def retry_failed_job(job_id,student_id=None):
 
 def _abandon_stale():
     cutoff=utcnow()-timedelta(seconds=current_app.config["ABANDON_AFTER_SECONDS"])
-    query=AptitudeTest.query.filter(AptitudeTest.status.in_(["generating","ready","in_progress"]),AptitudeTest.last_activity_at<cutoff)
+    # A learner can think on one question for minutes: a test whose clock is still
+    # running is not stale, however long since their last click.
+    query=AptitudeTest.query.filter(AptitudeTest.status.in_(["generating","ready","in_progress"]),AptitudeTest.last_activity_at<cutoff,or_(AptitudeTest.expires_at.is_(None),AptitudeTest.expires_at<=utcnow()))
     test_ids=[row[0] for row in query.with_entities(AptitudeTest.id).all()]
     query.update({"status":"abandoned"},synchronize_session=False)
     for test_id in test_ids:clear_test_cache(test_id)
@@ -89,7 +92,9 @@ def _abandon_stale():
 
 def abandon_stale_tests(student_id=None):
     cutoff=utcnow()-timedelta(seconds=current_app.config["ABANDON_AFTER_SECONDS"])
-    query=AptitudeTest.query.filter(AptitudeTest.status.in_(["generating","ready","in_progress"]),AptitudeTest.last_activity_at<cutoff)
+    # A learner can think on one question for minutes: a test whose clock is still
+    # running is not stale, however long since their last click.
+    query=AptitudeTest.query.filter(AptitudeTest.status.in_(["generating","ready","in_progress"]),AptitudeTest.last_activity_at<cutoff,or_(AptitudeTest.expires_at.is_(None),AptitudeTest.expires_at<=utcnow()))
     if student_id:query=query.filter(AptitudeTest.student_id==student_id)
     test_ids=[row[0] for row in query.with_entities(AptitudeTest.id).all()]
     changed=query.update({"status":"abandoned"},synchronize_session=False)

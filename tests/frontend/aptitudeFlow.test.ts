@@ -182,3 +182,60 @@ describe('starting a test exposes generation failures without duplicate requests
     expect(result.messages[0].options ?? []).not.toContainEqual({ label: 'Try again', value: 'retry_start_test' });
   });
 });
+
+describe('when time runs out', () => {
+  const summary = { score: 6, total: 21, answered_count: 11, timed_out: 1 };
+  const timedOutResult = { complete: true, timed_out: true, is_correct: false, correct_answer: 'A', explanation: 'x' } as Awaited<ReturnType<typeof api.submitAptitudeAnswer>>;
+
+  test('the learner is told time ended the test, and how much they answered', async () => {
+    jest.mocked(api.submitAptitudeAnswer).mockResolvedValueOnce(timedOutResult);
+    jest.mocked(api.getAptitudeResults).mockResolvedValueOnce(summary);
+    const result = await handleAptitudeText(active, '__aptitude_timeout__');
+    expect(result.state.step).toBe('completed');
+    expect(result.messages[0].text).toContain('Time is up');
+    expect(result.messages[0].text).toContain('answered 10 of 21');
+    expect(result.messages[0].text).toContain('6/21');
+  });
+
+  test('a timer that finished early does not end the test', async () => {
+    const fresh = { ...question, remaining_seconds: 600 };
+    jest.mocked(api.submitAptitudeAnswer).mockRejectedValueOnce(new Error('Time remains on this assessment'));
+    jest.mocked(api.getAptitudeQuestion).mockResolvedValueOnce(fresh);
+    const result = await handleAptitudeText(active, '__aptitude_timeout__');
+    expect(result.state.step).toBe('awaiting_question');
+    expect(result.state.question).toEqual(fresh);
+  });
+
+  test('time ending on an answered question still finishes the test', async () => {
+    jest.mocked(api.submitAptitudeAnswer).mockResolvedValueOnce(timedOutResult);
+    jest.mocked(api.getAptitudeResults).mockResolvedValueOnce(summary);
+    const result = await handleAptitudeText({ ...active, question: { ...question, status: 'answered' } }, '__aptitude_timeout__');
+    expect(api.submitAptitudeAnswer).toHaveBeenCalledWith('session', 'test', '', true);
+    expect(result.state.step).toBe('completed');
+  });
+
+  test('an answer that used the last second finishes the test instead of offering a retry', async () => {
+    jest.mocked(api.submitAptitudeAnswer)
+      .mockResolvedValueOnce({ complete: false, timed_out: false, is_correct: true, correct_answer: 'A', explanation: 'x' } as Awaited<ReturnType<typeof api.submitAptitudeAnswer>>)
+      .mockResolvedValueOnce(timedOutResult);
+    jest.mocked(api.getAptitudeQuestion).mockRejectedValueOnce(new Error('The assessment time has expired'));
+    jest.mocked(api.getAptitudeResults).mockResolvedValueOnce(summary);
+    const result = await handleAptitudeText(active, 'A');
+    expect(result.state.step).toBe('completed');
+  });
+
+  test('moving to another question after time ran out finishes the test', async () => {
+    jest.mocked(api.getAptitudeQuestion).mockRejectedValueOnce(new Error('The assessment time has expired'));
+    jest.mocked(api.submitAptitudeAnswer).mockResolvedValueOnce(timedOutResult);
+    jest.mocked(api.getAptitudeResults).mockResolvedValueOnce(summary);
+    const result = await handleAptitudeText(active, '__aptitude_nav:3');
+    expect(result.state.step).toBe('completed');
+  });
+});
+
+test('a test that ended elsewhere offers a new one instead of failing on every click', async () => {
+  jest.mocked(api.submitAptitudeAnswer).mockRejectedValueOnce(new Error('This assessment is not active'));
+  const result = await handleAptitudeText(active, 'A');
+  expect(result.state).toEqual({ step: 'awaiting_mode', sessionToken: 'session' });
+  expect(result.messages[0].text).toContain('already ended');
+});

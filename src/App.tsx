@@ -1846,7 +1846,7 @@ export default function App() {
     const chatId = currentChat.id;
     const flowState = aptitudeStates[chatId];
     if (!flowState || flowState.step !== "awaiting_question" || !flowState.question) return;
-    const timeoutKey = `${flowState.testId || ""}:${flowState.question.sequence}`;
+    const timeoutKey = `${flowState.testId || ""}:${flowState.question.sequence}:${flowState.question.deadline_at_ms || ""}`;
     // This guard lives above the question panel, so moving/remounting that
     // panel after a chat update can never submit the same timeout twice.
     if (aptitudeTimeoutSubmissions.current.has(timeoutKey)) return;

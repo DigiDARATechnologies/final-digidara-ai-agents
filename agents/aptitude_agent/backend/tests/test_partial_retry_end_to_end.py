@@ -7,9 +7,18 @@ questions -- is the production path.
 import json
 import re
 
+import pytest
+
 from backend.app.extensions import db
 from backend.app.models import AptitudeTest, AptitudeTestQuestion
 from backend.app.models.operations import AuditEvent
+
+
+@pytest.fixture(autouse=True)
+def scripted_wording_is_not_a_template_repeat(monkeypatch):
+    # The scripted questions share one wording on purpose, and these tests are about
+    # invalid questions. Reused templates: unit_tests/test_question_templates.py.
+    monkeypatch.setattr("backend.app.services.test_generation.questions_share_template", lambda *_: False)
 
 
 class ScriptedProvider:
