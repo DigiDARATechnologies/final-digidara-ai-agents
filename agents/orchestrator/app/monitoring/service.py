@@ -79,7 +79,9 @@ def save(source: str, severity: str, message: str, *, agent: str = "", action: s
     for attempt in (1, 2):
         session = get_session()
         try:
-            now = datetime.utcnow()
+            # MySQL keeps whole seconds: with fractions it rounds up, and an issue
+            # already told about would look newer than the telling.
+            now = datetime.utcnow().replace(microsecond=0)
             issue = session.query(SystemIssue).filter_by(fingerprint=fingerprint).first()
             if issue is None:
                 session.add(SystemIssue(fingerprint=fingerprint, source=source, severity=severity, agent=agent[:64],
@@ -215,8 +217,11 @@ def briefing(user_id: str, *, recent: bool = False) -> dict:
         now = datetime.utcnow()
         seen = _read_state(session, f"seen:{user_id}")
         since = now - FIRST_BRIEFING_WINDOW if recent or not seen else datetime.fromisoformat(seen)
-        issues = [describe(issue) for issue in _newest(session, since)]
-        return {"allowed": True, "issues": issues, "text": spoken_summary(issues, recent=recent), "as_of": now.isoformat()}
+        newest = _newest(session, since)
+        issues = [describe(issue) for issue in newest]
+        # Up to the newest one told, so anything after it is still news.
+        as_of = max((issue.last_seen for issue in newest), default=now)
+        return {"allowed": True, "issues": issues, "text": spoken_summary(issues, recent=recent), "as_of": as_of.isoformat()}
     finally:
         session.close()
 

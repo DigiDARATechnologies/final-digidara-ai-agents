@@ -72,6 +72,10 @@ def test_boss_says_a_problem_once_then_again_only_when_it_returns(people):
     assert service.briefing(monitor)["text"] == ""
     assert service.briefing(monitor, recent=True)["issues"]
     service.save("agent", service.ERROR, "Broke", agent="aptitude_agent", status=500)
+    session = service.get_session()
+    session.query(SystemIssue).one().last_seen += timedelta(seconds=2)  # Times are in whole seconds.
+    session.commit()
+    session.close()
     assert service.briefing(monitor)["issues"][0]["count"] == 2
 
 
