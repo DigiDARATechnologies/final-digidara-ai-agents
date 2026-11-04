@@ -20,6 +20,7 @@ import {
   type AgentLevel,
   type Band,
   type LearnerSummary,
+  type LevelGoal,
   type LevelId,
   type Readiness,
   type ReadinessArea,
@@ -60,7 +61,7 @@ const AREA_EXPLANATION: Record<string, string> = {
   codeforge_agent: "the problems you solved at your level's difficulty (Easy for Beginner, then Medium, then Hard), out of every such problem in the technologies you practise. Each language also opens on its own: solve all of its Easy problems to open its Medium ones, and so on, and all of its Hard problems to open its Professional assessment.",
   mock_interview_agent: "your best 5 interviews at your level's difficulty. An interview scoring 8/10 or more counts in full, a lower one in part (6/10 counts 75%); the 5 are added up and divided by 5, so 5 interviews at 8/10 complete the level. Professional is measured on your Hard interviews and needs 9/10. A weaker interview never lowers your progress.",
   aptitude_agent: "your best 5 aptitude tests at your level's difficulty. A test at 80% or more counts in full, a lower one in part (60% counts 75%); the 5 are added up and divided by 5, so 5 tests at 80% complete the level. Professional is measured on your Hard tests and needs 90%. A weaker test never lowers your progress.",
-  communication_agent: "the average of your writing, speaking and pronunciation scores from your latest sessions.",
+  communication_agent: "your best 5 writing and speaking sessions at your level's difficulty. A session at 80% or more counts in full, a lower one in part (60% counts 75%); the 5 are added up and divided by 5, so 5 sessions at 80% complete the level. Professional is measured on your Hard sessions and needs 90%. A weaker session never lowers your progress.",
   resume_builder_agent: "Resume has no levels: its area score is your best ATS score across your resumes. Run an ATS check to get one.",
   capstone_project_agent: "projects you passed: a project counts once its code grading AND its viva are passed. The first passed project completes Beginner, the second Medium, the third Hard, the fourth Professional. Code passed but viva still to do is half a level.",
   certificate_agent: "your best 5 exams, scored by your answers to the questions at your level's difficulty (beginner questions for Beginner, intermediate for Medium, advanced for Hard). 80% or more of them right counts in full, less in part; the 5 are added up and divided by 5, so 5 exams at 80% complete the level. Professional is measured on the advanced questions and needs 90%. A weaker exam never lowers your progress.",
@@ -143,6 +144,46 @@ function LevelProgress({ area }: { area: ReadinessArea }) {
   );
 }
 
+function plural(count: number, unit: string) {
+  return `${count} ${unit}${count === 1 ? "" : "s"}`;
+}
+
+/** What one level needs, e.g. "3 of 5 tests at 80%+". */
+function goalText(goal: LevelGoal, level: LevelId, agentName: string): string {
+  if (goal.unit === "problem") return `${goal.done} of ${plural(goal.needed, `${LEVEL_DIFFICULTY[level]} problem`)} solved`;
+  if (goal.unit === "assessment") return `${goal.done} of ${plural(goal.needed, "Professional assessment")} passed`;
+  if (goal.unit === "project") return `${goal.done} of ${plural(goal.needed, "project")} passed (code and viva)`;
+  const mark = goal.pass_percent ?? 0;
+  // Interviews are scored out of 10.
+  const bar = agentName === "mock_interview_agent" ? `${Math.round(mark) / 10}/10` : `${Math.round(mark)}%`;
+  return `${goal.done} of ${plural(goal.needed, goal.unit)} at ${bar} or more`;
+}
+
+/** Every level's goal for this agent, with how many are done and how many to go. */
+function LevelGoals({ area }: { area: ReadinessArea }) {
+  const goals = area.level_goals;
+  if (!goals || !LEVEL_IDS.some((level) => goals[level])) return null;
+  return (
+    <div className="rd-goals">
+      <p className="rd-goals-title">What each level needs</p>
+      <ul>
+        {LEVEL_IDS.map((level) => {
+          const goal = goals[level];
+          if (!goal) return null;
+          const left = Math.max(0, goal.needed - goal.done);
+          return (
+            <li key={level} className={`rd-goal lv-${level}${level === area.level ? " current" : ""}${left ? "" : " done"}`}>
+              <b>{LEVEL_LABELS[level]}</b>
+              <span>{goalText(goal, level, area.agent_name)}</span>
+              <em>{left ? `${left} more to go` : "✓ Done"}</em>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (level: LevelId) => void; busy: boolean }) {
   const scored = area.status === "assessed" && area.score !== null;
   // An area without levels (Resume) shows its own score, out of 100.
@@ -173,6 +214,7 @@ function AreaCard({ area, onLevel, busy }: { area: ReadinessArea; onLevel: (leve
         <LevelPicker value={area.level} onChange={onLevel} disabled={busy} gated nextUnlocked={area.can_level_up} openLevels={area.open_levels} unlockAt={area.unlock_at}
           scores={area.level_progress_basis === "level" ? area.level_scores : undefined} />
         <LevelProgress area={area} />
+        <LevelGoals area={area} />
       </>}
       {leveled && area.suggested_level && area.suggested_level !== area.level && (
         <button type="button" className="rd-suggest" disabled={busy} onClick={() => onLevel(area.suggested_level as LevelId)}>

@@ -159,6 +159,9 @@ def build_student_summary(assignments: list[ProjectAssignment], submissions: lis
             "projects_passed": len({s.assignment_id for s in submissions if _code_passed(s) and s.viva_passed is True}),
         },
         "level_scores": level_scores(submissions),
+        # One project passed (code and viva) completes each level.
+        "level_goals": {key: {"needed": 1, "done": 1 if score >= 100 else 0, "pass_percent": None, "unit": "project"}
+                        for key, score in level_scores(submissions).items()},
         "recent": recent_projects(assignments, submissions),
         "resume": {"projects": _resume_projects(assignments, submissions)},
     }

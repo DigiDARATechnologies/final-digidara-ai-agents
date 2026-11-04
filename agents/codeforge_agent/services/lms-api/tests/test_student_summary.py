@@ -37,6 +37,9 @@ class StudentSummaryScoringTests(unittest.TestCase):
         passed = [{"technology": "Python", "score": 82.0}, {"technology": "Python", "score": 75.0}]
         summary = build_student_summary([row("Easy", 100, "Solved")], {"Easy": 1}, "hard", passed)
         self.assertEqual(summary["level_scores"]["professional"], 66.7)
+        goals = summary["level_goals"]
+        self.assertEqual(goals["easy"], {"needed": 1, "done": 1, "pass_percent": None, "unit": "problem"})
+        self.assertEqual(goals["professional"], {"needed": 3, "done": 2, "pass_percent": None, "unit": "assessment"})
         self.assertEqual(summary["resume"]["achievements"][0]["title"], "Passed 2 Professional coding assessments in Python")
 
     def test_no_attempts_has_no_score(self):

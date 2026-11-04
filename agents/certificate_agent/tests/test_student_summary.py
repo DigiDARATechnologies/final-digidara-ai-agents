@@ -63,3 +63,11 @@ def test_professional_needs_90_percent_of_the_advanced_answers():
 def test_without_answers_no_level_scores_are_sent():
     body = build_student_summary([], [{"topic": "GenAI", "score_percentage": 90, "issued_at": None}])
     assert "level_scores" not in body
+
+
+def test_level_goals_count_exams_at_the_pass_mark():
+    from cert_app.services.readiness import level_goals
+    answers = [{"exam_id": i, "difficulty": "advanced", "correct": c, "asked": 10} for i, c in enumerate((9, 8, 7))]
+    goals = level_goals(answers)
+    assert goals["hard"] == {"needed": 5, "done": 2, "pass_percent": 80, "unit": "exam"}
+    assert goals["professional"]["done"] == 1 and goals["easy"]["done"] == 0

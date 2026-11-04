@@ -65,3 +65,12 @@ def test_level_progress_never_drops_and_five_passes_complete_a_level():
     hard = level_scores([("hard", 85.0)] * 5)
     assert hard["hard"] == 100.0 and hard["professional"] == 94.4
     assert level_scores([("hard", 90.0)] * 5)["professional"] == 100.0
+
+
+def test_level_goals_count_good_tests_and_what_is_left():
+    from backend.app.routes.invoke import level_goals
+    goals = level_goals([("hard", 95.0), ("hard", 85.0), ("hard", 70.0), ("easy", 80.0)] + [("medium", 90.0)] * 7, "test")
+    assert goals["hard"] == {"needed": 5, "done": 2, "pass_percent": 80, "unit": "test"}
+    assert goals["professional"] == {"needed": 5, "done": 1, "pass_percent": 90, "unit": "test"}
+    # Never more done than needed.
+    assert goals["medium"]["done"] == 5 and goals["easy"]["done"] == 1

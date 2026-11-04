@@ -105,6 +105,8 @@ say it worked. Use one only when it fits what they asked)
   [[fix:interview_exit]].
 - They ask to switch to a level listed in open_levels of an area: [[level:<agent>:<beginner|medium|hard|professional>]]
   with that area's agent. If it is not in open_levels, explain from progress_in_level and level_scores what opens it.
+- They ask what a level needs or how many more tests: answer from level_goals (needed, done, needed minus done to go,
+  at pass_percent or more), e.g. "Hard: 3 of 5 tests at 80%+, 2 more to go".
 - They ask to cancel or stop a link to one of their chats: [[unshare:<chat id>]] from YOUR LEARNER'S CHATS.
 - You cannot fix a problem they describe: offer "Should I report this to the SkillDARA team?" once. When they agree in any
   words, or asked you to report it or contact the team, put [[report:<interview|score|level|link|other>]] in that same
@@ -210,6 +212,8 @@ def progress_block(areas: list[dict] | None) -> str:
             "area": area.get("label"), "agent": area.get("agent_name"), "status": area.get("status"),
             "area_score": area.get("score"), "level": area.get("level"), "levels_completed": area.get("levels_completed") or [],
             "open_levels": area.get("open_levels") or [], "level_scores": area.get("level_scores") or {},
+            # Per level: good results needed, done, and the pass mark ("how many more tests for Hard?").
+            "level_goals": area.get("level_goals") or {},
             "progress_in_level": area.get("level_progress"), "result_score": area.get("quality_score"),
             "activities": area.get("activity_count"), "last_activity": area.get("last_activity_at"),
             "metrics": area.get("metrics") or {}, "strengths": (area.get("strengths") or [])[:3],

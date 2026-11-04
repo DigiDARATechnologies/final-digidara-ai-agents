@@ -14,20 +14,47 @@ RECENT_SESSIONS = 5
 RECENT_PRONUNCIATION = 20
 LEVEL_HISTORY = 60
 
-# Phase 2 levels: progress at each difficulty, starting from 0. It is the sum
-# of the latest LEVEL_SESSIONS scores (0-100) at that difficulty divided by
-# LEVEL_SESSIONS, so it grows with every session and reaches 100 only after
-# LEVEL_SESSIONS perfect ones. The orchestrator maps easy/medium/hard to the
-# Beginner/Medium/Hard levels.
+# Phase 2 levels, the same rule as Aptitude, Mock Interview and Certification:
+# progress at a difficulty is the best LEVEL_SESSIONS sessions there, each
+# counting in full at PASS_PERCENT or more and in part below it, added up and
+# divided by LEVEL_SESSIONS. So LEVEL_SESSIONS good sessions complete the level
+# and a weaker one never lowers it. Professional is measured on the Hard
+# sessions at PROFESSIONAL_PASS_PERCENT. The orchestrator maps easy/medium/hard
+# to the Beginner/Medium/Hard levels.
 LEVEL_SESSIONS = 5
+PASS_PERCENT = 80
+PROFESSIONAL_PASS_PERCENT = 90
+
+
+def _by_difficulty(sessions):
+    return {difficulty: [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
+            for difficulty in ("easy", "medium", "hard")}
+
+
+def _progress(scores, pass_percent):
+    credits = sorted((min(100.0, score * 100 / pass_percent) for score in scores), reverse=True)
+    return round(sum(credits[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
 
 
 def level_scores(sessions):
-    """sessions: (difficulty, score 0-100) pairs, newest first."""
-    result = {}
-    for difficulty in ("easy", "medium", "hard"):
-        scores = [max(0.0, min(100.0, float(score))) for level, score in sessions if level == difficulty and score is not None]
-        result[difficulty] = round(sum(scores[:LEVEL_SESSIONS]) / LEVEL_SESSIONS, 1)
+    """sessions: (difficulty, score 0-100) pairs."""
+    scores = _by_difficulty(sessions)
+    result = {difficulty: _progress(values, PASS_PERCENT) for difficulty, values in scores.items()}
+    result["professional"] = _progress(scores["hard"], PROFESSIONAL_PASS_PERCENT)
+    return result
+
+
+def level_goals(sessions):
+    """For each level, how many good sessions it needs, how many the learner
+    has, and the pass mark -- shown on the Job Readiness page."""
+    scores = _by_difficulty(sessions)
+
+    def goal(values, pass_percent):
+        good = sum(1 for score in values if score >= pass_percent)
+        return {"needed": LEVEL_SESSIONS, "done": min(good, LEVEL_SESSIONS), "pass_percent": pass_percent, "unit": "session"}
+
+    result = {difficulty: goal(values, PASS_PERCENT) for difficulty, values in scores.items()}
+    result["professional"] = goal(scores["hard"], PROFESSIONAL_PASS_PERCENT)
     return result
 
 
@@ -96,4 +123,5 @@ def student_summary(email, periods=None):
         "metrics": {"writing_score": parts["writing"], "speaking_score": parts["speaking"],
                     "pronunciation_score": parts["pronunciation"], "streak_days": user.streak_count or 0},
         "level_scores": level_scores(by_level),
+        "level_goals": level_goals(by_level),
     }

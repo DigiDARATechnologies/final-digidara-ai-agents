@@ -210,11 +210,14 @@ def topic_clarify(req: TopicClarifyRequest) -> TopicClarifyResponse:
     show one clarifying question first and re-call /eligibility/free with
     the combined answer. See prompts.topic_clarification_prompt."""
     logger.info("=== POST /api/topic/clarify description=%r", req.description)
-    result = call_json(
-        system=prompts.topic_clarification_prompt(req.description),
-        user="Decide now.",
-        temperature=0.3,
-    )
+    try:
+        result = call_json(
+            system=prompts.topic_clarification_prompt(req.description),
+            user="Decide now.",
+            temperature=0.3,
+        )
+    except LLMError as exc:
+        raise HTTPException(502, f"{exc}") from exc
     ready = bool(result.get("ready", True))
     return TopicClarifyResponse(
         ready=ready,
@@ -241,13 +244,17 @@ def topic_intake(req: TopicIntakeRequest) -> TopicIntakeResponse:
     "ready" without both slots filled is corrected here, not passed on."""
     logger.info("=== POST /api/topic/intake pending=%s options=%d", req.pending_question, len(req.shown_topics))
     memory = req.memory.model_dump()
-    result = call_json(
-        system=prompts.topic_intake_prompt(
-            memory, req.pending_question, req.shown_topics, [turn.model_dump() for turn in req.history],
-        ),
-        user=req.message,
-        temperature=0.2,
-    )
+    try:
+        result = call_json(
+            system=prompts.topic_intake_prompt(
+                memory, req.pending_question, req.shown_topics, [turn.model_dump() for turn in req.history],
+            ),
+            user=req.message,
+            temperature=0.2,
+        )
+    except LLMError as exc:
+        # The page carries on without the model (capstoneFlow's intakeFallback).
+        raise HTTPException(502, f"{exc}") from exc
 
     intent = result.get("intent") if result.get("intent") in _INTAKE_INTENTS else "question"
     raw_memory = result.get("memory") if isinstance(result.get("memory"), dict) else {}

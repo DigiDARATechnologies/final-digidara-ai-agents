@@ -44,6 +44,7 @@ def test_best_graded_score(client, summary_db):
     # Graded code but no viva passed yet: half of Beginner, no level completed.
     assert body["level_scores"] == {"easy": 50.0, "medium": 0.0, "hard": 0.0, "professional": 0.0}
     assert body["metrics"]["projects_passed"] == 0
+    assert body["level_goals"]["easy"] == {"needed": 1, "done": 0, "pass_percent": None, "unit": "project"}
     # The project, as the learner would ask Boss about it.
     assert [{k: row[k] for k in ("title", "status", "score", "submissions")} for row in body["recent"]] == [
         {"title": "Task tracker", "status": "code passed, viva not passed yet", "score": 81.0, "submissions": 3}]

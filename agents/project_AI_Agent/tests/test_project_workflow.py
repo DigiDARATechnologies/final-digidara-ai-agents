@@ -598,6 +598,24 @@ def test_intake_never_lets_a_non_update_change_memory_or_pick_a_missing_option(c
     assert body["memory"]["focus"] == "Python"
 
 
+def test_intake_when_the_model_fails_is_a_clean_502_not_a_500(client, database, monkeypatch):
+    from app.llm.client import LLMError
+    monkeypatch.setattr(routes, "call_json", Mock(side_effect=LLMError("The AI provider account has no credits left. Please try again later.")))
+    response = intake_turn(client)
+    assert response.status_code == 502 and "no credits" in response.json()["detail"]
+
+
+def test_an_account_without_credits_fails_at_once_instead_of_waiting_out_retries(monkeypatch):
+    from app.llm import client as llm_client
+    quota = llm_client.RateLimitError(message="insufficient_quota: You exceeded your current quota", llm_provider="openai", model="gpt-4o-mini")
+    completion = Mock(side_effect=quota)
+    monkeypatch.setattr(llm_client.litellm, "completion", completion)
+    monkeypatch.setattr(llm_client.time, "sleep", Mock(side_effect=AssertionError("must not wait")))
+    with pytest.raises(llm_client.LLMError, match="no credits"):
+        llm_client._provider_completion({"model": "gpt-4o-mini", "messages": []}, "test", 1)
+    assert completion.call_count == 1
+
+
 def test_intake_regenerate_without_options_on_screen_is_not_a_regenerate(client, database, monkeypatch):
     monkeypatch.setattr(routes, "call_json", Mock(return_value={"intent": "regenerate", "memory": {}}))
     assert intake_turn(client).json()["intent"] == "update"

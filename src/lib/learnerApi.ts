@@ -66,6 +66,14 @@ export interface LearnerSummary {
 
 export type AreaStatus = "assessed" | "not_started" | "unavailable";
 
+export interface LevelGoal {
+  needed: number;
+  done: number;
+  /** The score a result needs to count; null when there is no pass mark (problems solved, projects passed). */
+  pass_percent: number | null;
+  unit: "test" | "interview" | "session" | "exam" | "problem" | "assessment" | "project";
+}
+
 export interface ReadinessArea {
   agent_name: string;
   label: string;
@@ -99,6 +107,8 @@ export interface ReadinessArea {
   unlock_at?: number;
   /** Progress at every level (0-100), for agents that measure each level on its own results. */
   level_scores?: Partial<Record<LevelId, number>>;
+  /** What each level needs: e.g. Hard needs 5 tests at 80% or more, and 3 are done. */
+  level_goals?: Partial<Record<LevelId, LevelGoal>>;
   /** Set when readiness has just moved the learner up from this level. */
   promoted_from?: LevelId;
 }
