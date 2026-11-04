@@ -105,5 +105,12 @@ def build_student_summary(rows, totals=None, difficulty=None, passed_assessments
         },
         "level_scores": {**{level.lower(): _level_progress(solved, totals, level) or 0.0 for level in DIFFICULTY_WEIGHT},
                          "professional": round(100 * min(len(passed_assessments), PROFESSIONAL_PASSES) / PROFESSIONAL_PASSES, 1)} if totals else None,
+        # What each level needs, for the Job Readiness page: every problem of
+        # its difficulty solved, and Professional's passed assessments.
+        "level_goals": {**{level.lower(): {"needed": totals[level], "done": min(solved_by_difficulty[level], totals[level]),
+                                           "pass_percent": None, "unit": "problem"}
+                           for level in DIFFICULTY_WEIGHT if totals.get(level)},
+                        "professional": {"needed": PROFESSIONAL_PASSES, "done": min(len(passed_assessments), PROFESSIONAL_PASSES),
+                                         "pass_percent": None, "unit": "assessment"}} if totals else None,
         "resume": _resume_block(solved, passed_assessments),
     }

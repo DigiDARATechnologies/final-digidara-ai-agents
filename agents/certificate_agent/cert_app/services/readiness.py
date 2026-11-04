@@ -28,9 +28,8 @@ MIN_LEVEL_QUESTIONS = 3
 QUESTION_LEVEL = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
 
 
-def level_scores(answers: Iterable[dict]) -> dict[str, float]:
-    """answers: one row per (exam_id, difficulty) with `correct` and `asked`
-    counts. Progress (0-100) at easy/medium/hard and professional."""
+def _level_percents(answers: Iterable[dict]) -> dict[str, list[float]]:
+    """Each exam's percentage right at each difficulty it asked enough of."""
     percents: dict[str, list[float]] = {level: [] for level in QUESTION_LEVEL.values()}
     for row in answers:
         level = QUESTION_LEVEL.get(str(row.get("difficulty") or "").lower())
@@ -38,6 +37,27 @@ def level_scores(answers: Iterable[dict]) -> dict[str, float]:
         if level is None or asked < MIN_LEVEL_QUESTIONS:
             continue
         percents[level].append(100.0 * float(row.get("correct") or 0) / asked)
+    return percents
+
+
+def level_goals(answers: Iterable[dict]) -> dict[str, dict]:
+    """For each level, how many good exams it needs (LEVEL_SESSIONS at or above
+    the pass mark), how many the learner has, and the pass mark."""
+    percents = _level_percents(answers)
+
+    def goal(values, pass_percent):
+        good = sum(1 for value in values if value >= pass_percent)
+        return {"needed": LEVEL_SESSIONS, "done": min(good, LEVEL_SESSIONS), "pass_percent": pass_percent, "unit": "exam"}
+
+    result = {level: goal(values, PASS_PERCENT) for level, values in percents.items()}
+    result["professional"] = goal(percents["hard"], PROFESSIONAL_PASS_PERCENT)
+    return result
+
+
+def level_scores(answers: Iterable[dict]) -> dict[str, float]:
+    """answers: one row per (exam_id, difficulty) with `correct` and `asked`
+    counts. Progress (0-100) at easy/medium/hard and professional."""
+    percents = _level_percents(answers)
 
     def progress(values, pass_percent):
         credits = sorted((min(100.0, max(0.0, value) * 100 / pass_percent) for value in values), reverse=True)
@@ -81,7 +101,7 @@ def build_student_summary(exams: Iterable[dict], certificates: Iterable[dict], a
         "gaps": [f"Not certified yet: {topic} (best {best[topic]:.0f}%)" for topic in uncertified[:3]],
         "metrics": {"certificates": len(certificates), "exams_finished": len(exams), "topics": len(best)},
         # Only exams record each answer; chat-mode certificates alone keep the score for levels.
-        **({"level_scores": level_scores(answers)} if answers else {}),
+        **({"level_scores": level_scores(answers), "level_goals": level_goals(answers)} if answers else {}),
         "resume": {"certifications": [
             {"name": f"{topic} Certification", "issuer": "SkillDARA AI Certification",
              "date": _date(next((c.get("issued_at") for c in certificates if str(c.get("topic") or "General") == topic), None)),

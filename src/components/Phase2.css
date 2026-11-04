@@ -99,6 +99,16 @@
 .rd-progress .rd-muted { margin: 0; font-size: 12px; }
 .rd-bar.thin { height: 4px; margin: 2px 0; }
 .rd-promoted { margin: 0; font-size: 13px; color: var(--tx-1); }
+.rd-goals { display: grid; gap: 4px; }
+.rd-goals-title { margin: 0; font-size: 12px; font-weight: 600; color: var(--tx-2); }
+.rd-goals ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.rd-goal { display: grid; grid-template-columns: 92px 1fr auto; gap: 8px; align-items: baseline; padding: 4px 8px;
+  border-radius: 6px; font-size: 12px; color: var(--tx-2); }
+.rd-goal b { color: var(--tx-1); font-weight: 600; }
+.rd-goal em { font-style: normal; font-weight: 600; white-space: nowrap; }
+.rd-goal.current { outline: 1px solid var(--accent3); background: var(--accent-soft); }
+.rd-goal.done em { color: #15803d; }
+@media (max-width: 480px) { .rd-goal { grid-template-columns: 1fr auto; } .rd-goal span { grid-column: 1 / -1; grid-row: 2; } }
 .rd-suggest {
   margin-top: 8px; width: 100%; padding: 6px 8px; border: 1px dashed var(--line-1); border-radius: 8px; background: none;
   color: var(--tx-2); font: inherit; font-size: 12px; cursor: pointer; text-align: left;

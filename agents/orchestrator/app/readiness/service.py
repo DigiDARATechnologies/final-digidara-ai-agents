@@ -119,7 +119,7 @@ def summarize_reply(data: Any) -> dict:
     """Validate one agent's student summary; anything unexpected is dropped."""
     if not isinstance(data, dict):
         return {"score": None, "activity_count": 0, "last_activity_at": None, "strengths": [], "gaps": [], "metrics": {},
-                "resume": {}, "level_scores": {}, "recent": []}
+                "resume": {}, "level_scores": {}, "level_goals": {}, "recent": []}
     activity = data.get("activity_count")
     metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
     return {
@@ -131,8 +131,35 @@ def summarize_reply(data: Any) -> dict:
         "metrics": {str(k)[:60]: v for k, v in list(metrics.items())[:20] if isinstance(v, (str, int, float, bool)) or v is None},
         "resume": _resume_block(data.get("resume")),
         "level_scores": _level_scores(data.get("level_scores")),
+        "level_goals": _level_goals(data.get("level_goals")),
         "recent": _recent(data.get("recent")),
     }
+
+
+GOAL_UNITS = frozenset({"test", "interview", "session", "exam", "problem", "assessment", "project"})
+
+
+def _level_goals(value: Any) -> dict[str, dict]:
+    """What each level needs, as one per learner level: {needed, done,
+    pass_percent, unit} -- e.g. Hard needs 5 tests at 80% or more and the
+    learner has 3. Professional uses the agent's own goal, or Hard's."""
+    if not isinstance(value, dict):
+        return {}
+    goals = {}
+    for key in ("easy", "medium", "hard", "professional"):
+        goal = value.get(key)
+        if not isinstance(goal, dict):
+            continue
+        needed, done, mark, unit = goal.get("needed"), goal.get("done"), goal.get("pass_percent"), goal.get("unit")
+        if (not isinstance(needed, int) or isinstance(needed, bool) or not 0 < needed <= 10_000
+                or not isinstance(done, int) or isinstance(done, bool) or unit not in GOAL_UNITS):
+            continue
+        goals[key] = {"needed": needed, "done": max(0, min(done, needed)),
+                      "pass_percent": _clamp_score(mark), "unit": unit}
+    result = {level: goals[difficulty] for level, difficulty in level_rules.LEVEL_DIFFICULTY.items() if difficulty in goals}
+    if "professional" in goals:
+        result["professional"] = goals["professional"]
+    return result
 
 
 RECENT_LIMIT = 10

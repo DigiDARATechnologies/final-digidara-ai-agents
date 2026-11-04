@@ -146,6 +146,20 @@ def level_scores(sessions):
     return result
 
 
+def level_goals(sessions, unit):
+    """sessions: (difficulty, score 0-100) pairs. For each level, how many
+    good results it needs (LEVEL_SESSIONS at or above the pass mark), how many
+    the learner has, and the pass mark -- shown on the Job Readiness page."""
+    def goal(values, pass_percent):
+        good = sum(1 for score in values if score >= pass_percent)
+        return {"needed": LEVEL_SESSIONS, "done": min(good, LEVEL_SESSIONS), "pass_percent": pass_percent, "unit": unit}
+    scores = {difficulty: [score for level, score in sessions if level == difficulty and score is not None]
+              for difficulty in ("easy", "medium", "hard")}
+    result = {difficulty: goal(values, PASS_PERCENT) for difficulty, values in scores.items()}
+    result["professional"] = goal(scores["hard"], PROFESSIONAL_PASS_PERCENT)
+    return result
+
+
 INTERVIEW_DIFFICULTY = {"beginner": "easy", "intermediate": "medium", "advanced": "hard"}
 
 
@@ -180,6 +194,7 @@ def _student_summary(payload: dict):
 
     latest = recent[0]
     ended = latest.get("ended_at")
+    by_level = [(INTERVIEW_DIFFICULTY.get(str(r.get("difficulty") or "").lower()), float(r["overall_score"]) * 10) for r in rows]
     return jsonify({
         "schema": "digidara.student_summary.v1",
         "score": average("overall_score"),
@@ -193,9 +208,8 @@ def _student_summary(payload: dict):
             "communication_clarity": average("communication_clarity"),
             "confidence": average("confidence"),
         },
-        "level_scores": level_scores([
-            (INTERVIEW_DIFFICULTY.get(str(r.get("difficulty") or "").lower()), float(r["overall_score"]) * 10) for r in rows
-        ]),
+        "level_scores": level_scores(by_level),
+        "level_goals": level_goals(by_level, "interview"),
     })
 
 

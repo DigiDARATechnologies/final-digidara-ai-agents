@@ -41,8 +41,9 @@ def test_averages_writing_and_speaking_on_a_100_scale(client, app):
     db.session.commit()
     body = _invoke(client).get_json()
     assert body["score"] == 70.0
-    # Both sessions were at the default medium difficulty: (80 + 60) / 5.
-    assert body["level_scores"] == {"easy": 0.0, "medium": 28.0, "hard": 0.0}
+    # Both at the default medium difficulty: 80% counts in full, 60% as 75% -> (100 + 75) / 5.
+    assert body["level_scores"] == {"easy": 0.0, "medium": 35.0, "hard": 0.0, "professional": 0.0}
+    assert body["level_goals"]["medium"] == {"needed": 5, "done": 1, "pass_percent": 80, "unit": "session"}
     assert body["metrics"]["writing_score"] == 80.0 and body["metrics"]["speaking_score"] == 60.0
     assert body["metrics"]["pronunciation_score"] is None and body["metrics"]["streak_days"] == 4
     assert body["strengths"] == ["Clear structure"]
@@ -52,3 +53,14 @@ def test_averages_writing_and_speaking_on_a_100_scale(client, app):
 
 def test_unknown_learner_is_empty(client, app):
     assert _invoke(client, email="nobody@example.com").get_json()["score"] is None
+
+
+def test_levels_count_the_best_five_sessions_against_80_percent():
+    from app.services.readiness import level_goals, level_scores
+    # Five sessions at 80% complete a level; Professional is the Hard ones against 90%.
+    assert level_scores([("hard", 80.0)] * 5) == {"easy": 0.0, "medium": 0.0, "hard": 100.0, "professional": 88.9}
+    # A weaker session never lowers progress.
+    assert level_scores([("easy", 40.0), ("easy", 80.0)])["easy"] == 30.0
+    goals = level_goals([("hard", 92.0), ("hard", 85.0), ("hard", 50.0)])
+    assert goals["hard"] == {"needed": 5, "done": 2, "pass_percent": 80, "unit": "session"}
+    assert goals["professional"]["done"] == 1 and goals["professional"]["pass_percent"] == 90

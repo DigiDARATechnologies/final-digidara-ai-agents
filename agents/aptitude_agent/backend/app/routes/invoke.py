@@ -127,6 +127,20 @@ def level_scores(sessions):
     return result
 
 
+def level_goals(sessions, unit):
+    """sessions: (difficulty, score 0-100) pairs. For each level, how many
+    good results it needs (LEVEL_SESSIONS at or above the pass mark), how many
+    the learner has, and the pass mark -- shown on the Job Readiness page."""
+    def goal(values, pass_percent):
+        good = sum(1 for score in values if score >= pass_percent)
+        return {"needed": LEVEL_SESSIONS, "done": min(good, LEVEL_SESSIONS), "pass_percent": pass_percent, "unit": unit}
+    scores = {difficulty: [score for level, score in sessions if level == difficulty and score is not None]
+              for difficulty in ("easy", "medium", "hard")}
+    result = {difficulty: goal(values, PASS_PERCENT) for difficulty, values in scores.items()}
+    result["professional"] = goal(scores["hard"], PROFESSIONAL_PASS_PERCENT)
+    return result
+
+
 APTITUDE_LEVEL = {"Beginner": "easy", "Intermediate": "medium", "Advanced": "hard"}
 
 
@@ -188,6 +202,7 @@ def _student_summary(payload: dict):
         "metrics": {"tests_completed": len(completed), "recent_tests_averaged": len(recent),
                     "best_percentage": round(max(float(t.percentage or 0) for t in completed), 1)},
         "level_scores": level_scores([(levels.get(t.id), float(t.percentage or 0)) for t in completed]),
+        "level_goals": level_goals([(levels.get(t.id), float(t.percentage or 0)) for t in completed], "test"),
         # Each recent test with its date, so the learner can ask Boss "when did I take my tests?".
         "recent": [
             {"date": t.completed_at.isoformat() if t.completed_at else "", "title": "Aptitude test",

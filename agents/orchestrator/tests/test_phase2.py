@@ -1367,3 +1367,19 @@ def test_coins_reach_members_who_joined_before_coins_were_set(app_client, users,
                      json={"status": "active", "admin_coins": 10, "student_coins": 5})
     assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json() == {"people": 2, "coins": 15}
     assert app_client.post(f"/organizations/platform/{org['id']}/coins", headers=auth("platform")).json() == {"people": 0, "coins": 0}
+
+
+def test_level_goals_are_checked_and_given_per_learner_level():
+    goals = readiness_service.summarize_reply({"score": 50, "level_goals": {
+        "easy": {"needed": 5, "done": 7, "pass_percent": 80, "unit": "test"},
+        "hard": {"needed": 5, "done": 3, "pass_percent": 80, "unit": "test"},
+        "professional": {"needed": 5, "done": 1, "pass_percent": 90, "unit": "test"},
+        "medium": {"needed": "5", "done": 1, "unit": "test"},  # not a number: dropped
+    }})["level_goals"]
+    assert goals["beginner"] == {"needed": 5, "done": 5, "pass_percent": 80.0, "unit": "test"}
+    assert goals["hard"]["done"] == 3 and goals["professional"]["pass_percent"] == 90.0
+    assert "medium" not in goals
+    # Without its own Professional goal, Professional is measured on the Hard results.
+    hard_only = readiness_service.summarize_reply({"level_goals": {"hard": {"needed": 5, "done": 2, "pass_percent": 80, "unit": "session"}}})
+    assert hard_only["level_goals"]["professional"]["done"] == 2
+    assert readiness_service.summarize_reply({"score": 1})["level_goals"] == {}
