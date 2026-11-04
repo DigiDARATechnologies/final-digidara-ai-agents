@@ -68,10 +68,34 @@ def test_bad_recordings_never_reach_openai(api, monkeypatch, payload, status):
 
 
 def test_an_openai_failure_is_a_clean_error_with_no_details(api, monkeypatch):
-    openai_replies(monkeypatch, status=500, body={"error": {"message": "internal detail sk-test"}})
+    monkeypatch.setattr(speech.time, "sleep", lambda seconds: None)
+    post = openai_replies(monkeypatch, status=500, body={"error": {"message": "internal detail sk-test"}})
     response = api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
-    assert response.status_code == 502
+    assert response.status_code == 502 and post.call_count == 2
     assert "sk-test" not in response.text and "internal detail" not in response.text
+
+
+def test_a_blip_at_openai_is_tried_once_more(api, monkeypatch):
+    monkeypatch.setattr(speech.time, "sleep", lambda seconds: None)
+    busy = SimpleNamespace(status_code=429, json=lambda: {"error": {"code": "rate_limit_exceeded"}})
+    fine = SimpleNamespace(status_code=200, json=lambda: {"text": "How do I use the capstone agent?"})
+    monkeypatch.setattr(speech.httpx, "post", Mock(side_effect=[busy, fine]))
+    assert api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers()).json()["transcript"] == "How do I use the capstone agent?"
+
+
+def test_an_openai_account_without_credits_is_reported_and_not_retried(api, monkeypatch, caplog):
+    post = openai_replies(monkeypatch, status=429, body={"error": {"code": "insufficient_quota", "message": "no credits"}})
+    response = api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
+    assert response.status_code == 503 and post.call_count == 1
+    assert "credits" not in response.text
+    assert any(r.levelname == "ERROR" and "insufficient_quota" in r.getMessage() for r in caplog.records)
+
+
+def test_a_recording_openai_cannot_read_is_the_learners_to_redo(api, monkeypatch):
+    # A cut-off or too-short recording is not a server failure.
+    openai_replies(monkeypatch, status=400, body={"error": {"code": "audio_too_short"}})
+    response = api.post("/chat/transcribe", json={"audio_base64": AUDIO}, headers=headers())
+    assert response.status_code == 400 and "couldn't hear any words" in response.json()["detail"]
 
 
 def test_without_an_openai_key_voice_is_unavailable(api, monkeypatch):

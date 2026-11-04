@@ -31,6 +31,7 @@ _call_counter = itertools.count(1)
 
 _PROMPT_LOG_CHARS = 2000  # cap so a code-review prompt with embedded files doesn't flood the terminal
 _RATE_LIMIT_RETRIES = 3
+_QUOTA_EXHAUSTED = re.compile(r"insufficient_quota|credit_balance_exhausted|exceeded your current quota", re.IGNORECASE)
 
 
 def _retry_after_seconds(exc: Exception, attempt: int) -> float:
@@ -47,6 +48,10 @@ def _provider_completion(kwargs: dict[str, Any], caller: str, call_id: int) -> A
         try:
             return litellm.completion(**kwargs)
         except RateLimitError as exc:
+            # An account with no credits answers 429 too, but waiting never helps.
+            if _QUOTA_EXHAUSTED.search(str(exc)):
+                logger.error("[LLM #%d] %s failed: the AI provider account has no credits left (insufficient_quota)", call_id, caller)
+                raise LLMError("The AI provider account has no credits left. Please try again later.") from exc
             if attempt >= _RATE_LIMIT_RETRIES:
                 raise LLMError("The AI provider is temporarily rate limited. Please retry in about one minute.") from exc
             wait_seconds = _retry_after_seconds(exc, attempt)

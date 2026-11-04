@@ -11,6 +11,7 @@ import base64
 import binascii
 import logging
 import os
+import time
 
 import httpx
 
@@ -21,6 +22,11 @@ logger = logging.getLogger("orchestrator.transcribe")
 OPENAI_TRANSCRIPTIONS_URL = "https://api.openai.com/v1/audio/transcriptions"
 TRANSCRIPTION_MODEL = os.environ.get("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe")
 TRANSCRIPTION_TIMEOUT_SECONDS = 60
+# A blip at OpenAI (5xx, a busy-minute 429, a dropped connection) is tried once more.
+TRANSIENT_RETRIES = 1
+RETRY_DELAY_SECONDS = 1.0
+# OpenAI answers 429 with these when the account has no credits; retrying never helps.
+QUOTA_CODES = {"insufficient_quota", "credit_balance_exhausted", "billing_hard_limit_reached"}
 
 # A spoken question is seconds long; this is several minutes of compressed
 # audio, and well under OpenAI's 25 MB limit.
@@ -83,27 +89,34 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
     if not api_key:
         raise TranscriptionError(503, "Voice input is not available right now.")
     base_type = (mime_type or "").split(";", 1)[0].strip().lower()
-    try:
-        response = httpx.post(
-            OPENAI_TRANSCRIPTIONS_URL,
-            headers={"Authorization": f"Bearer {api_key}"},
-            files={"file": (f"question.{extension}", audio, base_type)},
-            data={
-                "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
-                "prompt": VOCABULARY_HINT,
-                # No forced language: speech is written in the language spoken,
-                # so another language is recognised and refused below instead
-                # of coming back empty ("I couldn't hear any words").
-            },
-            timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError as exc:
-        logger.warning("transcription request failed: %s", type(exc).__name__)
-        raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.") from exc
+    response = None
+    for attempt in range(1 + TRANSIENT_RETRIES):
+        if attempt:
+            time.sleep(RETRY_DELAY_SECONDS)
+        try:
+            response = httpx.post(
+                OPENAI_TRANSCRIPTIONS_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (f"question.{extension}", audio, base_type)},
+                data={
+                    "model": TRANSCRIPTION_MODEL, "response_format": "json", "temperature": "0",
+                    "prompt": VOCABULARY_HINT,
+                    # No forced language: speech is written in the language spoken,
+                    # so another language is recognised and refused below instead
+                    # of coming back empty ("I couldn't hear any words").
+                },
+                timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("transcription request failed: %s", type(exc).__name__)
+            if attempt < TRANSIENT_RETRIES:
+                continue
+            raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.") from exc
+        if response.status_code == 200 or not _is_transient(response) or attempt == TRANSIENT_RETRIES:
+            break
+        logger.warning("transcription returned HTTP %s; retrying once", response.status_code)
     if response.status_code != 200:
-        # Status only: OpenAI's error body can echo request details.
-        logger.warning("transcription returned HTTP %s", response.status_code)
-        raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.")
+        _raise_for_openai_error(response)
     try:
         text = str(response.json().get("text") or "").strip()
     except ValueError as exc:
@@ -118,6 +131,36 @@ def transcribe(audio_base64: str, mime_type: str, language: str = "auto") -> str
         raise TranscriptionError(422, SPEAK_ENGLISH_MESSAGE)
     logger.info("transcribed %d bytes of %s into %d chars", len(audio), base_type, len(text))
     return text
+
+
+def _openai_error_code(response) -> str:
+    """OpenAI's error code ("insufficient_quota", "audio_too_short", ...) only:
+    its message can echo request details."""
+    try:
+        error = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        return ""
+    return str(error.get("code") or error.get("type") or "") if isinstance(error, dict) else ""
+
+
+def _is_transient(response) -> bool:
+    return response.status_code >= 500 or (response.status_code == 429 and _openai_error_code(response) not in QUOTA_CODES)
+
+
+def _raise_for_openai_error(response) -> None:
+    code = _openai_error_code(response)
+    if code in QUOTA_CODES or response.status_code in (401, 403):
+        # Every recording fails until someone fixes the OpenAI account, so it is
+        # logged as an error (Boss reports it with its cause) and the learner is
+        # told to type instead.
+        logger.error("transcription failed: the OpenAI account cannot be used (HTTP %s, %s)", response.status_code, code or "no code")
+        raise TranscriptionError(503, "Voice input is not available right now. Please type your question.")
+    if response.status_code == 400:
+        # The recording itself: too short, cut off, or not audio OpenAI can read.
+        logger.info("transcription refused the recording (HTTP 400, %s)", code or "no code")
+        raise TranscriptionError(400, "I couldn't hear any words in that recording. Please try again or type your question.")
+    logger.warning("transcription returned HTTP %s (%s)", response.status_code, code or "no code")
+    raise TranscriptionError(502, "Voice input could not be processed. Please try again or type your question.")
 
 
 # Phrases of prompts this service sends (and sent before), which the model
