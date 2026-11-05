@@ -61,3 +61,75 @@ def test_live_preview_allows_a_preview_every_three_seconds(client, token, monkey
     payload = {"authToken": token, "audio_data": base64.b64encode(b"partial").decode(), "audio_type": "audio/webm"}
     statuses = [invoke(client, "speaking_transcribe_preview", payload).status_code for _ in range(20)]
     assert statuses == [200] * 20
+
+
+def _provider_replies(monkeypatch, app, *replies):
+    from unittest.mock import Mock
+
+    from app.services import groq_speaking
+
+    app.config["OPENAI_API_KEY"] = "sk-test"
+    built = []
+    for status, body in replies:
+        request = groq_speaking.httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
+        built.append(groq_speaking.httpx.Response(status, json=body, request=request))
+    post = Mock(side_effect=built)
+    monkeypatch.setattr(groq_speaking.httpx, "post", post)
+    monkeypatch.setattr(groq_speaking.time, "sleep", lambda seconds: None)
+    return post
+
+
+def _preview(client, token):
+    return invoke(client, "speaking_transcribe_preview", {
+        "authToken": token, "audio_data": base64.b64encode(b"\x1a\x45audio").decode(), "audio_type": "audio/webm",
+    })
+
+
+def test_a_recording_the_provider_cannot_read_is_not_a_server_failure(client, app, token, monkeypatch):
+    # OpenAI answers 400 to a very short or cut-off recording.
+    post = _provider_replies(monkeypatch, app, (400, {"error": {"code": "invalid_value", "message": "corrupted"}}))
+    response = _preview(client, token)
+    assert response.status_code == 400 and post.call_count == 1
+    assert "couldn't hear any words" in response.get_json()["message"]
+
+
+def test_a_blip_at_the_provider_is_tried_once_more(client, app, token, monkeypatch):
+    post = _provider_replies(monkeypatch, app, (429, {"error": {"code": "rate_limit_exceeded"}}), (200, {"text": "Hello there"}))
+    response = _preview(client, token)
+    assert response.status_code == 200 and response.get_json()["transcript"] == "Hello there"
+    assert post.call_count == 2
+
+
+def test_an_account_without_credits_is_an_error_with_its_cause_and_not_retried(client, app, token, monkeypatch, caplog):
+    post = _provider_replies(monkeypatch, app, (429, {"error": {"code": "insufficient_quota"}}))
+    response = _preview(client, token)
+    assert response.status_code == 502 and post.call_count == 1
+    assert "insufficient_quota" not in response.get_data(as_text=True)
+    assert any(r.levelname == "ERROR" and "insufficient_quota" in r.getMessage() for r in caplog.records)
+
+
+def test_the_days_first_two_requests_at_once_both_get_the_challenge(client, app, token, monkeypatch):
+    from unittest.mock import Mock
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.routes import daily_challenges
+
+    # The other request created today's rows first: this one hits the unique key once.
+    today = Mock(side_effect=[IntegrityError("INSERT", {}, Exception("Duplicate entry")), {"all_completed": False, "activities": []}])
+    monkeypatch.setattr(daily_challenges, "today_status", today)
+    response = invoke(client, "daily_challenge_today", {"authToken": token})
+    assert response.status_code == 200 and response.get_json()["all_completed"] is False
+    assert today.call_count == 2
+
+
+def test_a_daily_challenge_that_keeps_failing_is_a_clean_503(client, app, token, monkeypatch):
+    from unittest.mock import Mock
+
+    from sqlalchemy.exc import OperationalError
+
+    from app.routes import daily_challenges
+
+    monkeypatch.setattr(daily_challenges, "today_status", Mock(side_effect=OperationalError("SELECT", {}, Exception("gone away"))))
+    response = invoke(client, "daily_challenge_today", {"authToken": token})
+    assert response.status_code == 503

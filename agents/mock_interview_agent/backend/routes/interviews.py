@@ -92,6 +92,13 @@ def _apply_unanswered_score_adjustment(result, rows):
 # Answers re-evaluated per request when one request for every answer comes
 # back incomplete (long interviews: 15 answers in one reply).
 EVALUATION_CHUNK_SIZE = 5
+# The gateway gives end_interview 180 seconds, and one AI call can take a minute
+# when OpenAI is slow (20 seconds, three tries). No new evaluation call starts
+# after EVALUATION_BUDGET_SECONDS, and the final one only starts before
+# FINAL_EVALUATION_LATEST_START_SECONDS: past those the learner gets a clean
+# "retry", which resumes from the verdicts already saved.
+EVALUATION_BUDGET_SECONDS = 100
+FINAL_EVALUATION_LATEST_START_SECONDS = 110
 
 
 def _unanswered(row):
@@ -159,17 +166,20 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
     (with one retry each). Fails only if an answered question still has no
     valid verdict."""
     results = {}
+    started = time.monotonic()
     try:
         results.update(_evaluate_chunk(interview_row, interview_id, pending_rows))
     except Exception:
         logger.exception("Batch interview evaluation failed for interview %s; retrying in smaller groups", interview_id)
     for attempt in range(2):
         missing = [row for row in pending_rows if int(row["id"]) not in results]
-        if not missing:
+        if not missing or time.monotonic() - started >= EVALUATION_BUDGET_SECONDS:
             break
         logger.warning("Re-evaluating %s answer(s) in groups of %s (attempt %s) for interview %s",
                        len(missing), EVALUATION_CHUNK_SIZE, attempt + 1, interview_id)
         for start in range(0, len(missing), EVALUATION_CHUNK_SIZE):
+            if time.monotonic() - started >= EVALUATION_BUDGET_SECONDS:
+                break
             try:
                 results.update(_evaluate_chunk(interview_row, interview_id, missing[start:start + EVALUATION_CHUNK_SIZE]))
             except Exception:
@@ -182,6 +192,14 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
     missing = [row["id"] for row in pending_rows if int(row["id"]) not in results]
     if missing:
         logger.error("Interview %s: no valid evaluation for question(s) %s", interview_id, missing)
+        # Keep what was graded, so a retry only asks about the rest.
+        for row in pending_rows:
+            item = results.get(int(row["id"]))
+            if item and item.get("verdict") is not None:
+                db.query(
+                    "UPDATE interview_details SET verdict=%s, verdict_reason=%s, ideal_answer=%s, processing_status='evaluated' WHERE id=%s",
+                    (item["verdict"], item.get("reason"), item.get("ideal_answer"), row["id"]),
+                )
         return None, f"No valid evaluation for {len(missing)} answer(s)."
     for item in results.values():
         if item.get("verdict") is None and not item.get("ideal_answer"):
@@ -613,6 +631,7 @@ def daily_usage(student_id):
 
 @interviews_bp.route("/end_interview", methods=["POST"])
 def end_interview():
+    request_started = time.monotonic()
     data = request.get_json(silent=True) or {}
     interview_id = positive_int(data.get("interview_id"), "interview_id")
     set_log_context(interview_id=interview_id)
@@ -753,6 +772,12 @@ def end_interview():
         and row.get("answer") is not None
         and not row.get("timed_out")
     ]
+    if time.monotonic() - request_started >= FINAL_EVALUATION_LATEST_START_SECONDS:
+        log(logging.WARNING, "final_interview_evaluation_deferred", "Evaluation was slow; asking the learner to retry for the report")
+        return jsonify({
+            "error": "Final evaluation is temporarily unavailable. Please retry.",
+            "retryable": True,
+        }), 503
     try:
         with track_ai_usage(
             student_id=interview_row["student_id"],
@@ -1021,11 +1046,8 @@ def active_interview(student_id):
     payload = active_interview_payload(student_id)
     if not payload:
         return jsonify({"active": False})
-    if not payload["active"]:
-        return jsonify({
-            **payload,
-            "error": "The active interview has no recoverable question.",
-        }), 409
+    # Without a question to show (active: false) the interview is waiting for its
+    # report or its next question: a normal state, which the page and Boss resume.
     return jsonify(payload)
 
 
