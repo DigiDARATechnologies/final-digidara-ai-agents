@@ -554,6 +554,19 @@ def missing_material(question):
     return bool(_NEEDS_MATERIAL.search(question or "")) and not _HAS_MATERIAL.search(question or "")
 
 
+# "If A > B, B D": a comparison question where two letters sit side by side with
+# nothing between them. Saved questions were damaged this way by the old tag
+# stripping, and the bank and the stored-question filler both validate before
+# reuse, so this also stops those being served again.
+_RELATION_SYMBOL = re.compile(r"[<>≤≥≠]")
+_LOST_RELATION = re.compile(r"(?<![A-Za-z0-9])[A-Z]\s+[A-Z0-9](?![A-Za-z0-9])")
+
+
+def missing_relation(question):
+    text = re.sub(r"```.*?```", " ", question or "", flags=re.DOTALL)
+    return bool(_RELATION_SYMBOL.search(text)) and bool(_LOST_RELATION.search(text))
+
+
 def validate_generated_item(item, slot, internal_values=()):
     selected_language=str(slot.get("technical_language") or "python").lower()
     if not isinstance(item, dict):
@@ -564,6 +577,8 @@ def validate_generated_item(item, slot, internal_values=()):
     if not isinstance(item, dict) or not required.issubset(item): raise ValueError("missing required fields")
     if missing_material(item["question"]):
         raise ValueError("question refers to a passage, table or data it does not include; put it in the question, or ask something self-contained")
+    if missing_relation(item["question"]):
+        raise ValueError("question has two terms with no relation between them; state every comparison in full, such as B < C")
     options = item["options"]
     if not isinstance(options, dict) or set(options) != {"A","B","C","D"}: raise ValueError("options must be A-D")
     technical=slot["category"]=="Technical Aptitude"

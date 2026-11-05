@@ -1,8 +1,10 @@
 import pytest
 from flask import Flask
 
-from backend.app.services.question_validation import _validate_assumptions_and_scope, content_hash, normalize_question_text, questions_are_near_duplicates, validate_generated_item
+from backend.app.services.question_validation import _validate_assumptions_and_scope, content_hash, missing_relation, normalize_question_text, questions_are_near_duplicates, validate_generated_item
 from backend.app.services.test_generation import build_category_slots, demo_questions
+from backend.app.utils.explanation import normalize_explanation
+from backend.app.utils.security import clean_text
 
 
 @pytest.mark.parametrize("first,second",[
@@ -114,3 +116,51 @@ def test_a_question_needs_the_passage_or_data_it_refers_to():
         "In a pie chart, if 40% of the chart represents sales, what is the angle?",
     ):
         assert not missing_material(question), question
+
+
+@pytest.mark.parametrize("text",[
+    "If A > B, B < C, C > D, which of the following is true?",
+    "If x < 5 and y > 3, what is true?",
+    "If x<y and y>z, which holds?",
+    "Is A<B>C possible?",
+    "Which call creates a List<String> in Java?",
+    "A <B, C> D",
+])
+def test_comparisons_are_not_mistaken_for_html_tags(text):
+    assert clean_text(text)==text
+
+
+@pytest.mark.parametrize("text,cleaned",[
+    ("<b>Bold</b> word","Bold word"),
+    ("Line<br/>break","Line<br/>break"),
+    ("Line <br/> break","Line break"),
+    ('<a href="https://x.test" target=_blank>link</a>',"link"),
+    ("<script>alert(1)</script>x","alert(1)x"),
+    ("<img src=x onerror=alert(1)>y","y"),
+    ("<svg/onload=alert(1)>y","y"),
+])
+def test_real_html_tags_are_still_removed(text,cleaned):
+    assert clean_text(text)==cleaned
+
+
+def test_explanation_keeps_comparisons():
+    assert normalize_explanation("Step 1: B < C and C > D. Step 2: so B < C.")=="Step 1: B < C and C > D.\nStep 2: so B < C."
+
+
+def test_a_comparison_question_must_state_every_relation():
+    for question in ("If A > B, B D, which of the following is true?","If P < Q, Q 5, which is true?"):
+        assert missing_relation(question), question
+    for question in (
+        "If A > B, B < C, C > D, which of the following is true?",
+        "If A > B, B >= D, which of the following is true?",
+        "Which of A B C D is largest?",
+        "In a pie chart, if 40% of the chart represents sales, what is the angle?",
+    ):
+        assert not missing_relation(question), question
+
+
+def test_a_saved_question_with_a_lost_relation_is_rejected():
+    slot={"category":"Logical Reasoning","topic":"Symbolic & Coded Inequalities","difficulty":"Medium"}
+    item={**slot,"question":"If A > B, B D, which of the following is true?","options":{"A":"A > D","B":"B > D","C":"C < A","D":"D < B"},"correct_answer":"A","explanation":"A is greater than B, which is greater than D."}
+    with pytest.raises(ValueError,match="no relation"):
+        validate_generated_item(item,slot)
