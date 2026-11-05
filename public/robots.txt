@@ -18,4 +18,4 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
-Sitemap: https://skilldara.com/sitemap.xml
+Sitemap: https://www.skilldara.com/sitemap.xml
