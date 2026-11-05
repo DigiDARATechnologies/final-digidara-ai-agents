@@ -1231,6 +1231,19 @@ def _meaningful_demo_item(slot, index=0):
             "Testing compares the change with expected behavior and helps catch regressions before release.")
 
 
+# Differently built sentences for a repeated local fixture: one sentence with only
+# its topic changed still counts as a near duplicate of itself when two topics are
+# alike ("Cloud Architecture", "Cloud Computing Basics").
+_DEMO_CASE_WORDINGS=(
+    "Case {case} is a {topic} review with four candidate statements. Which statement is correct for this review?",
+    "During a {topic} audit, a team lists four claims. Which claim holds up?",
+    "An engineer studying {topic} writes down these notes. Which note is accurate?",
+    "Pick the answer a {topic} specialist would accept from these options.",
+    "Four learners each explain {topic} differently. Whose explanation should the class trust?",
+    "Your mentor quizzes you on {topic}: what would you answer?",
+)
+
+
 def demo_questions(slots, avoid_questions=None):
     templates=[
       ("A shop marks an item at ₹800 and offers a 15% discount. What is the selling price?",{"A":"₹640","B":"₹680","C":"₹700","D":"₹720"},"B","Step 1: 15% of ₹800 = ₹120. Step 2: ₹800 - ₹120 = ₹680. Step 3: Answer = ₹680."),
@@ -1308,14 +1321,13 @@ def demo_questions(slots, avoid_questions=None):
             # scenario before re-validating rather than publishing a duplicate
             # or failing an otherwise usable development assessment.
             if slot.get("category") != "Technical Aptitude":
-                question = (
-                        f"Case {i + 1} is a {slot['topic']} review with four candidate statements. "
-                        "Which statement is correct for this review?"
-                )
-                validated = validate_generated_item(
-                    {**slot, "question": question, "options": validated["options"],
-                     "correct_answer": validated["correct_answer"], "explanation": validated["explanation"]}, slot,
-                )
+                for wording in _DEMO_CASE_WORDINGS:
+                    validated = validate_generated_item(
+                        {**slot, "question": wording.format(case=i + 1, topic=slot["topic"]), "options": validated["options"],
+                         "correct_answer": validated["correct_answer"], "explanation": validated["explanation"]}, slot,
+                    )
+                    if not any(questions_are_near_duplicates(validated["question"], previous["question"]) for previous in result):
+                        break
             if any(questions_are_near_duplicates(validated["question"], previous["question"]) for previous in result):
                 raise ValueError(f"deterministic fallback could not produce a unique question for slot {i + 1}")
         result.append(validated)
