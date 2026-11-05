@@ -8,7 +8,7 @@ WORKDIR /app
 # Changing SECURITY_UPDATES rebuilds the step below, so `apt-get upgrade`
 # fetches current Debian security fixes instead of reusing a cached layer
 # (CI passes today's date; bump the default to refresh the servers' images).
-ARG SECURITY_UPDATES=2026-10-14
+ARG SECURITY_UPDATES=2026-11-05
 RUN echo "security updates: ${SECURITY_UPDATES}" \
     && apt-get update \
     && apt-get upgrade -y \

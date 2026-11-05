@@ -200,6 +200,38 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(batch.call_count, 1)
         self.assertEqual([item["question_id"] for item in result], [row["id"] for row in rows])
 
+    def test_evaluation_stops_within_its_time_budget_and_keeps_what_was_graded(self):
+        """A stalled OpenAI used to run past the gateway's 180 seconds: 504, no report."""
+        from routes.interviews import _batch_evaluations_or_error
+
+        rows = self._answered_rows(10)
+        interview = {"student_id": 1, "round_type": "technical", "subject": "Excel", "difficulty": "intermediate"}
+
+        def partly(_round, _subject, _difficulty, pairs):
+            return [{"question_id": pair["question_id"], "verdict": None if index else "correct", "reason": "r",
+                     "ideal_answer": "i"} for index, pair in enumerate(pairs)]
+
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", side_effect=partly) as batch,
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+            patch("routes.interviews.EVALUATION_BUDGET_SECONDS", 0),
+            patch("routes.interviews.db.query") as query,
+        ):
+            result, error = _batch_evaluations_or_error(interview, 7, rows)
+        self.assertIsNone(result)
+        self.assertIn("No valid evaluation", error)
+        self.assertEqual(batch.call_count, 1)  # no retries once the budget is spent
+        saved = [call for call in query.call_args_list if "UPDATE interview_details" in call.args[0]]
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0].args[1][-1], rows[0]["id"])
+
+    def test_an_interview_waiting_for_its_report_is_a_normal_answer(self):
+        waiting = {"active": False, "interview_id": 7, "awaiting_report": True, "needs_next_question": False}
+        with patch("routes.interviews.active_interview_payload", return_value=waiting):
+            response = create_app().test_client().get("/api/active_interview/1")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["awaiting_report"])
+
     def test_a_missing_verdict_is_asked_again_in_a_small_group(self):
         from routes.interviews import _batch_evaluations_or_error
 

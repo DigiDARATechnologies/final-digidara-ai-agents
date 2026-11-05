@@ -79,6 +79,21 @@ def test_local_category_fixture_produces_five_unique_sample_questions(category):
     assert all("local practice" not in question["question"].casefold() for question in questions)
 
 
+@pytest.mark.parametrize("topics",[
+    # Random draws that used to fail: reworded fixtures stayed near duplicates.
+    ["File Systems", "Network Topologies & Hardware Devices", "Computer Basics", "Software Types", "Cloud Computing Basics"],
+    ["Computer Organization", "System Security", "Advanced OSI vs TCP/IP Models", "IP Addressing", "Advanced Networking"],
+    ["CPU Scheduling Algorithms", "OSI vs TCP/IP Models", "Internet Basics", "Concurrency & Deadlocks", "Computer Basics"],
+])
+def test_alike_topics_still_get_five_different_sample_questions(topics):
+    app=Flask(__name__)
+    with app.app_context():
+        questions=demo_questions(build_category_slots("Computer Fundamentals","Beginner",topics=topics)[:5])
+    texts=[question["question"] for question in questions]
+    assert len(texts)==5
+    assert not any(questions_are_near_duplicates(first,second) for index,first in enumerate(texts) for second in texts[index+1:])
+
+
 def test_a_question_needs_the_passage_or_data_it_refers_to():
     import pytest
     from backend.app.services.question_validation import missing_material

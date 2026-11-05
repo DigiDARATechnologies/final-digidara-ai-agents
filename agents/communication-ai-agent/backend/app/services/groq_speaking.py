@@ -80,6 +80,24 @@ DAILY_FALLBACK_QUESTIONS = [
 GPT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 
 
+# OpenAI answers 429 with these when the account has no credits; retrying never helps.
+TRANSCRIPTION_QUOTA_CODES = {"insufficient_quota", "credit_balance_exhausted", "billing_hard_limit_reached"}
+
+
+def _transcription_error_code(response):
+    try:
+        error = response.json().get("error") or {}
+    except (ValueError, AttributeError):
+        return ""
+    return str(error.get("code") or error.get("type") or "") if isinstance(error, dict) else ""
+
+
+def _transcription_blip(response):
+    return response.status_code >= 500 or (
+        response.status_code == 429 and _transcription_error_code(response) not in TRANSCRIPTION_QUOTA_CODES
+    )
+
+
 def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", content_type="audio/webm", prompt=None):
     if not audio_bytes:
         raise ValueError("No audio bytes were provided for transcription")
@@ -122,19 +140,33 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         post_data["prompt"] = clean_prompt
         post_data["language"] = "en"
 
-    response = httpx.post(
-        endpoint_url,
-        headers={"Authorization": f"Bearer {api_key}"},
-        files={"file": (filename or "speaking-answer.webm", audio_bytes, content_type or "audio/webm")},
-        data=post_data,
-        timeout=45,
-    )
+    for attempt in range(2):
+        response = httpx.post(
+            endpoint_url,
+            headers={"Authorization": f"Bearer {api_key}"},
+            files={"file": (filename or "speaking-answer.webm", audio_bytes, content_type or "audio/webm")},
+            data=post_data,
+            timeout=45,
+        )
+        # A blip at the provider (5xx, a busy-minute 429) is tried once more.
+        if attempt or not _transcription_blip(response):
+            break
+        time.sleep(1)
     latency_ms = int((time.monotonic() - started) * 1000)
     if response.status_code >= 400:
-        current_app.logger.warning(
-            "%s audio transcription failed: status=%s latency_ms=%s body=%s",
+        code = _transcription_error_code(response)
+        if response.status_code == 400:
+            # The recording itself: too short, cut off, or not audio it can read.
+            current_app.logger.info("%s refused the recording: bytes=%s code=%s", provider_name, len(audio_bytes), code)
+            raise ValueError("I couldn't hear any words in that recording. Please try again or type your answer.")
+        # An account that cannot be used fails every recording until someone
+        # fixes it, so it is an error, with its cause, for Boss to report.
+        unusable = code in TRANSCRIPTION_QUOTA_CODES or response.status_code in (401, 403)
+        (current_app.logger.error if unusable else current_app.logger.warning)(
+            "%s audio transcription failed: status=%s code=%s latency_ms=%s body=%s",
             provider_name,
             response.status_code,
+            code,
             latency_ms,
             response.text[:500],
         )
