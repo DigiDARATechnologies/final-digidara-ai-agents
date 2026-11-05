@@ -1,0 +1,41 @@
+/* Styles for the public, crawlable pages (agents, pricing, colleges, FAQ). Light, plain, no scripts. */
+*{box-sizing:border-box}
+html{background:#f6f8fd}
+body{margin:0;font-family:"Plus Jakarta Sans","Plus Jakarta Sans Variable",Inter,"Segoe UI",system-ui,sans-serif;color:#1c2540;line-height:1.65;
+  background:radial-gradient(520px 360px at 8% 0%,rgba(139,123,255,.18),transparent 70%),radial-gradient(520px 380px at 100% 20%,rgba(94,200,255,.16),transparent 70%),#f6f8fd}
+a{color:#3a49d6;text-decoration:none}
+a:hover{text-decoration:underline}
+.sp-wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+.sp-nav{position:sticky;top:0;z-index:5;background:rgba(255,255,255,.92);border-bottom:1px solid #e3e7f2;backdrop-filter:blur(8px)}
+.sp-nav-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:68px}
+.sp-brand img{display:block;height:40px;width:auto}
+.sp-nav nav{display:flex;gap:22px;flex-wrap:wrap}
+.sp-nav nav a{color:#1c2540;font-weight:600;font-size:15px}
+.sp-btn{display:inline-block;padding:11px 22px;border-radius:12px;background:linear-gradient(120deg,#2851d8,#5b4fe0);color:#fff;font-weight:700;font-size:14.5px;box-shadow:0 12px 24px -14px rgba(60,60,200,.7)}
+.sp-btn:hover{text-decoration:none;filter:brightness(1.06)}
+.sp-main{padding-top:40px;padding-bottom:64px}
+.sp-crumbs{font-size:13.5px;color:#5b6577;margin-bottom:18px}
+h1{margin:10px 0 14px;font-size:clamp(30px,4.4vw,48px);line-height:1.1;letter-spacing:-.035em;font-weight:800;color:#17204a}
+h2{margin:36px 0 10px;font-size:24px;letter-spacing:-.025em;font-weight:800;color:#17204a}
+h3{margin:8px 0 6px;font-size:18px;letter-spacing:-.02em;font-weight:700;color:#17204a}
+p{margin:0 0 12px;color:#37415c}
+.sp-lead{font-size:19px;color:#4a5570;max-width:760px}
+.sp-pill{display:inline-block;padding:3px 12px;border-radius:999px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#4a3fd0;background:#ece9ff}
+.sp-list{padding-left:22px;margin:0 0 8px}
+.sp-list li{margin-bottom:8px;color:#37415c}
+.sp-chips{display:flex;flex-wrap:wrap;gap:10px;list-style:none;padding:0;margin:0}
+.sp-chips a{display:inline-block;padding:8px 16px;border-radius:999px;background:#fff;border:1px solid #dfe3f1;font-weight:600;font-size:14px}
+.sp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px;margin-top:26px}
+.sp-grid-4{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.sp-card{display:block;padding:22px;border-radius:20px;background:#fff;border:1px solid #e0e4f2;box-shadow:0 16px 32px -26px rgba(60,60,160,.55);color:inherit}
+a.sp-card:hover{text-decoration:none;transform:translateY(-2px);border-color:#b8b2ff}
+.sp-card p{margin:0;font-size:15px}
+.sp-price{font-size:32px;font-weight:800;letter-spacing:-.03em;color:#2851d8!important;margin:4px 0 6px!important}
+.sp-cta{margin-top:48px;padding:36px 28px;border-radius:24px;text-align:center;color:#fff;background:linear-gradient(120deg,#2851d8,#4a3fd0 60%,#7c4ddb)}
+.sp-cta h2{margin:0 0 8px;color:#fff}
+.sp-cta p{color:rgba(255,255,255,.88)}
+.sp-cta a:not(.sp-btn){color:#fff;text-decoration:underline}
+.sp-cta .sp-btn{background:#fff;color:#2b3fb8;box-shadow:none}
+.sp-foot{border-top:1px solid #e3e7f2;background:#fff;padding:28px 0;font-size:14px}
+.sp-foot p{margin:0 0 8px;color:#5b6577}
+@media (max-width:720px){.sp-nav nav{display:none}.sp-main{padding-top:28px}.sp-lead{font-size:17px}}
