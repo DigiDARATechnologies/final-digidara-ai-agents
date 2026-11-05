@@ -1,16 +1,16 @@
 # SkillDARA
 
-> SkillDARA (https://skilldara.com) is a platform of eight AI agents for students and professionals to upgrade their skills and get job-ready. It is built by DigiDARA Technologies. Start free with 25 coins.
+> SkillDARA (https://www.skilldara.com) is a platform of eight AI agents for students and professionals to upgrade their skills and get job-ready. It is built by DigiDARA Technologies. Start free with 25 coins.
 
 ## What it offers
-- [Coding Practice](https://skilldara.com/agents/coding-practice/): Practise coding with real test cases and an AI tutor.
-- [Aptitude Trainer](https://skilldara.com/agents/aptitude-trainer/): Quantitative, logical and verbal practice with explanations.
-- [Communication Coach](https://skilldara.com/agents/communication-coach/): Speaking, pronunciation and writing practice scored by AI.
-- [Mock Interview Agent](https://skilldara.com/agents/mock-interview/): Technical and HR mock interviews with feedback on every answer.
-- [Resume Builder](https://skilldara.com/agents/resume-builder/): Build an ATS-friendly resume in a guided workflow.
-- [Job Agent](https://skilldara.com/agents/job-agent/): Find jobs that match your profile, ranked by fit.
-- [Capstone Project Agent](https://skilldara.com/agents/capstone-project/): Take a project from topic to graded submission.
-- [AI Certification Agent](https://skilldara.com/agents/ai-certification/): Chat-based assessments and downloadable certificates.
+- [Coding Practice](https://www.skilldara.com/agents/coding-practice/): Practise coding with real test cases and an AI tutor.
+- [Aptitude Trainer](https://www.skilldara.com/agents/aptitude-trainer/): Quantitative, logical and verbal practice with explanations.
+- [Communication Coach](https://www.skilldara.com/agents/communication-coach/): Speaking, pronunciation and writing practice scored by AI.
+- [Mock Interview Agent](https://www.skilldara.com/agents/mock-interview/): Technical and HR mock interviews with feedback on every answer.
+- [Resume Builder](https://www.skilldara.com/agents/resume-builder/): Build an ATS-friendly resume in a guided workflow.
+- [Job Agent](https://www.skilldara.com/agents/job-agent/): Find jobs that match your profile, ranked by fit.
+- [Capstone Project Agent](https://www.skilldara.com/agents/capstone-project/): Take a project from topic to graded submission.
+- [AI Certification Agent](https://www.skilldara.com/agents/ai-certification/): Chat-based assessments and downloadable certificates.
 - One account for all agents, with chat history across devices.
 - For colleges: an organization dashboard, class and staff management, proctored assessments and reports.
 
@@ -21,10 +21,10 @@ Students preparing for placements, fresh graduates, job seekers and working prof
 Free to start (25 coins). One-time coin packs: Basic Rs 399 (250 coins), Standard Rs 799 (500 coins), Premium Rs 999 (750 coins). Coins never expire. Prices are before GST.
 
 ## Links
-- Home: https://skilldara.com/
-- All agents: https://skilldara.com/agents/
-- Pricing: https://skilldara.com/pricing/
-- For colleges: https://skilldara.com/for-colleges/
-- FAQ: https://skilldara.com/faq/
-- Login / sign up: https://skilldara.com/login
+- Home: https://www.skilldara.com/
+- All agents: https://www.skilldara.com/agents/
+- Pricing: https://www.skilldara.com/pricing/
+- For colleges: https://www.skilldara.com/for-colleges/
+- FAQ: https://www.skilldara.com/faq/
+- Login / sign up: https://www.skilldara.com/login
 - Contact: support@digidaraaiagents.com

@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLIC = ROOT / "public"
-SITE = "https://skilldara.com"
+SITE = "https://www.skilldara.com"
 TODAY = date.today().isoformat()
 SUPPORT = "support@digidaraaiagents.com"
 
