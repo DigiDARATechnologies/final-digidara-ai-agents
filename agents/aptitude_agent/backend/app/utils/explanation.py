@@ -2,7 +2,7 @@
 
 import re
 
-from .security import clean_text
+from .security import clean_text, strip_html_tags
 
 
 STEP_MARKER = re.compile(r"\bStep\s*#?\s*(\d+)\s*(?::|[.)-])\s*", re.IGNORECASE)
@@ -15,7 +15,7 @@ def normalize_explanation(value, maximum=3000):
     not rewrite reasoning or calculations; it changes only separators and the
     marker's presentation.
     """
-    raw=re.sub(r"<[^>]+>","",str(value or "")).replace("\r\n","\n").replace("\r","\n").strip()
+    raw=strip_html_tags(value).replace("\r\n","\n").replace("\r","\n").strip()
     matches=list(STEP_MARKER.finditer(raw))
     if len(matches)<2:
         return clean_text(raw,maximum)
