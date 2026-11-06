@@ -80,6 +80,11 @@ export default function JoinOrganization({ onJoined, onToast }: Props) {
         <h1>Join your college or company</h1>
         <p>Your organization gives you an 8-character code. Joining lets your trainers follow your progress and help you
           get job-ready faster.</p>
+        <ol className="org-steps">
+          <li><span>1</span><div><b>Get your code</b><small>Ask your college or company for the 8-character join code.</small></div></li>
+          <li><span>2</span><div><b>Enter it here</b><small>Pick your class details and confirm what you share.</small></div></li>
+          <li><span>3</span><div><b>Start tracking</b><small>Trainers see your progress and help you get job-ready.</small></div></li>
+        </ol>
       </div>
       <div className="rd-panel org-join-card">
         {pending ? (

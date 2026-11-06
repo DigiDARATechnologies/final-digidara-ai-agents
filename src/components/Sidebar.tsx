@@ -8,7 +8,6 @@ import LegalModal from "./LegalModal";
 import SearchChatsModal from "./SearchChatsModal";
 import ConfirmDialog from "./ConfirmDialog";
 import darkBgLogo from "../assets/skilldara-logo-dark.png";
-import lightBgLogo from "../assets/skilldara-logo.png";
 
 export interface SidebarProps {
   theme: "dark" | "light";
@@ -17,6 +16,8 @@ export interface SidebarProps {
   collapsed: boolean;
   mobileOpen: boolean;
   homeActive: boolean;
+  /** The page being shown, so its menu item is highlighted. */
+  activeView?: string;
   /** Assessments come from an organization: the item shows only for its members. */
   inOrganization?: boolean;
   chats: Chat[];
@@ -38,14 +39,19 @@ export interface SidebarProps {
   onDeleteChat: (chatId: string) => void;
 }
 
+const NAV_VIEW: Record<string, string> = {
+  "my-agents": "store", "learning-dashboard": "learning-dashboard", assessments: "assessments", courses: "courses",
+  readiness: "readiness", leaderboard: "leaderboard", organization: "organization", admin: "admin",
+};
+
 export default function Sidebar({
-  theme,
   onCloseMobile,
   planName,
   user,
   collapsed,
   mobileOpen,
   homeActive,
+  activeView,
   inOrganization = false,
   chats,
   currentChatId,
@@ -142,7 +148,7 @@ export default function Sidebar({
           <Logo
             variant={collapsed ? "icon" : "full"}
             size={collapsed ? 40 : 42}
-            src={collapsed ? undefined : theme === "dark" ? darkBgLogo : lightBgLogo}
+            src={collapsed ? undefined : darkBgLogo}
           />
         </button>
         <button className="icon-btn sidebar-close-mobile" onClick={onCloseMobile} aria-label="Close menu">
@@ -175,8 +181,9 @@ export default function Sidebar({
         </button>
       </div>
 
+      <div className="sidebar-scroll">
       <nav className="nav-list">
-        <button className="nav-item" onClick={() => onNavAction("my-agents")}>
+        <button className={`nav-item${NAV_VIEW["my-agents"] && NAV_VIEW["my-agents"] === activeView ? " active-tab" : ""}`} data-nav="my-agents" onClick={() => onNavAction("my-agents")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="3.5" y="3.5" width="7" height="7" rx="1.8" stroke="currentColor" strokeWidth="1.7" />
@@ -187,7 +194,7 @@ export default function Sidebar({
           </span>
           <span className="label">My Agents</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("learning-dashboard")}>
+        <button className={`nav-item${NAV_VIEW["learning-dashboard"] && NAV_VIEW["learning-dashboard"] === activeView ? " active-tab" : ""}`} data-nav="learning-dashboard" onClick={() => onNavAction("learning-dashboard")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="3.5" y="3.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.7" />
@@ -199,7 +206,7 @@ export default function Sidebar({
           <span className="label">My Dashboard</span>
         </button>
         {inOrganization && (
-          <button className="nav-item" onClick={() => onNavAction("assessments")}>
+          <button className={`nav-item${NAV_VIEW["assessments"] && NAV_VIEW["assessments"] === activeView ? " active-tab" : ""}`} data-nav="assessments" onClick={() => onNavAction("assessments")}>
             <span className="nav-icon">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <rect x="5" y="3.5" width="14" height="17" rx="2" stroke="currentColor" strokeWidth="1.7" />
@@ -209,7 +216,7 @@ export default function Sidebar({
             <span className="label">Assessments</span>
           </button>
         )}
-        <button className="nav-item" onClick={() => onNavAction("courses")}>
+        <button className={`nav-item${NAV_VIEW["courses"] && NAV_VIEW["courses"] === activeView ? " active-tab" : ""}`} data-nav="courses" onClick={() => onNavAction("courses")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <rect x="3.5" y="5" width="17" height="12" rx="2" stroke="currentColor" strokeWidth="1.7" />
@@ -218,7 +225,7 @@ export default function Sidebar({
           </span>
           <span className="label">Courses</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("readiness")}>
+        <button className={`nav-item${NAV_VIEW["readiness"] && NAV_VIEW["readiness"] === activeView ? " active-tab" : ""}`} data-nav="readiness" onClick={() => onNavAction("readiness")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.7" />
@@ -228,7 +235,7 @@ export default function Sidebar({
           </span>
           <span className="label">Job Readiness</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("leaderboard")}>
+        <button className={`nav-item${NAV_VIEW["leaderboard"] && NAV_VIEW["leaderboard"] === activeView ? " active-tab" : ""}`} data-nav="leaderboard" onClick={() => onNavAction("leaderboard")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
@@ -237,7 +244,7 @@ export default function Sidebar({
           </span>
           <span className="label">Leaderboard</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("organization")}>
+        <button className={`nav-item${NAV_VIEW["organization"] && NAV_VIEW["organization"] === activeView ? " active-tab" : ""}`} data-nav="organization" onClick={() => onNavAction("organization")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M4 20V8l8-4 8 4v12" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
@@ -246,7 +253,7 @@ export default function Sidebar({
           </span>
           <span className="label">Organization</span>
         </button>
-        <button className="nav-item" onClick={() => onNavAction("playground")}>
+        <button className={`nav-item${NAV_VIEW["playground"] && NAV_VIEW["playground"] === activeView ? " active-tab" : ""}`} data-nav="playground" onClick={() => onNavAction("playground")}>
           <span className="nav-icon">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M8.5 7L3.5 12l5 5M15.5 7l5 5-5 5M13.5 5l-3 14" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
@@ -255,7 +262,7 @@ export default function Sidebar({
           <span className="label">Code Playground</span>
         </button>
         {user.isAdmin && (
-          <button className="nav-item" onClick={() => onNavAction("admin")}>
+          <button className={`nav-item${NAV_VIEW["admin"] && NAV_VIEW["admin"] === activeView ? " active-tab" : ""}`} data-nav="admin" onClick={() => onNavAction("admin")}>
             <span className="nav-icon">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 3l7.5 3v5.5c0 4.5-3.1 8.2-7.5 9.5-4.4-1.3-7.5-5-7.5-9.5V6L12 3z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
@@ -332,6 +339,7 @@ export default function Sidebar({
             );
           })
         )}
+      </div>
       </div>
 
       {openMenuChat && menuAnchor && !chatToDelete && createPortal(
