@@ -68,11 +68,11 @@
   --sidebar-bg:#f7f8fa; --sidebar-border:#e3e6ec; --sidebar-text:#1c2434;
   --sidebar-text-dim:#5b6577; --sidebar-text-faint:#8b94a5;
   --sidebar-hover:rgba(16,24,40,.06); --sidebar-active:rgba(40,81,216,.10); --sidebar-card:#ffffff;
-  --canvas-bg:#ffffff; --canvas-bg-soft:#f4f5f8; --canvas-border:#e3e6ec;
-  --canvas-text:#1c2434; --canvas-text-dim:#5b6577; --canvas-text-faint:#8b94a5;
+  --canvas-bg:#ffffff; --canvas-bg-soft:#f3f5ff; --canvas-border:#e1e5f5;
+  --canvas-text:#17154a; --canvas-text-dim:#5b6577; --canvas-text-faint:#8b94a5;
   --canvas-accent-soft:rgba(40,81,216,.10);
-  --surf-0:#f7f8fa; --surf-1:#ffffff; --surf-2:#f4f5f8; --line-1:#dfe3ea; --line-2:#e9ecf1;
-  --tx-1:#1c2434; --tx-2:#5b6577; --tx-3:#8b94a5; --track:#d5dbe4; --btn-neutral:#1c2434;
+  --surf-0:#f6f7ff; --surf-1:#ffffff; --surf-2:#f3f5ff; --line-1:#e1e5f5; --line-2:#e9ecf8;
+  --tx-1:#17154a; --tx-2:#575d80; --tx-3:#8b90ad; --track:#d9ddf0; --btn-neutral:#17154a;
   --ov-1:rgba(16,24,40,.05); --ov-2:rgba(16,24,40,.08); --ov-3:rgba(16,24,40,.14);
   --ok:#16813c; --err:#c0392b; --cy:#1f7fa8; --accent3:#2f56c9;
   --gold:#c98a0a;
@@ -147,7 +147,7 @@
 html,body,#root{height:100%;}
 body{
   margin:0;
-  font-family:'Inter Variable','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-family:'Plus Jakarta Sans Variable','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   background:var(--page-bg);
   color:var(--text);
   -webkit-font-smoothing:antialiased;
@@ -1473,8 +1473,8 @@ body.glow-off .send-btn:hover{
    numerals wherever figures line up (stats, timers, tables, billing).
    Kept last so it refines earlier component rules without changing layout. */
 body{
-  font-family:'Inter Variable','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
-  font-feature-settings:'cv11','ss01','calt','kern';
+  font-family:'Plus Jakarta Sans Variable','Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-feature-settings:'kern';
   font-optical-sizing:auto;
   letter-spacing:-.006em;
   line-height:1.5;
@@ -2614,3 +2614,163 @@ body:has(.modal-overlay.open) .boss-fab{display:none}
 .boss-repair.failed{background:#fff7ed;color:#9a3412}
 .agent-dashboard{box-sizing:border-box;overflow-x:hidden}
 .agent-dashboard .chat-options,.agent-dashboard .chat-option-link{box-sizing:border-box;width:100%;max-width:100%;min-width:0;white-space:normal}
+
+
+/* ===== Light theme: soft lavender page, pastel glows, indigo text (matches the landing page) ===== */
+:root[data-theme="light"]{
+  --page-bg:#f6f7ff; --accent-grad:linear-gradient(110deg,#2851d8 0%,#6d4fe0 100%); --accent-soft:#eceeff;
+  --shadow-md:0 10px 30px rgba(60,70,170,.10); --shadow-lg:0 22px 50px rgba(60,70,170,.16);
+}
+:root[data-theme="light"] body{
+  background:
+    radial-gradient(640px 420px at 0% 0%,rgba(139,123,255,.16),transparent 70%),
+    radial-gradient(560px 420px at 100% 12%,rgba(94,200,255,.16),transparent 70%),
+    radial-gradient(520px 380px at 70% 100%,rgba(255,143,199,.12),transparent 70%),
+    #f6f7ff;
+  background-attachment:fixed;
+}
+h1,h2,h3,h4{ letter-spacing:-.025em; }
+
+/* ===== Light redesign: Admin, Help pages (release notes, contact, bug report) ===== */
+:root[data-theme="light"] .admin-shell-nav{ background:linear-gradient(180deg,#f3f2ff,#f6f7ff); border-right-color:#e1e5f5; }
+:root[data-theme="light"] .admin-shell-nav-item.active{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; border-color:transparent; box-shadow:0 10px 20px -12px rgba(60,70,200,.7); }
+.admin-shell-nav-item{ border-radius:12px; }
+.admin-shell-content-head h2{ font-size:26px; font-weight:700; letter-spacing:-.035em; }
+.admin-kpi,.admin-automation-card,.admin-chart{ border-radius:18px; background:var(--surf-1); border-color:var(--line-1); box-shadow:0 14px 30px -26px rgba(60,70,170,.55); }
+.admin-kpi strong{ color:var(--accent1); font-weight:800; letter-spacing:-.03em; }
+.admin-chart-col span.has-value{ background:linear-gradient(180deg,#7c5cff,#2851d8); }
+.admin-tab.active{ color:var(--accent1); border-bottom-color:var(--accent1); }
+.hp-page{ background:radial-gradient(520px 320px at 100% 0%,rgba(124,92,255,.12),transparent 70%),radial-gradient(480px 300px at 0% 10%,rgba(94,200,255,.14),transparent 70%); }
+.hp-title{ font-size:38px; font-weight:700; background:linear-gradient(100deg,#17154a,#4a3fd0); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.hp-group{ border-radius:22px; border:1px solid var(--line-1); background:var(--surf-1); box-shadow:0 18px 40px -32px rgba(60,70,170,.55); }
+.hp-search{ border-radius:14px; border-color:var(--line-1); background:var(--surf-1); }
+.hp-wf-num{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; }
+
+/* Organization */
+.og-head h1,.og-member-title{ font-weight:700; letter-spacing:-.035em; }
+.og-head{ padding:24px 28px; border-radius:24px; color:#fff; align-items:center;
+  background:radial-gradient(360px 220px at 100% 0%,rgba(255,255,255,.24),transparent 70%),radial-gradient(300px 200px at 0% 100%,rgba(94,200,255,.35),transparent 70%),linear-gradient(120deg,#2851d8,#4a3fd0 55%,#7c4ddb);
+  box-shadow:0 22px 44px -28px rgba(60,60,200,.7); }
+.og-head h1,.og-head .rd-kicker,.og-head .rd-muted{ color:#fff; }
+.og-head .rd-kicker{ background:rgba(255,255,255,.16); }
+.og-stat,.og-code,.og-table-wrap,.og-start .rd-panel{ border-radius:20px; border-color:var(--line-1); box-shadow:0 14px 32px -26px rgba(60,70,170,.55); }
+.og-stat b{ color:var(--accent1); font-weight:800; }
+.og-table th{ background:var(--surf-2); }
+.og-band{ border-radius:999px; }
+
+/* ===== Softer banners: pastel gradient with dark text (Leaderboard, Job Readiness, My Dashboard, Organization) ===== */
+html body .lb-head, html body .lb-page .rd-hero, html body .ld-head, html body .og-head{
+  color:#17154a; border:1px solid #e1e5f5;
+  background:
+    radial-gradient(420px 240px at 95% 0%, rgba(255,143,199,.38), transparent 70%),
+    radial-gradient(420px 260px at 0% 100%, rgba(94,200,255,.38), transparent 70%),
+    radial-gradient(360px 220px at 55% 0%, rgba(139,123,255,.30), transparent 70%),
+    linear-gradient(120deg,#f1f0ff 0%,#eaf3ff 55%,#fdeef7 100%);
+  box-shadow:0 24px 48px -36px rgba(60,70,170,.5); }
+html body .lb-head h2, html body .lb-page .rd-hero h1, html body .ld-head h1, html body .og-head h1{ color:#17154a; }
+html body .ld-head p, html body .lb-page .rd-hero .rd-muted, html body .lb-page .rd-hero .rd-how, html body .lb-page .rd-hero .rd-how summary, html body .og-head .rd-muted{ color:#575d80; }
+html body .lb-head .rd-kicker, html body .lb-page .rd-hero .rd-kicker, html body .ld-kicker, html body .og-head .rd-kicker{ background:#fff; border:1px solid #d9defa; color:#3b3fb8; }
+html body .lb-head::after, html body .lb-page .rd-hero::after{ opacity:.10; }
+html body .lb-head .lb-switch, html body .ld-switch{ background:#fff; border-color:#d9defa; }
+html body .lb-head .lb-switch button, html body .ld-switch button{ color:#575d80; }
+html body .lb-head .lb-switch button.on, html body .ld-switch button.on{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; }
+html body .lb-page .rd-hero .btn-primary{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; box-shadow:0 12px 22px -12px rgba(60,70,200,.7); }
+html body .lb-page .rd-hero .btn-outline{ background:#fff; color:#2b3fb8; border-color:#d9defa; }
+html body .lb-page .rd-hero .btn-outline:hover{ background:#f3f2ff; color:#2b3fb8; }
+html body .lb-page .rd-hero .rd-ring{ box-shadow:0 18px 36px -20px rgba(60,70,200,.5); border:1px solid #e1e5f5; }
+
+/* ===== My Agents (store): airy hero, pill tabs, lifted rounded cards (styling only) ===== */
+.store-hero{ padding:60px 24px 30px;
+  background:
+    radial-gradient(520px 300px at 8% 10%, rgba(139,123,255,.22), transparent 70%),
+    radial-gradient(520px 320px at 95% 20%, rgba(94,200,255,.22), transparent 70%),
+    radial-gradient(420px 260px at 55% 100%, rgba(255,143,199,.16), transparent 70%); }
+.store-hero h1{ font-size:clamp(34px,4.4vw,52px); font-weight:600; letter-spacing:-.04em; }
+.search-bar{ max-width:640px; padding:15px 24px; border-radius:999px; background:var(--surf-1,#fff); border-color:var(--line-1); box-shadow:0 18px 36px -26px rgba(60,70,170,.55); }
+.tabs{ border-bottom:0; gap:8px; }
+.tab-btn{ border:1px solid var(--line-1); border-radius:999px; padding:9px 18px; margin-bottom:0; background:var(--surf-1,#fff); }
+.tab-btn:hover{ border-color:var(--accent1); }
+.tab-btn.active{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; border-color:transparent; box-shadow:0 12px 22px -12px rgba(60,70,200,.7); }
+.store-body{ max-width:1320px; }
+.grid-agents{ gap:18px; }
+.card{ background:var(--surf-1,#fff); border-color:var(--line-1); border-radius:22px; padding:20px;
+  box-shadow:0 16px 34px -28px rgba(60,70,170,.6); }
+.card::before{ content:""; position:absolute; left:0; right:0; top:0; height:4px; background:var(--card-accent, linear-gradient(90deg,#2851d8,#7c5cff)); opacity:.9; }
+.card:hover{ border-color:#b9c2f3; box-shadow:0 26px 46px -28px rgba(60,70,200,.55); }
+.card-icon{ border-radius:16px; }
+.card-body h3{ font-weight:700; letter-spacing:-.02em; }
+.pin{ background:var(--accent-soft,#eceeff); border-color:transparent; color:var(--accent1); }
+
+/* ===== Profile: gradient avatar, floating stat cards, white section cards (styling only) ===== */
+.pv-page:not(.lb-page) .pv-inner{ max-width:1040px; }
+.pv-head{ position:relative; padding:34px 20px 30px; margin:6px 0 26px; border-radius:30px; border:1px solid #e1e5f5;
+  background:radial-gradient(420px 240px at 95% 0%,rgba(255,143,199,.34),transparent 70%),radial-gradient(420px 260px at 0% 100%,rgba(94,200,255,.34),transparent 70%),radial-gradient(360px 220px at 55% 0%,rgba(139,123,255,.26),transparent 70%),linear-gradient(120deg,#f1f0ff,#eaf3ff 55%,#fdeef7);
+  box-shadow:0 24px 48px -36px rgba(60,70,170,.5); }
+.pv-avatar{ background:linear-gradient(135deg,#2851d8,#7c5cff); box-shadow:0 0 0 5px #fff, 0 22px 44px -16px rgba(60,70,200,.55); }
+.pv-head h1{ font-weight:700; letter-spacing:-.04em; color:#17154a; }
+.pv-handle{ color:#575d80; }
+.pv-stats{ border-radius:24px; border-color:var(--line-1); padding:24px 12px; box-shadow:0 20px 40px -30px rgba(60,70,170,.55); }
+.pv-stats > div{ border-radius:16px; }
+.pv-stats > div + div{ border-left:1px solid var(--line-2); }
+.pv-stats b{ font-size:26px; font-weight:800; letter-spacing:-.03em; background:linear-gradient(100deg,#2851d8,#7c5cff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.pv-section{ padding:22px 24px; border:1px solid var(--line-1); border-radius:24px; background:var(--surf-1); box-shadow:0 18px 38px -32px rgba(60,70,170,.5); }
+.pv-section h2{ font-size:18px; font-weight:700; letter-spacing:-.025em; }
+.pv-range button.active{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; }
+.pv-cell{ border-radius:4px; background:#eef0fb; }
+.pv-cell.l1{ background:#cdd6ff; } .pv-cell.l2{ background:#9aa9f7; } .pv-cell.l3{ background:#6b7fee; } .pv-cell.l4{ background:#3b4fd8; }
+.pv-bars span.on{ background:linear-gradient(180deg,#7c5cff,#2851d8); }
+
+/* ===== Courses: lifted tiles with gradient top edge ===== */
+.crs-tile{ position:relative; overflow:hidden; padding:22px 20px 18px; border-radius:22px; border:1px solid var(--line-1); background:var(--surf-1); box-shadow:0 16px 34px -28px rgba(60,70,170,.6); transition:transform .18s, box-shadow .18s, border-color .18s; }
+.crs-tile::before{ content:""; position:absolute; left:0; right:0; top:0; height:5px; background:linear-gradient(90deg,#2851d8,#7c5cff 60%,#ef6aa8); }
+.crs-tile:hover{ transform:translateY(-3px); border-color:#b9c2f3; box-shadow:0 26px 46px -28px rgba(60,70,200,.55); }
+.crs-tile h2{ font-weight:700; letter-spacing:-.025em; font-size:17px; }
+.crs-grid{ gap:18px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+.ld-page:has(.crs-grid) .ld-inner, .ld-page:has(.crs-layout) .ld-inner{ max-width:1320px; }
+.crs-side{ border-radius:22px; }
+.crs-video{ border-radius:20px; box-shadow:0 24px 48px -28px rgba(20,20,80,.6); }
+
+/* ===== Chat home: glow backdrop, larger composer, pastel agent chips ===== */
+.home-landing{ background:radial-gradient(640px 420px at 12% 8%,rgba(139,123,255,.16),transparent 70%),radial-gradient(620px 420px at 92% 18%,rgba(94,200,255,.18),transparent 70%),radial-gradient(520px 360px at 55% 100%,rgba(255,143,199,.14),transparent 70%); }
+.home-landing .landing-center{ max-width:780px; }
+.home-landing .landing-center h1{ font-size:clamp(32px,4vw,46px); font-weight:600; letter-spacing:-.04em; background:linear-gradient(100deg,#17154a 10%,#3b3fb8 60%,#7c4ddb); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.home-subtitle{ font-size:17px; }
+.home-composer{ border-radius:28px; padding:20px 18px 14px; border-color:#dfe3f7; background:#fff; box-shadow:0 30px 60px -36px rgba(60,70,200,.55), 0 0 0 6px rgba(124,92,255,.05); }
+.home-send-btn{ width:42px; height:42px; background:linear-gradient(135deg,#2851d8,#6d4fe0); box-shadow:0 12px 22px -10px rgba(60,70,200,.8); }
+.home-chips{ max-width:760px; gap:12px; }
+.home-chip{ padding:10px 18px; background:#fff; border-color:#e1e5f5; box-shadow:0 12px 24px -20px rgba(60,70,170,.6); font-weight:600; }
+
+/* ===== Multicolour banners: vivid mesh gradients, white text, a different palette per page ===== */
+html body .lb-head, html body .lb-page .rd-hero, html body .ld-head, html body .og-head, html body .pv-head{
+  --b1:#2347c9; --b2:#8a4fe0; --b3:#ff5fa2; --b4:#ffb02e;
+  color:#fff; border:0;
+  background:
+    radial-gradient(520px 320px at 100% 0%, var(--b4), transparent 62%),
+    radial-gradient(480px 340px at 78% 110%, var(--b3), transparent 64%),
+    radial-gradient(520px 360px at 0% 100%, var(--b2), transparent 66%),
+    linear-gradient(115deg, var(--b1), var(--b2));
+  box-shadow:0 30px 60px -36px var(--b2); }
+/* Leaderboard: gold, pink, violet, blue */
+html body .lb-head{ --b1:#2a4bd7; --b2:#7b3fe4; --b3:#ff4f9a; --b4:#ffb62e; }
+/* Job Readiness: teal, blue, violet, pink */
+html body .lb-page .rd-hero{ --b1:#0e9aa7; --b2:#3b5bdb; --b3:#a24bf0; --b4:#ff7ab8; }
+/* My Dashboard and Courses: sky, indigo, green, amber */
+html body .ld-head{ --b1:#1f6feb; --b2:#4f46e5; --b3:#10b3a3; --b4:#ffc04d; }
+/* Organization: violet, magenta, orange */
+html body .og-head{ --b1:#5b3fe0; --b2:#c03fd8; --b3:#ff6b6b; --b4:#ffa94d; }
+/* Profile: indigo, cyan, pink, gold */
+html body .pv-head{ --b1:#3b4fe0; --b2:#14a6d8; --b3:#ff5fa2; --b4:#ffc04d; }
+html body .lb-head h2, html body .lb-page .rd-hero h1, html body .ld-head h1, html body .og-head h1, html body .pv-head h1{ color:#fff; text-shadow:0 2px 14px rgba(20,10,80,.25); }
+html body .ld-head p, html body .lb-page .rd-hero .rd-muted, html body .lb-page .rd-hero .rd-how, html body .lb-page .rd-hero .rd-how summary,
+html body .og-head .rd-muted, html body .pv-handle, html body .pv-head .pv-dot{ color:rgba(255,255,255,.92); }
+html body .lb-head .rd-kicker, html body .lb-page .rd-hero .rd-kicker, html body .ld-kicker, html body .og-head .rd-kicker{ background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.5); color:#fff; backdrop-filter:blur(6px); }
+html body .lb-head::after, html body .lb-page .rd-hero::after{ opacity:.22; }
+html body .lb-head .lb-switch, html body .ld-switch{ background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.45); }
+html body .lb-head .lb-switch button, html body .ld-switch button{ color:rgba(255,255,255,.9); }
+html body .lb-head .lb-switch button.on, html body .ld-switch button.on{ background:#fff; color:#3b3fb8; }
+html body .lb-page .rd-hero .btn-primary{ background:#fff; color:#3b3fb8; box-shadow:0 12px 22px -10px rgba(0,0,0,.4); }
+html body .lb-page .rd-hero .btn-outline{ background:rgba(255,255,255,.18); color:#fff; border-color:rgba(255,255,255,.55); }
+html body .lb-page .rd-hero .btn-outline:hover{ background:rgba(255,255,255,.3); color:#fff; }
+html body .lb-page .rd-hero .rd-ring{ border:0; box-shadow:0 22px 40px -16px rgba(20,10,90,.55); }
+html body .pv-head .plan-badge{ background:rgba(255,255,255,.9); }
+html body .pv-avatar{ box-shadow:0 0 0 5px rgba(255,255,255,.9), 0 22px 44px -16px rgba(20,10,90,.55); }

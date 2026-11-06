@@ -115,6 +115,12 @@ export default function Leaderboard({ defaultScope = "auto", onToast, compact = 
 
       {board && board.top.length > 0 && (
         <>
+          <div className="lb-stats">
+            <div><small>Ranked</small><strong>{board.total}</strong></div>
+            <div><small>Top score</small><strong>{Math.round(board.top[0].score)}</strong></div>
+            <div><small>Average</small><strong>{Math.round(board.entries.reduce((sum, e) => sum + e.score, 0) / Math.max(1, board.entries.length))}</strong></div>
+            <div className="mine"><small>Your rank</small><strong>{board.me ? `#${board.me.rank}` : "—"}</strong></div>
+          </div>
           {featured && (
             <div className={`lb-spotlight${featured.new_in_top ? " new" : ""}`} aria-live="polite" key={featured.user_id}>
               <span className="lb-spot-medal" aria-hidden="true">{MEDALS[featured.rank - 1]}</span>

@@ -403,7 +403,7 @@ export default function ReadinessView({ summary, onSummaryChange, onBack, onToas
   const membership = summary.membership;
 
   return (
-    <div className="pv-page rd-page">
+    <div className="pv-page rd-page lb-page">
       <div className="pv-inner">
         <button className="hp-back" onClick={onBack}>← Back</button>
 

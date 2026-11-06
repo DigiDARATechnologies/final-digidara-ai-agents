@@ -6,6 +6,7 @@ import '@fontsource-variable/inter/opsz.css'
 import '@fontsource-variable/plus-jakarta-sans/index.css'
 import './index.css'
 import './components/Phase2.css'
+import './finalPass.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(

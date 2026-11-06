@@ -283,3 +283,54 @@ button.og-band { cursor: pointer; }
 .rd-role-item strong { text-transform: capitalize; }
 .rd-role-item small { overflow-wrap: anywhere; }
 .rd-role-item.current { border-style: dashed; }
+
+
+/* ===== Job Readiness: clean light cards, indigo-blue gradient, clear status colours ===== */
+.rd-page{ font-family:'Plus Jakarta Sans Variable','Plus Jakarta Sans',system-ui,sans-serif; }
+.rd-hero{ padding:26px 28px; border:1px solid var(--line-1); border-radius:24px; margin:10px 0 24px;
+  background:radial-gradient(420px 220px at 100% 0%,rgba(109,79,224,.14),transparent 70%),radial-gradient(360px 220px at 0% 100%,rgba(94,200,255,.16),transparent 70%),var(--surf-1);
+  box-shadow:0 18px 44px -30px rgba(60,70,170,.45); }
+.rd-hero h1{ font-weight:700; letter-spacing:-.035em; }
+.rd-kicker{ display:inline-block; padding:3px 11px; border-radius:999px; background:var(--accent-soft); color:var(--accent1); letter-spacing:.06em; font-weight:700; }
+.rd-ring-value{ stroke-linecap:round; }
+.rd-ring-track{ stroke:var(--line-1); }
+.rd-area,.rd-panel{ border:1px solid var(--line-1); border-radius:20px; padding:18px 18px 16px; position:relative; overflow:hidden;
+  box-shadow:0 12px 30px -24px rgba(60,70,170,.5); transition:transform .18s ease, box-shadow .18s ease; }
+.rd-area:hover{ transform:translateY(-2px); box-shadow:0 20px 40px -26px rgba(60,70,170,.55); }
+.rd-area::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--accent1); }
+.rd-area.status-assessed::before{ background:linear-gradient(180deg,#2851d8,#6d4fe0); }
+.rd-area.status-not_started::before,.rd-area.status-unavailable::before{ background:var(--track); }
+.rd-area h3{ font-weight:700; letter-spacing:-.02em; }
+.rd-area-score b{ font-weight:800; color:var(--accent1); letter-spacing:-.03em; }
+.rd-bar{ height:8px; background:var(--accent-soft); }
+.rd-bar span{ background:linear-gradient(90deg,#2851d8,#6d4fe0); }
+.rd-level{ border-radius:10px; padding:8px 2px; background:var(--surf-2); border-color:var(--line-1); }
+.rd-level.active{ background:linear-gradient(135deg,#2851d8,#6d4fe0); border-color:transparent; box-shadow:0 8px 18px -8px rgba(40,81,216,.6); }
+.rd-goal.current{ background:var(--accent-soft); outline:1px solid color-mix(in srgb,var(--accent1) 40%,transparent); border-radius:8px; }
+.rd-goal.done em{ color:#16a34a; }
+.rd-good li::marker{ color:#16a34a; } .rd-gap li::marker{ color:#d97706; }
+.tone-low{ --tone:#dc2626; } .tone-mid{ --tone:#d97706; } .tone-good{ --tone:#2563eb; } .tone-top{ --tone:#16a34a; }
+.rd-suggest{ border-radius:10px; }
+.rd-trend path{ stroke:#6d4fe0; }
+
+/* ===== Job Readiness v2: full width, gradient hero banner ===== */
+.pv-page.lb-page .pv-inner { max-width: 1320px; }
+.lb-page .rd-hero { position: relative; overflow: hidden; gap: 36px; padding: 36px 40px; border: 0; border-radius: 30px; color: #fff; margin: 10px 0 26px;
+  background:
+    radial-gradient(420px 260px at 92% 0%, rgb(255 255 255 / .28), transparent 70%),
+    radial-gradient(360px 260px at 0% 100%, rgb(94 200 255 / .42), transparent 70%),
+    radial-gradient(300px 200px at 55% 120%, rgb(255 143 199 / .45), transparent 70%),
+    linear-gradient(120deg, #2347c9 0%, #4a3fd0 50%, #8a4fe0 100%);
+  box-shadow: 0 30px 60px -38px rgb(60 60 200 / .75); }
+.lb-page .rd-hero::after { content: "🎯"; position: absolute; right: 36px; bottom: -22px; font-size: 130px; opacity: .14; transform: rotate(-10deg); pointer-events: none; }
+.lb-page .rd-hero h1 { color: #fff; font-size: clamp(30px, 3.6vw, 44px); font-weight: 700; letter-spacing: -.04em; }
+.lb-page .rd-hero .rd-muted, .lb-page .rd-hero .rd-how, .lb-page .rd-hero .rd-how summary { color: rgb(255 255 255 / .86); }
+.lb-page .rd-hero .rd-kicker { background: rgb(255 255 255 / .16); border: 1px solid rgb(255 255 255 / .38); color: #fff; }
+.lb-page .rd-hero .rd-ring { padding: 10px; border-radius: 50%; background: #fff; box-shadow: 0 20px 40px -18px rgb(20 20 100 / .6); }
+.lb-page .rd-hero .rd-ring-track { stroke: #e9ecfb; }
+.lb-page .rd-hero .btn-primary { background: #fff; color: #2b3fb8; box-shadow: 0 10px 22px -12px rgb(0 0 0 / .5); }
+.lb-page .rd-hero .btn-outline { background: rgb(255 255 255 / .14); color: #fff; border-color: rgb(255 255 255 / .45); }
+.lb-page .rd-hero .btn-outline:hover { background: rgb(255 255 255 / .24); color: #fff; }
+.lb-page .rd-grid { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+.lb-page .pv-section h2, .lb-page .rd-panel h2 { font-weight: 700; letter-spacing: -.025em; }
+@media (max-width: 720px) { .lb-page .rd-hero { padding: 24px 20px; gap: 18px; } }

@@ -2283,6 +2283,7 @@ export default function App() {
           onCloseMobile={() => setMobileOpen(false)}
           mobileOpen={mobileOpen}
           homeActive={isHome}
+          activeView={view}
           inOrganization={Boolean(learnerSummary?.membership)}
           chats={chats}
           currentChatId={currentChatId}
@@ -2395,7 +2396,7 @@ export default function App() {
 
           {view === "leaderboard" && (
             <Suspense fallback={<ScreenLoading />}>
-              <div className="pv-page rd-page"><div className="pv-inner">
+              <div className="pv-page rd-page lb-page"><div className="pv-inner">
                 <button className="hp-back" onClick={startNewChatLanding}>← Back</button>
                 <Leaderboard onToast={showToast} />
               </div></div>
