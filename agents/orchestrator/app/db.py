@@ -166,3 +166,6 @@ def init_db() -> None:
         # pick the freshest one during a rollout. Always safe to re-run --
         # MySQL accepts an identical MODIFY COLUMN with no error.
         connection.execute(text("ALTER TABLE agent_registry MODIFY COLUMN last_heartbeat DATETIME(6) NOT NULL"))
+        # Same for team messages (staging first made this column without
+        # fractional seconds), so two sent in one second keep their order.
+        connection.execute(text("ALTER TABLE admin_messages MODIFY COLUMN created_at DATETIME(6) NOT NULL"))

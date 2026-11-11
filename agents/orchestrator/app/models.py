@@ -648,7 +648,8 @@ class AdminMessage(Base):
     report_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("boss_issue_reports.id", ondelete="SET NULL"), nullable=True, index=True)
     sender_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     body: Mapped[str] = mapped_column(String(2000))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    # Microseconds: two messages sent in the same second must still list in order.
+    created_at: Mapped[datetime] = mapped_column(DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"), default=_utc_now, index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
