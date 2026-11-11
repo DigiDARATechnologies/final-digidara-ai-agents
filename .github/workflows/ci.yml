@@ -41,21 +41,27 @@ jobs:
 
       - name: Upload frontend test coverage
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: frontend-unit-coverage
           path: artifacts/frontend-coverage/
           if-no-files-found: warn
+          retention-days: 7
 
       - name: Build frontend
         run: npm run build
 
       - name: Upload frontend build
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: dist/
           if-no-files-found: error
+          retention-days: 7
 
   python-quality:
     name: Python lint, types and unit tests
@@ -87,11 +93,14 @@ jobs:
 
       - name: Upload Python unit results
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: python-unit-results
           path: artifacts/python-unit.xml
           if-no-files-found: warn
+          retention-days: 7
 
       - name: Check every env key the code reads is documented (warning only)
         run: python scripts/check_env_drift.py --code | grep -E 'UNDOCUMENTED' | sed 's/^/::warning::/' || true
@@ -229,19 +238,25 @@ jobs:
 
       - name: Upload agent security reports
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: security-${{ matrix.agent }}
           path: artifacts/security/
           if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload agent test results and logs
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: agent-tests-${{ matrix.agent }}
           path: artifacts/agent-tests/${{ matrix.agent }}/
           if-no-files-found: warn
+          retention-days: 7
 
   pandas-catalog-content:
     name: CodeForge Pandas problems - content verification
@@ -411,11 +426,14 @@ jobs:
           output: frontend-trivy.json
       - name: Upload frontend security report
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: security-frontend-image
           path: frontend-trivy.json
           if-no-files-found: warn
+          retention-days: 7
 
   selenium-linux:
     name: Selenium - ${{ matrix.browser }}
@@ -469,6 +487,8 @@ jobs:
 
       - name: Upload Selenium screenshots and logs
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: selenium-${{ matrix.browser }}
@@ -476,6 +496,7 @@ jobs:
             artifacts/screenshots/
             frontend-test.log
           if-no-files-found: warn
+          retention-days: 7
 
   selenium-edge:
     name: Selenium - edge
@@ -515,6 +536,8 @@ jobs:
 
       - name: Upload Selenium screenshots and logs
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: selenium-edge
@@ -523,6 +546,7 @@ jobs:
             frontend-test.log
             frontend-test-error.log
           if-no-files-found: warn
+          retention-days: 7
 
   npm-security:
     name: npm dependency audit
@@ -540,11 +564,14 @@ jobs:
         run: npm audit --audit-level=high --json > npm-audit.json
       - name: Upload npm audit report
         if: always()
+        # A full artifact storage quota must not fail the build: these are reports only.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: security-npm
           path: npm-audit.json
           if-no-files-found: error
+          retention-days: 7
 
   publish-ghcr:
     name: Publish image to GHCR - ${{ matrix.agent }}
