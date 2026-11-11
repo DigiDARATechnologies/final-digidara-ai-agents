@@ -142,6 +142,14 @@ def init_db() -> None:
                 except Exception as exc:
                     if "1060" not in str(exc):
                         raise
+        report_columns = {column["name"] for column in inspect(engine).get_columns("boss_issue_reports")}
+        for column, ddl in (("status", "VARCHAR(16) NOT NULL DEFAULT 'open'"), ("solved_at", "DATETIME NULL")):
+            if column not in report_columns:
+                try:
+                    connection.execute(text(f"ALTER TABLE boss_issue_reports ADD COLUMN {column} {ddl}"))
+                except Exception as exc:
+                    if "1060" not in str(exc):
+                        raise
         payment_columns = {column["name"] for column in inspect(engine).get_columns("payments")}
         for column, ddl in (("credited_tokens", "INT NULL"), ("credited_points", "DOUBLE NULL"),
                             ("customer_gstin", "VARCHAR(15) NULL")):

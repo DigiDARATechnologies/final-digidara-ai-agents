@@ -4,6 +4,7 @@ const mockUserDetail = jest.fn();
 const mockConversation = jest.fn();
 const mockPayments = jest.fn();
 const mockAgents = jest.fn();
+const mockDownload = jest.fn();
 jest.mock('../../src/lib/adminApi', () => ({
   fetchOverview: (...a: unknown[]) => mockOverview(...a),
   fetchUsers: (...a: unknown[]) => mockUsers(...a),
@@ -11,6 +12,7 @@ jest.mock('../../src/lib/adminApi', () => ({
   fetchConversation: (...a: unknown[]) => mockConversation(...a),
   fetchPayments: (...a: unknown[]) => mockPayments(...a),
   fetchAgents: (...a: unknown[]) => mockAgents(...a),
+  downloadPaymentsCsv: (...a: unknown[]) => mockDownload(...a),
 }));
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -132,6 +134,25 @@ test('payments: paid money is split into Razorpay and manual cards', async () =>
   expect(screen.getByText('created')).toBeInTheDocument();
   expect(screen.queryByText('paid', { selector: '.admin-kpi span' })).not.toBeInTheDocument();     // no combined Paid card
   expect(table.getByText('Manual')).toBeInTheDocument();
+});
+
+test('payments: the manual card shows plan value; filter by type and export what is filtered', async () => {
+  mockDownload.mockResolvedValue(undefined);
+  const base = { user_id: 'r', email: 'rubi@x.io', name: 'Rubi', label: 'Basic plan', currency: 'INR', status: 'paid', created_at: '2026-11-03T08:00:00', paid_at: '2026-11-03T08:00:00', tokens: 0, points: 250 };
+  mockPayments.mockResolvedValue({
+    total: 1, page: 1, limit: 25,
+    summary: { paid: { count: 1, amount: 0 } },
+    paid_by_method: { razorpay: { count: 0, amount: 0 }, manual: { count: 1, amount: 0, value: 470.82 } },
+    payments: [{ ...base, id: 'p1', amount: 0, value: 470.82, razorpay_order_id: 'manual_1793684650', razorpay_payment_id: null, method: 'manual' }],
+  });
+  render(<PaymentsPanel />);
+  await screen.findByRole('table');
+  expect(screen.getByText(/at plan prices/)).toBeInTheDocument();
+  expect(screen.getAllByText(/470\.82/).length).toBeGreaterThanOrEqual(2);     // the card and the row's plan price
+  fireEvent.change(screen.getByLabelText('Filter by payment type'), { target: { value: 'manual' } });
+  await waitFor(() => expect(mockPayments).toHaveBeenLastCalledWith(expect.objectContaining({ method: 'manual', page: 1 })));
+  fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+  await waitFor(() => expect(mockDownload).toHaveBeenCalledWith({ status: '', search: '', method: 'manual' }));
 });
 
 test('agents: online and offline are clear, usage is joined to the chat agent, unconnected ones are listed', async () => {

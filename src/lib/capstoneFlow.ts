@@ -414,7 +414,7 @@ async function lockTopic(state: CapstoneFlowState, topic: TopicOption): Promise<
       state: { ...state, chosenTopic: topic, requirements: result.requirements, step: "awaiting_timer_confirm" },
       messages: [{
         text: `${formatRequirements(result.requirements)}\n\nNot sure how your report and zip should look? Download the examples below. Start the 7-day project timer when you are ready.`,
-        options: [{ label: "Start 7-day timer", value: "confirm" }, ...CAPSTONE_EXAMPLE_OPTIONS],
+        options: [{ label: "Start 7-day timer", value: "confirm", tone: "danger" }, ...CAPSTONE_EXAMPLE_OPTIONS],
       }],
     };
   } catch (error) {

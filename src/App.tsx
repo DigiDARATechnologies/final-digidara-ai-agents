@@ -38,6 +38,7 @@ import {
 import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import TeamMessagesPopup from "./components/TeamMessagesPopup";
 import OnboardingScreen from "./components/OnboardingScreen";
 import { deleteMyAvatar, fetchLearnerSummary, fetchMyAvatar, fetchReadiness, saveMyAvatar, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
@@ -2438,7 +2439,8 @@ export default function App() {
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onRemovePendingFile={handleRemovePendingFile}
-                onAttachDisabled={() => showToast("File attachments are only available in the Capstone Project Agent chat.")}
+                onAttachDisabled={() => showToast("File attachments work in the Capstone Project, Resume Builder and Job Fetch chats.")}
+                onAttachUnsupported={showToast}
                 codeMode={isCodeForgeChat && codeforgeState?.step === "awaiting_code"}
                 codeSeed={codeforgeState?.starterCode}
                 codeBusy={codeBusy}
@@ -2602,6 +2604,7 @@ export default function App() {
         <KnowledgeTestView key={knowledgeRun.sessionId} sessionId={knowledgeRun.sessionId} title={knowledgeRun.title} onClose={() => setKnowledgeRun(null)} />
       )}
 
+      {!user.isAdmin && <TeamMessagesPopup userId={user.id} />}
       <Toast message={toastMsg} show={toastShow} />
       <SaveIndicator status={agentState.status} />
     </>

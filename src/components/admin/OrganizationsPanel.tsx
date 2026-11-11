@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import OrgAssistant from "../org/OrgAssistant";
 import OrgDashboard from "../org/OrgDashboard";
 import {
-  fetchPlatformOrgs, platformCreateOrg, platformGiveCoins, platformUpdateOrg, type OrgCoins, type PlatformCreateResult, type PlatformOrg,
+  fetchPlatformOrgs, platformCreateOrg, platformDeleteOrg, platformGiveCoins, platformUpdateOrg, type OrgCoins, type PlatformCreateResult, type PlatformOrg,
 } from "../../lib/orgApi";
 import "../org/Org.css";
 
@@ -19,6 +19,8 @@ const COIN_FIELDS: { key: keyof OrgCoins; label: string }[] = [
   { key: "staff_coins", label: "For each staff login" },
   { key: "student_coins", label: "For each student" },
 ];
+
+interface OrgEdit { id: string; name: string; kind: string; member_limit: number; coins: OrgCoins }
 
 function coinsOf(org: PlatformOrg): OrgCoins {
   return { admin_coins: org.admin_coins ?? 0, staff_coins: org.staff_coins ?? 0, student_coins: org.student_coins ?? 0 };
@@ -47,7 +49,7 @@ export default function OrganizationsPanel() {
   const [orgs, setOrgs] = useState<PlatformOrg[]>([]);
   const [error, setError] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
-  const [coinEdit, setCoinEdit] = useState<{ id: string; coins: OrgCoins } | null>(null);
+  const [coinEdit, setCoinEdit] = useState<OrgEdit | null>(null);
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<PlatformCreateResult | null>(null);
   const [open, setOpen] = useState<PlatformOrg | null>(null);
@@ -96,16 +98,44 @@ export default function OrganizationsPanel() {
     }
   }
 
+  function startEdit(org: PlatformOrg) {
+    setCoinEdit({ id: org.id, name: org.name, kind: org.kind, member_limit: org.member_limit, coins: coinsOf(org) });
+  }
+
+  async function remove(org: PlatformOrg) {
+    const typed = window.prompt(
+      `Delete ${org.name}?\n\nIts admins, staff and join codes stop working and its ${org.member_count ?? 0} member(s) are released ` +
+      "(free to join another organization). Their accounts, coins and every attempt are kept.\n\nType the organization's name to confirm:",
+    );
+    if (typed === null) return;
+    if (typed.trim() !== org.name) {
+      setError("The name didn't match, so nothing was deleted.");
+      return;
+    }
+    try {
+      const result = await platformDeleteOrg(org.id);
+      setToast(`${result.name} deleted. ${result.members_released} member${result.members_released === 1 ? "" : "s"} released.`);
+      setCoinEdit(null);
+      void load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
   async function saveCoins(org: PlatformOrg, giveNow: boolean) {
     if (!coinEdit) return;
+    if (coinEdit.name.trim().length < 2) {
+      setError("Enter the organization's name.");
+      return;
+    }
     try {
-      await platformUpdateOrg(org.id, { status: org.status, ...coinEdit.coins });
+      await platformUpdateOrg(org.id, { name: coinEdit.name.trim(), kind: coinEdit.kind, member_limit: coinEdit.member_limit, ...coinEdit.coins });
       if (giveNow) {
         const given = await platformGiveCoins(org.id);
         setToast(given.people ? `${given.coins.toLocaleString()} coins given to ${given.people} ${given.people === 1 ? "person" : "people"}.`
           : "Everyone here already has their coins.");
       } else {
-        setToast(`Coins saved for ${org.name}.`);
+        setToast(`${coinEdit.name.trim()} saved.`);
       }
       setCoinEdit(null);
       void load();
@@ -203,14 +233,33 @@ export default function OrganizationsPanel() {
                 {coinEdit?.id !== org.id && (
                   <div className="org-actions">
                     <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpen(org)}>Open</button>
-                    <button type="button" className="link-btn" onClick={() => setCoinEdit({ id: org.id, coins: coinsOf(org) })}>Coins</button>
+                    <button type="button" className="link-btn" onClick={() => startEdit(org)}>Edit</button>
                     <button type="button" className="link-btn" onClick={() => void toggle(org)}>{org.status === "active" ? "Suspend" : "Reactivate"}</button>
+                    <button type="button" className="link-btn org-delete-link" onClick={() => void remove(org)}>Delete</button>
                   </div>
                 )}
                 {coinEdit?.id === org.id && (
                   <div className="org-staff-edit">
+                    <label className="field"><span>Organization name</span>
+                      <input value={coinEdit.name} required minLength={2} maxLength={255} onChange={(e) => setCoinEdit({ ...coinEdit, name: e.target.value })} />
+                    </label>
+                    <label className="field"><span>Type</span>
+                      <select value={coinEdit.kind} onChange={(e) => setCoinEdit({ ...coinEdit, kind: e.target.value })}>
+                        {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="field"><span>Member limit</span>
+                      <input type="number" min={1} max={100000} value={coinEdit.member_limit || ""} disabled={coinEdit.member_limit === 0}
+                        placeholder={coinEdit.member_limit === 0 ? "Unlimited" : undefined}
+                        onChange={(e) => setCoinEdit({ ...coinEdit, member_limit: Math.max(1, Number(e.target.value) || 1) })} />
+                    </label>
+                    <label className="org-check">
+                      <input type="checkbox" checked={coinEdit.member_limit === 0}
+                        onChange={(e) => setCoinEdit({ ...coinEdit, member_limit: e.target.checked ? 0 : Math.max(1000, org.member_count ?? 0) })} />
+                      Unlimited members
+                    </label>
                     <CoinFields value={coinEdit.coins} onChange={(coins) => setCoinEdit({ ...coinEdit, coins })} />
-                    <p className="rd-muted">New amounts apply to people who join from now on. "Save and give now" also gives them to everyone
+                    <p className="rd-muted">New coin amounts apply to people who join from now on. "Save and give now" also gives them to everyone
                       already here who has not had coins for their role yet; nobody gets them twice.</p>
                     <div className="org-actions">
                       <button type="button" className="btn btn-primary btn-sm" onClick={() => void saveCoins(org, false)}>Save</button>

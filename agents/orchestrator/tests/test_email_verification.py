@@ -203,3 +203,69 @@ def test_an_account_made_for_someone_gets_its_code_at_first_sign_in(api, smtp, d
     # A verified account is never emailed at sign-in.
     login()
     assert len(smtp) == 1
+
+
+def _signup_without_code(api, smtp, monkeypatch, **kwargs):
+    """Sign up, then let the sign-up code's resend cooldown pass."""
+    body = signup(api, **kwargs)
+    later = datetime.utcnow() + timedelta(seconds=61)
+
+    class _Later(datetime):
+        @classmethod
+        def utcnow(cls):
+            return later
+
+    monkeypatch.setattr(email_verification, "datetime", _Later)
+    smtp.clear()
+    return body
+
+
+def test_forgot_password_emails_a_code_and_sets_the_new_password(api, smtp, monkeypatch):
+    body = _signup_without_code(api, smtp, monkeypatch)
+    response = api.post("/auth/password/forgot", json={"email": "Asha@Example.com"})
+    assert response.status_code == 200
+    assert "reset" in SENT[-1]["Subject"].lower()
+    code = last_code()
+
+    # Old sessions die, the old password stops working, the new one works.
+    reset = api.post("/auth/password/reset", json={"email": "asha@example.com", "code": code, "new_password": "new-pass-456"})
+    assert reset.status_code == 200
+    assert api.get("/auth/me", headers=bearer(body["access_token"])).status_code == 401
+    assert api.post("/auth/login", json={"email": "asha@example.com", "password": "asha-pass-123"}).status_code == 401
+    login = api.post("/auth/login", json={"email": "asha@example.com", "password": "new-pass-456"})
+    assert login.status_code == 200
+    # The emailed code proved the address.
+    assert login.json()["user"]["email_verified"] is True
+    # A code works once.
+    again = api.post("/auth/password/reset", json={"email": "asha@example.com", "code": code, "new_password": "other-pass-789"})
+    assert again.status_code == 400
+
+
+def test_forgot_password_does_not_reveal_unknown_emails(api, smtp):
+    response = api.post("/auth/password/forgot", json={"email": "nobody@example.com"})
+    assert response.status_code == 200
+    assert response.json()["message"].startswith("If an account uses this email")
+    assert SENT == []
+
+
+def test_reset_codes_and_verification_codes_cannot_stand_in_for_each_other(api, smtp, monkeypatch):
+    signup(api)
+    verify_code = last_code()
+    assert api.post("/auth/password/reset", json={"email": "asha@example.com", "code": verify_code, "new_password": "new-pass-456"}).status_code == 400
+
+    _signup_without_code(api, smtp, monkeypatch, email="ravi@example.com")
+    api.post("/auth/password/forgot", json={"email": "ravi@example.com"})
+    reset_code = last_code()
+    ravi = api.post("/auth/login", json={"email": "ravi@example.com", "password": "asha-pass-123"}).json()
+    assert api.post("/auth/email/verify", json={"code": reset_code}, headers=bearer(ravi["access_token"])).status_code == 400
+
+
+def test_wrong_reset_codes_count_down_then_lock(api, smtp, monkeypatch):
+    _signup_without_code(api, smtp, monkeypatch)
+    api.post("/auth/password/forgot", json={"email": "asha@example.com"})
+    code = last_code()
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(5):
+        assert api.post("/auth/password/reset", json={"email": "asha@example.com", "code": wrong, "new_password": "new-pass-456"}).status_code == 400
+    locked = api.post("/auth/password/reset", json={"email": "asha@example.com", "code": code, "new_password": "new-pass-456"})
+    assert locked.status_code == 429

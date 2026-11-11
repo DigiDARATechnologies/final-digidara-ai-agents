@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
 import { googleAuthUrl } from "../lib/authApi";
 import LegalModal from "./LegalModal";
+import ForgotPasswordModal from "./ForgotPasswordModal";
 import lightBgLogo from "../assets/skilldara-logo.png";
 import LandingNav from "./LandingNav";
 import AgentIcon from "./AgentIcon";
@@ -96,10 +97,13 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
   const [submitting, setSubmitting] = useState(false);
   const [legalTab, setLegalTab] = useState<"terms" | "privacy" | null>(null);
   const [consent, setConsent] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [notice, setNotice] = useState("");
 
   function switchMode(next: "login" | "signup") {
     setMode(next);
     setError("");
+    setNotice("");
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -234,7 +238,7 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
 
               {mode === "login" && (
                 <div className="login-form-row">
-                  <a className="link-btn" href="mailto:support@digidaraaiagents.com?subject=Password%20reset%20request">Forgot password?</a>
+                  <button type="button" className="link-btn" onClick={() => setForgotOpen(true)}>Forgot password?</button>
                 </div>
               )}
 
@@ -255,6 +259,7 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
                 </label>
               )}
 
+              {notice && !error && <p className="form-notice" role="status">{notice}</p>}
               {error && <p className="form-error" role="alert">{error}</p>}
               <button type="submit" className="btn btn-primary btn-full" disabled={submitting || (mode === "signup" && !consent)}>
                 {submitting ? "Please wait…" : mode === "signup" ? "Create Account" : "Log In"}
@@ -280,6 +285,21 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
           </div>
         </div>
       </div>
+      {forgotOpen && (
+        <ForgotPasswordModal
+          open
+          initialEmail={email}
+          onClose={() => setForgotOpen(false)}
+          onDone={(resetEmail, message) => {
+            setForgotOpen(false);
+            setMode("login");
+            setEmail(resetEmail);
+            setPassword("");
+            setError("");
+            setNotice(message);
+          }}
+        />
+      )}
       <LegalModal open={legalTab !== null} initialTab={legalTab ?? "terms"} onClose={() => setLegalTab(null)} />
     </div>
   );

@@ -30,10 +30,13 @@ test('typing and submitting sends the trimmed text', () => {
   expect(onSend).toHaveBeenCalledWith('hello there');
 });
 
-test('the attach button calls onAttachClick instead of silently doing nothing', () => {
+test('the attach button shows document, photo and zip options; choosing one calls onAttachClick', () => {
   const onAttachClick = jest.fn();
   render(<NewChatLanding onSend={jest.fn()} onAttachClick={onAttachClick} onOpenAgent={jest.fn()} />);
   fireEvent.click(screen.getByTitle('Attach file'));
+  expect(screen.getByText('Upload Document')).toBeTruthy();
+  expect(screen.getByText('Upload Photo')).toBeTruthy();
+  fireEvent.click(screen.getByText('Upload Zip Folder'));
   expect(onAttachClick).toHaveBeenCalledTimes(1);
 });
 

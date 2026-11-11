@@ -64,6 +64,16 @@ class VerifyEmailRequest(BaseModel):
     code: str = Field(min_length=1, max_length=12)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    code: str = Field(min_length=1, max_length=12)
+    new_password: str = Field(min_length=8, max_length=255)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

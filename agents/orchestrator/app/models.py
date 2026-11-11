@@ -297,7 +297,8 @@ class Organization(Base):
     created_by: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     # 0 means unlimited.
     member_limit: Mapped[int] = mapped_column(Integer, default=1000, server_default="1000")
-    # "active" or "suspended" (a suspended organization's admins and codes stop working).
+    # "active", "suspended" (its admins and codes stop working) or "deleted"
+    # (the same, and hidden; its members were released).
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
     # Coins SkillDARA gives each person once, when they get access: the
     # organization's admins (owner and admins), each staff login and each
@@ -630,6 +631,25 @@ class BossIssueReport(Base):
     agent_id: Mapped[str] = mapped_column(String(60), default="")
     message: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    # "open" until the team marks it "solved" (which also messages the learner).
+    status: Mapped[str] = mapped_column(String(16), default="open", server_default="open")
+    solved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AdminMessage(Base):
+    """A message from the SkillDARA team to one learner -- a reply to a Boss
+    report (report_id) or a message of its own. It pops up the next time the
+    learner opens the app, until they mark it read; it is never deleted."""
+
+    __tablename__ = "admin_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    report_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("boss_issue_reports.id", ondelete="SET NULL"), nullable=True, index=True)
+    sender_id: Mapped[str | None] = mapped_column(String(32), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    body: Mapped[str] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ChatShareLink(Base):
