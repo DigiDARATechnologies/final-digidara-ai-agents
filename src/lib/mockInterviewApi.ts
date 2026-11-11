@@ -19,6 +19,14 @@ export interface MockInterviewQuestion {
   awaiting_report?: boolean;
   real_question_index?: number;
   is_followup?: boolean;
+  /** Complete server-persisted main-question plan; rendered one question at a time. */
+  question_plan?: Array<{
+    question_order: number;
+    question: string;
+    topic_area?: string | null;
+    subject_tag?: string | null;
+    is_followup: false;
+  }>;
 }
 
 export interface MockInterviewAnswerResult {

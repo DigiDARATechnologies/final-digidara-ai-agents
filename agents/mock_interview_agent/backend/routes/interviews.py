@@ -362,8 +362,9 @@ def start_interview():
     )
     topic_area_context = merge_topic_area_context(previous_topic_areas)
 
-    # Role sessions receive a session-start plan: source-backed FAQ questions
-    # where live search can verify them, plus existing live AI questions.
+    # Generate and persist every main question at session start. This keeps
+    # question navigation independent of provider availability and avoids one
+    # generation request for each answer in non-role modes.
     question_plan = None
     try:
         with track_ai_usage(
@@ -423,6 +424,9 @@ def start_interview():
                 )
             question_subject = subject_for_question(resolved_subjects, 0) if resolved_subjects else subject
             if interview_mode in {"role", "weak_topic_practice"}:
+                plan_role = role_name
+                plan_skills = prioritized_skills
+
                 def generate_ai_question(asked, skill_area):
                     generated = groq_client.generate_question(
                         round_type, role_name, difficulty, list(asked),
@@ -431,36 +435,48 @@ def start_interview():
                         role_skills=role_skills,
                         skill_area=skill_area,
                     )
-                    # Persist the exact assigned skill so analytics and any
-                    # later weak-area retest stay tied to this question's
-                    # real competency rather than a broad stack label.
                     return {**generated, "subject_tag": skill_area or subject_for_question(resolved_subjects, 0)}
+            else:
+                # A selected course/custom topic remains the scope. Inferred
+                # subskills let the batch planner distribute questions within
+                # that subject just as sequential generation did previously.
+                plan_role = question_subject or "HR interview"
+                plan_skills = role_skills if round_type == "technical" else None
 
-                question_generation_started_at = time.perf_counter()
-                question_plan = groq_client.build_interview_questions(
-                    role_name, difficulty, round_type, num_questions, generate_ai_question,
-                    already_asked_hashes, role_skills, question_context,
-                    skill_order=prioritized_skills,
-                )
-                timing["question_generation_seconds"] = round(
-                    time.perf_counter() - question_generation_started_at, 4
-                )
-                for index, planned_question in enumerate(question_plan):
+                def generate_ai_question(asked, skill_area):
+                    generated = groq_client.generate_question(
+                        round_type, question_subject, difficulty,
+                        asked_so_far=list(asked), recent_topic_areas=topic_area_context,
+                        role_context=role_subject_prompt(role_name, skill_area)
+                        if resolved_subjects else None,
+                        role_skills=role_skills,
+                        skill_area=skill_area,
+                    )
+                    return {**generated, "subject_tag": skill_area or question_subject}
+
+            question_generation_started_at = time.perf_counter()
+            question_plan = groq_client.build_interview_questions(
+                plan_role, difficulty, round_type, num_questions, generate_ai_question,
+                already_asked_hashes, plan_skills, question_context,
+                skill_order=prioritized_skills if interview_mode in {"role", "weak_topic_practice"} else plan_skills,
+            )
+            timing["question_generation_seconds"] = round(
+                time.perf_counter() - question_generation_started_at, 4
+            )
+            for index, planned_question in enumerate(question_plan):
+                if interview_mode in {"role", "weak_topic_practice"}:
                     planned_question.setdefault("topic_area", "frequently asked interview question")
                     planned_question.setdefault(
-                        "subject_tag", prioritized_skills[index % len(prioritized_skills)] if prioritized_skills else subject_for_question(resolved_subjects, index)
+                        "subject_tag", prioritized_skills[index % len(prioritized_skills)]
+                        if prioritized_skills else subject_for_question(resolved_subjects, index)
                     )
-                generated_question = question_plan[0]
-                question_subject = generated_question.get("subject_tag") or question_subject
-            else:
-                generated_question = _generate_unique_question(
-                    lambda context: groq_client.generate_question(
-                        round_type, question_subject, difficulty,
-                        asked_so_far=context, recent_topic_areas=topic_area_context,
-                        role_context=role_subject_prompt(role_name, question_subject) if resolved_subjects else None,
-                        role_skills=role_skills,
-                    ), already_asked_hashes, list(question_context)
-                )
+                else:
+                    planned_question.setdefault(
+                        "topic_area", question_subject or "general interview"
+                    )
+                    planned_question.setdefault("subject_tag", question_subject)
+            generated_question = question_plan[0]
+            question_subject = generated_question.get("subject_tag") or question_subject
         question = generated_question["question"]
         topic_area = generated_question.get("topic_area")
     except Exception:
@@ -609,6 +625,18 @@ def start_interview():
         "interview_id": interview_id,
         "question_order": 1,
         **format_question_for_display(generated_question),
+        # Additive plan metadata. The persisted rows remain authoritative, and
+        # answer submission advances from those rows after a reload.
+        "question_plan": [
+            {
+                "question_order": index,
+                "question": item["question"],
+                "topic_area": item.get("topic_area"),
+                "subject_tag": item.get("subject_tag"),
+                "is_followup": False,
+            }
+            for index, item in enumerate(question_plan, start=1)
+        ],
         "topic_area": topic_area,
         "total_questions": num_questions,
         "requested_questions": requested_questions,
