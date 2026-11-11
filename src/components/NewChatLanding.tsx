@@ -3,6 +3,7 @@ import { audioRecordingSupported } from "../lib/voiceCapture";
 import { cancelVoiceConversation, continueVoiceConversation, setBossVoiceOpener } from "../lib/voiceReply";
 import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
+import AttachMenu from "./AttachMenu";
 import { LIVE_AGENTS } from "../data/agents";
 import { TopPerformers } from "./Leaderboard";
 
@@ -10,7 +11,7 @@ import { TopPerformers } from "./Leaderboard";
 interface NewChatLandingProps {
   onSend: (text: string) => void;
   /** No agent/chat exists yet at this screen, so there's nowhere for an
-   * attached file to go -- called instead of opening a file picker, so the
+   * attached file to go -- called when an option in the "+" menu is chosen, so the
    * caller can explain that (e.g. a toast), matching how the main composer
    * already handles attachments being unavailable for the current agent. */
   onAttachClick: () => void;
@@ -124,11 +125,13 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
             }}
           />
           <div className="home-composer-bar">
-            <button type="button" className="home-round-btn" title="Attach file" aria-label="Attach file" onClick={onAttachClick}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
+            <AttachMenu
+              enabled={false}
+              documentAccept=".docx,.pdf,.zip"
+              onFiles={() => undefined}
+              onDisabled={onAttachClick}
+              buttonClassName="home-round-btn"
+            />
             <div className="home-agent-select" ref={menuRef}>
               <button type="button" className="home-agent-trigger" aria-haspopup="menu" aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}>

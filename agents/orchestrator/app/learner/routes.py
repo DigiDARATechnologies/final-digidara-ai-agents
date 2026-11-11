@@ -279,3 +279,18 @@ async def create_plan(req: PlanIn, request: Request, user_id: str = Depends(get_
     except coach_service.PlanError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"plan": plan}
+
+
+@router.get("/messages")
+def my_team_messages(user_id: str = Depends(get_current_user_id)) -> dict:
+    """Messages from the SkillDARA team, newest first; unread ones have read_at null."""
+    from app import admin_messages
+
+    return {"messages": admin_messages.for_learner(user_id)}
+
+
+@router.post("/messages/read")
+def mark_team_messages_read(user_id: str = Depends(get_current_user_id)) -> dict:
+    from app import admin_messages
+
+    return {"marked": admin_messages.mark_read(user_id)}

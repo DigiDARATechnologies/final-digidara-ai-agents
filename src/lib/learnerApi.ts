@@ -314,3 +314,16 @@ export const pinMemory = (id: string, pinned: boolean) => request<LearnerMemory>
 export const deleteMemory = (id: string) => request<void>(`/learner/memory/${id}`, json("DELETE"));
 export const fetchCareerPlan = () => request<{ plan: CareerPlan | null }>("/learner/plan");
 export const createCareerPlan = (language: "en" | "ta") => request<{ plan: CareerPlan }>("/learner/plan", json("POST", { language }));
+
+/** A message from the SkillDARA team: a reply to a report the learner made through Boss, or a note of its own. */
+export interface TeamMessage {
+  id: string;
+  report_id: string | null;
+  /** The learner's own report, when the message replies to one. */
+  report_message?: string | null;
+  body: string;
+  created_at: string | null;
+  read_at: string | null;
+}
+export const fetchTeamMessages = () => request<{ messages: TeamMessage[] }>("/learner/messages");
+export const markTeamMessagesRead = () => request<{ marked: number }>("/learner/messages/read", json("POST", {}));

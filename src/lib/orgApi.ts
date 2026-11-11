@@ -180,8 +180,11 @@ export const updateMemberClass = (orgId: string, memberId: string, fields: Class
 export const fetchPlatformOrgs = () => request<PlatformOrg[]>("/organizations/all");
 export const platformCreateOrg = (body: { name: string; kind: string; admin_name: string; admin_email: string; member_limit: number } & Partial<OrgCoins>) =>
   request<PlatformCreateResult>("/organizations/platform", json("POST", body));
-export const platformUpdateOrg = (orgId: string, body: { status: "active" | "suspended"; member_limit?: number } & Partial<OrgCoins>) =>
+export const platformUpdateOrg = (orgId: string, body: { status?: "active" | "suspended"; member_limit?: number; name?: string; kind?: string } & Partial<OrgCoins>) =>
   request<PlatformOrg>(`/organizations/platform/${orgId}`, json("PATCH", body));
+/** Removes the organization and releases its members; their accounts, coins and attempts stay. */
+export const platformDeleteOrg = (orgId: string) =>
+  request<{ deleted: string; name: string; members_released: number }>(`/organizations/platform/${orgId}`, { method: "DELETE" });
 /** Gives the organization's coins to everyone already in it who has not had them yet. */
 export const platformGiveCoins = (orgId: string) =>
   request<{ people: number; coins: number }>(`/organizations/platform/${orgId}/coins`, json("POST"));

@@ -52,7 +52,7 @@ def app_client(database, monkeypatch):
     # Join and assistant calls are rate limited per caller; every test starts fresh.
     limiter.reset()
     app = FastAPI()
-    for module in (registry_routes, gateway, learner_routes, org_routes, a2a_routes, auth_routes):
+    for module in (registry_routes, gateway, learner_routes, org_routes, a2a_routes, auth_routes, admin_routes):
         app.include_router(module.router)
     with TestClient(app) as client:
         yield client
@@ -675,6 +675,40 @@ def test_a_suspended_organization_locks_its_admins_and_codes_but_not_the_platfor
     assert app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).status_code == 403
     assert app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]}).status_code == 403
     assert app_client.get(f"/organizations/{org_id}/members", headers=auth("platform")).status_code == 200
+
+
+def test_the_platform_admin_edits_an_organization(app_client, users):
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    edited = app_client.patch(f"/organizations/platform/{org_id}", headers=auth("platform"), json={
+        "name": "  Anna   University Chennai ", "kind": "company", "member_limit": 0, "student_coins": 25}).json()
+    assert edited["name"] == "Anna University Chennai" and edited["kind"] == "company"
+    assert edited["member_limit"] == 0 and edited["student_coins"] == 25
+    # Not sending a status keeps it.
+    assert edited["status"] == "active"
+    assert app_client.patch(f"/organizations/platform/{org_id}", headers=auth("platform"), json={"name": "x"}).status_code == 422
+    assert app_client.patch(f"/organizations/platform/{org_id}", headers=auth("admin"), json={"name": "Mine"}).status_code == 403
+
+
+def test_deleting_an_organization_releases_members_and_keeps_their_records(app_client, users, database):
+    from app.models import Organization
+
+    org = _make_org(app_client)
+    org_id = org["organization"]["id"]
+    app_client.post("/organizations/join", headers=auth(), json={"join_code": org["organization"]["join_code"]})
+    assert app_client.delete(f"/organizations/platform/{org_id}", headers=auth("admin")).status_code == 403
+    result = app_client.delete(f"/organizations/platform/{org_id}", headers=auth("platform")).json()
+    assert result["members_released"] == 2  # its admin and the learner
+    # Gone from the list; its codes and admins stop working.
+    assert all(o["id"] != org_id for o in app_client.get("/organizations/all", headers=auth("platform")).json())
+    assert app_client.post("/organizations/join", headers=auth("other"), json={"join_code": org["organization"]["join_code"]}).status_code in (403, 410)
+    assert app_client.get(f"/organizations/{org_id}/members", headers=auth("admin")).status_code == 403
+    # The learner is free again, and the row is kept, marked deleted.
+    assert app_client.get("/organizations/me", headers=auth()).json()["membership"] is None
+    with database() as session:
+        assert session.get(Organization, org_id).status == "deleted"
+    assert app_client.delete(f"/organizations/platform/{org_id}", headers=auth("platform")).status_code == 404
+    assert app_client.patch(f"/organizations/platform/{org_id}", headers=auth("platform"), json={"status": "active"}).status_code == 404
 
 
 def test_admins_filter_drill_down_and_every_look_is_logged(app_client, agents, database):
@@ -1383,3 +1417,41 @@ def test_level_goals_are_checked_and_given_per_learner_level():
     hard_only = readiness_service.summarize_reply({"level_goals": {"hard": {"needed": 5, "done": 2, "pass_percent": 80, "unit": "session"}}})
     assert hard_only["level_goals"]["professional"]["done"] == 2
     assert readiness_service.summarize_reply({"score": 1})["level_goals"] == {}
+
+
+# --- Boss reports: status, the "solved" reply and team messages --------------
+
+def test_solving_a_boss_report_messages_the_learner_once_they_open_the_app(app_client, users, database):
+    from app.models import BossIssueReport
+
+    with database() as session:
+        session.add(BossIssueReport(id="r1", user_id="learner", category="other", agent_id="mock-interview",
+                                    message="why is my report not generated?"))
+        session.commit()
+    listed = app_client.get("/platform-admin/boss-reports", headers=auth("platform")).json()["reports"]
+    assert listed[0]["status"] == "open" and listed[0]["replies"] == []
+    assert app_client.put("/platform-admin/boss-reports/r1/status", headers=auth("admin"), json={"solved": True}).status_code == 403
+
+    solved = app_client.put("/platform-admin/boss-reports/r1/status", headers=auth("platform"), json={"solved": True}).json()
+    assert solved["status"] == "solved" and "solved" in solved["message"]["body"]
+    note = app_client.post("/platform-admin/boss-reports/r1/messages", headers=auth("platform"),
+                           json={"message": "Your interview report is ready now."})
+    assert note.status_code == 201
+    assert app_client.post("/platform-admin/boss-reports/r1/messages", headers=auth("platform"), json={"message": ""}).status_code == 422
+
+    listed = app_client.get("/platform-admin/boss-reports", headers=auth("platform")).json()["reports"]
+    assert listed[0]["status"] == "solved" and listed[0]["solved_at"]
+    assert [m["body"] for m in listed[0]["replies"]][1] == "Your interview report is ready now."
+
+    # The learner sees both, unread, newest first; another learner sees none.
+    mine = app_client.get("/learner/messages", headers=auth()).json()["messages"]
+    assert [m["body"] for m in mine][0] == "Your interview report is ready now." and all(m["read_at"] is None for m in mine)
+    assert app_client.get("/learner/messages", headers=auth("other")).json()["messages"] == []
+    assert app_client.post("/learner/messages/read", headers=auth()).json()["marked"] == 2
+    # Read messages stay in the list.
+    mine = app_client.get("/learner/messages", headers=auth()).json()["messages"]
+    assert len(mine) == 2 and all(m["read_at"] for m in mine)
+
+    reopened = app_client.put("/platform-admin/boss-reports/r1/status", headers=auth("platform"), json={"solved": False}).json()
+    assert reopened["status"] == "open" and reopened["message"] is None
+    assert app_client.put("/platform-admin/boss-reports/nope/status", headers=auth("platform"), json={"solved": True}).status_code == 404

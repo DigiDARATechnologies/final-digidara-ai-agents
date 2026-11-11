@@ -48,6 +48,8 @@ export interface ChatOption {
   /** A suggestion, not the only choice: shown with a star, and anything the
    * learner types instead goes straight to the agent's flow as its own answer. */
   suggested?: boolean;
+  /** "danger": a strong red button with white text, for a big step like starting a timer. */
+  tone?: "danger";
 }
 
 export interface ChatMessage {

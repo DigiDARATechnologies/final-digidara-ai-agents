@@ -71,3 +71,11 @@
   .lg-copy{ display:none; }
   .lg-form-panel{ padding:28px 16px 48px; background:linear-gradient(180deg,#f3f5ff,#fff); }
 }
+
+/* Forgot password popup */
+.login-overlay .forgot-card{ max-width:420px; width:100%; background:#fff; color:#17154a; }
+.login-overlay .forgot-title{ font-size:20px; font-weight:800; margin:0; }
+.login-overlay .forgot-sub{ font-size:14.5px; line-height:1.5; margin:0 0 14px; color:#475467; }
+.login-overlay .forgot-show{ display:flex; align-items:center; gap:8px; font-size:14px; margin:4px 0 12px; cursor:pointer; }
+.login-overlay .forgot-resend{ font-size:13.5px; text-align:center; margin-top:12px; color:#475467; }
+.login-overlay .form-notice{ color:#067647; background:#ecfdf3; border:1px solid #abefc6; border-radius:8px; padding:8px 12px; font-size:14px; margin:8px 0; }

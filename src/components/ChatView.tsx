@@ -49,6 +49,7 @@ interface ChatViewProps {
   onAttachFiles: (files: FileList) => void;
   onRemovePendingFile?: (index: number) => void;
   onAttachDisabled: () => void;
+  onAttachUnsupported?: (message: string) => void;
   /** When set, the composer becomes a multi-line code editor with Run/Submit
    * buttons instead of the normal single-line input + send button. */
   codeMode?: boolean;
@@ -146,6 +147,7 @@ export default function ChatView({
   onAttachFiles,
   onRemovePendingFile,
   onAttachDisabled,
+  onAttachUnsupported,
   codeMode = false,
   codeSeed = "",
   codeBusy = false,
@@ -726,7 +728,7 @@ export default function ChatView({
                             {option.description && <span>{option.description}</span>}
                           </a>
                         ) : (
-                          <button key={option.value} type="button" disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
+                          <button key={option.value} type="button" className={option.tone === "danger" ? "chat-option-danger" : undefined} disabled={!optionsActive} onClick={() => { if (agent.kind === "mock-interview") unlockSpeechSynthesis(); onChooseOption(option.value, option.label); }}>
                             <strong>{option.suggested && <span className="chat-option-star" aria-label="Suggested">★ </span>}{option.label}</strong>
                             {option.description && <span>{option.description}</span>}
                           </button>
@@ -860,6 +862,7 @@ export default function ChatView({
                 documentAccept={attachAccept}
                 onFiles={onAttachFiles}
                 onDisabled={onAttachDisabled}
+                onUnsupported={onAttachUnsupported}
                 variant="text"
               />
             )}
@@ -873,6 +876,7 @@ export default function ChatView({
             documentAccept={attachAccept}
             onFiles={onAttachFiles}
             onDisabled={onAttachDisabled}
+            onUnsupported={onAttachUnsupported}
             multiple
           />
           <textarea

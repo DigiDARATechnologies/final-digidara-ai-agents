@@ -9,12 +9,15 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import and_, func, not_, or_
 
-from app import config
+from app import admin_messages, config
 from app.auth.security import get_current_user_id
-from app.billing.plans import active_plan, credited_points, credited_tokens, payment_label, plan_name, points_for_tokens
+from app.billing.plans import (
+    PLANS, active_plan, charge_amount, credited_points, credited_tokens, payment_label, plan_name, points_for_tokens,
+)
 from app.db import get_session
 from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
 
@@ -290,36 +293,67 @@ def conversation_messages(user_id: str, conversation_id: str, admin_id: str = De
         session.close()
 
 
+def _manual_clause():
+    """SQL for _is_manual on a paid row: no Razorpay payment id, or one marked
+    manual_... (coins granted by an admin: manual_grant / manual_<n> /
+    manual_org_...), so the admin sees the two kinds of money apart."""
+    return and_(Payment.status == "paid", or_(
+        func.coalesce(Payment.razorpay_payment_id, "") == "",
+        func.lower(Payment.razorpay_payment_id).like("manual%"),
+        func.lower(func.coalesce(Payment.razorpay_order_id, "")).like("manual%"),
+    ))
+
+
+def _plan_value(payment: Payment) -> int:
+    """Paise a payment is worth: what was recorded, or -- for a plan given by
+    hand and recorded at 0 -- what that plan costs (price + GST). Coins from an
+    organization have no plan, so they stay 0."""
+    if payment.amount:
+        return int(payment.amount)
+    plan = PLANS.get(payment.plan_id or "")
+    return int(charge_amount(plan)) if plan else 0
+
+
+def _payments_query(session, status: str, search: str, method: str):
+    query = session.query(Payment, User.email, User.name).outerjoin(User, User.id == Payment.user_id)
+    if status.strip():
+        query = query.filter(Payment.status == status.strip())
+    if method == "manual":
+        query = query.filter(_manual_clause())
+    elif method == "razorpay":
+        query = query.filter(not_(_manual_clause()))
+    term = search.strip().lower()
+    if term:
+        like = f"%{term}%"
+        query = query.filter(or_(func.lower(User.email).like(like), func.lower(User.name).like(like), func.lower(Payment.razorpay_order_id).like(like),
+                                 func.lower(func.coalesce(Payment.razorpay_payment_id, "")).like(like)))
+    return query
+
+
 @router.get("/payments")
 def list_payments(
     status: str = "", search: str = "", page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=MAX_PAGE_SIZE),
+    method: str = Query("", pattern="^(|manual|razorpay)$"),
     _admin: str = Depends(require_admin),
 ) -> dict:
     session = get_session()
     try:
-        query = session.query(Payment, User.email, User.name).outerjoin(User, User.id == Payment.user_id)
-        if status.strip():
-            query = query.filter(Payment.status == status.strip())
-        term = search.strip().lower()
-        if term:
-            like = f"%{term}%"
-            query = query.filter(or_(func.lower(User.email).like(like), func.lower(User.name).like(like), func.lower(Payment.razorpay_order_id).like(like),
-                                     func.lower(func.coalesce(Payment.razorpay_payment_id, "")).like(like)))
+        query = _payments_query(session, status, search, method)
         total = query.count()
         rows = query.order_by(Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
         summary_rows = session.query(Payment.status, func.count(), func.sum(Payment.amount)).group_by(Payment.status).all()
-        # A paid row with no Razorpay payment id, or one marked manual_...
-        # (coins granted by an admin: manual_grant / manual_<n>), was recorded
-        # by hand, so the admin sees the two kinds of money apart.
-        manual = or_(
-            func.coalesce(Payment.razorpay_payment_id, "") == "",
-            func.lower(Payment.razorpay_payment_id).like("manual%"),
-            func.lower(func.coalesce(Payment.razorpay_order_id, "")).like("manual%"),
-        )
-        paid_rows = session.query(manual, func.count(), func.sum(Payment.amount)).filter(Payment.status == "paid").group_by(manual).all()
         paid_by_method = {"razorpay": {"count": 0, "amount": 0.0}, "manual": {"count": 0, "amount": 0.0}}
-        for is_manual, c, a in paid_rows:
-            paid_by_method["manual" if is_manual else "razorpay"] = {"count": int(c), "amount": _rupees(a)}
+        manual_value = 0
+        for payment in session.query(Payment).filter(Payment.status == "paid").all():
+            kind = "manual" if _is_manual(payment) else "razorpay"
+            paid_by_method[kind]["count"] += 1
+            paid_by_method[kind]["amount"] += int(payment.amount or 0)
+            if kind == "manual":
+                manual_value += _plan_value(payment)
+        for kind in paid_by_method.values():
+            kind["amount"] = _rupees(kind["amount"])
+        # What the manual rows are worth at plan prices (most are recorded at 0).
+        paid_by_method["manual"]["value"] = _rupees(manual_value)
         return {
             "total": total, "page": page, "limit": limit,
             "summary": {s: {"count": int(c), "amount": _rupees(a)} for s, c, a in summary_rows},
@@ -329,6 +363,7 @@ def list_payments(
                 "amount": _rupees(p.amount), "currency": p.currency, "status": p.status, "razorpay_order_id": p.razorpay_order_id,
                 "razorpay_payment_id": p.razorpay_payment_id, "created_at": _iso(p.created_at), "paid_at": _iso(p.paid_at),
                 "method": "manual" if p.status == "paid" and _is_manual(p) else "razorpay",
+                "value": _rupees(_plan_value(p)),
                 "tokens": credited_tokens(p),
                 "points": credited_points(p),
             } for p, email, name in rows],
@@ -337,10 +372,40 @@ def list_payments(
         session.close()
 
 
+
+@router.get("/payments/export")
+def export_payments(
+    status: str = "", search: str = "", method: str = Query("", pattern="^(|manual|razorpay)$"),
+    _admin: str = Depends(require_admin),
+) -> Response:
+    """Every payment matching the same filters as the list, as a CSV file."""
+    import csv
+    import io
+
+    session = get_session()
+    try:
+        rows = _payments_query(session, status, search, method).order_by(Payment.created_at.desc()).all()
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(["Email", "Name", "For", "Type", "Status", "Amount (INR)", "Plan value (INR)", "Coins",
+                         "Created (UTC)", "Paid (UTC)", "Razorpay payment id", "Order id"])
+        for p, email, name in rows:
+            kind = "Manual" if p.status == "paid" and _is_manual(p) else "Razorpay"
+            writer.writerow([email or "(deleted account)", name or "", payment_label(p.plan_id), kind, p.status,
+                             f"{_rupees(p.amount):.2f}", f"{_rupees(_plan_value(p)):.2f}", round(credited_points(p) or 0, 2),
+                             _iso(p.created_at) or "", _iso(p.paid_at) or "", p.razorpay_payment_id or "", p.razorpay_order_id or ""])
+    finally:
+        session.close()
+    name = f"skilldara-payments-{method or 'all'}-{datetime.utcnow():%Y-%m-%d}.csv"
+    # A BOM so Excel reads the rupee names and UTF-8 text correctly.
+    return Response("\ufeff" + out.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
 @router.get("/boss-reports")
-def boss_reports(limit: int = Query(100, ge=1, le=500), _admin: str = Depends(require_admin)) -> dict:
-    """Problems learners asked Boss to report, newest first, with how often each
-    kind came up in the last 30 days, so repeated problems stand out."""
+def boss_reports(_admin: str = Depends(require_admin)) -> dict:
+    """Problems learners asked Boss to report, newest first (every one), with
+    how often each kind came up in the last 30 days, so repeated problems
+    stand out, and how many each learner and each agent has had in all."""
     from app.models import BossIssueReport
 
     session = get_session()
@@ -349,15 +414,65 @@ def boss_reports(limit: int = Query(100, ge=1, le=500), _admin: str = Depends(re
         counts = (session.query(BossIssueReport.category, func.count(), func.count(func.distinct(BossIssueReport.user_id)))
                   .filter(BossIssueReport.created_at >= since).group_by(BossIssueReport.category).all())
         rows = (session.query(BossIssueReport, User.name, User.email).join(User, User.id == BossIssueReport.user_id)
-                .order_by(BossIssueReport.created_at.desc()).limit(limit).all())
+                .order_by(BossIssueReport.created_at.desc()).all())
+        replies = admin_messages.by_report([r.id for r, _name, _email in rows])
+        by_user: dict[str, dict] = {}
+        by_agent: dict[str, dict] = {}
+        for r, name, email in rows:
+            is_open = (r.status or "open") == "open"
+            person = by_user.setdefault(r.user_id, {"user_id": r.user_id, "name": name, "email": email, "reports": 0, "open": 0,
+                                                    "agents": set(), "last_at": r.created_at})
+            agent = by_agent.setdefault(r.agent_id or "", {"agent_id": r.agent_id or "", "reports": 0, "open": 0, "learners": set()})
+            for bucket in (person, agent):
+                bucket["reports"] += 1
+                bucket["open"] += is_open
+            person["agents"].add(r.agent_id or "")
+            agent["learners"].add(r.user_id)
         return {
             "repeated": sorted(({"category": category, "reports": reports, "learners": learners}
                                 for category, reports, learners in counts), key=lambda item: -item["reports"]),
-            "reports": [{"id": r.id, "category": r.category, "agent_id": r.agent_id, "message": r.message,
-                         "name": name, "email": email, "created_at": _iso(r.created_at)} for r, name, email in rows],
+            "reports": [{"id": r.id, "user_id": r.user_id, "category": r.category, "agent_id": r.agent_id, "message": r.message,
+                         "name": name, "email": email, "created_at": _iso(r.created_at),
+                         "status": r.status or "open", "solved_at": _iso(r.solved_at),
+                         "replies": replies.get(r.id, [])} for r, name, email in rows],
+            "by_user": sorted(({**{k: v for k, v in p.items() if k not in ("agents", "last_at")},
+                                "agents": sorted(a for a in p["agents"] if a), "last_at": _iso(p["last_at"])}
+                               for p in by_user.values()), key=lambda item: (-item["reports"], item["email"] or "")),
+            "by_agent": sorted(({**{k: v for k, v in a.items() if k != "learners"}, "learners": len(a["learners"])}
+                                for a in by_agent.values()), key=lambda item: (-item["reports"], item["agent_id"])),
         }
     finally:
         session.close()
+
+
+class ReportStatusIn(BaseModel):
+    solved: bool
+    # The note sent to the learner when it is solved; empty sends the standard one.
+    message: str = Field(default="", max_length=2000)
+
+
+class ReportMessageIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+def _messages_call(fn, *args):
+    try:
+        return fn(*args)
+    except admin_messages.MessageError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+
+
+@router.put("/boss-reports/{report_id}/status")
+def set_boss_report_status(report_id: str, req: ReportStatusIn, admin_id: str = Depends(require_admin)) -> dict:
+    """Mark a report solved (the learner gets a message, shown next time they
+    open the app) or open it again."""
+    return _messages_call(admin_messages.set_report_status, admin_id, report_id, req.solved, req.message)
+
+
+@router.post("/boss-reports/{report_id}/messages", status_code=201)
+def message_boss_reporter(report_id: str, req: ReportMessageIn, admin_id: str = Depends(require_admin)) -> dict:
+    """A message from the team to the learner who sent this report."""
+    return _messages_call(admin_messages.reply_to_report, admin_id, report_id, req.message)
 
 
 @router.get("/enterprise-enquiries")

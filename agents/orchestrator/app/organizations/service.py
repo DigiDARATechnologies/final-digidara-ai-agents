@@ -22,7 +22,7 @@ from app import db
 from app.auth.security import hash_password
 from app.learner import levels as level_rules
 from app.learner import service as learner_service
-from app.models import Organization, OrganizationMember, OrgJoinCode, User
+from app.models import Organization, OrganizationMember, OrgJoinCode, OrgJoinRequest, User
 from app.organizations import coins
 from app.readiness import service as readiness_service
 
@@ -34,6 +34,8 @@ STAFF_ROLES = ("owner", "admin", "staff")
 # Coins given once to each admin, staff login and student (organizations/coins.py).
 COIN_FIELDS = ("admin_coins", "staff_coins", "student_coins")
 KINDS = ("college", "training_institute", "company", "other")
+# A deleted organization keeps its row (see delete_for_platform).
+DELETED = "deleted"
 MAX_BULK = 200
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -164,17 +166,27 @@ def create_for_platform(name: str, kind: str, admin_name: str, admin_email: str,
     return result
 
 
-def set_status(org_id: str, status: str, member_limit: int | None = None, coin_amounts: dict | None = None) -> dict:
-    """Platform admin: suspend or reactivate an organization, or change its
-    limit or the coins it gives (from now on; see coins.grant_current_members)."""
-    if status not in ("active", "suspended"):
+def set_status(org_id: str, status: str | None, member_limit: int | None = None, coin_amounts: dict | None = None,
+               name: str | None = None, kind: str | None = None) -> dict:
+    """Platform admin: suspend or reactivate an organization, rename it,
+    change its type, its limit or the coins it gives (from now on; see
+    coins.grant_current_members). A None leaves that setting as it is."""
+    if status is not None and status not in ("active", "suspended"):
         raise OrgError(400, "Status must be active or suspended.")
     session = db.get_session()
     try:
         org = session.get(Organization, org_id)
-        if org is None:
+        if org is None or org.status == DELETED:
             raise OrgError(404, "No such organization.")
-        org.status = status
+        if status is not None:
+            org.status = status
+        if name is not None:
+            cleaned = " ".join(name.split())[:255]
+            if len(cleaned) < 2:
+                raise OrgError(400, "Enter the organization's name.")
+            org.name = cleaned
+        if kind is not None:
+            org.kind = kind if kind in KINDS else "other"
         if member_limit is not None:
             org.member_limit = _limit(member_limit, org.member_limit)
         for field, value in (coin_amounts or {}).items():
@@ -184,6 +196,31 @@ def set_status(org_id: str, status: str, member_limit: int | None = None, coin_a
         return _org_dict(org, _count(session, org.id))
     finally:
         session.close()
+
+
+def delete_for_platform(org_id: str) -> dict:
+    """Platform admin: delete an organization. It leaves the list and its
+    admins, staff and join codes stop working. Its members are released --
+    each as if they had left -- so they can join another organization.
+
+    Nothing a learner did is erased: the organization's row is kept (marked
+    deleted) with its assessments, knowledge tests and every attempt on
+    them, and accounts and coins are untouched. (A real DELETE would cascade
+    through assessments to learners' attempts.)"""
+    session = db.get_session()
+    try:
+        org = session.get(Organization, org_id)
+        if org is None or org.status == DELETED:
+            raise OrgError(404, "No such organization.")
+        released = session.query(OrganizationMember).filter_by(organization_id=org_id).delete()
+        session.query(OrgJoinRequest).filter_by(organization_id=org_id).delete()
+        session.query(OrgJoinCode).filter_by(organization_id=org_id).update({"active": False})
+        org.status = DELETED
+        name = org.name
+        session.commit()
+    finally:
+        session.close()
+    return {"deleted": org_id, "name": name, "members_released": released}
 
 
 def find_code(session, code: str) -> tuple[Organization, OrgJoinCode | None]:
@@ -663,7 +700,7 @@ def list_all() -> list[dict]:
     session = db.get_session()
     try:
         result = []
-        for org in session.query(Organization).order_by(Organization.name).all():
+        for org in session.query(Organization).filter(Organization.status != DELETED).order_by(Organization.name).all():
             owners = (session.query(User.name, User.email).join(OrganizationMember, OrganizationMember.user_id == User.id)
                       .filter(OrganizationMember.organization_id == org.id, OrganizationMember.role.in_(ADMIN_ROLES)).all())
             codes = session.query(OrgJoinCode).filter_by(organization_id=org.id, active=True).count()

@@ -22,6 +22,7 @@ import {
   type JobAutomationSettings,
 } from "../../lib/jobFetchApi";
 import { fetchUsers, type AdminUserRow } from "../../lib/adminApi";
+import { formatDate } from "./adminFormat";
 
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -460,7 +461,7 @@ export default function JobsAdminPanel() {
           ) : (
             <div className="admin-table-card">
               <table className="admin-table">
-                <thead><tr><th>Title</th><th>Company</th><th>Source</th><th>Location</th><th>Category</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Title</th><th>Company</th><th>Source</th><th>Location</th><th>Category</th><th>Received</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filteredJobs.map((job) => {
                     const badge = getJobSourceBadge(job.external_id, job.source_type);
@@ -487,6 +488,10 @@ export default function JobsAdminPanel() {
                         </td>
                         <td>{job.location || "—"}</td>
                         <td>{job.category || "—"}</td>
+                        <td style={{ whiteSpace: "nowrap" }} title="When SkillDARA received this job">
+                          {formatDate(job.created_at)}
+                          {job.published_at && <><br /><small style={{ color: "var(--tx-3, #667085)" }}>Posted {formatDate(job.published_at).split(",")[0]}</small></>}
+                        </td>
                         <td><StatusBadge status={job.status} /></td>
                         <td>
                           <div className="admin-row-actions">
@@ -507,7 +512,7 @@ export default function JobsAdminPanel() {
                       </tr>
                     );
                   })}
-                  {!filteredJobs.length && <tr><td colSpan={7} className="admin-table-empty">No jobs match these filters.</td></tr>}
+                  {!filteredJobs.length && <tr><td colSpan={8} className="admin-table-empty">No jobs match these filters.</td></tr>}
                 </tbody>
               </table>
             </div>

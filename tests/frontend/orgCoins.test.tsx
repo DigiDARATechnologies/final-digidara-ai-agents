@@ -1,5 +1,5 @@
 jest.mock('../../src/lib/orgApi', () => ({
-  fetchPlatformOrgs: jest.fn(), platformCreateOrg: jest.fn(), platformUpdateOrg: jest.fn(), platformGiveCoins: jest.fn(),
+  fetchPlatformOrgs: jest.fn(), platformCreateOrg: jest.fn(), platformUpdateOrg: jest.fn(), platformGiveCoins: jest.fn(), platformDeleteOrg: jest.fn(),
 }));
 jest.mock('../../src/components/org/OrgDashboard', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../src/components/org/OrgAssistant', () => ({ __esModule: true, default: () => null }));
@@ -26,17 +26,37 @@ test('a new organization is created with coins for its admin, each staff login a
   expect(await screen.findByText('100 coins given to the admin.')).toBeInTheDocument();
 });
 
-test('the coins of an organization are changed and given to its current members', async () => {
+test('an organization is edited (name, type, limit, coins) and coins given to its current members', async () => {
   api.fetchPlatformOrgs.mockResolvedValue([org]);
   api.platformUpdateOrg.mockResolvedValue({ ...org, student_coins: 30 });
   api.platformGiveCoins.mockResolvedValue({ people: 2, coins: 60 });
   render(<OrganizationsPanel />);
   expect(await screen.findByText('Coins: admin 100 · staff 50 · student 20')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Coins' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   const item = within(screen.getByText('ABC College').closest('li') as HTMLElement);
+  fireEvent.change(item.getByDisplayValue('ABC College'), { target: { value: 'ABC Engineering College' } });
   fireEvent.change(item.getByLabelText('For each student'), { target: { value: '30' } });
   fireEvent.click(item.getByRole('button', { name: 'Save and give now' }));
   await waitFor(() => expect(api.platformGiveCoins).toHaveBeenCalledWith('o1'));
-  expect(api.platformUpdateOrg).toHaveBeenCalledWith('o1', { status: 'active', admin_coins: 100, staff_coins: 50, student_coins: 30 });
+  expect(api.platformUpdateOrg).toHaveBeenCalledWith('o1', {
+    name: 'ABC Engineering College', kind: 'college', member_limit: 0, admin_coins: 100, staff_coins: 50, student_coins: 30,
+  });
   expect(await screen.findByText('60 coins given to 2 people.')).toBeInTheDocument();
+});
+
+test('deleting needs the name typed and says how many members were released', async () => {
+  api.fetchPlatformOrgs.mockResolvedValue([org]);
+  api.platformDeleteOrg.mockResolvedValue({ deleted: 'o1', name: 'ABC College', members_released: 3 });
+  const prompt = jest.spyOn(window, 'prompt');
+  render(<OrganizationsPanel />);
+  await screen.findByText('ABC College');
+  prompt.mockReturnValueOnce('wrong name');
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  expect(await screen.findByText("The name didn't match, so nothing was deleted.")).toBeInTheDocument();
+  expect(api.platformDeleteOrg).not.toHaveBeenCalled();
+  prompt.mockReturnValueOnce('ABC College');
+  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+  await waitFor(() => expect(api.platformDeleteOrg).toHaveBeenCalledWith('o1'));
+  expect(await screen.findByText('ABC College deleted. 3 members released.')).toBeInTheDocument();
+  prompt.mockRestore();
 });
