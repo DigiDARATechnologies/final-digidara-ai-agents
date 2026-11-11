@@ -101,7 +101,6 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
 
   return (
     <section className="view view-chat new-chat-landing home-landing active">
-      <TopPerformers onOpen={onOpenLeaderboard} />
       <div className="landing-center">
         <div className="home-logo">
           <Logo variant="icon" size={72} />
@@ -188,6 +187,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
           ))}
         </div>
         <p className="home-hint">Choose an agent or let SkillDARA pick the right one.</p>
+        <TopPerformers onOpen={onOpenLeaderboard} />
       </div>
       <p className="home-disclaimer">AI can make mistakes. Please verify important information.</p>
       {talking && (

@@ -188,3 +188,30 @@
   .ld-ring { width: 120px; height: 120px; }
   .ld-ring strong { font-size: 28px; }
 }
+
+/* ===== Light redesign: indigo/blue brand palette, banner header, soft cards ===== */
+.ld-page { --ld-s1: #3b5bdb; --ld-s2: #7c5cff; --ld-s3: #12b3a6; --ld-s4: #f5a524; --ld-s5: #ef6aa8; --ld-grid: #e1e5f5; --ld-axis: #8b90ad;
+  font-family: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, sans-serif; }
+.ld-head { padding: 24px 28px; border-radius: 24px; color: #fff; align-items: center; margin-bottom: 20px;
+  background:
+    radial-gradient(360px 220px at 100% 0%, rgb(255 255 255 / .24), transparent 70%),
+    radial-gradient(300px 200px at 0% 100%, rgb(94 200 255 / .35), transparent 70%),
+    linear-gradient(120deg, #2851d8 0%, #4a3fd0 55%, #7c4ddb 100%);
+  box-shadow: 0 22px 44px -28px rgb(60 60 200 / .7); }
+.ld-head h1 { color: #fff; font-size: clamp(24px, 2.8vw, 32px); font-weight: 700; letter-spacing: -.035em; }
+.ld-head p { color: rgb(255 255 255 / .85); }
+.ld-kicker { background: rgb(255 255 255 / .16); border-color: rgb(255 255 255 / .38); color: #fff; }
+.ld-switch { background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .35); }
+.ld-switch button { color: rgb(255 255 255 / .85); }
+.ld-switch button.on { background: #fff; color: #2b3fb8; }
+.ld-kpi, .ld-card { border-radius: 20px; border-color: var(--line-1); box-shadow: 0 14px 32px -26px rgb(60 70 170 / .55); }
+.ld-kpi { position: relative; overflow: hidden; }
+.ld-kpi::after { content: ""; position: absolute; right: -28px; top: -28px; width: 96px; height: 96px; border-radius: 50%; background: radial-gradient(circle, rgb(124 92 255 / .16), transparent 70%); }
+.ld-kpi strong { font-size: 30px; font-weight: 800; letter-spacing: -.03em; color: var(--accent1, #2851d8); }
+.ld-card-head h2 { font-weight: 700; letter-spacing: -.02em; }
+.ld-progress { height: 8px; background: var(--accent-soft, #eceeff); }
+.ld-progress i { background: linear-gradient(90deg, #2851d8, #7c5cff); }
+.ld-hbars div { height: 9px; background: var(--accent-soft, #eceeff); }
+.ld-hbars i { background: linear-gradient(90deg, #3b5bdb, #7c5cff); }
+.ld-activity i, .ld-pair i { border-radius: 6px 6px 0 0; }
+.ld-table th { color: var(--tx-3); }

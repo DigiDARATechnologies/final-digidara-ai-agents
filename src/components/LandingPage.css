@@ -277,3 +277,11 @@
   .lp-compare-row > span:last-child{ padding-bottom:18px; }
   .lp-compare-row > span::before{ content:attr(data-label); flex:none; width:96px; font-size:11.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--lp-dim); }
 }
+
+
+/* ===== Typography: lighter, tighter headings like BizDARA; gradient accent words ===== */
+.lp-hero h1,.lp-head h2,.lp-split h2,.lp-final h2{ font-weight:600; letter-spacing:-.04em; }
+.lp-stat strong{ font-weight:700; }
+.lp-lead,.lp-head p{ font-weight:400; }
+.lp-btn{ letter-spacing:0; font-weight:700; }
+.lp-grad{ background:linear-gradient(100deg,#2563eb 0%,#6d4fe0 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
