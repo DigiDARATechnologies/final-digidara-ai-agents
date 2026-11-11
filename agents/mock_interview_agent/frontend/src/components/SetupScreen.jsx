@@ -42,6 +42,7 @@ const ROLE_PRESETS = [
   "Data Analyst",
   "Digital Marketing Executive",
   "AI Engineer",
+  "Prompt Engineer",
 ];
 const StartIcon = APP_ICONS.start;
 const SelectedIcon = APP_ICONS.selected;

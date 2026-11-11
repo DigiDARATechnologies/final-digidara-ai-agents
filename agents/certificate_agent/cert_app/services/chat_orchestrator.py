@@ -132,7 +132,9 @@ def analyze_user_message(session_id: str, user_message: str) -> dict:
 Your task is to analyze the user's message and classify their intent.
 
 We have two intents:
-1. "start_exam": Use this if the user explicitly wants to take, generate, or start a certification exam on a technical topic, or if they state a technical subject they want to be tested on (e.g., "Python", "Docker", "AWS", "I want to validate my Python full stack skills", "test me on React"). Extract the clean technical topic (e.g., "Python Full Stack Development", "React").
+1. "start_exam": Use this if the user explicitly wants to take, generate, or start a certification exam on a technical topic, or if they state a technical subject they want to be tested on (e.g., "Python", "Docker", "AWS", "I want to validate my Python full stack skills", "test me on React", "Digital Marketing", "Prompt Engineering"). Extract the clean technical topic (e.g., "Python Full Stack Development", "React", "Digital Marketing").
+
+SCOPE: "technical topic" means any job skill a learner can be certified in. Besides programming and engineering, this INCLUDES professional career skills such as Digital Marketing (SEO, SEM, Google Ads, social media, content and email marketing, analytics) and Prompt Engineering (prompt design, LLMs, generative AI tools). Treat these exactly like technical topics: never refuse them.
 2. "chat": Use this for greetings, questions about how the certification system works, career/technical skill discussions, or general chat.
 
 OUT-OF-SCOPE HARD RULE:

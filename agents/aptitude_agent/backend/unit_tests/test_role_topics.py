@@ -215,3 +215,20 @@ def test_a_non_coding_skill_is_not_also_told_to_use_a_coding_language():
     assert power_bi["technical_skill"] == "Power BI" and "technical_language" not in power_bi
     sql = _slot("Technical Aptitude", "SQL Queries & Joins", "Medium", "SQL", None, "Data Analyst", ["SQL"], "SQL")
     assert sql["technical_language"] == "SQL"
+
+
+def test_digital_marketing_and_prompt_engineering_get_their_own_topics_and_no_language():
+    from backend.app.services.role_topics import MARKETING_TOPICS, PROMPT_TOPICS
+
+    marketing = role_technical_context("Digital Marketing Executive", ["HTML", "SEO"])
+    prompting = role_technical_context("Prompt Engineer", ["Python"])
+    assert (marketing["family"], marketing["language"]) == ("marketing", None)
+    assert (prompting["family"], prompting["language"]) == ("prompt", None)
+    for level in ("Beginner", "Intermediate", "Advanced"):
+        assert set(role_topics_for_level("Digital Marketing Executive", [], level)) <= set(MARKETING_TOPICS)
+        assert set(role_topics_for_level("Prompt Engineer", [], level)) <= set(PROMPT_TOPICS)
+        assert role_topics_for_level("Digital Marketing Executive", [], level)
+    # A technical slot for these roles carries no programming language.
+    slots = build_category_slots("Technical Aptitude", "Beginner", seed=1, technical_role="Digital Marketing Executive")
+    assert all("technical_language" not in slot and slot["technical_role_family"] == "marketing" for slot in slots)
+    assert {slot["topic"] for slot in slots} <= set(MARKETING_TOPICS)

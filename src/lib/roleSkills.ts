@@ -18,6 +18,8 @@ const ROLE_SKILLS: Record<string, string[]> = {
   "ui/ux designer": ["figma", "wireframing", "prototyping", "user research", "design systems"],
   "cybersecurity analyst": ["networking", "linux", "security fundamentals", "siem", "vulnerability assessment"],
   "product manager": ["product strategy", "roadmapping", "user research", "analytics", "communication"],
+  "prompt engineer": ["prompt engineering", "llm", "chatgpt", "generative ai", "prompt evaluation", "rag", "python"],
+  "digital marketing executive": ["seo", "sem", "google ads", "social media marketing", "content marketing", "email marketing", "google analytics"],
 };
 
 /** The known starting skills for this role, or null when it is not a common one. */

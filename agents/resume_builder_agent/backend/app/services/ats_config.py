@@ -35,6 +35,10 @@ SKILL_ALIASES = {
     # Data and analytics
     "ai": "Artificial Intelligence",
     "artificial intelligence": "Artificial Intelligence",
+    "prompt engineering": "Prompt Engineering", "prompt design": "Prompt Engineering",
+    "llm": "Large Language Models", "llms": "Large Language Models", "large language models": "Large Language Models",
+    "generative ai": "Generative AI", "genai": "Generative AI", "gen ai": "Generative AI",
+    "chatgpt": "ChatGPT", "rag": "RAG", "retrieval augmented generation": "RAG",
     "js": "JavaScript",
     "javascript": "JavaScript",
     "machine learning": "Machine Learning",
@@ -135,6 +139,18 @@ COMMON_ROLE_SKILLS = {
     ],
     "qa engineer": [
         "Python", "SQL", "Git", "Jira", "Agile"
+    ],
+    "digital marketing executive": [
+        "SEO", "SEM", "Google Ads", "Google Analytics", "Social Media Marketing",
+        "Content Marketing", "Email Marketing"
+    ],
+    "digital marketing": [
+        "SEO", "SEM", "Google Ads", "Google Analytics", "Social Media Marketing",
+        "Content Marketing", "Email Marketing"
+    ],
+    "prompt engineer": [
+        "Prompt Engineering", "Large Language Models", "Generative AI", "ChatGPT",
+        "Python", "RAG", "Artificial Intelligence"
     ],
 }
 

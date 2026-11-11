@@ -133,6 +133,8 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Data Structures and Algorithms", "SQL Queries & Joins", "OOP Four Pillars",
             "Flowcharts", "Pseudocode", "Output Prediction", "Machine Learning Fundamentals",
             "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
+            "Digital Marketing Fundamentals", "SEO Basics", "Social Media Marketing",
+            "Prompt Engineering Fundamentals", "Prompt Writing Techniques",
         ),
         "Intermediate": (
             "Data Structures", "Searching Algorithms", "Sorting Algorithms", "Recursion",
@@ -142,6 +144,8 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Asymptotic Notation", "Database Normalization", "ACID Properties",
             "Keys & Relationships", "Constructors/Destructors/Garbage Collection",
             "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
+            "Digital Marketing Fundamentals", "SEO & SEM", "Content & Email Marketing", "Marketing Analytics",
+            "Prompt Engineering Fundamentals", "Prompt Design Patterns", "LLM Output Evaluation",
         ),
         "Advanced": (
             "Advanced Data Structures", "Graph Algorithms", "Dynamic Programming",
@@ -151,6 +155,8 @@ _TOPIC_NAMES_BY_LEVEL = {
             "Advanced Data Structures and Algorithms", "Advanced Searching & Sorting Algorithms",
             "Advanced SQL Queries & Joins", "Advanced OOP Four Pillars",
             "Machine Learning Fundamentals", "Power BI & Data Visualization", "Excel Data Analysis", "React Fundamentals", "Flask Web Development",
+            "SEO & SEM", "Marketing Analytics", "Campaign Strategy & Budgeting", "Advanced Marketing Analytics",
+            "Prompt Design Patterns", "Advanced Prompt Engineering", "RAG & AI Agents",
         ),
     },
 }

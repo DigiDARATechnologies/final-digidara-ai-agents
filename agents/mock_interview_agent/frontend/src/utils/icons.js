@@ -126,6 +126,7 @@ export const SUBJECT_ICONS = {
   "RAG & Vector Databases": { icon: DatabaseZap, color: "#2563EB" },
   FastAPI: { icon: SiFastapi, color: "#009688" },
   "AI Agent Development": { icon: Bot, color: "#4F46E5" },
+  "Prompt Engineering": { icon: Search, color: "#7C3AED" },
   SEO: { icon: Search, color: "#F43F5E" },
   "SEM & Google Ads": { icon: Megaphone, color: "#EA580C" },
   "Social Media Marketing": { icon: Share2, color: "#DB2777" },

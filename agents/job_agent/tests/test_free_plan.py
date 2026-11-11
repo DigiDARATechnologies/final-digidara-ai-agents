@@ -86,7 +86,8 @@ def test_the_month_plan_fits_the_free_limits_and_mixes_roles_and_cities():
     assert adzuna_month <= 2500 and jsearch_month <= 200
     assert max(sum(len(c["roles"]) for c in day["adzuna"]) for day in plan) <= 250
     first, second = plan[0], plan[1]
-    assert len(first["adzuna"]) == 7  # every city, every day
+    # Every city, every day (the remote "India" searches join on some days).
+    assert len([city for city in first["adzuna"] if city["city"] != "India"]) == 7
     for city in first["adzuna"]:
         assert len(set(city["roles"])) == len(city["roles"])
     # Neighbouring cities search different roles on the same day, and each day moves on.
@@ -97,11 +98,11 @@ def test_the_month_plan_fits_the_free_limits_and_mixes_roles_and_cities():
 
 def test_every_role_reaches_every_city_within_days():
     seen = set()
-    # 38 roles in 7 cities, and each once as a remote search, at 70 a day. Well inside
+    # 39 roles in 7 cities, and each once as a remote search, at 70 a day. Well inside
     # the 7 days a job is kept, so jobs do not expire before their search comes round.
     for day in upcoming_plan(5, date(2026, 10, 1)):
         seen.update((role, city["city"]) for city in day["adzuna"] for role in city["roles"])
-    assert len(seen) == 38 * 8
+    assert len(seen) == 39 * 8
 
 
 def test_a_short_quota_day_runs_fewer_without_shifting_the_rotation():
