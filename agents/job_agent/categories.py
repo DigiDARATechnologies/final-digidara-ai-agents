@@ -33,6 +33,8 @@ DEFAULT_CATEGORIES = [
         "course_keywords": [
             "generative ai", "gen ai", "genai", "agentic ai", "agentic",
             "large language model", "llm",
+            # The Prompt Engineering course: its jobs are Gen AI jobs.
+            "prompt engineering", "prompt",
         ],
     },
     {

@@ -47,7 +47,8 @@ def is_topic_course(topic: str) -> bool:
         "cad/cam", "automobile engineering", "mechatronics", "ic engines",
         "structural engineering", "geotechnical engineering", "transportation engineering",
         "hydraulics", "surveying", "construction management",
-        "environmental engineering", "concrete technology", "hydrology", "building materials"
+        "environmental engineering", "concrete technology", "hydrology", "building materials",
+        "prompt engineering", "digital marketing",
     }
     if t in course_list:
         return True

@@ -10,6 +10,7 @@ const ROLE_SUGGESTIONS = [
   "software developer", "full stack developer", "frontend developer", "backend developer", "data analyst",
   "data scientist", "machine learning engineer", "devops engineer", "cloud engineer", "qa / test engineer",
   "business analyst", "ui/ux designer", "cybersecurity analyst", "product manager",
+  "prompt engineer", "digital marketing executive",
 ];
 const DEGREE_SUGGESTIONS = ["b.e / b.tech", "b.sc", "bca", "b.com", "bba", "m.e / m.tech", "m.sc", "mca", "mba", "diploma"];
 

@@ -44,6 +44,8 @@ SKILL_TOPIC_RULES = {
     "react": ("react", "react fundamentals", "javascript", "api design", "web"),
     "machine learning": ("machine learning", "ml", "machine learning fundamentals", "data structures and algorithms", "data structures", "time complexity"),
       "power bi": ("power bi", "power bi & data visualization", "business intelligence", "database programming", "data structures", "sql queries"),
+    "digital marketing": ("digital marketing", "marketing", "seo", "search engine", "google ads", "social media", "content marketing", "email marketing", "campaign"),
+    "prompt engineering": ("prompt engineering", "prompt", "llm", "chatgpt", "generative ai", "rag"),
 }
 
 _SKILL_ALIAS_KEYS = {
@@ -102,7 +104,23 @@ def skill_for_topic(topic, skills, fallback_index=0):
             return skill
     return values[fallback_index % len(values)]
 
+# Career courses that are not programming: like "generic" they take no
+# programming language, but they have their own topics (topic_config.py).
+MARKETING_TOPICS = (
+    "Digital Marketing Fundamentals", "SEO Basics", "Social Media Marketing", "SEO & SEM",
+    "Content & Email Marketing", "Marketing Analytics", "Campaign Strategy & Budgeting", "Advanced Marketing Analytics",
+)
+PROMPT_TOPICS = (
+    "Prompt Engineering Fundamentals", "Prompt Writing Techniques", "Prompt Design Patterns",
+    "LLM Output Evaluation", "Advanced Prompt Engineering", "RAG & AI Agents",
+)
+LANGUAGE_FREE_FAMILIES = frozenset({"generic", "marketing", "prompt"})
+
 ROLE_TOPIC_RULES = {
+    "prompt": {"language": None, "terms": ("prompt engineer", "prompt engineering", "prompt design", "prompting", "llm", "generative ai", "chatgpt", "rag"),
+               "topics": PROMPT_TOPICS},
+    "marketing": {"language": None, "terms": ("digital marketing", "marketing", "seo", "search engine", "google ads", "social media", "content marketing", "email marketing", "campaign"),
+                  "topics": MARKETING_TOPICS},
     "python": {"language": "Python", "terms": ("python", "django", "flask", "fastapi", "pandas", "numpy"),
                 "topics": ("Programming Fundamentals", "Variables & Data Types", "Loops", "Functions", "Data Structures", "Object-Oriented Basics", "Object-Oriented Programming", "Exception Handling", "Database Programming", "API Design")},
     "java": {"language": "Java", "terms": ("java", "spring", "hibernate", "j2ee", "kotlin"),
@@ -125,6 +143,13 @@ ROLE_TOPIC_RULES = {
 
 def _role_key(role, skills=()):
     text = " ".join([str(role or ""), *(str(skill or "") for skill in skills)]).casefold()
+    # The role decides first: a Digital Marketing learner who also knows some
+    # HTML is still a marketer, not a web developer.
+    role_text = str(role or "").casefold()
+    if "prompt" in role_text:
+        return "prompt"
+    if "marketing" in role_text or re.search(r"\bseo\b", role_text):
+        return "marketing"
     if any(term in text for term in ROLE_TOPIC_RULES["mern"]["terms"]):
         return "mern"
     if any(term in text for term in ROLE_TOPIC_RULES["dotnet"]["terms"]):

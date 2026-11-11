@@ -24,7 +24,7 @@ from ..services.topic_selection_service import (
     save_last_topics,save_mixed_topics,select_mixed_topics_for_attempt,
     select_topics_for_attempt,
 )
-from ..services.role_topics import normalize_technical_skills, role_technical_context, role_topics_for_level
+from ..services.role_topics import LANGUAGE_FREE_FAMILIES, normalize_technical_skills, role_technical_context, role_topics_for_level
 from ..services.usage_service import record_usage
 from ..topic_config import topic_is_starred
 from ..utils.authentication import require_student
@@ -145,8 +145,8 @@ def create_test():
     # Specific roles select their own formatter. Generic or missing roles are
     # deliberately language-neutral and ignore any legacy browser language.
     has_role_context = "target_role" in body or "target_skills" in body or "skills" in body
-    requested_language = None if has_role_context and role_context["family"] == "generic" else str(body.get("technical_language") or DEFAULT_TECHNICAL_LANGUAGE).strip()
-    if target_role and role_context["family"] != "generic":
+    requested_language = None if has_role_context and role_context["family"] in LANGUAGE_FREE_FAMILIES else str(body.get("technical_language") or DEFAULT_TECHNICAL_LANGUAGE).strip()
+    if target_role and role_context["family"] not in LANGUAGE_FREE_FAMILIES:
         requested_language=role_context["language"]
     language_by_key={language.casefold():language for language in TECHNICAL_LANGUAGES}
     if requested_language is not None:

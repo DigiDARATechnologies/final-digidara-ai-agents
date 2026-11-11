@@ -15,6 +15,7 @@ ROLE_SUBJECTS = {
     "data scientist": ["python", "data science", "mysql", "machine learning"],
     "digital marketing executive": ["seo", "sem & google ads", "social media marketing", "content marketing", "email marketing"],
     "ai engineer": ["python", "machine learning", "generative ai", "rag & vector databases", "fastapi"],
+    "prompt engineer": ["prompt engineering", "generative ai", "rag & vector databases", "ai agent development"],
 }
 
 # Older role interviews grouped several data skills under the broad ``python``
