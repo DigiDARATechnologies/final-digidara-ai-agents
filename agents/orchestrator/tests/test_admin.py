@@ -250,3 +250,20 @@ def test_boss_reports_count_each_learner_and_each_agent(api, seeded, database):
     mock, aptitude = body["by_agent"]
     assert (mock["agent_id"], mock["reports"], mock["open"], mock["learners"]) == ("mock-interview", 3, 2, 2)
     assert (aptitude["agent_id"], aptitude["reports"], aptitude["learners"]) == ("aptitude", 1, 1)
+
+
+def test_a_users_page_shows_every_coin_spent_even_without_chats(api, seeded, database):
+    from app.models import TokenUsageEvent
+
+    with database() as session:
+        session.add_all([
+            TokenUsageEvent(user_id="ravi", agent_name="voice", action="speak", tokens=4000, created_at=NOW - timedelta(minutes=2)),
+            TokenUsageEvent(user_id="ravi", agent_name="boss", action="chat", tokens=2000, created_at=NOW - timedelta(minutes=1)),
+            TokenUsageEvent(user_id="ravi", agent_name="voice", action="speak", tokens=2000, created_at=NOW),
+            TokenUsageEvent(user_id="asha", agent_name="boss", action="chat", tokens=999, created_at=NOW),
+        ])
+        session.commit()
+    body = api.get("/platform-admin/users/ravi", headers=bearer("boss")).json()
+    assert [(u["agent_name"], u["tokens"]) for u in body["usage"]] == [("voice", 2000), ("boss", 2000), ("voice", 4000)]
+    assert body["usage_by_agent"][0]["agent_name"] == "voice" and body["usage_by_agent"][0]["uses"] == 2
+    assert body["usage_by_agent"][0]["tokens"] == 6000 and body["usage_by_agent"][0]["points"] > 0

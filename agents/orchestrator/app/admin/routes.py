@@ -19,7 +19,7 @@ from app.billing.plans import (
     PLANS, active_plan, charge_amount, credited_points, credited_tokens, payment_label, plan_name, points_for_tokens,
 )
 from app.db import get_session
-from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, User
+from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, TokenUsageEvent, User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/platform-admin", tags=["platform-admin"])
@@ -242,6 +242,14 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
             session.query(ConversationMessage.conversation_id, func.count(ConversationMessage.id)).filter_by(user_id=user_id).group_by(ConversationMessage.conversation_id).all()
         )
         states = session.query(AgentChatState).filter_by(user_id=user_id).order_by(AgentChatState.updated_at.desc()).all()
+        # Every charge against the balance, newest first: where the coins went,
+        # even for use that leaves no chat (Boss, voice, the career plan, tests).
+        usage = session.query(TokenUsageEvent).filter_by(user_id=user_id).order_by(TokenUsageEvent.created_at.desc()).all()
+        by_agent: dict[str, dict] = {}
+        for event in usage:
+            row = by_agent.setdefault(event.agent_name or "", {"agent_name": event.agent_name or "", "uses": 0, "tokens": 0})
+            row["uses"] += 1
+            row["tokens"] += int(event.tokens or 0)
         paid = [p for p in payments if p.status == "paid"]
         return {
             "user": {
@@ -270,6 +278,12 @@ def user_detail(user_id: str, _admin: str = Depends(require_admin)) -> dict:
                 "agent_id": s.agent_id, "chat_id": s.chat_id, "step": (s.state or {}).get("step") if isinstance(s.state, dict) else None,
                 "updated_at": _iso(s.updated_at),
             } for s in states],
+            "usage": [{
+                "agent_name": e.agent_name, "action": e.action, "tokens": int(e.tokens or 0),
+                "points": round(points_for_tokens(e.tokens or 0, user.tokens_per_point), 2), "created_at": _iso(e.created_at),
+            } for e in usage],
+            "usage_by_agent": sorted(({**row, "points": round(points_for_tokens(row["tokens"], user.tokens_per_point), 2)}
+                                      for row in by_agent.values()), key=lambda row: -row["tokens"]),
         }
     finally:
         session.close()

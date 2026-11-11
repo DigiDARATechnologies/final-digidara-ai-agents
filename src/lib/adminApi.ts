@@ -35,6 +35,9 @@ export interface UserDetail {
   payments: UserPayment[];
   conversations: { id: string; agent_id: string; title: string; messages: number; pinned: boolean; created_at: string | null; updated_at: string | null; deleted: boolean }[];
   agent_progress: { agent_id: string; chat_id: string; step: string | null; updated_at: string | null }[];
+  /** Every charge against the balance, newest first. */
+  usage?: { agent_name: string; action: string; tokens: number; points: number; created_at: string | null }[];
+  usage_by_agent?: { agent_name: string; uses: number; tokens: number; points: number }[];
 }
 export interface ConversationView { id: string; agent_id: string; title: string; messages: { role: string; content: string; time: string; created_at: string | null }[] }
 export interface PaymentRow {
