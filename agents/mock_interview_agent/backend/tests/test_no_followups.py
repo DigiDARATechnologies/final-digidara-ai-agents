@@ -69,6 +69,7 @@ class PlannedQuestionFlowTests(unittest.TestCase):
             patch("routes.answers.db.save_answer_with_optional_daily_usage", side_effect=save_answer),
             patch("routes.answers.daily_answered_count", return_value=0),
             patch("routes.answers.groq_client.evaluate_answer") as immediate_evaluation,
+            patch("routes.answers.groq_client.generate_question") as next_question_generation,
             patch("routes.interviews._batch_evaluations_or_error", return_value=(evaluations, None)) as batch,
             patch("routes.interviews.groq_client.evaluate_interview", return_value=summary),
             patch("routes.interviews.finalize_open_focus_events", return_value={}),
@@ -93,6 +94,7 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(len(result.get_json()["scorecard"]), 10)
         self.assertEqual(batch.call_count, 1)
         immediate_evaluation.assert_not_called()
+        next_question_generation.assert_not_called()
 
     def test_historical_followup_still_renders_below_parent(self):
         rows = [
