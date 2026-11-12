@@ -1,6 +1,6 @@
 import React from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -24,7 +24,7 @@ vi.mock("../components/Profile", () => ({
   default: () => <div>Profile page</div>,
 }));
 vi.mock("../components/InterviewScreen", () => ({
-  default: () => <div>Interview page</div>,
+  default: (props) => <div>Interview page{props.awaitingReport ? " — restoring final report" : ""}</div>,
 }));
 vi.mock("../components/ResultScreen", () => ({
   default: () => <div>Result page</div>,
@@ -77,5 +77,24 @@ describe("sidebar routing", () => {
       expect(screen.getByText(pageText)).toBeInTheDocument();
       expect(item).toHaveClass("nav-item-active");
     }
+  });
+
+  it("restores a completed interview that is waiting for its report", async () => {
+    apiMocks.getActiveInterview.mockResolvedValueOnce({
+      active: false,
+      awaiting_report: true,
+      interview_id: 73,
+      difficulty: "advanced",
+      total_questions: 5,
+    });
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <App />
+        <LocationProbe />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText("Interview page — restoring final report")).toBeInTheDocument());
+    expect(screen.getByRole("status", { name: "Current route" })).toHaveTextContent("/interview");
   });
 });

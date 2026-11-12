@@ -467,6 +467,53 @@ class RouteIntegrationTests(unittest.TestCase):
             for call in query.call_args_list
         ))
 
+    def test_final_report_can_be_retried_without_losing_saved_long_answers(self):
+        interview = {
+            "id": 42, "student_id": 1, "round_type": "technical", "subject": "Python",
+            "difficulty": "advanced", "num_questions": 1, "status": "in_progress",
+        }
+        answer = "A detailed explanation of Python generators. " * 250
+        rows = [{
+            "id": 81, "question_order": 1, "question": "Explain generators.",
+            "answer": answer, "time_taken_sec": 110, "is_followup": 0,
+            "answer_audio_path": None, "verdict": "correct",
+            "verdict_reason": "Accurate.", "ideal_answer": "Generators yield values lazily.",
+            "subject_tag": "Python", "timed_out": 0, "processing_status": "evaluated",
+        }]
+        result = {
+            "overall_score": 8.5, "technical_accuracy": 9.0,
+            "communication_clarity": 8.0, "confidence": 8.0,
+            "strengths": json.dumps(["Accurate concepts", "Clear response"]),
+            "weaknesses": json.dumps(["Add an example", "Discuss memory use"]),
+            "feedback": "A strong answer with room for one concrete example.",
+        }
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            compact = " ".join(sql.split())
+            if compact.startswith("SELECT * FROM interviews"):
+                return interview.copy(), 0
+            if compact.startswith("SELECT question_order") or compact.startswith("SELECT id, question_order"):
+                return [row.copy() for row in rows], 0
+            if "FROM ai_usage_records" in compact and fetch:
+                return [], 0
+            return None, 0
+
+        with (
+            patch("routes.interviews.db.query", side_effect=query_result),
+            patch("routes.interviews.groq_client.evaluate_interview",
+                  side_effect=[TimeoutError("provider timed out"), result.copy()]) as evaluate,
+        ):
+            first = self.client.post("/api/end_interview", json={"interview_id": 42})
+            self.assertEqual(first.status_code, 503)
+            self.assertEqual(rows[0]["answer"], answer)
+            retry = self.client.post("/api/end_interview", json={"interview_id": 42})
+
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.get_json()["interview_id"], 42)
+        self.assertEqual(rows[0]["answer"], answer)
+        self.assertEqual(evaluate.call_count, 2)
+        self.assertEqual(len(evaluate.call_args.args[3][0]["answer"]), len(answer))
+
     def test_exit_interview_reports_actual_transition(self):
         def query_result(sql, _params=None, fetch=False, fetchone=False):
             if "SELECT id, status FROM interviews" in sql:
