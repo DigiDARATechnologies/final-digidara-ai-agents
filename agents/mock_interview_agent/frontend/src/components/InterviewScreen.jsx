@@ -30,6 +30,7 @@ export default function InterviewScreen({
   initialQuestionOrder = 1,
   initialRealQuestionIndex = 1,
   initialIsFrequentlyAsked = false,
+  awaitingReport = false,
   onFinished,
   onExited,
 }) {
@@ -38,7 +39,7 @@ export default function InterviewScreen({
   const [realQuestionIndex, setRealQuestionIndex] = useState(initialRealQuestionIndex);
   const [question, setQuestion] = useState(null);
   const [isFrequentlyAsked, setIsFrequentlyAsked] = useState(initialIsFrequentlyAsked);
-  const [phase, setPhase] = useState("loading"); // loading | asking | ready | answering | manual | submitting | finishing
+  const [phase, setPhase] = useState(awaitingReport ? "finishing" : "loading"); // loading | asking | ready | answering | manual | submitting | finishing | evaluation_failed
   const [error, setError] = useState(null);
   const { speak, listen, stopListening, finishListening, stopSpeaking, isListening, isSpeaking, isCandidateSpeaking, isSpeechRecognitionSupported } = useSpeech();
   const currentQuestionRef = useRef({ order: initialQuestionOrder, text: null });
@@ -108,9 +109,11 @@ export default function InterviewScreen({
     setLastVerdict,
     isTranscribing,
     hasRetryableSubmission,
+    hasRetryableFinalReport,
     resetSubmission,
     handleSubmit: submitAnswerForInterview,
     retryLastSubmission: retrySubmission,
+    retryFinalReport,
   } = submission;
 
   const {
@@ -156,6 +159,13 @@ export default function InterviewScreen({
   );
 
   useEffect(() => {
+    if (awaitingReport) {
+      retryFinalReport();
+      return () => {
+        stopInterviewResourcesRef.current?.();
+        cancelActiveRequest();
+      };
+    }
     if (firstQuestion) {
       askQuestionRef.current?.(
         firstQuestion,
@@ -169,8 +179,8 @@ export default function InterviewScreen({
       stopInterviewResourcesRef.current?.();
       cancelActiveRequest();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- interview startup must only restart when the supplied first question changes.
-  }, [firstQuestion, initialIsFrequentlyAsked]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- interview startup changes only for a new first question or a restored awaiting-report session.
+  }, [firstQuestion, initialIsFrequentlyAsked, awaitingReport]);
 
   const askQuestion = useCallback(async (text, order, realIndex = realQuestionIndexRef.current, frequentlyAsked = false) => {
     if (exitStartedRef.current) return;
@@ -198,7 +208,7 @@ export default function InterviewScreen({
 
     startTimer();
     startAnswerCapture();
-  }, [exitStartedRef, resetAnswerCapture, resetSubmission, setLastVerdict, showExitModal, speak, startAnswerCapture, startTimer, timeExpiredRef]);
+  }, [exitStartedRef, interviewId, resetAnswerCapture, resetSubmission, setLastVerdict, showExitModal, speak, startAnswerCapture, startTimer, timeExpiredRef]);
 
   function stopInterviewResources() {
     clearTimer();
@@ -238,7 +248,7 @@ export default function InterviewScreen({
   const voiceState = (() => {
     if (isExiting) return "exiting";
     if (phase === "asking" || isSpeaking) return "asking";
-    if (phase === "submitting" || phase === "finishing") return "processing";
+    if (phase === "submitting" || phase === "finishing" || phase === "evaluation_failed") return "processing";
     if (phase === "manual") return "manual";
     if (isCandidateSpeaking) return "speaking";
     if (isListening || phase === "answering") return "listening";
@@ -295,6 +305,7 @@ export default function InterviewScreen({
             transcript={transcript}
             audioUrl={audioUrl}
             lastVerdict={lastVerdict}
+            finalEvaluationFailed={phase === "evaluation_failed"}
           />
         </div>
 
@@ -320,6 +331,11 @@ export default function InterviewScreen({
             {phase === "ready" && hasRetryableSubmission && (
               <button className="secondary-btn compact-btn" onClick={retryLastSubmission}>
                 Try submitting again
+              </button>
+            )}
+            {phase === "evaluation_failed" && hasRetryableFinalReport && (
+              <button className="secondary-btn compact-btn" onClick={retryFinalReport}>
+                Retry final report
               </button>
             )}
           </div>
