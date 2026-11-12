@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Filter Coffee in RS Puram, Coimbatore | Kaapi Corner</title>
+  <meta name="description" content="Fresh filter coffee, hot bajji and evening snacks in RS Puram, Coimbatore. Show this flyer for 20% off your first order. Open 7am-10pm, all week.">
+  <link rel="canonical" href="https://kaapicorner.example/">
+  <meta property="og:title" content="Kaapi Corner - Filter Coffee in RS Puram, Coimbatore">
+  <meta property="og:description" content="20% off your first order with our flyer offer.">
+  <meta property="og:image" content="https://kaapicorner.example/flyer.png">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Google Analytics 4. Replace G-XXXXXXXXXX with your own Measurement ID. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "CafeOrCoffeeShop",
+    "name": "Kaapi Corner",
+    "address": {"@type": "PostalAddress", "streetAddress": "12 DB Road, RS Puram",
+                "addressLocality": "Coimbatore", "postalCode": "641002", "addressCountry": "IN"},
+    "telephone": "+91-90000-00000",
+    "openingHours": "Mo-Su 07:00-22:00",
+    "priceRange": "₹"
+  }
+  </script>
+</head>
+<body>
+  <header class="hero">
+    <img class="logo" src="logo.svg" alt="Kaapi Corner logo, a steaming coffee tumbler" width="72" height="72">
+    <h1>Filter Coffee &amp; Evening Snacks in RS Puram, Coimbatore</h1>
+    <p class="lead">Freshly brewed filter coffee, hot bajji and sundal. Show the flyer (or this page) and get <strong>20% off your first order</strong>.</p>
+    <a class="cta" href="#offer" onclick="gtag('event', 'claim_offer_click', {location: 'hero'});">Claim 20% off</a>
+  </header>
+
+  <main>
+    <section class="cards" aria-label="Why visit">
+      <article>
+        <h2>Brewed every 30 minutes</h2>
+        <p>Decoction made fresh through the day, never reheated.</p>
+      </article>
+      <article>
+        <h2>Snacks from ₹30</h2>
+        <p>Bajji, vada, sundal and sweet of the day.</p>
+      </article>
+      <article>
+        <h2>Open 7am - 10pm</h2>
+        <p>Every day, including Sundays and holidays.</p>
+      </article>
+    </section>
+
+    <section id="offer" class="offer">
+      <h2>Your flyer offer</h2>
+      <p>Code <strong>KAAPI20</strong>: 20% off your first order, valid until 31 December.</p>
+      <a class="cta" href="https://wa.me/919000000000?text=KAAPI20"
+         onclick="gtag('event', 'whatsapp_order_click', {location: 'offer'});">Order on WhatsApp</a>
+      <a class="secondary" href="tel:+919000000000"
+         onclick="gtag('event', 'call_click', {location: 'offer'});">Call +91 90000 00000</a>
+    </section>
+
+    <section class="visit">
+      <h2>Find us</h2>
+      <p>12 DB Road, RS Puram, Coimbatore 641002 - two minutes from the RS Puram bus stop.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Kaapi Corner is a hypothetical business created for a SkillDARA capstone example.</p>
+  </footer>
+</body>
+</html>

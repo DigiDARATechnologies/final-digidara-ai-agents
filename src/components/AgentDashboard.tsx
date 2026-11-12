@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { confirmCertificate, downloadCertificate, downloadFinalReport, previewCertificate, type CertificatePreview } from "../lib/capstoneApi";
-import { CAPSTONE_EXAMPLE_FILES } from "../lib/capstoneExamples";
-import type { CapstoneFlowState, CapstoneStep } from "../lib/capstoneFlow";
+import { capstoneExampleFiles } from "../lib/capstoneExamples";
+import { exampleTrackFor, type CapstoneFlowState, type CapstoneStep } from "../lib/capstoneFlow";
 import type { User } from "../types";
 
 /** Shown only once BOTH the code score and the viva are passed -- the backend
@@ -159,7 +159,7 @@ export default function AgentDashboard({ user, state, onClose }: AgentDashboardP
         <h3>Example Files</h3>
         <p className="muted">See the expected report format and zip folder structure. They are the same for every project; write your own for yours.</p>
         <div className="chat-options">
-          {CAPSTONE_EXAMPLE_FILES.map((file) => (
+          {capstoneExampleFiles(exampleTrackFor(state)).map((file) => (
             <a key={file.href} className="chat-option-link" href={file.href} download={file.download}>
               <strong>{file.label}</strong>
               <span>{file.description}</span>

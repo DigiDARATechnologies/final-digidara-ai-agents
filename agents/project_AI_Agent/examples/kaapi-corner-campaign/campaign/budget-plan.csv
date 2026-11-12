@@ -1,0 +1,11 @@
+setting,value
+Campaign type,Search
+Goal,Website traffic + WhatsApp order clicks
+Location,5 km radius around RS Puram, Coimbatore
+Language,English + Tamil
+Daily budget (INR),300
+Bidding,Maximise clicks (max CPC Rs 12)
+Ad schedule,6:30am - 9:30pm
+Duration,7 days
+Total budget (INR),2100
+Conversion action,whatsapp_order_click (GA4 event imported into Google Ads)
