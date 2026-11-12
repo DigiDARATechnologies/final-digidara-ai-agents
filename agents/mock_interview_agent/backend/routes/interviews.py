@@ -30,7 +30,6 @@ from services.interview_state import (
 )
 from services.focus_tracking import finalize_open_focus_events, focus_summary
 from services.ai_usage import track_ai_usage
-from services.interview_evaluation_lock import interview_evaluation_lock
 from services.role_interviews import (
     normalize_weak_topic_areas,
     role_subject_prompt,
@@ -660,44 +659,9 @@ def daily_usage(student_id):
 
 @interviews_bp.route("/end_interview", methods=["POST"])
 def end_interview():
+    request_started = time.monotonic()
     data = request.get_json(silent=True) or {}
     interview_id = positive_int(data.get("interview_id"), "interview_id")
-    evaluation_lock = interview_evaluation_lock(interview_id)
-    try:
-        acquired = evaluation_lock.__enter__()
-    except Exception:
-        log(
-            logging.ERROR,
-            "final_interview_evaluation_lock_failed",
-            "Could not safely acquire the final evaluation lock",
-            exc_info=True,
-        )
-        return jsonify({
-            "error": "Final evaluation is temporarily unavailable. Please retry.",
-            "retryable": True,
-            "interview_id": interview_id,
-        }), 503
-    if not acquired:
-        evaluation_lock.__exit__(None, None, None)
-        log(
-            logging.WARNING,
-            "final_interview_evaluation_already_running",
-            "A final evaluation for this interview is already running",
-        )
-        return jsonify({
-            "error": "The final report is already being generated. Retry shortly.",
-            "retryable": True,
-            "interview_id": interview_id,
-        }), 503
-    try:
-        return _end_interview_locked(interview_id)
-    finally:
-        evaluation_lock.__exit__(None, None, None)
-
-
-def _end_interview_locked(interview_id):
-    request_started = time.monotonic()
-    db_started = request_started
     set_log_context(interview_id=interview_id)
 
     interview_row, _ = db.query(
@@ -716,19 +680,6 @@ def _end_interview_locked(interview_id):
            ORDER BY question_order, id""",
         (interview_id,), fetch=True,
     )
-    db_retrieval_ms = round((time.monotonic() - db_started) * 1000)
-    answer_characters = sum(len(row.get("answer") or "") for row in rows)
-    log(
-        logging.INFO,
-        "final_interview_evaluation_started",
-        "Final report workflow started",
-        difficulty=interview_row.get("difficulty"),
-        round_type=interview_row.get("round_type"),
-        question_count=sum(1 for row in rows if not row.get("is_followup")),
-        answer_characters=answer_characters,
-        db_retrieval_ms=db_retrieval_ms,
-        evaluator_model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
-    )
     # Batch-evaluate all submitted answers once, then persist each result by
     # the database question id before building the final scorecard.
     batch_rows = [
@@ -741,17 +692,7 @@ def _end_interview_locked(interview_id):
         # New interviews contain only main questions. Keep this filter for
         # historical interviews that already have follow-up rows.
         pending_rows = batch_rows
-        batch_started = time.monotonic()
         evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending_rows)
-        log(
-            logging.INFO if not evaluation_error else logging.ERROR,
-            "final_answer_batch_evaluation_finished",
-            "Answer batch evaluation finished",
-            duration_ms=round((time.monotonic() - batch_started) * 1000),
-            pending_question_count=len(pending_rows),
-            answer_characters=answer_characters,
-            succeeded=evaluation_error is None,
-        )
         if evaluation_error:
             return jsonify({
                 "error": "Interview evaluation is temporarily unavailable. Please retry shortly or contact support.",
@@ -866,7 +807,6 @@ def _end_interview_locked(interview_id):
             "retryable": True,
         }), 503
     try:
-        final_ai_started = time.monotonic()
         with track_ai_usage(
             student_id=interview_row["student_id"],
             interview_id=interview_id,
@@ -876,26 +816,11 @@ def _end_interview_locked(interview_id):
                 interview_row["round_type"], interview_row["subject"],
                 interview_row["difficulty"], qa_pairs,
             )
-        log(
-            logging.INFO,
-            "final_interview_ai_evaluation_finished",
-            "Final scorecard provider request finished",
-            duration_ms=round((time.monotonic() - final_ai_started) * 1000),
-            question_count=len(qa_pairs),
-            answer_characters=sum(len(pair.get("answer") or "") for pair in qa_pairs),
-            provider="openai",
-            model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
-        )
     except Exception:
         log(
             logging.ERROR,
             "final_interview_evaluation_failed",
             "Final interview evaluation failed",
-            duration_ms=round((time.monotonic() - final_ai_started) * 1000) if "final_ai_started" in locals() else None,
-            question_count=len(qa_pairs),
-            answer_characters=sum(len(pair.get("answer") or "") for pair in qa_pairs),
-            provider="openai",
-            model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
             exc_info=True,
         )
         return jsonify({
@@ -920,7 +845,6 @@ def _end_interview_locked(interview_id):
 
     integrity = finalize_open_focus_events(interview_id)
 
-    report_save_started = time.monotonic()
     db.query(
         """UPDATE interviews SET
              status='completed', ended_at = NOW(),
@@ -934,15 +858,6 @@ def _end_interview_locked(interview_id):
             result["strengths"], result["weaknesses"], result["feedback"],
             interview_id,
         ),
-    )
-    log(
-        logging.INFO,
-        "final_interview_report_persisted",
-        "Final interview report persisted",
-        db_save_ms=round((time.monotonic() - report_save_started) * 1000),
-        total_duration_ms=round((time.monotonic() - request_started) * 1000),
-        question_count=sum(1 for row in rows if not row.get("is_followup")),
-        answer_characters=answer_characters,
     )
     dashboard_cache.invalidate(interview_row["student_id"])
 
