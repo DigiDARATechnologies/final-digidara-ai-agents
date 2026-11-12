@@ -156,3 +156,17 @@ def test_a_role_in_other_words_is_the_same_role():
     assert not matches("Python Developer", ["Data Analyst"])
     assert not matches("JavaScript Developer", ["Java Developer"])
     assert not matches("Sales Manager", ["Sales Executive"])
+
+
+def test_digital_marketing_and_prompt_engineering_titles_match():
+    from job_agent.chat_service import _matches_target_role, _resolve_search_context
+
+    assert _matches_target_role("Digital Marketing Specialist", ["Digital Marketing Executive"])
+    assert _matches_target_role("Digital Marketing Intern", ["Digital Marketing Executive"])
+    assert _matches_target_role("AI Prompt Engineer", ["Prompt Engineer"])
+    # An SEO job is a related role (offered by "Search related roles"), not the same job.
+    assert not _matches_target_role("SEO Executive", ["Digital Marketing Executive"])
+    assert not _matches_target_role("Sales Executive", ["Digital Marketing Executive"])
+    # Asking for the course's jobs searches every title it leads to.
+    titles = _resolve_search_context("digital marketing jobs in Chennai", {}, [])["titles"]
+    assert {"Digital Marketing Executive", "SEO Executive", "Social Media Executive"} <= set(titles)

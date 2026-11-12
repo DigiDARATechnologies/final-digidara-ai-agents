@@ -1,0 +1,18 @@
+[
+  {"id": "TC1", "email": "The glass jar I received yesterday is cracked. Order #4512. What can you do?",
+   "expected_category": "damaged_item", "refund_allowed": true},
+  {"id": "TC2", "email": "My order #4498 was supposed to arrive on Monday. It is Thursday. Where is it?",
+   "expected_category": "delivery_status", "refund_allowed": false},
+  {"id": "TC3", "email": "I bought a bedsheet 45 days ago and I don't like the colour. I want my money back.",
+   "expected_category": "refund_request", "refund_allowed": false},
+  {"id": "TC4", "email": "The kurta is too small. Can I get a size L instead? Order #4530.",
+   "expected_category": "exchange", "refund_allowed": false},
+  {"id": "TC5", "email": "I was charged twice for order #4541. Please check, I can see two debits of Rs 899.",
+   "expected_category": "payment_issue", "refund_allowed": true},
+  {"id": "TC6", "email": "Your delivery person was very rude and threw the parcel at my gate. Not acceptable.",
+   "expected_category": "complaint", "refund_allowed": false},
+  {"id": "TC7", "email": "Is the Nila cotton bedsheet 100% cotton? Does it shrink after washing?",
+   "expected_category": "product_question", "refund_allowed": false},
+  {"id": "TC8", "email": "Please cancel order #4560, I placed it by mistake an hour ago.",
+   "expected_category": "cancellation", "refund_allowed": true}
+]

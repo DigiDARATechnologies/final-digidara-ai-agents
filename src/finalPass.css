@@ -226,7 +226,10 @@ html body .dashboard-toggle { border-radius: 14px; height: 42px; background: #ff
 html body .dashboard-toggle:hover, html body .dashboard-toggle.active { background: linear-gradient(135deg, #2851d8, #6d4fe0); color: #fff; border-color: transparent; }
 html body .status-pill { background: #fff; border-color: #e6e9f8; }
 
-html body .dropdown-panel { top: 54px; width: 380px; padding: 0; border-radius: 24px; border: 1px solid #e1e5f5; background: #fff; overflow: hidden;
+/* Not the composer's "+" menu: this rule's top:54px plus that menu's own
+   bottom:46px squashed it to 2px under overflow:hidden, so no attach option
+   could be clicked in any chat. */
+html body .dropdown-panel:not(.attach-menu-panel) { top: 54px; width: 380px; padding: 0; border-radius: 24px; border: 1px solid #e1e5f5; background: #fff; overflow: hidden;
   box-shadow: 0 40px 80px -30px rgba(40,40,140,.55), 0 0 0 6px rgba(124,92,255,.05); }
 html body .dropdown-head { padding: 18px 20px; font-size: 16px; font-weight: 700; letter-spacing: -.02em; color: #17154a;
   background: linear-gradient(120deg, #f1f0ff, #eaf3ff 60%, #fdeef7); border-bottom: 1px solid #e6e9f8; }
@@ -276,7 +279,7 @@ html body .admin-error { border-radius: 16px; background: #fdecec; border-color:
 html body .admin-success { border-radius: 16px; background: #e6f7ee; border-color: #b8e6cb; color: #15803d; }
 html body .admin-chips span { background: #f1f2ff; border-color: transparent; color: #3b3fb8; font-weight: 600; }
 html body .admin-two-col { gap: 22px; }
-@media (max-width: 760px) { html body .topbar { padding: 0 14px; } html body .dropdown-panel { width: min(380px, calc(100vw - 24px)); } }
+@media (max-width: 760px) { html body .topbar { padding: 0 14px; } html body .dropdown-panel:not(.attach-menu-panel) { width: min(380px, calc(100vw - 24px)); } }
 
 /* ---- Chat home: Top performers becomes a slim strip under the agent chips ---- */
 html body .lb-side { position: static; top: auto; right: auto; width: 100%; max-width: 860px; margin: 26px auto 0; padding: 14px 16px; z-index: auto;

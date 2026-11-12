@@ -1,0 +1,39 @@
+{
+  "prompt": "src/prompts/v1_baseline.txt",
+  "model": "recorded responses (see README)",
+  "temperature": 0.2,
+  "responses": [
+    {
+      "id": "TC1",
+      "raw": "Dear Customer,\n\nWe are very sorry that your glass jar arrived cracked. We will arrange a full refund for order #4512 as soon as you send us a photo of the damage.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC2",
+      "raw": "Dear Customer,\n\nThank you for reaching out to us regarding your order #4498, and please accept our sincere apologies for the delay in delivery. We completely understand how frustrating it can be when an order does not arrive on the date that was promised, especially when you have been waiting for it since Monday. Delays like this can sometimes happen because of high order volumes, weather conditions, local holidays, or issues at our courier partner's sorting hub, and we are truly sorry that it has affected you. We have escalated your order to our logistics team, who will contact the courier partner and find out the exact status of your parcel. You should receive an update with the new expected delivery date within the next 24 to 48 hours. In the meantime, you can also track your parcel using the link in your order confirmation email. Thank you for your patience and understanding.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC3",
+      "raw": "Dear Customer,\n\nWe are sorry you are not happy with the colour of the bedsheet. We will refund the full amount to your original payment method within 5-7 working days.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC4",
+      "raw": "Dear Customer,\n\nSure! Please send the kurta back using the return label in your account and we will ship a size L as soon as we receive it.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC5",
+      "raw": "Dear Customer,\n\nWe are sorry about the double charge on order #4541. Our payments team will check and the extra Rs 899 will be refunded within 5-7 working days.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC6",
+      "raw": "Dear Customer,\n\nWe are very sorry about your experience with the delivery person. We have reported this to the courier and we will refund your delivery charge as an apology.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC7",
+      "raw": "Dear Customer,\n\nYes, the Nila cotton bedsheet is 100% cotton. It may shrink slightly after the first wash, so we recommend washing it in cold water.\n\nRegards,\nCustomer Care"
+    },
+    {
+      "id": "TC8",
+      "raw": "Dear Customer,\n\nNo problem. We have cancelled order #4560 and the amount will be refunded to you within 3-5 working days.\n\nRegards,\nCustomer Care"
+    }
+  ]
+}

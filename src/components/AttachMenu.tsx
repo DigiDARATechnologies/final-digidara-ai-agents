@@ -16,6 +16,9 @@ interface AttachMenuProps {
   multiple?: boolean;
   /** Overrides the "+" button's class (the home screen styles its own). */
   buttonClassName?: string;
+  /** Whether this chat can read a photo. Only chats that answer about an
+   * image take one; elsewhere "Upload Photo" says what the chat does accept. */
+  photoAllowed?: boolean;
 }
 
 const PHOTO_ACCEPT = "image/*";
@@ -34,6 +37,7 @@ export default function AttachMenu({
   variant = "icon",
   multiple = false,
   buttonClassName = "icon-btn attach-plus-btn",
+  photoAllowed = true,
 }: AttachMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -47,6 +51,7 @@ export default function AttachMenu({
   const zipAllowed = acceptParts.some((part) => part.toLowerCase() === ".zip");
   const docParts = acceptParts.filter((part) => part.toLowerCase() !== ".zip");
   const docAccept = docParts.join(",");
+  const acceptedLabel = acceptParts.map((part) => part.replace(/^\./, "").toUpperCase()).join(", ");
 
   useEffect(() => {
     if (!open) return;
@@ -71,7 +76,8 @@ export default function AttachMenu({
       return;
     }
     if (!allowed) {
-      (onUnsupported ?? (() => onDisabled()))(`${kind} uploads aren't supported in this chat.`);
+      const accepted = acceptedLabel ? ` You can upload: ${acceptedLabel}.` : "";
+      (onUnsupported ?? (() => onDisabled()))(`${kind} uploads aren't supported in this chat.${accepted}`);
       return;
     }
     input?.click();
@@ -134,7 +140,7 @@ export default function AttachMenu({
           <span className="attach-menu-ico">📄</span>
           <span>Upload Document</span>
         </button>
-        <button type="button" className="attach-menu-item" onClick={() => choose(photoInputRef.current, true, "Photo")}>
+        <button type="button" className="attach-menu-item" onClick={() => choose(photoInputRef.current, photoAllowed, "Photo")}>
           <span className="attach-menu-ico">🖼️</span>
           <span>Upload Photo</span>
         </button>

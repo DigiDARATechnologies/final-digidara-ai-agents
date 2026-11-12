@@ -1,0 +1,39 @@
+{
+  "prompt": "src/prompts/v2_role_and_rules.txt",
+  "model": "recorded responses (see README)",
+  "temperature": 0.2,
+  "responses": [
+    {
+      "id": "TC1",
+      "raw": "{\"category\": \"damaged_item\", \"reply\": \"We're sorry your glass jar arrived cracked. Please share a photo of the jar and we will send a replacement or a full refund for order #4512.\"}"
+    },
+    {
+      "id": "TC2",
+      "raw": "{\"category\": \"delivery_status\", \"reply\": \"Sorry for the delay with order #4498. We have asked the courier for an update and will share the new delivery date within 24 hours.\"}"
+    },
+    {
+      "id": "TC3",
+      "raw": "{\"category\": \"refund_request\", \"reply\": \"Thank you for your message. As the purchase was 45 days ago, it is outside our 30-day window and we are unable to process a refund.\"}"
+    },
+    {
+      "id": "TC4",
+      "raw": "{\"category\": \"refund_request\", \"reply\": \"We can exchange the kurta for a size L. Please use the return label in your account and we will ship the new size once we receive it.\"}"
+    },
+    {
+      "id": "TC5",
+      "raw": "{\"category\": \"payment_issue\", \"reply\": \"Sorry about the double charge on order #4541. The duplicate Rs 899 will be refunded to your account within 5-7 working days.\"}"
+    },
+    {
+      "id": "TC6",
+      "raw": "{\"category\": \"delivery_status\", \"reply\": \"We're sorry about how your parcel was delivered. We have shared your feedback with our courier partner.\"}"
+    },
+    {
+      "id": "TC7",
+      "raw": "Here is the reply:\n{\"category\": \"product_question\", \"reply\": \"Yes, it is 100% cotton. It may shrink slightly in the first wash, so please wash it in cold water.\"}"
+    },
+    {
+      "id": "TC8",
+      "raw": "{\"category\": \"cancellation\", \"reply\": \"We have cancelled order #4560. Since it had not shipped, the full amount will be refunded within 3-5 working days.\"}"
+    }
+  ]
+}

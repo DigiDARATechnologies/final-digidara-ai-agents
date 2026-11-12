@@ -270,6 +270,28 @@ ROLE_ALIASES = {
     "full stack developer": {"full stack developer", "full stack engineer", "fullstack developer"},
     "frontend developer": {"frontend developer", "frontend engineer", "front end developer"},
     "backend developer": {"backend developer", "backend engineer", "back end developer"},
+    # Digital Marketing course: employers use several titles for the same
+    # entry-level job, so each of these counts as a Digital Marketing Executive.
+    "digital marketing executive": {
+        "digital marketing executive", "digital marketing associate", "digital marketing specialist",
+        "digital marketing analyst", "digital marketing coordinator", "digital marketing intern",
+        "digital marketing trainee", "digital marketer", "online marketing executive",
+    },
+    "seo executive": {"seo executive", "seo analyst", "seo specialist", "seo associate", "seo intern", "seo trainee"},
+    "social media executive": {
+        "social media executive", "social media marketing executive", "social media specialist",
+        "social media associate", "social media intern", "social media analyst",
+    },
+    "performance marketing executive": {
+        "performance marketing executive", "performance marketing associate", "performance marketing specialist",
+        "ppc executive", "ppc specialist", "ppc analyst", "sem executive", "sem specialist",
+        "paid media executive", "google ads specialist", "google ads executive",
+    },
+    # Prompt Engineering course.
+    "prompt engineer": {
+        "prompt engineer", "ai prompt engineer", "prompt engineering", "prompt writer",
+        "prompt designer", "prompt specialist", "llm prompt engineer",
+    },
 }
 
 # Broader career neighbors are searched only after an explicit user request.
@@ -278,6 +300,18 @@ RELATED_ROLE_ALIASES = {
     "ai engineer": {"data scientist", "machine learning developer", "ml developer", "mlops engineer", "machine learning researcher", "ai research scientist"},
     "ai developer": {"machine learning developer", "ml developer", "data scientist", "mlops engineer"},
     "data analyst": {"analytics engineer", "data analytics engineer", "business analyst", "data scientist"},
+    "digital marketing executive": {
+        "seo executive", "seo analyst", "seo specialist", "social media executive", "social media marketing executive",
+        "performance marketing executive", "ppc executive", "sem executive", "content marketing executive",
+        "email marketing executive", "marketing executive", "marketing associate",
+    },
+    "seo executive": {"digital marketing executive", "content marketing executive", "sem executive"},
+    "social media executive": {"digital marketing executive", "content marketing executive", "content creator"},
+    "performance marketing executive": {"digital marketing executive", "seo executive", "marketing analyst"},
+    "prompt engineer": {
+        "generative ai engineer", "genai engineer", "gen ai engineer", "llm engineer", "ai engineer",
+        "conversational ai designer", "ai content writer", "ai trainer", "ai content specialist",
+    },
 }
 
 
@@ -1343,6 +1377,8 @@ def extract_target_titles_from_text(text: str) -> List[str]:
         "python developer", "java developer", "react developer", "node developer",
         "cloud engineer", "devops engineer", "qa engineer", "automation tester",
         "test engineer", "ui/ux designer", "mobile developer", "android developer",
+        "digital marketing executive", "digital marketing specialist", "digital marketing analyst",
+        "performance marketing executive", "social media executive", "seo executive", "seo analyst",
         "ios developer", "system engineer", "business analyst", "product manager",
         "intern", "trainee"
     ]
@@ -1358,6 +1394,7 @@ def extract_target_titles_from_text(text: str) -> List[str]:
         canon = re.sub(r"\bLlm\b", "LLM", canon)
         canon = re.sub(r"\bNlp\b", "NLP", canon)
         canon = re.sub(r"\bMlops\b", "MLOps", canon)
+        canon = re.sub(r"\bSeo\b", "SEO", canon)
         if canon.lower() not in seen_lower:
             seen_lower.add(canon.lower())
             detected.append(canon)
@@ -2888,6 +2925,9 @@ SEARCH_ROLE_FAMILIES = {
     "python": ["Python Developer"],
     "java": ["Java Developer"],
     "react": ["React Developer"],
+    "digital marketing": ["Digital Marketing Executive", "SEO Executive", "Social Media Executive",
+                          "Performance Marketing Executive"],
+    "prompt engineering": ["Prompt Engineer"],
 }
 
 

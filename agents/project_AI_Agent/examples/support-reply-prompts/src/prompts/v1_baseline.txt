@@ -1,0 +1,4 @@
+Reply to this customer email for our online store.
+
+Email:
+{email}

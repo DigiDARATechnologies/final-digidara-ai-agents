@@ -20,9 +20,12 @@ agents/project_AI_Agent/examples/expense-tracker: the program and its tests are
 actually executed here and their genuine output is rendered into the screenshots,
 so the example is internally consistent. The outputs are committed and built
 deterministically (fixed zip timestamps, reportlab's invariant mode), so
-re-running this script only changes them when the example itself changes:
+re-running this script only changes them when the example itself changes.
 
-    pip install reportlab
+It then builds the Digital Marketing and Prompt Engineering pairs, which are not
+code projects -- see scripts/build_capstone_track_examples.py:
+
+    pip install reportlab qrcode playwright && python -m playwright install chromium
     python scripts/build_capstone_examples.py
 """
 import shutil
@@ -80,7 +83,11 @@ FONT_CANDIDATES = ["C:/Windows/Fonts/consola.ttf", "C:/Windows/Fonts/cour.ttf",
 
 
 def run(command, cwd):
-    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    # Warnings from the builder's own environment (e.g. a pytest plugin importing
+    # an out-of-date package) must not end up in a student-facing screenshot.
+    import os
+    env = {**os.environ, "PYTHONWARNINGS": "ignore"}
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, env=env)
     return (result.stdout + result.stderr).rstrip("\n")
 
 
@@ -300,6 +307,9 @@ def main():
     print(f"Wrote {OUT_DIR / ZIP_NAME} ({(OUT_DIR / ZIP_NAME).stat().st_size:,} bytes), {len(names)} files:")
     for name in names:
         print("  ", name)
+    # Digital Marketing and Prompt Engineering get their own pair (not code projects).
+    from build_capstone_track_examples import build_all
+    build_all()
 
 
 if __name__ == "__main__":

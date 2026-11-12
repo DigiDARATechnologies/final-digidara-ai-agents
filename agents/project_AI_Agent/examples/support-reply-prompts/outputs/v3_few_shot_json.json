@@ -1,0 +1,39 @@
+{
+  "prompt": "src/prompts/v3_few_shot_json.txt",
+  "model": "recorded responses (see README)",
+  "temperature": 0.2,
+  "responses": [
+    {
+      "id": "TC1",
+      "raw": "{\"category\": \"damaged_item\", \"reply\": \"Hi, I'm so sorry your glass jar arrived cracked. Please reply with a photo of the jar and your order number #4512, and we'll send a free replacement or a full refund within 48 hours. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC2",
+      "raw": "{\"category\": \"delivery_status\", \"reply\": \"Hi, I'm sorry order #4498 is late. I've asked our courier partner for an update and will email you the new delivery date within 24 hours. You can also track it from the link in your order email. - Nila Home Support Team\"}"
+    },
+    {
+      "id": "TC3",
+      "raw": "{\"category\": \"refund_request\", \"reply\": \"Hi, thank you for writing to us. Our return window is 30 days, so we can't take the bedsheet back after 45 days. As a thank-you for shopping with us, I've added a 10% store-credit coupon to your account. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC4",
+      "raw": "{\"category\": \"exchange\", \"reply\": \"Hi, of course! Please use the return label in your account to send the kurta back, and we'll ship a size L as soon as it reaches us. The exchange is free. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC5",
+      "raw": "{\"category\": \"payment_issue\", \"reply\": \"Hi, I'm sorry you were charged twice for order #4541. I've raised this with our payments team, and the duplicate Rs 899 will be refunded to your account within 5-7 working days. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC6",
+      "raw": "{\"category\": \"complaint\", \"reply\": \"Hi, I'm really sorry about how your parcel was handled. That is not acceptable. I've reported the delivery person to our courier partner, and if anything inside was damaged, please send a photo and we'll replace it. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC7",
+      "raw": "{\"category\": \"product_question\", \"reply\": \"Hi, yes - the Nila cotton bedsheet is 100% cotton. It can shrink by about 2% in the first wash, so we recommend a cold wash and drying in the shade. - Nila Home Support\"}"
+    },
+    {
+      "id": "TC8",
+      "raw": "{\"category\": \"cancellation\", \"reply\": \"Hi, done! I've cancelled order #4560 before it shipped, and the full amount will be refunded to your original payment method within 3-5 working days. - Nila Home Support\"}"
+    }
+  ]
+}
