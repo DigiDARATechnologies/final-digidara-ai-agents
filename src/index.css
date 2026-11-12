@@ -1030,6 +1030,16 @@ body.glow-off .send-btn:hover{
 }
 .composer textarea::placeholder{ color:var(--canvas-text-faint); }
 .attach-plus-btn{ border-radius:50%; flex-shrink:0; }
+/* The browser's default focus outline drew a hard dark circle round the "+"
+   (and mic) whenever focus came back to it -- after the file picker closed, or
+   any key press -- clashing with the composer's gradient ring. Mouse focus shows
+   nothing; keyboard focus gets a soft brand ring in the hover style instead. */
+.composer .icon-btn:focus, .landing-composer .icon-btn:focus, .home-round-btn:focus{ outline:none; }
+.composer .icon-btn:focus-visible, .landing-composer .icon-btn:focus-visible, .home-round-btn:focus-visible{
+  outline:none; background:var(--canvas-bg-soft); border-color:transparent;
+  box-shadow:0 0 0 2px var(--canvas-bg), 0 0 0 4px rgba(40,81,216,.45);
+}
+.composer .send-btn:focus-visible{ box-shadow:0 0 0 2px var(--canvas-bg), 0 0 0 4px rgba(40,81,216,.45); }
 .send-btn{ background:var(--accent-grad); color:#fff; }
 .send-btn:hover{ box-shadow:0 4px 14px rgba(40,81,216,.4); }
 .icon-btn.mic-recording{ background:var(--red); color:#fff; border-color:var(--red); animation:micPulse 1.4s ease-in-out infinite; }

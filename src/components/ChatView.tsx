@@ -45,6 +45,8 @@ interface ChatViewProps {
   /** File input `accept` string ... varies per agent (Capstone wants
    * `.docx,.zip`; Resume Builder wants resume documents). */
   attachAccept?: string;
+  /** Whether this chat can read an attached photo (see AttachMenu). */
+  attachPhotos?: boolean;
   pendingFiles: File[];
   onAttachFiles: (files: FileList) => void;
   onRemovePendingFile?: (index: number) => void;
@@ -143,6 +145,7 @@ export default function ChatView({
   canEditMessage,
   attachEnabled,
   attachAccept = ".docx,.zip",
+  attachPhotos = true,
   pendingFiles,
   onAttachFiles,
   onRemovePendingFile,
@@ -860,6 +863,7 @@ export default function ChatView({
               <AttachMenu
                 enabled={attachEnabled}
                 documentAccept={attachAccept}
+                photoAllowed={attachPhotos}
                 onFiles={onAttachFiles}
                 onDisabled={onAttachDisabled}
                 onUnsupported={onAttachUnsupported}
@@ -874,6 +878,7 @@ export default function ChatView({
           <AttachMenu
             enabled={attachEnabled}
             documentAccept={attachAccept}
+            photoAllowed={attachPhotos}
             onFiles={onAttachFiles}
             onDisabled={onAttachDisabled}
             onUnsupported={onAttachUnsupported}
