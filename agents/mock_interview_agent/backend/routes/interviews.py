@@ -107,10 +107,12 @@ def _unanswered(row):
 
 
 def _evaluate_chunk(interview_row, interview_id, rows):
-    """One evaluator request for these rows: {row id: valid result}. Results
-    are matched to rows by position (the prompt asks for the same order), so
-    a reply that numbers them 1, 2, 3 instead of using the ids still counts;
-    a result without a valid verdict for an answered question is left out."""
+    """Return individually valid results keyed by question row ID.
+
+    Full ordered replies numbered 1..N remain supported for older model
+    responses. Partial replies must carry the actual question IDs, so a result
+    can never accidentally be applied to the wrong answer.
+    """
     with track_ai_usage(
         student_id=interview_row["student_id"],
         interview_id=interview_id,
@@ -129,15 +131,27 @@ def _evaluate_chunk(interview_row, interview_id, rows):
     by_id = {}
     ids = {int(row["id"]) for row in rows}
     returned_ids = [item.get("question_id") for item in evaluations if isinstance(item, dict)]
-    use_ids = len(returned_ids) == len(evaluations) and {_as_int(value) for value in returned_ids} == ids
+    parsed_ids = [_as_int(value) for value in returned_ids]
+    use_ids = len(returned_ids) == len(evaluations) and set(parsed_ids) == ids
+    ordinal_ids = len(evaluations) == len(rows) and parsed_ids == list(range(1, len(rows) + 1))
     for position, item in enumerate(evaluations):
         if not isinstance(item, dict):
+            logger.warning("Ignoring malformed batch evaluation item for interview %s", interview_id)
             continue
         if use_ids:
             row_id = _as_int(item.get("question_id"))
-        elif len(evaluations) == len(rows):
+        elif ordinal_ids:
             row_id = int(rows[position]["id"])
         else:
+            # Partial results can only be safely associated via the actual
+            # database row ID. Missing, duplicate, or out-of-scope IDs are
+            # omitted and retried by _batch_evaluations_or_error.
+            row_id = _as_int(item.get("question_id"))
+            if row_id not in ids:
+                logger.warning("Ignoring unmatched batch evaluation item for interview %s", interview_id)
+                continue
+        if row_id in by_id:
+            logger.warning("Ignoring duplicate batch evaluation for interview %s question %s", interview_id, row_id)
             continue
         row = next((r for r in rows if int(r["id"]) == row_id), None)
         if row is None:
