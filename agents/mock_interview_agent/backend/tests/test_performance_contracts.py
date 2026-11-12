@@ -112,7 +112,9 @@ class DashboardQueryTests(unittest.TestCase):
 
     def test_dashboard_uses_cache_and_completion_invalidates_it(self):
         dashboard_source = function_source(DASHBOARD_SOURCE, "dashboard")
-        completion_source = function_source(INTERVIEWS_SOURCE, "end_interview")
+        # end_interview is the lock-owning route wrapper; the completion write
+        # and dashboard cache invalidation live in its locked implementation.
+        completion_source = function_source(INTERVIEWS_SOURCE, "_end_interview_locked")
         self.assertIn("dashboard_cache.get_with_generation", dashboard_source)
         self.assertIn("dashboard_cache.set_if_generation", dashboard_source)
         self.assertIn("dashboard_cache.invalidate", completion_source)
