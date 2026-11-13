@@ -713,3 +713,31 @@ def test_import_draft_creates_editable_resume(client):
     assert payload["personal_info"]["name"] == "Alex Morgan"
     assert payload["skills"]
     assert payload["experience"]
+
+
+def test_import_draft_without_email_stays_editable_and_reports_a_contact_gap(client):
+    """Pasted notes must not be rejected merely because an email was omitted."""
+    analysis = analyze_resume_text(
+        """Rubeshkanna Ravichandran
+Data Analyst Intern
+Tamil Nadu, India
+LinkedIn: https://www.linkedin.com/in/rubeshkannaravichandran
+
+Skills
+Python, SQL, Power BI
+""",
+        filename="pasted-notes.txt",
+    )
+    response = client.post(
+        "/api/import-resume/draft",
+        json={
+            "user_id": "test-user-without-email",
+            "originalFileName": "pasted-notes.txt",
+            "parsedResume": analysis["parsedResume"],
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()["data"]
+    assert payload["personal_info"]["email"] == ""
+    assert payload["personal_info"]["name"] == "Rubeshkanna Ravichandran"

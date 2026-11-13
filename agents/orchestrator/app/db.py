@@ -157,4 +157,8 @@ def init_db() -> None:
         # tie (or invert) once resolve_healthy() orders by this column to
         # pick the freshest one during a rollout. Always safe to re-run --
         # MySQL accepts an identical MODIFY COLUMN with no error.
-        connection.execute(text("ALTER TABLE agent_registry MODIFY COLUMN last_heartbeat DATETIME(6) NOT NULL"))
+        # SQLite has no MySQL ``MODIFY COLUMN`` syntax. Local development
+        # databases already retain sufficient timestamp precision, so this
+        # MySQL-only compatibility migration is intentionally skipped there.
+        if engine.dialect.name == "mysql":
+            connection.execute(text("ALTER TABLE agent_registry MODIFY COLUMN last_heartbeat DATETIME(6) NOT NULL"))
