@@ -23,9 +23,9 @@ INK = colors.HexColor("#24232E")
 MUTED = colors.HexColor("#626575")
 LINE = colors.HexColor("#DED9F2")
 SOFT = colors.HexColor("#F6F3FF")
-LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "skilldara-logo.jpg"
-LOGO_WIDTH = 38*mm
-LOGO_HEIGHT = 21.375*mm
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "skilldara-logo.png"
+LOGO_WIDTH = 46*mm
+LOGO_HEIGHT = 46*132/737*mm
 
 
 def _logo():
@@ -117,7 +117,7 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     )
     style = _styles()
     title_block = [Paragraph("Mock Interview", style["title"]), Paragraph("Interview Report", style["subtitle"])]
-    report_header = Table([[title_block, _logo()]], colWidths=[138*mm, 38*mm], hAlign="LEFT")
+    report_header = Table([[title_block, _logo()]], colWidths=[130*mm, 46*mm], hAlign="LEFT")
     report_header.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
