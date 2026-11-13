@@ -27,6 +27,7 @@ def app(tmp_path, monkeypatch):
         SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     app = create_app(TestConfig)
+    monkeypatch.setenv("AGENT_SIGNATURE_MODE", "off")
     # Endpoint tests replace the provider call with a deterministic mock. Keep
     # that route available instead of activating the production offline draft.
     monkeypatch.setenv("AI_PROVIDER", "openai")
