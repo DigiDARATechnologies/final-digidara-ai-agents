@@ -7,6 +7,7 @@ import '@fontsource-variable/plus-jakarta-sans/index.css'
 import './index.css'
 import './components/Phase2.css'
 import './finalPass.css'
+import './orgAdminUi.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
