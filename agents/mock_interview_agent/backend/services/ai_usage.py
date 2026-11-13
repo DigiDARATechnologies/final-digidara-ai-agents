@@ -61,6 +61,19 @@ class UsageScope:
 _usage_scope = ContextVar("ai_usage_scope", default=None)
 
 
+def current_usage_context():
+    """Return non-sensitive identifiers for diagnostics in low-level clients."""
+    scope = _usage_scope.get()
+    if scope is None:
+        return {}
+    return {
+        "student_id": scope.student_id,
+        "interview_id": scope.interview_id,
+        "question_id": scope.question_id,
+        "request_type": scope.request_type,
+    }
+
+
 @contextmanager
 def track_ai_usage(*, student_id=None, interview_id=None, question_id=None, request_type):
     """Make attribution available to the low-level OpenAI client per request."""

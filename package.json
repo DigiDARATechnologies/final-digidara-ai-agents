@@ -7,6 +7,7 @@
     "setup:env": "node scripts/setup-env.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "verify:production-camera-guard": "npm run build && node scripts/verify-production-camera-guard.mjs",
     "lint": "oxlint",
     "preview": "vite preview",
     "test:agents": "python scripts/test_agents.py",

@@ -4,6 +4,7 @@ import {
   fetchProctorState, sendProctorEvents, sendProctorSnapshot, startProctoring,
   type ProctoredAgent, type ProctorEventKind, type ProctorSettings, type ProctorState,
 } from "../lib/proctorApi";
+import { IS_VITE_DEV } from "../lib/buildFlags";
 import { forgetFreshSession, isFreshSession, ruleLines } from "../lib/proctoring";
 import "./Proctor.css";
 
@@ -42,6 +43,49 @@ function requestFullscreen(): void {
 }
 
 const VIDEO: MediaTrackConstraints = { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: "user" };
+const SIMULATED_FACE_SEQUENCE: Array<0 | 1 | 2> = [1, 1, 0, 1, 2];
+
+function createSimulatedCameraStream(): MediaStream {
+  const canvas = document.createElement("canvas");
+  canvas.width = 320;
+  canvas.height = 240;
+  const context = canvas.getContext("2d");
+  if (!context || typeof canvas.captureStream !== "function") {
+    throw new Error("This browser cannot create a development camera preview.");
+  }
+  let tick = 0;
+  const draw = () => {
+    tick += 1;
+    context.fillStyle = "#dce8f2";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#31465a";
+    context.font = "bold 16px sans-serif";
+    context.textAlign = "center";
+    context.fillText("DEVELOPMENT SIMULATION", 160, 28);
+    const faces = SIMULATED_FACE_SEQUENCE[Math.floor((tick - 1) / 5) % SIMULATED_FACE_SEQUENCE.length];
+    for (let index = 0; index < faces; index += 1) {
+      const x = faces === 1 ? 160 : index === 0 ? 105 : 215;
+      context.fillStyle = "#a9c5d8";
+      context.beginPath();
+      context.ellipse(x, 105, 35, 43, 0, 0, Math.PI * 2);
+      context.fill();
+      context.fillStyle = "#263849";
+      context.beginPath();
+      context.arc(x - 11, 99, 3, 0, Math.PI * 2);
+      context.arc(x + 11, 99, 3, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "#263849";
+      context.beginPath();
+      context.arc(x, 111, 10, 0.15, Math.PI - 0.15);
+      context.stroke();
+    }
+  };
+  draw();
+  const stream = canvas.captureStream(5);
+  const redraw = window.setInterval(draw, 1_000);
+  stream.getTracks().forEach((track) => track.addEventListener("ended", () => window.clearInterval(redraw), { once: true }));
+  return stream;
+}
 
 /** The camera, asked for together with the microphone the interview uses, so
  * no permission popup appears later (a popup takes focus from the page and
@@ -88,6 +132,8 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
   const sessionRef = useRef<ProctorState | null>(null);
   const awayRef = useRef(false);
   const lastSentRef = useRef<Record<string, number>>({});
+  const fakeCameraRef = useRef(false);
+  const simulatedSnapshotSequenceRef = useRef(0);
   const terminatedRef = useRef(false);
   const onTerminateRef = useRef(onTerminate);
   onTerminateRef.current = onTerminate;
@@ -131,6 +177,21 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
     });
   }, [report]);
 
+  async function openConfiguredCamera(state: ProctorState): Promise<MediaStream> {
+    // Vite replaces import.meta.env.DEV at build time and removes this entire
+    // branch (including the simulator implementation) from production assets.
+    if (IS_VITE_DEV && new URLSearchParams(window.location.search).get("devFakeCamera") === "1") {
+      if (!state.fake_camera_allowed) {
+        throw new Error("Development camera simulation is disabled by the local orchestrator. Set ALLOW_FAKE_CAMERA=true with ENV=dev.");
+      }
+      fakeCameraRef.current = true;
+      simulatedSnapshotSequenceRef.current = 0;
+      return createSimulatedCameraStream();
+    }
+    fakeCameraRef.current = false;
+    return openCamera();
+  }
+
   async function start() {
     setError("");
     const wanted = sessionRef.current?.settings ?? (presetRef.current ? null : PRACTICE_SETTINGS);
@@ -143,7 +204,7 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
         : await startProctoring(agentName, refId);
       presetRef.current = false;
       if (sessionId) forgetFreshSession(sessionId);
-      if (state.settings.webcam && !streamRef.current) attachCamera(await openCamera());
+      if (state.settings.webcam && !streamRef.current) attachCamera(await openConfiguredCamera(state));
       if (!state.settings.fullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {});
       applyState(state);
       setPhase("live");
@@ -224,7 +285,10 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
       canvas.width = 320;
       canvas.height = Math.round(320 * (video.videoHeight / video.videoWidth)) || 240;
       canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      sendProctorSnapshot(current.id, canvas.toDataURL("image/jpeg", 0.6)).then(applyState).catch(() => {});
+      const simulatedFaces = IS_VITE_DEV && fakeCameraRef.current
+        ? SIMULATED_FACE_SEQUENCE[simulatedSnapshotSequenceRef.current++ % SIMULATED_FACE_SEQUENCE.length]
+        : undefined;
+      sendProctorSnapshot(current.id, canvas.toDataURL("image/jpeg", 0.6), simulatedFaces).then(applyState).catch(() => {});
     };
     const first = window.setTimeout(snap, FIRST_SNAPSHOT_MS);
     const every = window.setInterval(snap, SNAPSHOT_EVERY_MS);
@@ -253,7 +317,9 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
 
   async function restartCamera() {
     try {
-      attachCamera(await openCamera());
+      const current = sessionRef.current;
+      if (!current) return;
+      attachCamera(await openConfiguredCamera(current));
     } catch (failure) {
       setNotice(failure instanceof Error ? failure.message : "The camera could not be started.");
       report("camera_blocked", "The camera could not be turned back on.");
@@ -295,6 +361,7 @@ export default function ProctorGate({ agentName, refId, sessionId, label, onTerm
       <div className="proctor-bar" aria-live="polite">
         <span className="proctor-dot" aria-hidden="true" />
         <span>Proctored</span>
+        {IS_VITE_DEV && fakeCameraRef.current && <span className="proctor-notice" role="status">Development simulation only — this is not real camera evidence.</span>}
         {session && <span className="proctor-meta">Warnings {session.warnings}/{session.max_warnings}</span>}
         {notice && <span className="proctor-notice" role="alert">{notice}</span>}
       </div>

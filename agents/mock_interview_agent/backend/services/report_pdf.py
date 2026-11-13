@@ -144,6 +144,10 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
         ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
     story.extend([detail_table, Paragraph("Score Summary", style["heading"])])
+    story.append(Paragraph(
+        "Camera and integrity observations are handled separately and are not part of the interview answer score.",
+        style["body"],
+    ))
     scores = [
         ("Overall score", f"{interview.get('overall_score')}/10"),
         ("Knowledge", f"{interview.get('technical_accuracy')}/10"),

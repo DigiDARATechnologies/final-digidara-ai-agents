@@ -12,7 +12,17 @@ def _int(name: str, default: int) -> int:
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 
-ENV = os.environ.get("ENV", "dev")
+ENV = os.environ.get("ENV", "dev").strip().lower()
+_ALLOW_FAKE_CAMERA_REQUESTED = os.environ.get("ALLOW_FAKE_CAMERA", "false").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+if ENV == "production" and _ALLOW_FAKE_CAMERA_REQUESTED:
+    raise RuntimeError(
+        "Unsafe configuration: ALLOW_FAKE_CAMERA cannot be enabled when ENV=production."
+    )
+# Test and development environments may opt in. All other environments ignore
+# the flag, and snapshot handling independently rejects simulated evidence.
+ALLOW_FAKE_CAMERA = ENV in {"dev", "test"} and _ALLOW_FAKE_CAMERA_REQUESTED
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     if ENV != "dev":
