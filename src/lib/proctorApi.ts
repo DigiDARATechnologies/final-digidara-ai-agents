@@ -1,5 +1,6 @@
 /** Proctoring and assessment links (orchestrator app/proctoring). */
 import { sessionToken } from "./session";
+import { IS_VITE_DEV } from "./buildFlags";
 
 const RAW_BASE = import.meta.env.VITE_GATEWAY_API_URL !== undefined ? import.meta.env.VITE_GATEWAY_API_URL : "http://127.0.0.1:8100";
 const BASE = RAW_BASE.endsWith("/") ? RAW_BASE.slice(0, -1) : RAW_BASE;
@@ -42,6 +43,8 @@ export interface ProctorState {
   warnings_left: number;
   integrity: number;
   terminated: boolean;
+  /** True only when the local orchestrator has explicitly opted into fake camera testing. */
+  fake_camera_allowed?: boolean;
 }
 
 export type ProctorEventKind = "focus_lost" | "fullscreen_exit" | "copy" | "cut" | "paste" | "context_menu" | "camera_off" | "camera_blocked";
@@ -136,8 +139,11 @@ export const startProctoring = (agentName: ProctoredAgent, ref: string) =>
   request<ProctorState>("/proctoring/sessions", post({ agent_name: agentName, ref, consent: true }));
 export const sendProctorEvents = (sessionId: string, events: { kind: ProctorEventKind; detail?: string }[]) =>
   request<ProctorState>(`/proctoring/sessions/${sessionId}/events`, post({ events }));
-export const sendProctorSnapshot = (sessionId: string, image: string) =>
-  request<ProctorState>(`/proctoring/sessions/${sessionId}/snapshots`, post({ image }));
+export const sendProctorSnapshot = (sessionId: string, image: string, simulatedFaces?: 0 | 1 | 2) => {
+  const payload: { image: string; simulated_faces?: 0 | 1 | 2 } = { image };
+  if (IS_VITE_DEV && simulatedFaces !== undefined) payload.simulated_faces = simulatedFaces;
+  return request<ProctorState>(`/proctoring/sessions/${sessionId}/snapshots`, post(payload));
+};
 export const fetchProctorState = (sessionId: string) => request<ProctorState>(`/proctoring/sessions/${sessionId}`);
 export const endProctoring = (sessionId: string) => request<ProctorState>(`/proctoring/sessions/${sessionId}/end`, post({}));
 export const previewAssessment = (token: string) => request<AssessmentPreview>(`/assessments/${encodeURIComponent(token)}`);

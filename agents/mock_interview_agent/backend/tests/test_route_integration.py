@@ -38,6 +38,53 @@ class RouteIntegrationTests(unittest.TestCase):
         self.assertTrue(response.get_json()["answer_saved"])
         self.assertIn("already saved", response.get_json()["error"])
 
+    def test_identical_batch_answer_retry_returns_saved_next_question(self):
+        current = {
+            "id": 7, "interview_id": 41, "question_order": 1,
+            "question": "What is a component?", "answer": "A reusable UI unit.",
+            "verdict": None, "verdict_reason": None, "timed_out": False,
+            "processing_status": "answered", "is_followup": 0,
+        }
+        interview = {"id": 41, "student_id": 1, "status": "in_progress", "num_questions": 2}
+        next_question = {
+            "question_order": 2, "question": "What is state?",
+            "question_source": "preset", "topic_area": "React", "is_followup": 0,
+        }
+        rows = [current.copy(), {
+            "id": 8, "question_order": 2, "question": "What is state?",
+            "answer": None, "verdict": None, "timed_out": False,
+            "processing_status": "pending", "is_followup": 0,
+        }]
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            compact = " ".join(sql.split())
+            if compact.startswith("SELECT * FROM interview_details") and "question_order =" in compact:
+                return current.copy(), 1
+            if compact.startswith("SELECT * FROM interviews"):
+                return interview.copy(), 1
+            if compact.startswith("SELECT question_order, question"):
+                return next_question.copy(), 1
+            if compact.startswith("SELECT * FROM interview_details WHERE interview_id"):
+                return [row.copy() for row in rows], 2
+            return None, 0
+
+        with (
+            patch("routes.answers.db.query", side_effect=query_result),
+            patch("routes.answers.daily_answered_count", return_value=1),
+            patch("routes.answers.db.save_answer_with_optional_daily_usage") as save,
+            patch("routes.answers.groq_client.evaluate_answer") as evaluate,
+        ):
+            response = self.client.post("/api/submit_answer", json={
+                "interview_id": 41, "question_order": 1,
+                "answer": "A reusable UI unit.",
+            })
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()["question_order"], 2)
+        self.assertEqual(response.get_json()["question"], "What is state?")
+        save.assert_not_called()
+        evaluate.assert_not_called()
+
     def test_start_interview_routes_request_through_atomic_creation(self):
         creation = {
             "student_exists": True,
@@ -504,7 +551,9 @@ class RouteIntegrationTests(unittest.TestCase):
                   side_effect=[TimeoutError("provider timed out"), result.copy()]) as evaluate,
         ):
             first = self.client.post("/api/end_interview", json={"interview_id": 42})
-            self.assertEqual(first.status_code, 503)
+            self.assertEqual(first.status_code, 200)
+            self.assertTrue(first.get_json()["provisional"])
+            self.assertEqual(first.get_json()["report_status"], "provisional")
             self.assertEqual(rows[0]["answer"], answer)
             retry = self.client.post("/api/end_interview", json={"interview_id": 42})
 
@@ -513,6 +562,136 @@ class RouteIntegrationTests(unittest.TestCase):
         self.assertEqual(rows[0]["answer"], answer)
         self.assertEqual(evaluate.call_count, 2)
         self.assertEqual(len(evaluate.call_args.args[3][0]["answer"]), len(answer))
+
+    def test_failed_batch_evaluation_returns_provisional_report_with_saved_rows(self):
+        interview = {
+            "id": 43, "student_id": 1, "round_type": "technical", "subject": "Python",
+            "difficulty": "intermediate", "num_questions": 2, "status": "in_progress",
+            "interview_mode": "role", "role_name": "Python Developer",
+        }
+        rows = [
+            {"id": 91, "question_order": 1, "question": "What is a list?", "answer": "An ordered collection.",
+             "time_taken_sec": 12, "is_followup": 0, "answer_audio_path": None, "verdict": "correct",
+             "verdict_reason": "Accurate", "ideal_answer": "Ordered collection", "subject_tag": "Python",
+             "topic_area": "Python fundamentals", "timed_out": 0, "processing_status": "evaluated"},
+            {"id": 92, "question_order": 2, "question": "What is a tuple?", "answer": "Immutable sequence.",
+             "time_taken_sec": 12, "is_followup": 0, "answer_audio_path": None, "verdict": None,
+             "verdict_reason": None, "ideal_answer": None, "subject_tag": "Python",
+             "topic_area": "Python fundamentals", "timed_out": 0, "processing_status": "answered"},
+        ]
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            compact = " ".join(sql.split())
+            if compact.startswith("SELECT * FROM interviews"):
+                return interview.copy(), 1
+            if compact.startswith("SELECT question_order") or compact.startswith("SELECT id, question_order"):
+                return [row.copy() for row in rows], len(rows)
+            return None, 0
+
+        with (
+            patch("routes.interviews.db.query", side_effect=query_result),
+            patch("routes.interviews._batch_evaluations_or_error", return_value=(None, "No valid evaluation for 1 answer(s).")),
+            patch("routes.interviews.groq_client.evaluate_interview") as evaluate,
+        ):
+            response = self.client.post("/api/end_interview", json={"interview_id": 43})
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        payload = response.get_json()
+        self.assertTrue(payload["provisional"])
+        self.assertTrue(payload["retryable"])
+        self.assertEqual(payload["total_marks"], 1)
+        self.assertEqual(payload["max_marks"], 2)
+        self.assertEqual(payload["question_results"][0]["verdict"], "correct")
+        evaluate.assert_not_called()
+
+    def test_malformed_final_evaluation_is_retried_once(self):
+        interview = {
+            "id": 44, "student_id": 1, "round_type": "technical", "subject": "Python",
+            "difficulty": "advanced", "num_questions": 1, "status": "in_progress",
+        }
+        rows = [{
+            "id": 93, "question_order": 1, "question": "Explain generators.",
+            "answer": "They yield values lazily.", "time_taken_sec": 12,
+            "is_followup": 0, "answer_audio_path": None, "verdict": "correct",
+            "verdict_reason": "Accurate", "ideal_answer": "Lazy iterator", "subject_tag": None,
+            "topic_area": None, "timed_out": 0, "processing_status": "evaluated",
+        }]
+        result = {
+            "overall_score": 8, "technical_accuracy": 8,
+            "communication_clarity": 8, "confidence": 8,
+            "strengths": json.dumps(["Correct concept", "Clear response"]),
+            "weaknesses": json.dumps(["Add an example", "Discuss use cases"]),
+            "feedback": "Good response.",
+        }
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            compact = " ".join(sql.split())
+            if compact.startswith("SELECT * FROM interviews"):
+                return interview.copy(), 1
+            if compact.startswith("SELECT question_order") or compact.startswith("SELECT id, question_order"):
+                return [row.copy() for row in rows], len(rows)
+            if "FROM ai_usage_records" in compact and fetch:
+                return [], 0
+            return None, 0
+
+        with (
+            patch("routes.interviews.db.query", side_effect=query_result),
+            patch("routes.interviews.groq_client.evaluate_interview", side_effect=[ValueError("invalid JSON"), result.copy()]) as evaluate,
+            patch("routes.interviews.db.execute_update", return_value=1),
+        ):
+            response = self.client.post("/api/end_interview", json={"interview_id": 44})
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertFalse(response.get_json().get("provisional", False))
+        self.assertEqual(evaluate.call_count, 2)
+
+    def test_advanced_report_is_independent_of_absent_empty_or_large_camera_payloads(self):
+        interview = {
+            "id": 45, "student_id": 1, "round_type": "technical", "subject": "Python",
+            "difficulty": "advanced", "num_questions": 1, "status": "in_progress",
+        }
+        row = {
+            "id": 94, "question_order": 1, "question": "Explain thread safety.",
+            "answer": "Use synchronization to protect shared mutable state.", "time_taken_sec": 20,
+            "is_followup": 0, "answer_audio_path": None, "verdict": "correct",
+            "verdict_reason": "Correct idea.", "ideal_answer": "Protect shared state.",
+            "subject_tag": None, "topic_area": None, "timed_out": 0,
+            "processing_status": "evaluated",
+        }
+        result = {
+            "overall_score": 8, "technical_accuracy": 8, "communication_clarity": 8,
+            "confidence": 8, "strengths": json.dumps(["Sound reasoning", "Relevant example"]),
+            "weaknesses": json.dumps(["Add detail", "Compare alternatives"]),
+            "feedback": "Clear answer.",
+        }
+        payloads = [None, {}, {"frames": ["x" * 100_000 for _ in range(10)], "detections": []}]
+
+        for camera_data in payloads:
+            def query_result(sql, _params=None, fetch=False, fetchone=False):
+                compact = " ".join(sql.split())
+                if compact.startswith("SELECT * FROM interviews"):
+                    return interview.copy(), 1
+                if compact.startswith("SELECT question_order") or compact.startswith("SELECT id, question_order"):
+                    return [row.copy()], 1
+                if "FROM ai_usage_records" in compact and fetch:
+                    return [], 0
+                return None, 0
+
+            with (
+                patch("routes.interviews.db.query", side_effect=query_result),
+                patch("routes.interviews.groq_client.evaluate_interview", return_value=result.copy()) as evaluate,
+                patch("routes.interviews.db.execute_update", return_value=1),
+            ):
+                request_payload = {"interview_id": 45}
+                if camera_data is not None:
+                    request_payload["camera_data"] = camera_data
+                response = self.client.post("/api/end_interview", json=request_payload)
+
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(response.get_json()["proctoring_note"],
+                "Camera and integrity observations are handled separately and are not part of the interview answer score.")
+            self.assertEqual(len(evaluate.call_args.args[3]), 1)
+            self.assertNotIn("camera_data", evaluate.call_args.args[3][0])
 
     def test_exit_interview_reports_actual_transition(self):
         def query_result(sql, _params=None, fetch=False, fetchone=False):

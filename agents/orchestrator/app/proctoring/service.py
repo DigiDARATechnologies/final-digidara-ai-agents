@@ -28,6 +28,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from app import db
+from app import config
 from app.learner import levels as level_rules
 from app.models import (
     Assessment,
@@ -171,7 +172,13 @@ def _session_dict(ps: ProctorSession) -> dict:
         "max_warnings": settings["max_warnings"], "integrity": ps.integrity,
         "warnings_left": max(0, settings["max_warnings"] - ps.warnings),
         "terminated": ps.status == "terminated",
+        "fake_camera_allowed": _fake_camera_enabled(),
     }
+
+
+def _fake_camera_enabled() -> bool:
+    """Defense in depth: test/development only, even if config is overridden."""
+    return config.ENV in {"dev", "test"} and bool(config.ALLOW_FAKE_CAMERA)
 
 
 def _own_session(session, user_id: str, session_id: str) -> ProctorSession:
@@ -277,9 +284,13 @@ def _decode_jpeg(image: str) -> bytes:
     return raw
 
 
-def add_snapshot(user_id: str, session_id: str, image: str) -> tuple[dict, str | None]:
+def add_snapshot(user_id: str, session_id: str, image: str, simulated_faces: int | None = None) -> tuple[dict, str | None]:
     """Stores one webcam still. Returns the session state and the snapshot id
     to face-check (None when face checks are off or nothing was stored)."""
+    if simulated_faces is not None and not _fake_camera_enabled():
+        raise ProctorError(403, "Simulated camera data is available only in local development.")
+    if simulated_faces is not None and simulated_faces not in {0, 1, 2}:
+        raise ProctorError(400, "Simulated face count must be 0, 1 or 2.")
     raw = _decode_jpeg(image)
     purge_old_snapshots()
     session = db.get_session()
@@ -290,10 +301,21 @@ def add_snapshot(user_id: str, session_id: str, image: str) -> tuple[dict, str |
             return _session_dict(ps), None
         if session.query(ProctorSnapshot).filter_by(session_id=ps.id).count() >= MAX_SNAPSHOTS_PER_SESSION:
             return _session_dict(ps), None
-        snapshot = ProctorSnapshot(session_id=ps.id, image=raw)
+        snapshot = ProctorSnapshot(
+            session_id=ps.id,
+            image=raw,
+            faces=simulated_faces,
+            note="Development-only simulated camera frame" if simulated_faces is not None else "",
+        )
         session.add(snapshot)
+        if simulated_faces is not None:
+            if simulated_faces == 0:
+                _add_event(session, ps, "no_face", "Development-only simulated frame: no face.")
+            elif simulated_faces > 1:
+                _add_event(session, ps, "multiple_faces", "Development-only simulated frame: multiple faces.")
         session.commit()
-        return _session_dict(ps), snapshot.id if settings["face"] else None
+        check_id = snapshot.id if settings["face"] and simulated_faces is None else None
+        return _session_dict(ps), check_id
     finally:
         session.close()
 

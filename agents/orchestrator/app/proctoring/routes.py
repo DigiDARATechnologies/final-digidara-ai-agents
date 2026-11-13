@@ -33,6 +33,8 @@ class EventsIn(BaseModel):
 class SnapshotIn(BaseModel):
     # A base64 JPEG (optionally a data: URL) of at most 200 KB.
     image: str = Field(min_length=10, max_length=300_000)
+    # Only accepted when the server has explicitly enabled local fake-camera mode.
+    simulated_faces: int | None = Field(default=None, ge=0, le=2)
 
 
 class ConsentIn(BaseModel):
@@ -83,7 +85,7 @@ def add_events(session_id: str, req: EventsIn, request: Request, user_id: str = 
 @limiter.limit("6/minute")
 def add_snapshot(session_id: str, req: SnapshotIn, request: Request, background: BackgroundTasks,
                  user_id: str = Depends(get_verified_user_id)) -> dict:
-    state, check_id = _run(service.add_snapshot, user_id, session_id, req.image)
+    state, check_id = _run(service.add_snapshot, user_id, session_id, req.image, req.simulated_faces)
     if check_id:
         background.add_task(service.check_snapshot, check_id)
     return state
