@@ -403,6 +403,23 @@ def test_resume_edit_requires_a_nonempty_request(client):
     assert response.get_json()["message"] == "edit_request is required"
 
 
+def test_local_resume_edit_adds_colon_delimited_education():
+    proposed, changes = ai.local_grounded_resume_edit(
+        {"title": "Data Analyst Resume", "education": []},
+        "i want add Education pg : mca:ksr college:2023-2025:cgpa9.1",
+    )
+
+    assert proposed["education"] == [{
+        "school": "ksr college",
+        "degree": "MCA",
+        "level": "PG",
+        "start_date": "2023",
+        "end_date": "2025",
+        "cgpa": "9.1",
+    }]
+    assert changes == ["Added education: PG | MCA | ksr college | 2023 | 2025 | CGPA 9.1."]
+
+
 def test_optimize_resume_returns_ai_generated_summary_and_bullets(client, monkeypatch):
     def fake_ai_response(prompt, max_tokens):
         assert "complete, truthful resume optimization" in prompt

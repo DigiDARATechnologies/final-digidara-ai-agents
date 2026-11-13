@@ -593,11 +593,16 @@ def has_content(item):
 
 def build_personal_info(payload):
     payload = payload or {}
-    require_fields(payload, ["name", "email"])
+    # Imported notes and older resumes often omit an email address.  Keep the
+    # resume editable in that case and let the ATS review flag the missing
+    # contact detail instead of rejecting the whole import.
+    require_fields(payload, ["name"])
     links = clean_list(payload.get("links"), "personal_info.links", 10)
     return PersonalInfo(
         name=clean_text(payload["name"], "personal_info.name", 255, required=True),
-        email=clean_text(payload["email"], "personal_info.email", 255, required=True),
+        # The database column is non-nullable, so a missing email is stored as
+        # an empty value rather than NULL until the learner adds one.
+        email=clean_text(payload.get("email"), "personal_info.email", 255) or "",
         phone=clean_text(payload.get("phone"), "personal_info.phone", 50),
         location=clean_text(payload.get("location"), "personal_info.location", 255),
         links=[clean_text(link, "personal_info.links", 500, required=True) for link in links],
@@ -609,14 +614,14 @@ def apply_personal_info_payload(resume, payload):
         resume.personal_info = None
         return
 
-    require_fields(payload, ["name", "email"])
+    require_fields(payload, ["name"])
     if not resume.personal_info:
         resume.personal_info = build_personal_info(payload)
         return
 
     links = clean_list(payload.get("links"), "personal_info.links", 10)
     resume.personal_info.name = clean_text(payload["name"], "personal_info.name", 255, required=True)
-    resume.personal_info.email = clean_text(payload["email"], "personal_info.email", 255, required=True)
+    resume.personal_info.email = clean_text(payload.get("email"), "personal_info.email", 255) or ""
     resume.personal_info.phone = clean_text(payload.get("phone"), "personal_info.phone", 50)
     resume.personal_info.location = clean_text(payload.get("location"), "personal_info.location", 255)
     resume.personal_info.links = [
@@ -1169,6 +1174,13 @@ def preview_resume_pdf():
     try:
         style = normalize_style(payload.get("style_settings") or resume_data.get("style_settings"))
         pdf_bytes = render_resume_pdf(resume_data, template_choice, style)
+        # The dashboard uses this metadata to show the actual generated page
+        # count beside its one/two-page plan. It does not alter the PDF.
+        try:
+            from pypdf import PdfReader
+            page_count = len(PdfReader(BytesIO(pdf_bytes)).pages)
+        except Exception:
+            page_count = None
     except Exception:
         return error_response("PDF preview failed", 500)
 
@@ -1180,6 +1192,8 @@ def preview_resume_pdf():
         max_age=0,
     )
     response.headers["Content-Disposition"] = "inline; filename=resume-preview.pdf"
+    if page_count:
+        response.headers["X-Resume-Page-Count"] = str(page_count)
     return response
 
 
