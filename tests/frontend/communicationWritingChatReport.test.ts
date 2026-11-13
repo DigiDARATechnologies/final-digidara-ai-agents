@@ -54,3 +54,23 @@ test('a model reply with "null" or a copied field label is never shown to the le
   expect(messages[0].text).toBe("Are there any experiences or themes in life that you find interesting?");
   expect(messages[0].text).not.toMatch(/null|friendly acknowledgment/i);
 });
+
+test("timeout when finishing writing chat keeps retry option and allows recovery", async () => {
+  mocked.finishWritingChat
+    .mockRejectedValueOnce(new Error("The writing chat finish request timed out. Please try again."))
+    .mockResolvedValueOnce({ session_id: 99, overall_score: 7.5, summary_feedback: "Good ideas.", total_turns: 1 });
+
+  const initial = chatState([
+    { role: "assistant", text: "What do you like about nature?" },
+    { role: "user", text: "I love walking in the forest." },
+  ]);
+  const failed = await handleCommunicationText(initial, "end_session");
+  expect(failed.state.step).toBe("writing_chat_turn");
+  expect(failed.messages[0].text).toContain("timed out");
+  expect(failed.messages[0].options?.map((o) => o.value)).toEqual(["end_session", "menu"]);
+
+  const retried = await handleCommunicationText(failed.state, "end_session");
+  expect(retried.state.step).toBe("main_menu");
+  expect(retried.state.sessionId).toBe(99);
+  expect(retried.messages[0].text).toContain("Overall score: 7.5/10");
+});

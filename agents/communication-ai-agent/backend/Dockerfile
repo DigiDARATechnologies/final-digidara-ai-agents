@@ -31,4 +31,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # Threads, not more processes: a request mostly waits on OpenAI or MySQL, so
 # one worker serves 32 learners at once (gthread) and the server stays idle.
-CMD ["gunicorn", "-w", "4", "-k", "gthread", "--threads", "32", "--timeout", "120", "-b", "0.0.0.0:5001", "run:app"]
+ENV GUNICORN_TIMEOUT=210
+CMD ["sh", "-c", "exec gunicorn -w 4 -k gthread --threads 32 --timeout ${GUNICORN_TIMEOUT:-210} -b 0.0.0.0:5001 run:app"]
