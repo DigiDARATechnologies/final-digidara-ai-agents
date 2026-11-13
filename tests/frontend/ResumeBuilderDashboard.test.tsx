@@ -29,7 +29,7 @@ beforeEach(() => {
     id: 7, user_id: "learner", target_role: "Data Analyst", template_choice: "pulse-rose",
     personal_info: { name: "Rubeshkanna", email: "rubesh@example.test" }, summary: "Target-role summary.",
   });
-  api.previewResumePdf.mockResolvedValue(new Blob(["%PDF-1.4"]));
+  api.previewResumePdf.mockResolvedValue({ blob: new Blob(["%PDF-1.4"]), pageCount: 1 });
   api.selectResumeTemplate.mockResolvedValue({});
   api.listResumeStyles.mockRejectedValue(new Error("offline")); // the built-in list is used
   api.saveResumeStyle.mockResolvedValue({});

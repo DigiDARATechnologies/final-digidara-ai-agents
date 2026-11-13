@@ -18,7 +18,7 @@ def integration_url(fallback):
     return value
 
 @pytest.fixture()
-def app(tmp_path):
+def app(tmp_path, monkeypatch):
     class TestConfig:
         TESTING = True
         SECRET_KEY = "test-secret-key-for-security-regression-tests"
@@ -27,6 +27,10 @@ def app(tmp_path):
         SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     app = create_app(TestConfig)
+    # Endpoint tests replace the provider call with a deterministic mock. Keep
+    # that route available instead of activating the production offline draft.
+    monkeypatch.setenv("AI_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     with app.app_context():
         db.drop_all()
         db.create_all()
