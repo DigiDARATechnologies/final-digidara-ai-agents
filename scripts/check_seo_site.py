@@ -76,7 +76,8 @@ def static_checks() -> None:
     check(app.get("publisher") == {"@id": f"{SITE}/#org"} and app.get("brand") == {"@id": f"{SITE}/#brand"}, "SoftwareApplication points to the Organization and Brand")
     logo = org.get("logo", {}).get("url", "")
     check(logo.startswith(SITE) and (DIST / logo.replace(SITE + "/", "")).is_file(), "Organization logo file exists", logo)
-    check("sameAs" not in org, "no sameAs yet (add only verified official profiles)")
+    same = org.get("sameAs", [])
+    check(len(same) == len(set(same)) and all(u.startswith("https://") for u in same), f"Organization sameAs: {len(same)} unique https profile URLs")
 
     print("\n== Inner pages point at the same Organization")
     for url, f in pages.items():
