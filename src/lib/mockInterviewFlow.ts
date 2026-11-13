@@ -46,6 +46,7 @@ const roleOptions: ChatOption[] = [
   { label: "Data Analyst", value: "Data Analyst" },
   { label: "Digital Marketing Executive", value: "Digital Marketing Executive" },
   { label: "AI Engineer", value: "AI Engineer" },
+  { label: "Prompt Engineer", value: "Prompt Engineer" },
   { label: "Enter another role", value: "custom_role" },
 ];
 const questionCountOptions: ChatOption[] = [

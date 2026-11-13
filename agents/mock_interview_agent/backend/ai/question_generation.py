@@ -167,6 +167,11 @@ PRESET_ROLE_SKILLS = {
         "intermediate": ["machine learning pipelines", "LLM prompting and evaluation", "RAG systems", "embeddings and vector databases", "model deployment APIs", "testing and monitoring AI systems", "responsible AI"],
         "advanced": ["production ML system design", "LLM architecture and orchestration", "RAG quality and retrieval optimization", "model evaluation and observability", "scalable inference", "AI safety and governance", "cost and latency trade-offs"],
     },
+    "prompt engineer": {
+        "beginner": ["how LLMs work (tokens, context, temperature)", "clear prompt structure (role, task, context, format)", "zero-shot and few-shot prompting", "using ChatGPT and other AI tools for work", "spotting wrong or made-up answers"],
+        "intermediate": ["step-by-step and chain-of-thought prompting", "structured output (JSON, tables, templates)", "prompt templates and reuse", "prompts for coding, content and data analysis", "evaluating and testing prompts", "RAG basics"],
+        "advanced": ["prompt evaluation frameworks and metrics", "RAG design and retrieval quality", "tool use and AI agents", "prompt injection and AI safety", "cost, latency and model choice", "prompt versioning in production"],
+    },
 }
 
 MASTER_FAQ_PROMPT = """You curate real, frequently asked interview questions. Never invent questions.
@@ -827,6 +832,7 @@ PRESET_SUBJECTS = {
     "rag & vector databases",
     "fastapi",
     "ai agent development",
+    "prompt engineering",
     "seo",
     "sem & google ads",
     "social media marketing",

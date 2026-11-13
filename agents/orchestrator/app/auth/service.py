@@ -123,6 +123,9 @@ def _purge_phase2(user_id: str) -> None:
     boss_memory.forget(user_id)
     coach_service.purge(user_id)
     links_service.purge(user_id)
+    from app import admin_messages
+
+    admin_messages.purge(user_id)
     session = get_session()
     try:
         session.query(A2ATask).filter_by(user_id=user_id).delete()
@@ -143,6 +146,12 @@ def _boss_reports(user_id: str) -> list[dict]:
         session.close()
 
 
+def _team_messages(user_id: str) -> list[dict]:
+    from app import admin_messages
+
+    return admin_messages.for_learner(user_id)
+
+
 def _export_phase2(user_id: str) -> dict:
     from app.coach import service as coach_service
     from app.learner import service as learner_service
@@ -158,6 +167,7 @@ def _export_phase2(user_id: str) -> dict:
         "memory": memory_service.list_for(user_id),
         "boss_memory": boss_memory.export(user_id),
         "boss_reports": _boss_reports(user_id),
+        "team_messages": _team_messages(user_id),
         "career_plan": coach_service.get(user_id),
     }
 

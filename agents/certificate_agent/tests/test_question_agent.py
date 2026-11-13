@@ -100,3 +100,19 @@ def test_the_same_question_reworded_is_a_duplicate():
     assert deduper.add("What is the purpose of a foreign key constraint in joins?")
     assert deduper.add("What is the output of print(2 ** 3) in Python?")
     assert deduper.add("What is the output of print(3 ** 2) in Python?")
+
+
+def test_career_courses_get_their_own_question_areas_not_code_ones():
+    from cert_app.agents.question_agent import _focus_for, _MARKETING_FOCUS_AREAS, _PROMPT_FOCUS_AREAS, _GENERAL_FOCUS_AREAS
+
+    marketing = {_focus_for("Digital Marketing", i) for i in range(8)}
+    prompting = {_focus_for("Prompt Engineering", i) for i in range(8)}
+    assert marketing == set(_MARKETING_FOCUS_AREAS) and prompting == set(_PROMPT_FOCUS_AREAS)
+    assert not any("debugging" in area for area in marketing | prompting)
+    assert _focus_for("Docker", 2) == _GENERAL_FOCUS_AREAS[2]
+
+
+def test_both_career_courses_are_named_courses_on_the_certificate():
+    from cert_app.services.exam_service import is_topic_course
+
+    assert is_topic_course("Digital Marketing") and is_topic_course(" prompt engineering ")

@@ -454,6 +454,7 @@ it_coverage:
     - Data Scientist
     - Machine Learning Engineer
     - AI Engineer
+    - Prompt Engineer
     - DevOps Engineer
     - Cloud Engineer
     - QA Engineer
@@ -468,6 +469,12 @@ it_coverage:
     - Mobile App Developer
     # Learners also target these, and without a search they had no jobs at all.
     - Digital Marketing Executive
+    # Digital Marketing and Prompt Engineering courses: the titles their
+    # learners' jobs are actually posted under.
+    - SEO Executive
+    - Social Media Executive
+    - Performance Marketing Executive
+    - Generative AI Engineer
     - Sales Executive
     - HR Executive
     - Content Writer
@@ -503,8 +510,8 @@ jsearch:
 # Key is read from PRLABS_API_KEY in the environment (never put it here).
 # Each role below is searched in each location; calls per day/month are capped
 # by JOBS_PRLABS_DAILY_QUERIES / JOBS_PRLABS_MONTHLY_CALLS (free_plan.py).
-# With 14 roles x 6 locations and 14 searches a day, every role runs every day
-# and reaches every location every 6 days.
+# With 15 roles x 6 locations and 14 searches a day, every role runs about every
+# day and reaches every location about every 6-7 days.
 prlabs:
   enabled: true
   # "Tamil Nadu, India" covers the whole state; the five cities below (each
@@ -536,3 +543,7 @@ prlabs:
     - Backend Developer
     - Python Developer
     - UI UX Designer
+    # Digital Marketing course. (Prompt Engineering jobs are posted as Generative
+    # AI Engineer, above; the narrower titles of both courses are searched on
+    # Adzuna and JSearch via it_coverage.)
+    - Digital Marketing Executive

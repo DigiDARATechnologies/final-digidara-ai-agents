@@ -7,8 +7,10 @@ from app.auth.consent import CONSENT_POLICY_VERSION
 from app.auth.schemas import (
     AccountDeleteRequest,
     ChangePasswordRequest,
+    ForgotPasswordRequest,
     GoogleAuthRequest,
     LoginRequest,
+    ResetPasswordRequest,
     SignupRequest,
     TokenResponse,
     UserOut,
@@ -92,6 +94,34 @@ def verify_email_code(req: VerifyEmailRequest, request: Request, user_id: str = 
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
     return _to_out(user)
+
+
+@router.post("/password/forgot")
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
+def forgot_password(req: ForgotPasswordRequest, request: Request) -> dict:
+    """Email a reset code. The answer is the same whether or not the email
+    has an account, so this can't be used to look accounts up."""
+    email = req.email.strip().lower()
+    if not allow_account_attempt("reset-send", email, _SEND_CODE_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
+    try:
+        email_verification.send_reset_code(email)
+    except email_verification.VerificationError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"message": "If an account uses this email, we've sent it a 6-digit code."}
+
+
+@router.post("/password/reset")
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
+def reset_password(req: ResetPasswordRequest, request: Request) -> dict:
+    email = req.email.strip().lower()
+    if not allow_account_attempt("reset-verify", email, _VERIFY_CODE_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
+    try:
+        email_verification.reset_password(email, req.code, hash_password(req.new_password))
+    except email_verification.VerificationError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"message": "Your password has been changed. Please log in with your new password."}
 
 
 @router.post("/login", response_model=TokenResponse)

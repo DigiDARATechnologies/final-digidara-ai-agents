@@ -80,14 +80,9 @@ def _code_hash(user_id: str, code: str) -> str:
 
 
 def _send(to_address: str, name: str, code: str) -> None:
-    settings = _smtp_settings()
-    if settings is None:
-        raise VerificationError(503, "Email verification is not available right now. Please try again later.")
+    first_name = (name or "there").split()[0]
     message = EmailMessage()
     message["Subject"] = f"{code} is your SkillDARA verification code"
-    message["From"] = f"SkillDARA <{settings['sender']}>"
-    message["To"] = to_address
-    first_name = (name or "there").split()[0]
     message.set_content(
         f"Hi {first_name},\n\n"
         f"Your SkillDARA verification code is: {code}\n\n"
@@ -106,6 +101,15 @@ def _send(to_address: str, name: str, code: str) -> None:
 </div>""",
         subtype="html",
     )
+    _deliver(to_address, message)
+
+
+def _deliver(to_address: str, message: EmailMessage) -> None:
+    settings = _smtp_settings()
+    if settings is None:
+        raise VerificationError(503, "Email is not available right now. Please try again later.")
+    message["From"] = f"SkillDARA <{settings['sender']}>"
+    message["To"] = to_address
     context = ssl.create_default_context()
     try:
         if settings["port"] == 465:
@@ -184,6 +188,101 @@ def verify_code(user_id: str, code: str, now: datetime | None = None) -> None:
             session.commit()
             left = MAX_ATTEMPTS - user.email_code_attempts
             raise VerificationError(400, f"That code is not right. {left} {'try' if left == 1 else 'tries'} left." if left else "Too many wrong codes. Please ask for a new one.")
+        user.email_verified = True
+        user.email_code_hash = None
+        user.email_code_expires_at = None
+        user.email_code_attempts = 0
+        session.commit()
+    finally:
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# Forgotten password: a 6-digit code emailed to the account, then a new
+# password. It reuses the email_code_* columns (one pending code per account)
+# but hashes under a different purpose, so a reset code can never verify an
+# email and a verification code can never reset a password. Completing a
+# reset also proves the address, so it marks the email verified, and signs
+# every existing session out.
+# ---------------------------------------------------------------------------
+
+def _reset_hash(user_id: str, code: str) -> str:
+    return hmac.new(JWT_SECRET.encode(), f"reset-code:{user_id}:{code}".encode(), hashlib.sha256).hexdigest()
+
+
+def _send_reset(to_address: str, name: str, code: str) -> None:
+    first_name = (name or "there").split()[0]
+    minutes = int(CODE_TTL.total_seconds() // 60)
+    message = EmailMessage()
+    message["Subject"] = f"{code} is your SkillDARA password reset code"
+    message.set_content(
+        f"Hi {first_name},\n\n"
+        f"Your SkillDARA password reset code is: {code}\n\n"
+        f"It expires in {minutes} minutes. Enter it in the app with your new password.\n\n"
+        "If you didn't ask to reset your password, you can ignore this email; your password stays the same.\n\n"
+        "- SkillDARA"
+    )
+    message.add_alternative(
+        f"""<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;color:#1c2434">
+<h2 style="color:#2851d8">Reset your password</h2>
+<p>Hi {first_name},</p>
+<p>Your SkillDARA password reset code is:</p>
+<p style="font-size:30px;font-weight:bold;letter-spacing:6px;background:#f4f5f8;padding:14px;text-align:center;border-radius:8px">{code}</p>
+<p>It expires in {minutes} minutes.</p>
+<p style="color:#667085;font-size:13px">If you didn't ask to reset your password, you can ignore this email; your password stays the same.</p>
+</div>""",
+        subtype="html",
+    )
+    _deliver(to_address, message)
+
+
+def send_reset_code(email: str, now: datetime | None = None) -> None:
+    """Email a reset code if `email` belongs to an account. Says nothing
+    about whether it does: an unknown address just returns, so the route
+    can't be used to find out who has an account."""
+    now = now or datetime.utcnow()
+    email = (email or "").strip().lower()
+    if _smtp_settings() is None:
+        raise VerificationError(503, "Password reset by email is not available right now. Please contact support.")
+    session = db.get_session()
+    try:
+        user = session.query(User).filter_by(email=email).with_for_update().first()
+        if user is None:
+            return
+        if user.email_code_sent_at and now - user.email_code_sent_at < RESEND_COOLDOWN:
+            wait = int((RESEND_COOLDOWN - (now - user.email_code_sent_at)).total_seconds()) + 1
+            raise VerificationError(429, f"Please wait {wait} seconds before asking for a new code.")
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        user.email_code_hash = _reset_hash(user.id, code)
+        user.email_code_expires_at = now + CODE_TTL
+        user.email_code_sent_at = now
+        user.email_code_attempts = 0
+        to_address, name = user.email, user.name
+        session.commit()
+    finally:
+        session.close()
+    _send_reset(to_address, name, code)
+
+
+def reset_password(email: str, code: str, new_password_hash: str, now: datetime | None = None) -> None:
+    """Set the new password if `code` is this account's current reset code."""
+    now = now or datetime.utcnow()
+    email = (email or "").strip().lower()
+    code = (code or "").strip()
+    session = db.get_session()
+    try:
+        user = session.query(User).filter_by(email=email).with_for_update().first()
+        if user is None or not user.email_code_hash or not user.email_code_expires_at or now > user.email_code_expires_at:
+            raise VerificationError(400, "This code has expired or is not right. Please ask for a new one.")
+        if user.email_code_attempts >= MAX_ATTEMPTS:
+            raise VerificationError(429, "Too many wrong codes. Please ask for a new one.")
+        if not (code.isdigit() and len(code) == 6 and hmac.compare_digest(user.email_code_hash, _reset_hash(user.id, code))):
+            user.email_code_attempts += 1
+            session.commit()
+            left = MAX_ATTEMPTS - user.email_code_attempts
+            raise VerificationError(400, f"That code is not right. {left} {'try' if left == 1 else 'tries'} left." if left else "Too many wrong codes. Please ask for a new one.")
+        user.password_hash = new_password_hash
+        user.session_version = (user.session_version or 0) + 1
         user.email_verified = True
         user.email_code_hash = None
         user.email_code_expires_at = None

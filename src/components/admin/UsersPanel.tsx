@@ -4,6 +4,15 @@ import { agentLabel, formatDate, formatMoney, formatNumber, PAYMENT_BADGE } from
 import { formatPoints } from "../../lib/points";
 import { useLoad } from "./useLoad";
 
+/** Names the usage log uses that are not chat agents. */
+const USAGE_NAMES: Record<string, string> = {
+  boss: "Boss (general chat)", voice: "Voice replies", career_coach: "Career plan", knowledge_test: "Knowledge test", org_assistant: "Organization assistant",
+};
+function usageLabel(name: string): string {
+  if (!name) return "—";
+  return USAGE_NAMES[name] ?? agentLabel(name.replace(/_agent$/, "").replace(/_/g, "-"));
+}
+
 const PAGE = 25;
 
 function Conversation({ userId, conversationId, onClose }: { userId: string; conversationId: string; onClose: () => void }) {
@@ -85,6 +94,35 @@ function UserDetail({ userId, onBack }: { userId: string; onBack: () => void }) 
         </table>
       </div>
       {open && <Conversation userId={userId} conversationId={open} onClose={() => setOpen(null)} />}
+
+      <h4>Coins used</h4>
+      <p className="admin-loading">Every charge against this account's balance. Some use leaves no chat: Boss, voice replies, the career plan and knowledge tests.</p>
+      {!!data.usage_by_agent?.length && (
+        <div className="admin-table-card">
+          <table className="admin-table">
+            <thead><tr><th>Where</th><th>Times</th><th>Coins</th></tr></thead>
+            <tbody>
+              {data.usage_by_agent.map((row) => (
+                <tr key={row.agent_name || "none"}><td className="admin-table-primary">{usageLabel(row.agent_name)}</td><td>{formatNumber(row.uses)}</td><td>{formatPoints(row.points)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="admin-table-card">
+        <table className="admin-table">
+          <thead><tr><th>When</th><th>Where</th><th>Action</th><th>Coins</th></tr></thead>
+          <tbody>
+            {data.usage?.map((row, index) => (
+              <tr key={`${row.created_at}-${index}`}>
+                <td>{formatDate(row.created_at)}</td><td className="admin-table-primary">{usageLabel(row.agent_name)}</td>
+                <td>{row.action ? row.action.replace(/_/g, " ") : "—"}</td><td>{formatPoints(row.points)}</td>
+              </tr>
+            ))}
+            {!data.usage?.length && <tr><td colSpan={4} className="admin-table-empty">No coins used yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
 
       <h4>Where they are in each agent</h4>
       <div className="admin-table-card">

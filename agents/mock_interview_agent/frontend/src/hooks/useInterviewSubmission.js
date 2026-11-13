@@ -6,7 +6,10 @@ import { logClientEvent, reportClientError, reportClientWarning } from "../utils
 const VERDICT_DISPLAY_MS = 1400;
 const TRANSCRIPTION_TIMEOUT_MS = 10000;
 const ANSWER_SUBMISSION_TIMEOUT_MS = 30000;
-const FINAL_RESULT_TIMEOUT_MS = 45000;
+// The gateway allows 180 seconds for this action. A 45-second browser abort
+// used to cancel valid evaluations of long answers while upstream services
+// were still working.
+const FINAL_RESULT_TIMEOUT_MS = 172000;
 
 function debugInterview(stage, details = {}) {
   logClientEvent("debug", `voice_interview_${stage.replace(/\s+/g, "_")}`, stage, details);
@@ -16,8 +19,10 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [lastVerdict, setLastVerdict] = useState(null);
   const [hasRetryableSubmission, setHasRetryableSubmission] = useState(false);
+  const [hasRetryableFinalReport, setHasRetryableFinalReport] = useState(false);
   const submittingRef = useRef(false);
   const lastSubmissionRef = useRef(null);
+  const finalReportPendingRef = useRef(false);
   const activeRequestRef = useRef(null);
   const phaseRef = useRef(phase);
   useEffect(() => {
@@ -25,7 +30,7 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
   }, [phase]);
 
   async function handleSubmit(answerText, { timedOut = false } = {}) {
-    if (submittingRef.current || phaseRef.current === "submitting" || phaseRef.current === "finishing" || isExitStarted()) return;
+    if (submittingRef.current || phaseRef.current === "submitting" || phaseRef.current === "finishing" || phaseRef.current === "evaluation_failed" || isExitStarted()) return;
     const submittedQuestion = currentQuestionRef.current;
     lastSubmissionRef.current = { answerText, timedOut };
     setHasRetryableSubmission(true);
@@ -93,23 +98,35 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
         if (isExitStarted()) return;
       }
       if (res.done) {
+        // The answer is already persisted by submitAnswer. From here on the
+        // only retryable operation is report generation, never answer submit.
+        lastSubmissionRef.current = null;
+        setHasRetryableSubmission(false);
         setPhase("finishing");
+        finalReportPendingRef.current = true;
         requestTimeout = window.setTimeout(() => { requestTimedOut = true; controller.abort(); }, FINAL_RESULT_TIMEOUT_MS);
         debugInterview("final evaluation requested");
         const finalResult = await endInterview(interviewId, { signal: controller.signal });
         window.clearTimeout(requestTimeout);
         requestTimeout = null;
+        finalReportPendingRef.current = false;
+        setHasRetryableFinalReport(false);
         debugInterview("final evaluation received");
         if (!isExitStarted()) onFinished(finalResult);
         return;
       }
       const nextRealQuestionIndex = realQuestionIndexRef.current + 1;
       if (nextRealQuestionIndex > totalQuestions) {
+        lastSubmissionRef.current = null;
+        setHasRetryableSubmission(false);
         setPhase("finishing");
+        finalReportPendingRef.current = true;
         requestTimeout = window.setTimeout(() => { requestTimedOut = true; controller.abort(); }, FINAL_RESULT_TIMEOUT_MS);
         const finalResult = await endInterview(interviewId, { signal: controller.signal });
         window.clearTimeout(requestTimeout);
         requestTimeout = null;
+        finalReportPendingRef.current = false;
+        setHasRetryableFinalReport(false);
         if (!isExitStarted()) onFinished(finalResult);
         return;
       }
@@ -122,7 +139,13 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
       );
     } catch (e) {
       if (isExitStarted()) return;
-      if (requestTimedOut) {
+      if (finalReportPendingRef.current) {
+        setError(requestTimedOut
+          ? "Your answers are saved, but the final report is taking longer than expected. Retry the report without submitting your answers again."
+          : (e.message || "Your answers are saved, but the final report could not be generated. Retry the report without submitting your answers again."));
+        setHasRetryableFinalReport(true);
+        setPhase("evaluation_failed");
+      } else if (requestTimedOut) {
         setError("The interview service took too long to respond. Your answer is still here—please try submitting it again.");
       } else if (e.name === "AbortError") {
         return;
@@ -131,7 +154,7 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
       }
       debugInterview("submission failed", { timedOut: requestTimedOut, error: e.message });
       reportClientError("answer_submission_failed", e, { interview_id: interviewId, question_order: submittedQuestion.order, timed_out: requestTimedOut });
-      setPhase("ready");
+      if (!finalReportPendingRef.current) setPhase("ready");
     } finally {
       if (requestTimeout) window.clearTimeout(requestTimeout);
       setIsTranscribing(false);
@@ -146,6 +169,41 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
     handleSubmit(pending.answerText, { timedOut: pending.timedOut });
   }
 
+  async function retryFinalReport() {
+    if (submittingRef.current || isExitStarted()) return;
+    submittingRef.current = true;
+    finalReportPendingRef.current = true;
+    setHasRetryableFinalReport(false);
+    setError(null);
+    setPhase("finishing");
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    let requestTimedOut = false;
+    const requestTimeout = window.setTimeout(() => {
+      requestTimedOut = true;
+      controller.abort();
+    }, FINAL_RESULT_TIMEOUT_MS);
+    try {
+      const finalResult = await endInterview(interviewId, { signal: controller.signal });
+      finalReportPendingRef.current = false;
+      setHasRetryableFinalReport(false);
+      if (!isExitStarted()) onFinished(finalResult);
+    } catch (e) {
+      if (isExitStarted()) return;
+      setError(requestTimedOut
+        ? "Your answers are saved, but the final report is still taking too long. You can retry the report again."
+        : (e.message || "Your answers are saved, but the final report could not be generated. You can retry it again."));
+      setHasRetryableFinalReport(true);
+      setPhase("evaluation_failed");
+      reportClientError("final_interview_report_retry_failed", e, { interview_id: interviewId, timed_out: requestTimedOut });
+    } finally {
+      window.clearTimeout(requestTimeout);
+      finalReportPendingRef.current = false;
+      submittingRef.current = false;
+      if (activeRequestRef.current === controller) activeRequestRef.current = null;
+    }
+  }
+
   function cancelActiveRequest() {
     activeRequestRef.current?.abort();
   }
@@ -153,7 +211,9 @@ export default function useInterviewSubmission({ interviewId, timeLimitSec, tota
   function resetSubmission() {
     lastSubmissionRef.current = null;
     setHasRetryableSubmission(false);
+    setHasRetryableFinalReport(false);
+    finalReportPendingRef.current = false;
   }
 
-  return { cancelActiveRequest, submittingRef, lastVerdict, setLastVerdict, isTranscribing, hasRetryableSubmission, resetSubmission, handleSubmit, retryLastSubmission };
+  return { cancelActiveRequest, submittingRef, lastVerdict, setLastVerdict, isTranscribing, hasRetryableSubmission, hasRetryableFinalReport, resetSubmission, handleSubmit, retryLastSubmission, retryFinalReport };
 }

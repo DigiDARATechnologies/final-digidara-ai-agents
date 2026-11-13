@@ -38,6 +38,7 @@ import {
 import LandingPage from "./components/LandingPage";
 import LoginOverlay, { GOOGLE_OAUTH_CONSENT_KEY } from "./components/LoginOverlay";
 import VerifyEmailScreen from "./components/VerifyEmailScreen";
+import TeamMessagesPopup from "./components/TeamMessagesPopup";
 import OnboardingScreen from "./components/OnboardingScreen";
 import { deleteMyAvatar, fetchLearnerSummary, fetchMyAvatar, fetchReadiness, saveMyAvatar, type LearnerSummary } from "./lib/learnerApi";
 import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
@@ -1958,6 +1959,19 @@ export default function App() {
       return;
     }
 
+    // Resume Builder and Job Fetch read documents, not pictures: a pasted
+    // screenshot used to be taken for a resume and fail later on.
+    if (agent?.kind === "resume-builder" || agent?.kind === "job-fetch") {
+      const allowed = agent.kind === "resume-builder" ? /\.(pdf|docx?|txt|zip)$/i : /\.(pdf|docx?)$/i;
+      const rejected = Array.from(files).find((file) => !allowed.test(file.name));
+      if (rejected) {
+        showToast(agent.kind === "resume-builder"
+          ? `${rejected.name} can't be read here. Upload your resume as PDF, DOC, DOCX or TXT, or your LinkedIn export as a ZIP.`
+          : `${rejected.name} can't be read here. Upload your resume as PDF, DOC or DOCX.`);
+        return;
+      }
+    }
+
     if (agent?.kind === "resume-builder") {
       const file = Array.from(files)[0];
       if (!file) return;
@@ -1977,7 +1991,7 @@ export default function App() {
       return;
     }
 
-    showToast("File attachments are only available in the Capstone Project Agent chat.");
+    showToast("File attachments work in the Capstone Project, Resume Builder and Job Fetch chats.");
   }
 
   function handleNavAction(action: "my-agents" | "workflows" | "saved" | "settings" | "playground" | "admin" | "readiness" | "organization" | "leaderboard" | "learning-dashboard" | "assessments" | "courses") {
@@ -2435,11 +2449,15 @@ export default function App() {
                 onEditMessage={isMockInterviewChat ? undefined : editMessage}
                 canEditMessage={canEditMessage}
                 attachEnabled={isCapstoneChat || isResumeBuilderChat || isJobFetchChat}
-                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
+                // Resume Builder also imports the LinkedIn data-export zip.
+                attachAccept={isResumeBuilderChat ? ".pdf,.doc,.docx,.txt,.zip" : isJobFetchChat ? ".pdf,.doc,.docx" : ".docx,.zip"}
+                // Only the Capstone agent reads images (questions about a screenshot).
+                attachPhotos={isCapstoneChat}
                 pendingFiles={pendingFiles}
                 onAttachFiles={handleAttachFiles}
                 onRemovePendingFile={handleRemovePendingFile}
-                onAttachDisabled={() => showToast("File attachments are only available in the Capstone Project Agent chat.")}
+                onAttachDisabled={() => showToast("File attachments work in the Capstone Project, Resume Builder and Job Fetch chats.")}
+                onAttachUnsupported={showToast}
                 codeMode={isCodeForgeChat && codeforgeState?.step === "awaiting_code"}
                 codeSeed={codeforgeState?.starterCode}
                 codeBusy={codeBusy}
@@ -2603,6 +2621,7 @@ export default function App() {
         <KnowledgeTestView key={knowledgeRun.sessionId} sessionId={knowledgeRun.sessionId} title={knowledgeRun.title} onClose={() => setKnowledgeRun(null)} />
       )}
 
+      {!user.isAdmin && <TeamMessagesPopup userId={user.id} />}
       <Toast message={toastMsg} show={toastShow} />
       <SaveIndicator status={agentState.status} />
     </>

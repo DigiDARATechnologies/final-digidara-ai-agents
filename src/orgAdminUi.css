@@ -1,0 +1,253 @@
+/* Organization and Admin UI polish (light theme). Styling only.
+   Imported last in main.tsx; selectors use `html body` so they win over the older rules. */
+
+/* ======================================================================
+   ORGANIZATION
+   ====================================================================== */
+
+html body .org-page { padding: 20px 28px 70px; }
+html body .org-page .pv-inner, html body .org-page .og-inner { max-width: none; width: 100%; }
+
+/* ---- Header banner ---- */
+html body .org-dash-head { position: relative; overflow: hidden; margin: 6px 0 20px; padding: 26px 30px; border-radius: 28px; color: #fff; align-items: center;
+  background:
+    radial-gradient(460px 280px at 100% 0%, rgba(255,255,255,.22), transparent 62%),
+    radial-gradient(420px 300px at 82% 125%, rgba(255,120,180,.38), transparent 64%),
+    radial-gradient(360px 260px at 0% 110%, rgba(40,200,190,.28), transparent 64%),
+    linear-gradient(115deg, #2347c9, #5b45dc);
+  box-shadow: 0 28px 54px -38px #3b4fd8; }
+html body .org-dash-head::after { content: "🏫"; position: absolute; right: 26px; bottom: -22px; font-size: 118px; opacity: .13; transform: rotate(-8deg); pointer-events: none; }
+html body .org-dash-title h1 { color: #fff; font-size: clamp(24px, 2.8vw, 34px); font-weight: 700; letter-spacing: -.04em; text-shadow: 0 2px 14px rgba(20,10,80,.25); }
+html body .org-dash-head .rd-kicker { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.5); color: #fff; backdrop-filter: blur(6px); }
+html body .org-dash-head .rd-muted, html body .org-dash-head small { color: rgba(255,255,255,.88); }
+html body .org-dash-head .org-avatar.xl { width: 64px; height: 64px; border-radius: 20px; font-size: 28px; color: #3b3fb8; background: #fff; box-shadow: 0 16px 28px -14px rgba(0,0,0,.45); }
+html body .org-dash-head .btn-outline { background: rgba(255,255,255,.16); color: #fff; border-color: rgba(255,255,255,.5); }
+html body .org-dash-head .btn-outline:hover { background: rgba(255,255,255,.28); }
+html body .org-dash-head .btn-primary { background: #fff; color: #3b3fb8; box-shadow: 0 12px 22px -12px rgba(0,0,0,.4); }
+
+/* ---- Tabs ---- */
+html body .org-tabs { gap: 4px; padding: 5px; margin-bottom: 18px; border-radius: 999px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 14px 28px -24px rgba(60,70,170,.55); width: fit-content; max-width: 100%; }
+html body .org-tabs button { padding: 10px 20px; border-radius: 999px; font-size: 14.5px; font-weight: 600; color: #575d80; transition: background .15s, color .15s; }
+html body .org-tabs button:hover { background: #f1f2ff; color: #17154a; }
+html body .org-tabs button.on { background: linear-gradient(135deg, #2851d8, #6d4fe0); color: #fff; box-shadow: 0 12px 22px -12px rgba(60,70,200,.7); }
+html body .org-tabs.small button { padding: 7px 14px; font-size: 13px; }
+
+/* ---- Filters ---- */
+html body .org-filters { padding: 14px 16px; border-radius: 20px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 14px 28px -26px rgba(60,70,170,.5); }
+html body .org-filters select, html body .org-search, html body .og-search { height: 42px; border-radius: 14px; border: 1.5px solid #dfe3f7; background: #f9faff; color: #17154a; font-weight: 500; }
+html body .org-filters select:focus, html body .org-search:focus, html body .og-search:focus { outline: none; border-color: #5b4fe0; background: #fff; box-shadow: 0 0 0 4px rgba(91,79,224,.14); }
+
+/* ---- KPI tiles: each with its own colour ---- */
+html body .org-kpis { gap: 16px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+html body .org-kpi { --k: #3b4fd8; position: relative; overflow: hidden; min-height: 112px; padding: 18px 20px; border-radius: 24px; background: #fff; border: 1px solid #e6e9f8;
+  box-shadow: 0 18px 38px -30px color-mix(in srgb, var(--k) 70%, transparent); transition: transform .2s, box-shadow .2s; }
+html body .org-kpi::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, var(--k), color-mix(in srgb, var(--k) 45%, #fff)); }
+html body .org-kpi::after { content: ""; position: absolute; right: -30px; top: -30px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--k) 20%, transparent), transparent 70%); }
+html body .org-kpi:hover { transform: translateY(-2px); box-shadow: 0 26px 46px -30px color-mix(in srgb, var(--k) 80%, transparent); }
+html body .org-kpi:nth-child(5n+1) { --k: #3b4fd8; } html body .org-kpi:nth-child(5n+2) { --k: #12a37a; }
+html body .org-kpi:nth-child(5n+3) { --k: #ea7a1c; } html body .org-kpi:nth-child(5n+4) { --k: #dc4f8c; } html body .org-kpi:nth-child(5n+5) { --k: #0ea5c6; }
+html body .org-kpi b { font-size: 34px; letter-spacing: -.045em; color: var(--k); }
+html body .org-kpi span { font-size: 13.5px; font-weight: 700; color: #575d80; }
+html body .org-kpi small { color: #8b90ad; }
+
+/* ---- Cards ---- */
+html body .org-card { padding: 24px; border-radius: 26px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 22px 44px -36px rgba(60,70,200,.5); }
+html body .org-card h3 { font-size: 18px; font-weight: 700; letter-spacing: -.03em; color: #17154a; }
+html body .org-card-head { margin-bottom: 16px; }
+html body .org-card-head .rd-muted { padding: 4px 12px; border-radius: 999px; background: #f1f2ff; color: #3b3fb8; font-size: 12px; font-weight: 600; }
+html body .org-grid-2, html body .org-grid-3, html body .org-grid-1 { gap: 20px; margin-top: 20px; }
+html body .org-overview > .org-card { margin-top: 20px; }
+html body .org-seg { padding: 4px; border-radius: 999px; background: #f1f2ff; }
+html body .org-seg button { padding: 6px 14px; border-radius: 999px; color: #575d80; }
+html body .org-seg button.on { background: #fff; color: #3b3fb8; box-shadow: 0 6px 12px -8px rgba(60,70,200,.6); }
+
+/* ---- Charts ---- */
+html body .org-bandbar { height: 18px; border-radius: 999px; background: #eef0fa; gap: 3px; }
+html body .org-bandbar button { border-radius: 999px; }
+html body .org-bar-track { height: 12px; border-radius: 999px; background: #eef0fa; }
+html body .org-bar-track i { border-radius: 999px; background: linear-gradient(90deg, #3b4fd8, #7c5cff); }
+html body .org-bar-row:hover { background: #f6f7ff; }
+html body .org-bar-label { font-weight: 600; color: #17154a; }
+html body .org-trend-col span { border-radius: 8px 8px 0 0; background: linear-gradient(180deg, #7c5cff, #3b4fd8); }
+html body .org-stack { height: 22px; border-radius: 999px; background: #eef0fa; }
+html body .org-stack .org-lv:last-child { border-radius: 0 999px 999px 0; }
+html body .org-band-legend .og-band { border-radius: 999px; background: #fff; border: 1px solid #e6e9f8; font-weight: 600; box-shadow: 0 8px 14px -12px rgba(60,70,170,.6); }
+
+/* ---- People list and tables ---- */
+html body .org-people button { padding: 10px 12px; border-radius: 16px; }
+html body .org-people button:hover { background: #f6f7ff; }
+html body .org-avatar { border-radius: 14px; color: #fff; background: linear-gradient(135deg, #3b4fd8, #7c5cff); box-shadow: 0 10px 16px -10px #5b4fe0; }
+html body .org-people li:nth-child(4n+2) .org-avatar, html body .org-table tr:nth-child(4n+2) .org-avatar { background: linear-gradient(135deg, #12a37a, #6cc3e8); box-shadow: 0 10px 16px -10px #12a37a; }
+html body .org-people li:nth-child(4n+3) .org-avatar, html body .org-table tr:nth-child(4n+3) .org-avatar { background: linear-gradient(135deg, #ea7a1c, #ffc04d); box-shadow: 0 10px 16px -10px #ea7a1c; }
+html body .org-people li:nth-child(4n+4) .org-avatar, html body .org-table tr:nth-child(4n+4) .org-avatar { background: linear-gradient(135deg, #dc4f8c, #ff8fc7); box-shadow: 0 10px 16px -10px #dc4f8c; }
+html body .org-toolbar { padding: 4px 2px; }
+html body .org-table-wrap { border-radius: 24px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 22px 44px -36px rgba(60,70,200,.5); }
+html body .org-table th { padding: 14px 18px; background: #f6f7ff; color: #6b709a; font-size: 11.5px; letter-spacing: .06em; border-bottom: 1px solid #e6e9f8; }
+html body .org-table td { padding: 14px 18px; border-top: 1px solid #eef0fa; }
+html body .org-table.compact td, html body .org-table.compact th { padding: 10px 14px; }
+html body .org-row:hover, html body .org-row:focus-visible { background: #f6f7ff; }
+html body .org-person b { color: #17154a; font-weight: 700; }
+html body .org-lv { border-radius: 8px; }
+html body .og-band { border-radius: 999px; padding: 4px 12px; font-weight: 700; }
+html body .org-chip { border-radius: 999px; padding: 4px 12px; background: #f1f2ff; color: #3b3fb8; font-weight: 600; }
+html body .org-chip.status-joined { background: #e6f7ee; color: #15803d; }
+html body .org-chip.status-waiting, html body .org-chip.status-not_signed_up { background: #fff4de; color: #b86e00; }
+html body .org-chip.status-other_organization { background: #fdecec; color: #c0392b; }
+html body .org-empty { padding: 28px; color: #8b90ad; }
+
+/* ---- Join codes and staff lists ---- */
+html body .org-code-list { gap: 12px; }
+html body .org-code-list li { padding: 16px 18px; border-radius: 20px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 14px 28px -26px rgba(60,70,170,.55); transition: border-color .15s, transform .15s; }
+html body .org-code-list li:hover { border-color: #b9c2f3; transform: translateY(-1px); }
+html body .org-code { display: inline-block; padding: 6px 14px; border-radius: 12px; background: linear-gradient(135deg, #eef0ff, #f7eefb); color: #3b3fb8; font-size: 18px; font-weight: 700; letter-spacing: .16em; }
+html body .org-created { border-radius: 18px; background: #e6f7ee; border: 1px solid #b8e6cb; }
+html body .org-notice { border-radius: 14px; background: #fff4de; border: 1px solid #ffe2a8; color: #8a5300; }
+html body .org-staff-name { color: #3b3fb8; }
+html body .org-coins { border-radius: 18px; border-color: #e6e9f8; background: #fafaff; }
+html body .og-consent { border-radius: 14px; background: #f1f2ff; border: 1px solid #dfe3f7; }
+
+/* ---- Student drawer ---- */
+html body .org-drawer-overlay { backdrop-filter: blur(6px); background: rgba(23,21,74,.4); }
+html body .org-drawer { background: #f8f9ff; border-left: 1px solid #dfe3f7; box-shadow: -34px 0 70px -30px rgba(40,40,140,.55); }
+html body .org-drawer-head { padding: 18px 20px; margin: -20px -22px 18px; border-radius: 0 0 26px 26px; color: #fff;
+  background: radial-gradient(320px 200px at 100% 0%, rgba(255,255,255,.22), transparent 62%), radial-gradient(300px 220px at 0% 120%, rgba(255,120,180,.34), transparent 64%), linear-gradient(115deg, #2347c9, #5b45dc); }
+html body .org-drawer-title h2 { color: #fff; font-weight: 700; letter-spacing: -.03em; }
+html body .org-drawer-title > span { color: rgba(255,255,255,.85); }
+html body .org-drawer-head .org-avatar { color: #3b3fb8; background: #fff; }
+html body .org-drawer-head .org-icon-btn { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.4); color: #fff; }
+html body .org-drawer-hero, html body .org-agent-card, html body .org-chat-list button, html body .org-history li { border-radius: 18px; background: #fff; border: 1px solid #e6e9f8; box-shadow: 0 12px 24px -22px rgba(60,70,170,.5); }
+html body .org-drawer-body h3 { font-size: 15px; font-weight: 700; letter-spacing: -.02em; color: #17154a; }
+html body .org-chat-list button:hover { border-color: #b9c2f3; }
+html body .org-level-steps i { height: 8px; border-radius: 999px; background: #eceffb; }
+html body .org-level-edit label { border-radius: 14px; background: #fff; border-color: #e6e9f8; }
+html body .org-msg { border-radius: 18px; }
+html body .org-msg.user { background: linear-gradient(135deg, #e8ecff, #f3ebff); border-color: #d6dcfb; }
+
+/* ---- Organization assistant ---- */
+html body .org-assistant { border-radius: 28px; border: 1px solid #e6e9f8; box-shadow: 0 30px 60px -40px rgba(60,70,200,.55); }
+html body .org-assistant-head { padding: 20px 24px; background: linear-gradient(120deg, #f1f0ff, #eaf3ff 60%, #fdeef7); border-bottom: 1px solid #e6e9f8; }
+html body .org-assistant-list { background: #f8f9ff; }
+html body .org-assistant-input { background: #fff; }
+html body .org-assistant-input input { border-radius: 999px; height: 46px; padding: 0 18px; border: 1.5px solid #dfe3f7; background: #f9faff; }
+html body .org-assistant-input input:focus { outline: none; border-color: #5b4fe0; background: #fff; box-shadow: 0 0 0 4px rgba(91,79,224,.14); }
+html body .org-mic { border-radius: 50%; width: 46px; height: 46px; background: #fff; border-color: #dfe3f7; }
+html body .org-suggestions button { padding: 10px 16px; border-color: #dfe3f7; background: #fff; box-shadow: 0 10px 18px -16px rgba(60,70,170,.6); font-weight: 600; }
+html body .org-suggestions button:hover { border-color: #5b4fe0; color: #3b3fb8; }
+
+/* ---- Assessments and tests tab ---- */
+html body .assess-card, html body .assess-table-wrap, html body .kt-test-item, html body .kt-builder { border-radius: 22px; border-color: #e6e9f8; background: #fff; box-shadow: 0 16px 34px -30px rgba(60,70,170,.5); }
+html body .assess-table th { background: #f6f7ff; color: #6b709a; }
+html body .assess-link { color: #3b3fb8; font-weight: 600; }
+
+/* ---- Learner's own organization page ---- */
+html body .org-member { max-width: 980px; }
+html body .org-member-card { padding: 28px; background: radial-gradient(380px 220px at 100% 0%, rgba(124,92,255,.14), transparent 65%), radial-gradient(340px 220px at 0% 100%, rgba(94,200,255,.16), transparent 65%), #fff; }
+html body .org-member-card h1 { font-weight: 700; letter-spacing: -.04em; color: #17154a; }
+
+@media (max-width: 760px) {
+  html body .org-page { padding: 14px 12px 60px; }
+  html body .org-dash-head { padding: 20px; }
+  html body .org-tabs { width: 100%; }
+  html body .org-drawer-head { margin: -16px -16px 16px; }
+}
+
+/* ======================================================================
+   ADMIN
+   ====================================================================== */
+
+/* ---- Shell: dark nav that matches the main sidebar ---- */
+html body .admin-shell { grid-template-columns: 260px minmax(0, 1fr); }
+html body .admin-shell-nav { padding: 20px 14px; gap: 12px; background: linear-gradient(180deg, #0d0e12 0%, #14151b 55%, #1b1c24 100%); border-right: 1px solid rgba(255,255,255,.07); }
+html body .admin-back-btn { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #fff; border-radius: 999px; }
+html body .admin-back-btn:hover { background: rgba(255,255,255,.16); }
+html body .admin-shell-title { padding: 4px 10px; color: rgba(255,255,255,.7); font-size: 12px; letter-spacing: .1em; }
+html body .admin-shell-nav nav { gap: 2px; }
+html body .admin-shell-nav-item { height: 42px; padding: 0 10px; gap: 12px; border-radius: 10px; font-size: 14px; font-weight: 400; color: #ececf1; transition: background .15s; }
+html body .admin-shell-nav-item > span:first-child { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font-size: 14px; background: rgba(255,255,255,.1); }
+html body .admin-shell-nav-item:hover { background: rgba(255,255,255,.08); color: #fff; border-color: transparent; }
+html body .admin-shell-nav-item.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 500; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); border-color: transparent; }
+html body .admin-shell-nav-item.active > span:first-child { background: linear-gradient(135deg, #3b6cff, #8b5cf6); box-shadow: 0 8px 14px -8px #5b6cff; }
+html body .admin-shell-user { padding: 12px 10px 0; border-top: 1px solid rgba(255,255,255,.1); color: rgba(255,255,255,.7); font-size: 12.5px; }
+html body .admin-shell-user .btn, html body .admin-shell-user button { color: #fff; }
+
+/* ---- Content area ---- */
+html body .admin-shell-content { padding: 24px 32px 60px; }
+html body .admin-section { gap: 18px; }
+html body .admin-toolbar { gap: 12px; flex-wrap: wrap; padding: 4px 2px; }
+
+/* ---- KPI cards: coloured per position ---- */
+html body .admin-kpis { gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+html body .admin-kpi { --k: #3b4fd8; padding: 20px 22px; border-radius: 24px; }
+html body .admin-kpi::before { background: linear-gradient(90deg, var(--k), color-mix(in srgb, var(--k) 45%, #fff)); height: 4px; }
+html body .admin-kpi::after { content: ""; position: absolute; right: -30px; top: -30px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--k) 20%, transparent), transparent 70%); pointer-events: none; }
+html body .admin-kpi:nth-child(5n+1) { --k: #3b4fd8; } html body .admin-kpi:nth-child(5n+2) { --k: #12a37a; }
+html body .admin-kpi:nth-child(5n+3) { --k: #ea7a1c; } html body .admin-kpi:nth-child(5n+4) { --k: #dc4f8c; } html body .admin-kpi:nth-child(5n+5) { --k: #0ea5c6; }
+html body .admin-kpi strong { color: var(--k); font-size: 34px; }
+html body .admin-kpi span { color: #575d80; }
+html body .admin-chart { height: 150px; padding: 18px; border-radius: 24px; gap: 4px; }
+html body .admin-chart-col span { border-radius: 6px 6px 0 0; background: #eceffb; }
+html body .admin-chart-col span.has-value { background: linear-gradient(180deg, #7c5cff, #3b4fd8); }
+html body .admin-section h4 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; color: #17154a; margin: 18px 0 8px; }
+
+/* ---- Tables ---- */
+html body .admin-table-card { border-radius: 24px; background: #fff; overflow: auto; }
+html body .admin-table th { position: sticky; top: 0; z-index: 1; padding: 14px 18px; font-size: 11.5px; letter-spacing: .06em; }
+html body .admin-table td { padding: 14px 18px; font-size: 13.5px; }
+html body .admin-table tbody tr { transition: background .12s; }
+html body .admin-table tbody tr:nth-child(even) td { background: #fcfcff; }
+html body .admin-table tbody tr:hover td { background: #f3f4ff; }
+html body .admin-table-primary { color: #17154a; font-weight: 700; }
+html body .admin-table td small { color: #8b90ad; }
+html body .admin-row-click:hover td { background: #f3f4ff; }
+html body .admin-row-actions { gap: 8px; }
+html body .admin-table-empty { padding: 40px 18px; color: #8b90ad; }
+html body .admin-badge { padding: 4px 12px; font-weight: 700; }
+html body .admin-endpoint { padding: 3px 8px; border-radius: 8px; background: #f1f2ff; color: #3b3fb8; }
+
+/* ---- Filters and forms ---- */
+html body .admin-filter-bar { gap: 16px; }
+html body .admin-search { flex: 1 1 260px; }
+html body .admin-section .field input, html body .admin-section .field select, html body .admin-section .field textarea {
+  min-height: 44px; border-radius: 14px; border: 1.5px solid #dfe3f7; background: #f9faff; color: #17154a; }
+html body .admin-section .field input:focus, html body .admin-section .field select:focus, html body .admin-section .field textarea:focus {
+  outline: none; border-color: #5b4fe0; background: #fff; box-shadow: 0 0 0 4px rgba(91,79,224,.14); }
+html body .admin-section .field > span, html body .admin-section .field label { font-weight: 600; color: #575d80; }
+
+/* ---- Buttons in admin ---- */
+html body .admin-shell-content .btn-sm { height: 36px; padding: 0 16px; border-radius: 12px; font-weight: 600; }
+html body .admin-shell-content .btn-primary { background: linear-gradient(135deg, #2851d8, #6d4fe0); border: 0; box-shadow: 0 12px 20px -12px rgba(60,70,200,.7); }
+html body .admin-shell-content .btn-outline { background: #fff; border: 1.5px solid #dfe3f7; color: #3b3fb8; }
+html body .admin-shell-content .btn-outline:hover { background: #f1f2ff; border-color: #b9c2f3; }
+html body .admin-shell-content .btn-danger { background: #fdecec; border: 1.5px solid #f6c6c6; color: #c0392b; }
+html body .admin-shell-content .btn-danger:hover { background: #fbdada; }
+
+/* ---- Cards used by Organizations, Agents, Courses and Enterprise panels ---- */
+html body .admin-agent-grid { gap: 18px; }
+html body .admin-agent-card { padding: 20px; border-radius: 24px; border: 1px solid #e6e9f8; background: #fff; box-shadow: 0 18px 38px -32px rgba(60,70,200,.55); transition: transform .18s, box-shadow .18s; }
+html body .admin-agent-card:hover { transform: translateY(-2px); box-shadow: 0 26px 46px -32px rgba(60,70,200,.55); }
+html body .admin-agent-icon { border-radius: 16px; }
+html body .crs-card, html body .crs-add, html body .crs-lesson-edit { border-radius: 22px; background: #fff; border: 1px solid #e6e9f8; }
+html body .admin-conversation { border-radius: 20px; background: #fff; border: 1px solid #e6e9f8; }
+html body .admin-user-head { padding: 18px 22px; border-radius: 22px; background: linear-gradient(120deg, #f1f0ff, #eaf3ff 60%, #fdeef7); border: 1px solid #e6e9f8; }
+
+/* ---- Boss reports ---- */
+html body .boss-count-grid { gap: 20px; }
+html body .boss-count-row.active td { background: #e8ecff; }
+html body .boss-status { padding: 4px 12px; }
+html body .boss-status.open { background: #fff4de; color: #b86e00; }
+html body .boss-status.solved { background: #e6f7ee; color: #15803d; }
+html body .boss-open-count { margin: 6px 2px 4px; font-size: 14px; color: #575d80; }
+html body .boss-reply-sent { border-radius: 14px; border-left: 4px solid #5b4fe0; background: #f6f7ff; }
+html body .boss-reply-box { padding: 10px 2px; }
+html body .boss-reply-box textarea { min-height: 90px; border-radius: 16px; border: 1.5px solid #dfe3f7; background: #f9faff; }
+html body .boss-reply-box textarea:focus { outline: none; border-color: #5b4fe0; background: #fff; box-shadow: 0 0 0 4px rgba(91,79,224,.14); }
+html body .boss-notice { border-radius: 16px; background: #e6f7ee; border: 1px solid #b8e6cb; color: #15803d; font-weight: 600; }
+html body .team-msg-item { border-radius: 16px; background: #f6f7ff; border-color: #e6e9f8; }
+
+@media (max-width: 900px) {
+  html body .admin-shell { grid-template-columns: 1fr; }
+  html body .admin-shell-nav { flex-direction: row; flex-wrap: wrap; align-items: center; padding: 12px; }
+  html body .admin-shell-nav nav { flex-direction: row; flex-wrap: wrap; }
+  html body .admin-shell-user { display: none; }
+  html body .admin-shell-content { padding: 18px 14px 50px; }
+}

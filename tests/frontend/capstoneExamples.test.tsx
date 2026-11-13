@@ -46,3 +46,39 @@ test('the example report is a PDF, not the .docx format the student uploads', ()
   expect(CAPSTONE_EXAMPLE_FILES.some((file) => file.download.endsWith('.docx'))).toBe(false);
   expect(CAPSTONE_EXAMPLE_FILES[0].download).toBe('capstone-example-report.pdf');
 });
+
+describe('course-specific examples', () => {
+  const { capstoneExampleTrack, capstoneExampleFiles, capstoneExampleOptions } = jest.requireActual('../../src/lib/capstoneExamples');
+
+  test.each([
+    ['Digital Marketing', 'digital-marketing'],
+    ['SEO and Google Ads', 'digital-marketing'],
+    ['Prompt Engineering', 'prompt-engineering'],
+    ['Python', 'code'],
+    ['Java — Web development', 'code'],
+  ])('a project for "%s" gets the %s example', (focus, track) => {
+    expect(capstoneExampleTrack(focus, '')).toBe(track);
+  });
+
+  test('the student\'s course decides, not a word in the topic title', () => {
+    expect(capstoneExampleTrack('Python', 'SEO keyword checker tool')).toBe('code');
+    expect(capstoneExampleTrack(undefined, 'SEO-Optimized Local Business Flyer Campaign')).toBe('digital-marketing');
+  });
+
+  test.each(['digital-marketing', 'prompt-engineering'])('the %s files exist and are a real PDF and zip', (track) => {
+    const files = capstoneExampleFiles(track);
+    expect(files).toHaveLength(2);
+    expect(capstoneExampleOptions(track).every((o: { href?: string }) => o.href?.includes(track))).toBe(true);
+    for (const file of files) {
+      const bytes = fs.readFileSync(path.join(publicDir, file.href));
+      expect(bytes.subarray(0, file.download.endsWith('.pdf') ? 5 : 2).toString()).toBe(file.download.endsWith('.pdf') ? '%PDF-' : 'PK');
+    }
+  });
+
+  test('the dashboard shows the marketing examples on a digital marketing project', () => {
+    const state = { ...createInitialCapstoneState(user), intake: { focus: 'Digital Marketing' } };
+    render(<AgentDashboard user={user} state={state} onClose={jest.fn()} />);
+    expect(screen.getByRole('link', { name: /Download example project/ })).toHaveAttribute(
+      'href', '/capstone-examples/capstone-example-project-digital-marketing.zip');
+  });
+});

@@ -16,7 +16,7 @@ from ..topic_config import (
     CATEGORY_TOPIC_CONFIG,select_rotating_topic_names,
     select_weighted_topic_names,topic_definitions_for,
 )
-from .role_topics import role_technical_context, role_topics_for_level, role_topics_for_category, role_skill_topics_for_level, skill_for_topic
+from .role_topics import LANGUAGE_FREE_FAMILIES, role_technical_context, role_topics_for_level, role_topics_for_category, role_skill_topics_for_level, skill_for_topic
 
 CATEGORIES={
     category:tuple(item["name"] for item in topic_definitions_for(category))
@@ -264,7 +264,7 @@ def _slot(category,topic,difficulty,technical_language=None,rigor=None,technical
         context=role_technical_context(technical_role,technical_skills) if technical_role is not None else None
         # Generic roles remain language-neutral; direct legacy callers without
         # role context retain the existing formatter default.
-        if context is None or context["family"] != "generic":
+        if context is None or context["family"] not in LANGUAGE_FREE_FAMILIES:
             row["technical_language"]=technical_language or DEFAULT_TECHNICAL_LANGUAGE
         if context is not None:
             row["technical_role"]=context["role"]
@@ -460,6 +460,8 @@ Quality:
 - For Technical Aptitude slots with technical_role context, make the question relevant to that role and its listed role terms. Do not introduce an unrelated language or framework merely because the formatter has an internal fallback language.
 - For Technical Aptitude, the question must be written using exactly the slot's selected technical_language when one is provided; do not substitute another language.
 - When a Technical Aptitude slot includes technical_skill, the question stem or its explanation must explicitly assess that saved skill (for example, mention Python, SQL, Machine Learning, Power BI, Flask, or React). Do not attach a skill label to a generic programming question without evidence.
+- For technical_role_family "marketing", ask about digital marketing only (SEO, SEM, Google Ads, social media, content, email, analytics metrics such as CTR, CPC, CPA, ROAS and conversion rate, campaign planning); use concrete brands and numbers; never ask about programming or code.
+- For technical_role_family "prompt", ask about prompt engineering only (how LLMs behave, prompt structure, zero/few-shot, step-by-step prompting, structured output, evaluating outputs and hallucinations, RAG, AI agents, prompt injection); a question may quote a short prompt in its text but must not require programming.
 - For technical_role_family "generic", use the listed common technical terms as a configurable pool across programming, OOP, data structures, databases, networking, operating systems, software engineering, web/API fundamentals, and problem solving. Keep questions language-neutral unless the slot explicitly supplies a language.
 - Avoid these recent typed number patterns: {json.dumps(blocked_patterns,separators=(',',':'))}.
 - Recent questions to avoid: {json.dumps(forbidden_questions,ensure_ascii=False,separators=(',',':'))}.

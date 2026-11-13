@@ -143,7 +143,7 @@ def test_payments_filter_search_and_summary(api, seeded):
     everything = get()
     assert everything["total"] == 3 and everything["payments"][0]["id"] == "p3"                                 # newest first
     assert everything["summary"] == {"paid": {"count": 2, "amount": 599.0}, "created": {"count": 1, "amount": 999.0}}
-    assert everything["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 0, "amount": 0.0}}
+    assert everything["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 0, "amount": 0.0, "value": 0.0}}
     assert {p["id"]: p["method"] for p in everything["payments"]} == {"p1": "razorpay", "p2": "razorpay", "p3": "razorpay"}
     assert [p["id"] for p in get(status="paid")["payments"]] == ["p1", "p2"]
     assert [p["id"] for p in get(search="ravi")["payments"]] == ["p3"]
@@ -157,7 +157,7 @@ def test_paid_payments_without_a_razorpay_id_count_as_manual(api, seeded, databa
                             created_at=NOW, paid_at=NOW))
         session.commit()
     body = api.get("/platform-admin/payments", headers=bearer("boss")).json()
-    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 999.0}}
+    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 999.0, "value": 999.0}}
     assert body["summary"]["paid"] == {"count": 3, "amount": 1598.0}
     assert next(p for p in body["payments"] if p["id"] == "p4")["method"] == "manual"
 
@@ -195,5 +195,75 @@ def test_admin_granted_payments_marked_manual_count_as_manual(api, seeded, datab
                             razorpay_payment_id="manual_grant", status="paid", created_at=NOW, paid_at=NOW))
         session.commit()
     body = api.get("/platform-admin/payments", headers=bearer("boss")).json()
-    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 0.0}}
-    assert next(p for p in body["payments"] if p["id"] == "p5")["method"] == "manual"
+    # Recorded at 0, but worth the Standard plan's price + GST.
+    assert body["paid_by_method"] == {"razorpay": {"count": 2, "amount": 599.0}, "manual": {"count": 1, "amount": 0.0, "value": 942.82}}
+    p5 = next(p for p in body["payments"] if p["id"] == "p5")
+    assert p5["method"] == "manual" and p5["value"] == 942.82
+
+
+def test_payments_filter_by_type_and_export_the_same_rows(api, seeded, database):
+    with database() as session:
+        session.add(Payment(id="p5", user_id="ravi", plan_id="basic", amount=0, razorpay_order_id="manual_1793168000",
+                            status="paid", created_at=NOW, paid_at=NOW))
+        session.add(Payment(id="p6", user_id="ravi", plan_id="org_coins", amount=0, razorpay_order_id="manual_org_abc",
+                            razorpay_payment_id="manual_org_abc", status="paid", created_at=NOW, paid_at=NOW))
+        session.commit()
+
+    def ids(**query):
+        return {p["id"] for p in api.get("/platform-admin/payments", params=query, headers=bearer("boss")).json()["payments"]}
+
+    assert ids(method="manual") == {"p5", "p6"}
+    # Razorpay: paid through checkout, and orders still awaiting payment.
+    assert ids(method="razorpay") == {"p1", "p2", "p3"}
+    assert ids(method="razorpay", status="paid") == {"p1", "p2"}
+    assert len(ids()) == 5
+    assert api.get("/platform-admin/payments", params={"method": "cash"}, headers=bearer("boss")).status_code == 422
+    body = api.get("/platform-admin/payments", headers=bearer("boss")).json()
+    assert body["paid_by_method"]["manual"] == {"count": 2, "amount": 0.0, "value": 470.82}   # org coins have no plan price
+
+    export = api.get("/platform-admin/payments/export", params={"method": "manual"}, headers=bearer("boss"))
+    assert export.status_code == 200 and export.headers["content-type"].startswith("text/csv")
+    assert 'filename="skilldara-payments-manual-' in export.headers["content-disposition"]
+    lines = export.text.lstrip("\ufeff").strip().splitlines()
+    assert lines[0].startswith("Email,Name,For,Type,Status") and len(lines) == 3
+    assert all(",Manual,paid," in line for line in lines[1:]) and any("470.82" in line for line in lines[1:])
+    assert api.get("/platform-admin/payments/export", headers=bearer("asha")).status_code == 403
+
+
+def test_boss_reports_count_each_learner_and_each_agent(api, seeded, database):
+    from app.models import BossIssueReport
+
+    with database() as session:
+        session.add_all([
+            BossIssueReport(id="b1", user_id="asha", category="other", agent_id="mock-interview", message="a", created_at=NOW),
+            BossIssueReport(id="b2", user_id="asha", category="other", agent_id="mock-interview", message="b", created_at=NOW,
+                            status="solved"),
+            BossIssueReport(id="b3", user_id="asha", category="score", agent_id="aptitude", message="c", created_at=NOW),
+            BossIssueReport(id="b4", user_id="ravi", category="other", agent_id="mock-interview", message="d", created_at=NOW),
+        ])
+        session.commit()
+    body = api.get("/platform-admin/boss-reports", headers=bearer("boss")).json()
+    assert len(body["reports"]) == 4
+    asha, ravi = body["by_user"]
+    assert (asha["email"], asha["reports"], asha["open"], asha["agents"]) == ("asha@x.io", 3, 2, ["aptitude", "mock-interview"])
+    assert (ravi["email"], ravi["reports"], ravi["open"]) == ("ravi@x.io", 1, 1)
+    mock, aptitude = body["by_agent"]
+    assert (mock["agent_id"], mock["reports"], mock["open"], mock["learners"]) == ("mock-interview", 3, 2, 2)
+    assert (aptitude["agent_id"], aptitude["reports"], aptitude["learners"]) == ("aptitude", 1, 1)
+
+
+def test_a_users_page_shows_every_coin_spent_even_without_chats(api, seeded, database):
+    from app.models import TokenUsageEvent
+
+    with database() as session:
+        session.add_all([
+            TokenUsageEvent(user_id="ravi", agent_name="voice", action="speak", tokens=4000, created_at=NOW - timedelta(minutes=2)),
+            TokenUsageEvent(user_id="ravi", agent_name="boss", action="chat", tokens=2000, created_at=NOW - timedelta(minutes=1)),
+            TokenUsageEvent(user_id="ravi", agent_name="voice", action="speak", tokens=2000, created_at=NOW),
+            TokenUsageEvent(user_id="asha", agent_name="boss", action="chat", tokens=999, created_at=NOW),
+        ])
+        session.commit()
+    body = api.get("/platform-admin/users/ravi", headers=bearer("boss")).json()
+    assert [(u["agent_name"], u["tokens"]) for u in body["usage"]] == [("voice", 2000), ("boss", 2000), ("voice", 4000)]
+    assert body["usage_by_agent"][0]["agent_name"] == "voice" and body["usage_by_agent"][0]["uses"] == 2
+    assert body["usage_by_agent"][0]["tokens"] == 6000 and body["usage_by_agent"][0]["points"] > 0

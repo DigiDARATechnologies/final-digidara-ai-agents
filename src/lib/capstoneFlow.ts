@@ -1,4 +1,4 @@
-import { CAPSTONE_EXAMPLE_OPTIONS } from "./capstoneExamples";
+import { capstoneExampleOptions, capstoneExampleTrack, type CapstoneExampleTrack } from "./capstoneExamples";
 import type { ChatOption, User } from "../types";
 import {
   askProjectQuestion,
@@ -368,6 +368,14 @@ async function generateTopicsFor(
   }
 }
 
+/** Which example report and zip fit this project: Digital Marketing and
+ * Prompt Engineering projects get their own, everything else the code example. */
+export function exampleTrackFor(state: CapstoneFlowState, topic: TopicOption | undefined = state.chosenTopic): CapstoneExampleTrack {
+  const focus = state.intake?.focus || state.topicSeed;
+  const topicText = topic ? [topic.title, topic.summary, ...(topic.skills_applied ?? [])].join(" ") : "";
+  return capstoneExampleTrack(focus, topicText);
+}
+
 /** Asks for a missing intake field. Any options on screen are dropped — the
  * request they were generated for no longer holds. */
 function askFor(
@@ -414,7 +422,7 @@ async function lockTopic(state: CapstoneFlowState, topic: TopicOption): Promise<
       state: { ...state, chosenTopic: topic, requirements: result.requirements, step: "awaiting_timer_confirm" },
       messages: [{
         text: `${formatRequirements(result.requirements)}\n\nNot sure how your report and zip should look? Download the examples below. Start the 7-day project timer when you are ready.`,
-        options: [{ label: "Start 7-day timer", value: "confirm" }, ...CAPSTONE_EXAMPLE_OPTIONS],
+        options: [{ label: "Start 7-day timer", value: "confirm", tone: "danger" }, ...capstoneExampleOptions(exampleTrackFor(state, topic))],
       }],
     };
   } catch (error) {
@@ -661,8 +669,8 @@ export async function handleCapstoneText(
         return {
           state: { ...state, deadlineAt: result.deadline_at, submissionGuide: result.submission_guide, step: "awaiting_submission" },
           messages: [{
-            text: `${formatSubmissionGuide(result.submission_guide, result.deadline_at)}\n\nI will monitor your project here. Attach the .docx report and .zip source code in this chat when ready. The example report and example project below show the expected format.`,
-            options: CAPSTONE_EXAMPLE_OPTIONS,
+            text: `${formatSubmissionGuide(result.submission_guide, result.deadline_at)}\n\nI will monitor your project here. Attach the .docx report and .zip source code in this chat when ready. The example report and example project below show the expected format for this kind of project.`,
+            options: capstoneExampleOptions(exampleTrackFor(state)),
           }],
         };
       } catch (error) {

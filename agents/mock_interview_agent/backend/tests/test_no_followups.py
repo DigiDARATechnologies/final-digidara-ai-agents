@@ -69,6 +69,7 @@ class PlannedQuestionFlowTests(unittest.TestCase):
             patch("routes.answers.db.save_answer_with_optional_daily_usage", side_effect=save_answer),
             patch("routes.answers.daily_answered_count", return_value=0),
             patch("routes.answers.groq_client.evaluate_answer") as immediate_evaluation,
+            patch("routes.answers.groq_client.generate_question") as next_question_generation,
             patch("routes.interviews._batch_evaluations_or_error", return_value=(evaluations, None)) as batch,
             patch("routes.interviews.groq_client.evaluate_interview", return_value=summary),
             patch("routes.interviews.finalize_open_focus_events", return_value={}),
@@ -93,6 +94,7 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(len(result.get_json()["scorecard"]), 10)
         self.assertEqual(batch.call_count, 1)
         immediate_evaluation.assert_not_called()
+        next_question_generation.assert_not_called()
 
     def test_historical_followup_still_renders_below_parent(self):
         rows = [
@@ -255,6 +257,50 @@ class PlannedQuestionFlowTests(unittest.TestCase):
         self.assertEqual(calls[1], [110])                     # only the missing answer, asked again
         self.assertEqual(result[9]["verdict"], "wrong")
         self.assertEqual(result[0]["verdict"], "partial")
+
+    def test_partial_batch_response_preserves_valid_results_and_retries_only_missing_ids(self):
+        from routes.interviews import _batch_evaluations_or_error
+
+        rows = self._answered_rows(3)
+        calls = []
+
+        def evaluate(_round, _subject, _difficulty, pairs):
+            ids = [pair["question_id"] for pair in pairs]
+            calls.append(ids)
+            if len(calls) == 1:
+                return [
+                    {"question_id": 101, "verdict": "correct", "reason": "First", "ideal_answer": "I1"},
+                    {"question_id": 102, "verdict": "partial", "reason": "Second", "ideal_answer": "I2"},
+                    {"question_id": "bad-id", "verdict": "correct", "reason": "Bad", "ideal_answer": "Ix"},
+                ]
+            return [{"question_id": 103, "verdict": "wrong", "reason": "Third", "ideal_answer": "I3"}]
+
+        with (
+            patch("routes.interviews.groq_client.evaluate_answers_batch", side_effect=evaluate),
+            patch("routes.interviews.track_ai_usage", side_effect=lambda **_kwargs: nullcontext()),
+        ):
+            result, error = _batch_evaluations_or_error(
+                {"student_id": 1, "round_type": "technical", "subject": "Python", "difficulty": "medium"},
+                7, rows,
+            )
+
+        self.assertIsNone(error)
+        self.assertEqual(calls, [[101, 102, 103], [103]])
+        self.assertEqual([item["verdict"] for item in result], ["correct", "partial", "wrong"])
+
+    def test_batch_evaluation_parser_keeps_partial_model_list_for_route_level_validation(self):
+        from ai.answer_evaluation import evaluate_answers_batch
+
+        pairs = [
+            {"question_id": 101, "question": "Q1", "answer": "A1"},
+            {"question_id": 102, "question": "Q2", "answer": "A2"},
+        ]
+        partial = [{"question_id": 101, "verdict": "correct", "reason": "Good", "ideal_answer": "Ideal"}]
+        result = evaluate_answers_batch(
+            "technical", "Python", "intermediate", pairs,
+            chat_fn=lambda *_args, **_kwargs: json.dumps({"evaluations": partial}),
+        )
+        self.assertEqual(result, partial)
 
     def test_the_report_fails_only_if_an_answer_never_gets_a_verdict(self):
         from routes.interviews import _batch_evaluations_or_error

@@ -22,6 +22,22 @@ class RouteIntegrationTests(unittest.TestCase):
         self.client = self.app.test_client()
         dashboard_cache.invalidate(1)
 
+    def test_a_different_answer_cannot_overwrite_an_already_saved_answer(self):
+        saved_question = {
+            "id": 7, "interview_id": 41, "question_order": 2,
+            "question": "What is a component?", "answer": "A reusable UI unit.",
+            "verdict": None, "timed_out": False,
+        }
+        with patch("routes.answers.db.query", return_value=(saved_question, 1)):
+            response = self.client.post("/api/submit_answer", json={
+                "interview_id": 41, "question_order": 2,
+                "answer": "A completely different answer.",
+            })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.get_json()["answer_saved"])
+        self.assertIn("already saved", response.get_json()["error"])
+
     def test_start_interview_routes_request_through_atomic_creation(self):
         creation = {
             "student_exists": True,
@@ -29,6 +45,15 @@ class RouteIntegrationTests(unittest.TestCase):
             "interview_id": 41,
             "orphaned_interview_id": None,
         }
+        plan = [
+            {
+                "question": f"What does Python concept {index} mean?",
+                "topic_area": "Python fundamentals",
+                "subject_tag": "Python fundamentals",
+                "source": "ai_generated",
+            }
+            for index in range(1, 6)
+        ]
         with (
             patch("routes.interviews.db.query", return_value=({"id": 1}, 0)),
             patch("routes.interviews.daily_answered_count", return_value=0),
@@ -37,13 +62,7 @@ class RouteIntegrationTests(unittest.TestCase):
             patch("routes.interviews.recent_topic_areas_for_student", return_value=[]),
             patch("routes.interviews.get_recent_asked_history", return_value=(set(), [])),
             patch("routes.interviews.groq_client.infer_role_skills", return_value=[]),
-            patch(
-                "routes.interviews.groq_client.generate_question",
-                return_value={
-                    "topic_area": "generators and iterators",
-                    "question": "What does a Python generator do?",
-                },
-            ) as generate_question,
+            patch("routes.interviews.groq_client.build_interview_questions", return_value=plan) as build_plan,
             patch(
                 "routes.interviews.db.create_or_resume_interview",
                 return_value=creation,
@@ -64,22 +83,75 @@ class RouteIntegrationTests(unittest.TestCase):
         payload = response.get_json()
         self.assertEqual(payload["interview_id"], 41)
         self.assertEqual(payload["question_order"], 1)
-        self.assertEqual(payload["question"], "What does a Python generator do?")
-        generate_question.assert_called_once()
+        self.assertEqual(payload["question"], plan[0]["question"])
+        self.assertEqual(len(payload["question_plan"]), 5)
+        build_plan.assert_called_once()
         create_interview.assert_called_once_with(
             1,
             "technical",
             "Python",
             "beginner",
             5,
-            "What does a Python generator do?",
-            "generators and iterators",
+            plan[0]["question"],
+            "Python fundamentals",
             interview_mode="course",
             role_name="",
             resolved_subjects=None,
             first_subject_tag="Python",
-            question_plan=None,
+            question_plan=plan,
         )
+
+    def test_custom_topic_start_persists_the_complete_batch_plan(self):
+        creation = {"student_exists": True, "created": True, "interview_id": 42, "orphaned_interview_id": None}
+        plan = [
+            {"question": f"How would you use React concept {index}?", "topic_area": "React", "source": "ai_generated"}
+            for index in range(1, 6)
+        ]
+        with (
+            patch("routes.interviews.db.query", return_value=({"id": 1}, 0)),
+            patch("routes.interviews.daily_answered_count", return_value=0),
+            patch("routes.interviews.active_interview_payload", return_value=None),
+            patch("routes.interviews.recent_questions_for_student", return_value=[]),
+            patch("routes.interviews.recent_topic_areas_for_student", return_value=[]),
+            patch("routes.interviews.get_recent_asked_history", return_value=(set(), [])),
+            patch("routes.interviews.groq_client.infer_role_skills", return_value=["React"]),
+            patch("routes.interviews.groq_client.build_interview_questions", return_value=plan) as build_plan,
+            patch("routes.interviews.db.create_or_resume_interview", return_value=creation) as create_interview,
+        ):
+            response = self.client.post("/api/start_interview", json={
+                "student_id": 1, "round_type": "technical", "interview_mode": "custom_topic",
+                "subject": "React", "difficulty": "intermediate", "num_questions": 5,
+            })
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()["question"], plan[0]["question"])
+        build_plan.assert_called_once()
+        self.assertEqual(len(create_interview.call_args.kwargs["question_plan"]), 5)
+
+    def test_hr_start_generates_and_persists_ten_questions_in_one_plan(self):
+        creation = {"student_exists": True, "created": True, "interview_id": 43, "orphaned_interview_id": None}
+        plan = [
+            {"question": f"Tell me about a workplace situation {index}?", "topic_area": "behavioral", "source": "ai_generated"}
+            for index in range(1, 11)
+        ]
+        with (
+            patch("routes.interviews.db.query", return_value=({"id": 1}, 0)),
+            patch("routes.interviews.daily_answered_count", return_value=0),
+            patch("routes.interviews.active_interview_payload", return_value=None),
+            patch("routes.interviews.recent_questions_for_student", return_value=[]),
+            patch("routes.interviews.recent_topic_areas_for_student", return_value=[]),
+            patch("routes.interviews.get_recent_asked_history", return_value=(set(), [])),
+            patch("routes.interviews.groq_client.build_interview_questions", return_value=plan) as build_plan,
+            patch("routes.interviews.db.create_or_resume_interview", return_value=creation) as create_interview,
+        ):
+            response = self.client.post("/api/start_interview", json={
+                "student_id": 1, "round_type": "hr", "difficulty": "beginner", "num_questions": 10,
+            })
+
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(len(response.get_json()["question_plan"]), 10)
+        build_plan.assert_called_once()
+        self.assertEqual(len(create_interview.call_args.kwargs["question_plan"]), 10)
 
     def _resume_stalled_interview(self, issued, status=200):
         # Q3 of 5 was answered but Q4 was never issued (generation failed, or the learner left).
@@ -394,6 +466,53 @@ class RouteIntegrationTests(unittest.TestCase):
             "UPDATE interviews SET" in call.args[0]
             for call in query.call_args_list
         ))
+
+    def test_final_report_can_be_retried_without_losing_saved_long_answers(self):
+        interview = {
+            "id": 42, "student_id": 1, "round_type": "technical", "subject": "Python",
+            "difficulty": "advanced", "num_questions": 1, "status": "in_progress",
+        }
+        answer = "A detailed explanation of Python generators. " * 250
+        rows = [{
+            "id": 81, "question_order": 1, "question": "Explain generators.",
+            "answer": answer, "time_taken_sec": 110, "is_followup": 0,
+            "answer_audio_path": None, "verdict": "correct",
+            "verdict_reason": "Accurate.", "ideal_answer": "Generators yield values lazily.",
+            "subject_tag": "Python", "timed_out": 0, "processing_status": "evaluated",
+        }]
+        result = {
+            "overall_score": 8.5, "technical_accuracy": 9.0,
+            "communication_clarity": 8.0, "confidence": 8.0,
+            "strengths": json.dumps(["Accurate concepts", "Clear response"]),
+            "weaknesses": json.dumps(["Add an example", "Discuss memory use"]),
+            "feedback": "A strong answer with room for one concrete example.",
+        }
+
+        def query_result(sql, _params=None, fetch=False, fetchone=False):
+            compact = " ".join(sql.split())
+            if compact.startswith("SELECT * FROM interviews"):
+                return interview.copy(), 0
+            if compact.startswith("SELECT question_order") or compact.startswith("SELECT id, question_order"):
+                return [row.copy() for row in rows], 0
+            if "FROM ai_usage_records" in compact and fetch:
+                return [], 0
+            return None, 0
+
+        with (
+            patch("routes.interviews.db.query", side_effect=query_result),
+            patch("routes.interviews.groq_client.evaluate_interview",
+                  side_effect=[TimeoutError("provider timed out"), result.copy()]) as evaluate,
+        ):
+            first = self.client.post("/api/end_interview", json={"interview_id": 42})
+            self.assertEqual(first.status_code, 503)
+            self.assertEqual(rows[0]["answer"], answer)
+            retry = self.client.post("/api/end_interview", json={"interview_id": 42})
+
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.get_json()["interview_id"], 42)
+        self.assertEqual(rows[0]["answer"], answer)
+        self.assertEqual(evaluate.call_count, 2)
+        self.assertEqual(len(evaluate.call_args.args[3][0]["answer"]), len(answer))
 
     def test_exit_interview_reports_actual_transition(self):
         def query_result(sql, _params=None, fetch=False, fetchone=False):

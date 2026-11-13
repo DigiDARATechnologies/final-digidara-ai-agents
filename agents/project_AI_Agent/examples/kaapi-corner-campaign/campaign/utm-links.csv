@@ -1,0 +1,5 @@
+channel,utm_source,utm_medium,utm_campaign,utm_content,url
+Printed flyer (QR code),flyer,offline,rs_puram_launch,qr_front,https://kaapicorner.example/?utm_source=flyer&utm_medium=offline&utm_campaign=rs_puram_launch&utm_content=qr_front
+Google Ads,google,cpc,rs_puram_launch,rsa_offer,https://kaapicorner.example/?utm_source=google&utm_medium=cpc&utm_campaign=rs_puram_launch&utm_content=rsa_offer
+Instagram post,instagram,social,rs_puram_launch,flyer_post,https://kaapicorner.example/?utm_source=instagram&utm_medium=social&utm_campaign=rs_puram_launch&utm_content=flyer_post
+WhatsApp status,whatsapp,social,rs_puram_launch,status,https://kaapicorner.example/?utm_source=whatsapp&utm_medium=social&utm_campaign=rs_puram_launch&utm_content=status

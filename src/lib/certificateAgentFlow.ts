@@ -132,6 +132,8 @@ const DEFAULT_TOPICS = [
   "Machine Learning & AI",
   "Cloud Computing & DevOps",
   "Web Development",
+  "Prompt Engineering",
+  "Digital Marketing",
 ];
 
 const topicOptions: ChatOption[] = DEFAULT_TOPICS.map((value) => ({

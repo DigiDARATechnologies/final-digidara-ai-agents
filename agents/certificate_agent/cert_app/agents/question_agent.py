@@ -372,8 +372,44 @@ _DATA_FOCUS_AREAS = [
 ]
 
 
+# Career courses that are not programming: their batches must not be steered
+# towards debugging, libraries or code architecture.
+_MARKETING_KEYWORDS = ("digital marketing", "marketing", "seo", "search engine", "google ads", "social media", "sem ")
+_PROMPT_KEYWORDS = ("prompt engineer", "prompt design", "prompting", "prompt writing")
+
+_MARKETING_FOCUS_AREAS = [
+    "marketing fundamentals, the digital funnel and customer journey",
+    "SEO: keywords, on-page, off-page and technical SEO",
+    "Google Ads / SEM: campaign types, bidding, quality score and ad copy",
+    "social media marketing on Instagram, LinkedIn, Facebook and YouTube",
+    "content marketing and copywriting",
+    "email marketing and marketing automation",
+    "analytics: Google Analytics 4, KPIs, CTR, CPC, CPA, ROAS and conversion tracking",
+    "campaign strategy and budgeting scenarios with a concrete brand and numbers",
+]
+
+_PROMPT_FOCUS_AREAS = [
+    "how large language models work: tokens, context window, temperature",
+    "writing clear prompts: role, task, context, constraints and output format",
+    "zero-shot, few-shot and example-based prompting",
+    "step-by-step reasoning and breaking a task into smaller prompts",
+    "structured output: JSON, tables and templates",
+    "prompts for real work: coding, content, data analysis, customer support",
+    "evaluating prompts: accuracy, consistency, hallucinations and testing",
+    "RAG, tool use, AI agents, safety and prompt injection",
+]
+
+
 def _focus_for(topic: str, index: int) -> str:
-    areas = _DATA_FOCUS_AREAS if is_practical_data_topic(topic) else _GENERAL_FOCUS_AREAS
+    t = f"{(topic or '').lower()} "
+    if any(k in t for k in _PROMPT_KEYWORDS):
+        areas = _PROMPT_FOCUS_AREAS
+    elif any(k in t for k in _MARKETING_KEYWORDS):
+        areas = _MARKETING_FOCUS_AREAS
+    elif is_practical_data_topic(topic):
+        areas = _DATA_FOCUS_AREAS
+    else:
+        areas = _GENERAL_FOCUS_AREAS
     return areas[index % len(areas)]
 
 

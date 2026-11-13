@@ -37,7 +37,9 @@ class PlatformCreateIn(BaseModel):
 
 
 class PlatformUpdateIn(BaseModel):
-    status: str = "active"
+    status: str | None = None  # None: keep
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    kind: str | None = None
     member_limit: int | None = Field(default=None, ge=0, le=100000)  # 0: unlimited
     admin_coins: int | None = Field(default=None, ge=0, le=1_000_000)
     staff_coins: int | None = Field(default=None, ge=0, le=1_000_000)
@@ -158,7 +160,15 @@ def platform_create_organization(req: PlatformCreateIn, admin_id: str = Depends(
 
 @router.patch("/platform/{org_id}")
 def platform_update_organization(org_id: str, req: PlatformUpdateIn, _admin: str = Depends(require_admin)) -> dict:
-    return _run(service.set_status, org_id, req.status, req.member_limit, req.model_dump(include=_COIN_FIELDS))
+    return _run(service.set_status, org_id, req.status, req.member_limit, req.model_dump(include=_COIN_FIELDS),
+                req.name, req.kind)
+
+
+@router.delete("/platform/{org_id}")
+def platform_delete_organization(org_id: str, _admin: str = Depends(require_admin)) -> dict:
+    """Platform admin: remove an organization. Its members are released (free
+    to join another); their accounts, coins and every attempt stay."""
+    return _run(service.delete_for_platform, org_id)
 
 
 @router.post("/platform/{org_id}/coins")

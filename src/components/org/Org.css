@@ -286,6 +286,7 @@ button.org-bar-row:hover { background: var(--surf-2); }
 .org-coins { border: 1px solid var(--line-1); border-radius: 12px; padding: 10px 12px 2px; margin: 0 0 14px; }
 .org-coins legend { padding: 0 6px; font-size: 13.5px; font-weight: 700; color: var(--tx-1); }
 .org-coins legend small { font-weight: 500; color: var(--tx-3); }
+.org-actions .org-delete-link { color: #dc2626; }
 
 /* ===== Join page: two-column hero + glowing form card ===== */
 .org-join { position: relative; max-width: 1120px; margin: 28px auto 0; padding: 44px 40px; border-radius: 32px; border: 1px solid #e1e5f5;

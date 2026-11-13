@@ -200,6 +200,22 @@ def _submit_answer(data):
     if not current:
         return jsonify({"error": "Question not found for this interview."}), 404
 
+    # A transport retry with the same payload is idempotent. If a client sends
+    # a different answer after the first one has been committed, surface the
+    # conflict instead of silently evaluating/advancing with stale text.
+    saved_answer = current.get("answer")
+    submitted_answer = (answer or "").strip()
+    if saved_answer is not None and submitted_answer:
+        normalized_saved = " ".join(str(saved_answer).split())
+        normalized_submitted = " ".join(submitted_answer.split())
+        if normalized_saved != normalized_submitted:
+            return jsonify({
+                "error": "An answer is already saved for this question. It cannot be replaced.",
+                "answer_saved": True,
+                "interview_id": interview_id,
+                "question_order": question_order,
+            }), 409
+
     interview_row, _ = db.query(
         "SELECT * FROM interviews WHERE id = %s", (interview_id,), fetchone=True
     )

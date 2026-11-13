@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" role="img" aria-label="Kaapi Corner logo">
+  <circle cx="36" cy="36" r="34" fill="#e3a23b"/>
+  <path d="M22 30h24l-3 22a4 4 0 0 1-4 3H29a4 4 0 0 1-4-3z" fill="#fff7ec"/>
+  <path d="M46 34h3a5 5 0 0 1 0 10h-4" fill="none" stroke="#fff7ec" stroke-width="3"/>
+  <path d="M30 14c-3 4 3 6 0 10M37 12c-3 4 3 6 0 10" fill="none" stroke="#5b3416" stroke-width="2.5" stroke-linecap="round"/>
+</svg>

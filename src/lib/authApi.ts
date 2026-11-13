@@ -176,6 +176,18 @@ export async function verifyEmailCode(token: string, code: string): Promise<Auth
   return parseAuthResponse<AuthUser>(response);
 }
 
+/** Emails a 6-digit password reset code, if the email has an account. */
+export async function requestPasswordReset(email: string): Promise<{ message: string }> {
+  const response = await postJson("/auth/password/forgot", { email });
+  return parseAuthResponse<{ message: string }>(response);
+}
+
+/** Sets a new password using the emailed code. */
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ message: string }> {
+  const response = await postJson("/auth/password/reset", { email, code, new_password: newPassword });
+  return parseAuthResponse<{ message: string }>(response);
+}
+
 function postJson(path: string, body: Record<string, unknown>): Promise<Response> {
   return fetch(`${ORCHESTRATOR_BASE}${path}`, {
     method: "POST",

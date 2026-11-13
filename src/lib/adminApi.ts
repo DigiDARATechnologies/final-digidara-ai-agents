@@ -35,18 +35,23 @@ export interface UserDetail {
   payments: UserPayment[];
   conversations: { id: string; agent_id: string; title: string; messages: number; pinned: boolean; created_at: string | null; updated_at: string | null; deleted: boolean }[];
   agent_progress: { agent_id: string; chat_id: string; step: string | null; updated_at: string | null }[];
+  /** Every charge against the balance, newest first. */
+  usage?: { agent_name: string; action: string; tokens: number; points: number; created_at: string | null }[];
+  usage_by_agent?: { agent_name: string; uses: number; tokens: number; points: number }[];
 }
 export interface ConversationView { id: string; agent_id: string; title: string; messages: { role: string; content: string; time: string; created_at: string | null }[] }
 export interface PaymentRow {
   id: string; user_id: string; email: string; name: string; label: string; amount: number; currency: string; status: string;
   razorpay_order_id: string; razorpay_payment_id: string | null; created_at: string | null; paid_at: string | null; tokens: number; points: number;
   method?: "razorpay" | "manual";
+  /** What it is worth: the amount, or for a plan given by hand at 0, the plan's price + GST. */
+  value?: number;
 }
 export type PaymentTotal = { count: number; amount: number };
 export interface PaymentList {
   total: number; page: number; limit: number; summary: Record<string, PaymentTotal>;
   /** Paid money split by how it arrived: Razorpay checkout, or recorded by hand (no Razorpay payment id). */
-  paid_by_method?: { razorpay: PaymentTotal; manual: PaymentTotal };
+  paid_by_method?: { razorpay: PaymentTotal; manual: PaymentTotal & { value?: number } };
   payments: PaymentRow[];
 }
 export interface RegistryAgent {
@@ -72,16 +77,59 @@ export const fetchUsers = (params: { search?: string; sort?: string; page?: numb
 export const fetchUserDetail = (id: string) => get<UserDetail>(`/users/${encodeURIComponent(id)}`);
 export const fetchConversation = (userId: string, conversationId: string) =>
   get<ConversationView>(`/users/${encodeURIComponent(userId)}/conversations/${encodeURIComponent(conversationId)}`);
-export const fetchPayments = (params: { status?: string; search?: string; page?: number; limit?: number }) => get<PaymentList>("/payments", params as Record<string, string | number>);
+export type PaymentMethodFilter = "" | "razorpay" | "manual";
+export const fetchPayments = (params: { status?: string; search?: string; method?: PaymentMethodFilter; page?: number; limit?: number }) =>
+  get<PaymentList>("/payments", params as Record<string, string | number>);
+/** Downloads every payment matching the filters as a CSV file. */
+export async function downloadPaymentsCsv(params: { status?: string; search?: string; method?: PaymentMethodFilter }): Promise<void> {
+  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value)).toString();
+  const response = await fetch(`${BASE}/platform-admin/payments/export${query ? `?${query}` : ""}`, {
+    headers: { Authorization: `Bearer ${sessionToken() || ""}` },
+  });
+  if (!response.ok) throw new Error("The export failed. Please try again.");
+  const name = /filename="([^"]+)"/.exec(response.headers.get("content-disposition") || "")?.[1] || "skilldara-payments.csv";
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 export const fetchAgents = () => get<AgentList>("/agents");
 export interface EnterpriseEnquiryRow {
   id: string; organization: string; organization_type: string; contact_name: string; email: string; phone: string;
   learners: number | null; city: string; message: string; emailed: boolean; created_at: string | null;
 }
+export interface TeamMessage { id: string; report_id: string | null; body: string; created_at: string | null; read_at: string | null }
 export interface BossReportRow {
   id: string; category: string; agent_id: string; message: string; name: string; email: string; created_at: string | null;
+  user_id?: string; status?: "open" | "solved"; solved_at?: string | null;
+  /** Messages the team sent the learner about this report, oldest first. */
+  replies?: TeamMessage[];
 }
+export interface BossReportsByUser { user_id: string; name: string; email: string; reports: number; open: number; agents: string[]; last_at: string | null }
+export interface BossReportsByAgent { agent_id: string; reports: number; open: number; learners: number }
 export const fetchBossReports = () => get<{
   repeated: { category: string; reports: number; learners: number }[]; reports: BossReportRow[];
+  by_user?: BossReportsByUser[]; by_agent?: BossReportsByAgent[];
 }>("/boss-reports");
+async function send<T>(method: string, path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${BASE}/platform-admin${path}`, {
+    method,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken() || ""}` },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(typeof data.detail === "string" ? data.detail : "The admin request failed.");
+  }
+  return response.json();
+}
+/** Solved also messages the learner (`message`, or the standard note when empty). */
+export const setBossReportStatus = (id: string, solved: boolean, message = "") =>
+  send<{ id: string; status: "open" | "solved"; message: TeamMessage | null }>("PUT", `/boss-reports/${encodeURIComponent(id)}/status`, { solved, message });
+export const messageBossReporter = (id: string, message: string) =>
+  send<TeamMessage>("POST", `/boss-reports/${encodeURIComponent(id)}/messages`, { message });
 export const fetchEnterpriseEnquiries = () => get<{ total: number; enquiries: EnterpriseEnquiryRow[] }>("/enterprise-enquiries");

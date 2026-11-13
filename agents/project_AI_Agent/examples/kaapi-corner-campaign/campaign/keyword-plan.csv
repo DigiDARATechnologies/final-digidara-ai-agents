@@ -1,0 +1,10 @@
+keyword,match_type,intent,monthly_searches_est,priority,used_in
+filter coffee rs puram,phrase,local visit,320,high,title; h1; ad group 1
+filter coffee coimbatore,phrase,local visit,1900,high,meta description; ad group 1
+coffee shop near me,broad,local visit,8100,medium,ad group 1
+evening snacks coimbatore,phrase,local visit,880,medium,h2; ad group 2
+bajji shop rs puram,exact,local visit,90,low,ad group 2
+cafe offers coimbatore,phrase,deal seeking,260,medium,ad group 3
+free coffee,negative,,,exclude,campaign negative list
+coffee powder,negative,,,exclude,campaign negative list
+jobs,negative,,,exclude,campaign negative list
