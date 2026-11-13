@@ -144,7 +144,7 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
                     <span className="lp-card-icon"><AgentIcon name={item.icon} size="1.3em" /></span>
                     <span className="lp-card-tag">{item.cat}</span>
                   </div>
-                  <h3>{item.name}</h3>
+                  <h3><a className="lp-card-title-link" href={`/agents/${item.slug}/`}>{item.name}</a></h3>
                   <p>{item.text}</p>
                   <button type="button" className="lp-card-link" onClick={onLogin}>Try this agent →</button>
                 </article>
@@ -278,24 +278,20 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
           </div>
           <div>
             <h4>Agents</h4>
-            <button type="button" onClick={() => scrollToId("agents")}>Coding Practice</button>
-            <button type="button" onClick={() => scrollToId("agents")}>Aptitude Trainer</button>
-            <button type="button" onClick={() => scrollToId("agents")}>Communication Coach</button>
-            <button type="button" onClick={() => scrollToId("agents")}>Mock Interview</button>
-            <button type="button" onClick={() => scrollToId("agents")}>Resume Builder</button>
-            <button type="button" onClick={() => scrollToId("agents")}>Job Agent</button>
+            {AGENTS.map((item) => <a key={item.slug} href={`/agents/${item.slug}/`}>{item.name}</a>)}
+            <a href="/agents/">All agents</a>
           </div>
           <div>
             <h4>Product</h4>
             <button type="button" onClick={() => scrollToId("journey")}>How it works</button>
-            <button type="button" onClick={() => scrollToId("pricing")}>Pricing</button>
-            <button type="button" onClick={() => scrollToId("colleges")}>For Colleges</button>
+            <a href="/pricing/" onClick={(e) => { e.preventDefault(); scrollToId("pricing"); }}>Pricing</a>
+            <a href="/for-colleges/" onClick={(e) => { e.preventDefault(); scrollToId("colleges"); }}>For Colleges</a>
             <button type="button" onClick={onLogin}>Log in</button>
             <button type="button" onClick={onLogin}>Sign up free</button>
           </div>
           <div>
             <h4>Resources</h4>
-            <button type="button" onClick={() => scrollToId("faq")}>FAQ</button>
+            <a href="/faq/" onClick={(e) => { e.preventDefault(); scrollToId("faq"); }}>FAQ</a>
             <a href={composeUrl("Support request")} target="_blank" rel="noopener noreferrer">Help &amp; support</a>
             <a href={composeUrl("Bug report")} target="_blank" rel="noopener noreferrer">Report a bug</a>
           </div>

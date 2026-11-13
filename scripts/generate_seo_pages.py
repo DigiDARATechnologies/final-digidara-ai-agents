@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+import subprocess
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +20,12 @@ PUBLIC = ROOT / "public"
 SITE = "https://www.skilldara.com"
 TODAY = date.today().isoformat()
 SUPPORT = "support@digidaraaiagents.com"
+# The organization behind the product, and the product brand. The home page (index.html)
+# defines both with these @ids; every other page points at the same ids.
+ORG_ID = f"{SITE}/#org"
+BRAND_ID = f"{SITE}/#brand"
+ORG_REF = {"@type": "Organization", "@id": ORG_ID, "name": "DigiDARA Technologies", "url": f"{SITE}/"}
+BRAND_REF = {"@type": "Brand", "@id": BRAND_ID, "name": "SkillDARA"}
 
 AGENTS = [
     {
@@ -167,7 +174,10 @@ def head(title: str, desc: str, path: str, extra_ld: list[dict] | None = None) -
     <meta name="twitter:title" content="{e(title)}" />
     <meta name="twitter:description" content="{e(desc)}" />
     <meta name="twitter:image" content="{SITE}/og-image.png" />
-    {ld}<link rel="icon" type="image/png" href="/favicon.png" />
+    {ld}<link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="stylesheet" href="/seo-pages.css" />
   </head>
@@ -233,7 +243,7 @@ def agent_page(a: dict) -> None:
         "@context": "https://schema.org", "@type": "SoftwareApplication", "name": f"SkillDARA {a['name']}",
         "applicationCategory": "EducationalApplication", "operatingSystem": "Web", "url": f"{SITE}{path}",
         "description": a["lead"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"},
-        "publisher": {"@type": "Organization", "name": "DigiDARA Technologies", "url": SITE},
+        "publisher": ORG_REF, "brand": BRAND_REF,
     }
     others = "".join(
         f'<li><a href="/agents/{o["slug"]}/">{e(o["name"])}</a></li>' for o in AGENTS if o["slug"] != a["slug"]
@@ -288,7 +298,7 @@ def pricing_page() -> None:
     prod = {
         "@context": "https://schema.org", "@type": "Product", "name": "SkillDARA coins",
         "description": "One-time coin packs used by SkillDARA AI agents. Coins never expire.",
-        "brand": {"@type": "Brand", "name": "SkillDARA"},
+        "brand": BRAND_REF, "manufacturer": ORG_REF,
         "offers": [
             {"@type": "Offer", "name": n, "price": p.replace("₹", ""), "priceCurrency": "INR", "url": f"{SITE}/pricing/"}
             for n, p, _, _ in PLANS
@@ -337,13 +347,57 @@ def faq_page() -> None:
     write(path, head(title, desc, path, [faq, crumbs([("Home", "/"), ("FAQ", path)])]) + shell(body))
 
 
+def not_found_page() -> None:
+    """The page nginx shows (with a real 404 status) for any address that is not a page of this site.
+
+    noindex, no canonical: it must never compete with the home page in search results."""
+    body = """      <h1>This page does not exist</h1>
+      <p class="sp-lead">The address may be mistyped, or the page may have moved. Start from the home page or pick an agent below.</p>
+      <p><a class="sp-btn" href="/">Go to the SkillDARA home page</a></p>
+      <h2>Popular pages</h2>
+      <ul class="sp-chips"><li><a href="/agents/">All AI agents</a></li><li><a href="/pricing/">Pricing</a></li><li><a href="/for-colleges/">For colleges</a></li><li><a href="/faq/">FAQ</a></li></ul>"""
+    page = f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Page not found | SkillDARA</title>
+    <meta name="robots" content="noindex, follow" />
+    <meta name="theme-color" content="#17348e" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/seo-pages.css" />
+  </head>
+""" + shell(body)
+    (PUBLIC / "404.html").write_text(page, encoding="utf-8")
+
+
+def lastmod(*paths: str) -> str:
+    """The day these files last changed: today if they have uncommitted changes, else their last commit.
+
+    Falls back to today when git is unavailable, so the sitemap never carries an invented older date."""
+    try:
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", *paths], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+        if dirty:
+            return TODAY
+        day = subprocess.run(["git", "log", "-1", "--format=%cs", "--", *paths], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+        return day or TODAY
+    except (OSError, subprocess.CalledProcessError):
+        return TODAY
+
+
 def sitemap() -> None:
-    urls = [("/", "1.0", "weekly"), ("/agents/", "0.9", "weekly")]
-    urls += [(f"/agents/{a['slug']}/", "0.8", "monthly") for a in AGENTS]
-    urls += [("/pricing/", "0.8", "monthly"), ("/for-colleges/", "0.7", "monthly"), ("/faq/", "0.7", "monthly"), ("/login", "0.4", "monthly")]
+    """Public, indexable pages only. /login and every signed-in or token route are left out on purpose."""
+    home_sources = ("index.html", "src/components/LandingPage.tsx", "src/data/landingAgents.ts")
+    pages = [("/", home_sources, "1.0", "weekly"), ("/agents/", (f"public/agents/index.html",), "0.9", "weekly")]
+    pages += [(f"/agents/{a['slug']}/", (f"public/agents/{a['slug']}/index.html",), "0.8", "monthly") for a in AGENTS]
+    pages += [(f"/{d}/", (f"public/{d}/index.html",), pr, "monthly") for d, pr in (("pricing", "0.8"), ("for-colleges", "0.7"), ("faq", "0.7"))]
     rows = "\n".join(
-        f"  <url><loc>{SITE}{p}</loc><lastmod>{TODAY}</lastmod><changefreq>{f}</changefreq><priority>{pr}</priority></url>"
-        for p, pr, f in urls
+        f"  <url><loc>{SITE}{p}</loc><lastmod>{lastmod(*src)}</lastmod><changefreq>{f}</changefreq><priority>{pr}</priority></url>"
+        for p, src, pr, f in pages
     )
     (PUBLIC / "sitemap.xml").write_text(
         f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{rows}\n</urlset>\n',
@@ -389,6 +443,7 @@ if __name__ == "__main__":
     pricing_page()
     colleges_page()
     faq_page()
+    not_found_page()
     sitemap()
     llms()
-    print("generated", len(AGENTS) + 4, "pages, sitemap.xml and llms.txt")
+    print("generated", len(AGENTS) + 4, "pages, 404.html, sitemap.xml and llms.txt")
