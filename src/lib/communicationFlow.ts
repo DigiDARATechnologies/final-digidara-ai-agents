@@ -750,7 +750,16 @@ export async function handleCommunicationText(
           }],
         };
       } catch (error) {
-        return showMenu(state, `Writing chat ended, but the report could not be prepared: ${(error as Error).message}`);
+        return {
+          state,
+          messages: [{
+            text: `Could not prepare the writing chat report: ${(error as Error).message}`,
+            options: [
+              { label: "Retry report", value: "end_session", description: "Try preparing the writing report again" },
+              { label: "Back to menu", value: "menu", description: "Return to the main Communication Coach menu" },
+            ],
+          }],
+        };
       }
     }
     try {
