@@ -66,7 +66,8 @@ def test_pdf_default_standard_declaration():
     text = extract_pdf_text(pdf_bytes)
 
     assert "DECLARATION" in text.upper()
-    assert STANDARD_DECLARATION in text or "true and accurate to the best of my knowledge" in text
+    normalized_text = " ".join(text.split())
+    assert STANDARD_DECLARATION in normalized_text or "true and accurate to the best of my knowledge" in normalized_text
     assert "Arun Kuma" not in text
     assert "Chennai" not in text
     assert "DD/MM/YYYY" not in text

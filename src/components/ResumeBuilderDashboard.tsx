@@ -43,7 +43,7 @@ function asStyle(value: unknown): ResumeStyle {
 
 export default function ResumeBuilderDashboard({ user, state, onClose }: { user: User; state: ResumeBuilderFlowState; onClose: () => void }) {
   const experienceLevel = state.draft?.experienceLevel;
-  const pagePlan = experienceLevel === "experienced" ? "Up to 2 pages" : experienceLevel === "fresher" ? "1 page" : undefined;
+  const pagePlan = experienceLevel === "experienced" ? "Target: up to 2 pages" : experienceLevel === "fresher" ? "Target: 1 page" : undefined;
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
   const [templateChoice, setTemplateChoice] = useState(state.templateChoice || "steady-form");
   const [savingTemplate, setSavingTemplate] = useState(false);
@@ -52,6 +52,7 @@ export default function ResumeBuilderDashboard({ user, state, onClose }: { user:
   const [savedResume, setSavedResume] = useState<Record<string, unknown>>();
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewError, setPreviewError] = useState("");
+  const [previewPageCount, setPreviewPageCount] = useState<number>();
   const [styleOptions, setStyleOptions] = useState<ResumeStyleOptions>(FALLBACK_STYLE_OPTIONS);
   const [style, setStyle] = useState<ResumeStyle>(DEFAULT_RESUME_STYLE);
   const [styleError, setStyleError] = useState("");
@@ -75,16 +76,22 @@ export default function ResumeBuilderDashboard({ user, state, onClose }: { user:
     let url = "";
     setPreviewUrl("");
     setPreviewError("");
+    setPreviewPageCount(undefined);
     void previewResumePdf(user.id, savedResume, templateChoice, style)
-      .then((blob) => {
+      .then(({ blob, pageCount }) => {
         if (!active) return;
-        url = URL.createObjectURL(blob);
+        // Ask the browser PDF viewer to fit the complete A4 page to the
+        // available panel width. The fragment does not alter the PDF bytes or
+        // the download; it only prevents a cramped, horizontally scrolling
+        // preview on narrow dashboard panels.
+        url = `${URL.createObjectURL(blob)}#zoom=page-width`;
         setPreviewUrl(url);
+        setPreviewPageCount(pageCount);
       })
       .catch((error) => { if (active) setPreviewError((error as Error).message || "Resume preview failed."); });
     return () => {
       active = false;
-      if (url) URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url.split("#", 1)[0]);
     };
   }, [savedResume, templateChoice, style, user.id]);
   async function chooseTemplate(value: string) {
@@ -167,5 +174,5 @@ export default function ResumeBuilderDashboard({ user, state, onClose }: { user:
       {styleError && <p className="dashboard-error" role="alert">{styleError}</p>}
     </section>
   );
-  return <aside className="agent-dashboard" aria-label="Resume Builder dashboard"><button className="dashboard-close" onClick={onClose} aria-label="Close dashboard">×</button><h2>Resume Builder</h2><div className="dashboard-card"><span>Selected Resume</span><strong>{state.resumeTitle || "No resume selected"}</strong></div><div className="dashboard-card"><span>Workflow</span><strong>{state.step.replaceAll("_", " ")}</strong></div>{experienceLevel && <div className="dashboard-card"><span>Resume Plan</span><strong>{experienceLevel === "fresher" ? "Fresher" : "Experienced"} · {pagePlan}</strong></div>}{state.atsScore !== undefined && <div className="dashboard-card"><span>ATS Score</span><strong style={{ color: state.atsScore >= 80 ? "#10b981" : state.atsScore >= 60 ? "#f59e0b" : "#ef4444" }}>{state.atsScore}/100{state.draft?.targetRole ? ` · ${state.draft.targetRole}` : ""}</strong></div>}{state.resumeId && templates.length > 0 && <label className="dashboard-card"><span>Template</span><select value={templateChoice} disabled={savingTemplate || downloading} onChange={(event) => void chooseTemplate(event.target.value)}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>}{styleControls}{state.resumeId && <section className="resume-dashboard-preview"><b>Resume Preview</b>{previewUrl ? <iframe title="Resume PDF preview" src={previewUrl} /> : <p>{previewError || "Preparing your saved resume preview…"}</p>}</section>}{state.resumeId && <button className="option-btn" disabled={downloading} onClick={() => void download()}>{downloading ? "Preparing PDF…" : "Download PDF"}</button>}{downloadError && <p className="dashboard-error" role="alert">{downloadError}</p>}</aside>;
+  return <aside className="agent-dashboard" aria-label="Resume Builder dashboard"><button className="dashboard-close" onClick={onClose} aria-label="Close dashboard">×</button><h2>Resume Builder</h2><div className="dashboard-card"><span>Selected Resume</span><strong>{state.resumeTitle || "No resume selected"}</strong></div><div className="dashboard-card"><span>Workflow</span><strong>{state.step.replaceAll("_", " ")}</strong></div>{experienceLevel && <div className="dashboard-card"><span>Resume Plan</span><strong>{experienceLevel === "fresher" ? "Fresher" : "Experienced"} · {pagePlan}{previewPageCount ? ` · Actual PDF: ${previewPageCount} ${previewPageCount === 1 ? "page" : "pages"}` : ""}</strong></div>}{state.atsScore !== undefined && <div className="dashboard-card"><span>ATS Score</span><strong style={{ color: state.atsScore >= 80 ? "#10b981" : state.atsScore >= 60 ? "#f59e0b" : "#ef4444" }}>{state.atsScore}/100{state.draft?.targetRole ? ` · ${state.draft.targetRole}` : ""}</strong></div>}{state.resumeId && templates.length > 0 && <label className="dashboard-card"><span>Template</span><select value={templateChoice} disabled={savingTemplate || downloading} onChange={(event) => void chooseTemplate(event.target.value)}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label>}{styleControls}{state.resumeId && <section className="resume-dashboard-preview"><b>Resume Preview</b>{previewUrl ? <iframe title="Resume PDF preview" src={previewUrl} /> : <p>{previewError || "Preparing your saved resume preview…"}</p>}</section>}{state.resumeId && <button className="option-btn" disabled={downloading} onClick={() => void download()}>{downloading ? "Preparing PDF…" : "Download PDF"}</button>}{downloadError && <p className="dashboard-error" role="alert">{downloadError}</p>}</aside>;
 }

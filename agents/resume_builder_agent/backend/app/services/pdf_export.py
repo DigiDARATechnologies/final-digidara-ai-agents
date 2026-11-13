@@ -334,7 +334,7 @@ def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_styl
     name = paragraph_style("NavyName", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=22, leading=25, textColor=colors.white)
     tagline = paragraph_style("NavyTagline", parent=styles["Normal"], fontName="Helvetica", fontSize=8.8, leading=12, textColor=colors.HexColor("#dbe7f4"))
     contact = paragraph_style("NavyContact", parent=tagline, fontSize=8, leading=11)
-    section = paragraph_style("NavySection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.2, leading=12, alignment=1, textColor=colors.HexColor(navy), backColor=colors.HexColor(pale), spaceBefore=9, spaceAfter=5, borderPadding=(4, 4, 4, 4))
+    section = paragraph_style("NavySection", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.2, leading=12, alignment=1, textColor=colors.HexColor(navy), backColor=colors.HexColor(pale), spaceBefore=9, spaceAfter=5, borderPadding=(4, 4, 4, 4), keepWithNext=1)
     title = paragraph_style("NavyEntryTitle", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=9.2, leading=11, textColor=colors.HexColor(ink))
     role = paragraph_style("NavyRole", parent=styles["Normal"], fontSize=8.4, leading=10.5, textColor=colors.HexColor(muted))
     body = paragraph_style("NavyBody", parent=styles["Normal"], fontSize=8.2, leading=10.5, textColor=colors.HexColor(ink))
@@ -372,7 +372,9 @@ def render_reportlab_navy_portrait_pdf(resume, colors, page_size, paragraph_styl
     def entry(item, kind):
         if kind == "experience":
             left = "<br/>".join(filter(None, [pdf_text(date_range(item.get("start_date"), item.get("end_date"))), pdf_text(clean_location(item.get("location")))]))
-            right = [paragraph(pdf_text(item.get("company") or ""), title), paragraph(pdf_text(item.get("role") or ""), role)]
+            # Keep the hierarchy consistent with every other theme: the role
+            # is the primary entry label and the company is its secondary line.
+            right = [paragraph(pdf_text(item.get("role") or ""), title), paragraph(pdf_text(item.get("company") or ""), role)]
             bullets = item.get("ai_generated_bullets") or ([item.get("raw_input")] if item.get("raw_input") else [])
         else:
             left = pdf_text(date_range(item.get("start_date"), item.get("end_date")) or item.get("date") or "")
@@ -441,6 +443,7 @@ def render_reportlab_analyst_pro_pdf(
     table,
     table_style,
     keep_together=None,
+    stacked_content=False,
 ):
     buffer = BytesIO()
     doc = document(
@@ -452,7 +455,35 @@ def render_reportlab_analyst_pro_pdf(
         bottomMargin=0.42 * inch,
     )
     styles = get_styles()
-    profile = reportlab_template_profile(template_choice)
+    # Apply the existing density rules before calculating all layout styles.
+    # This keeps short resumes balanced while preventing long template content
+    # from becoming cramped or misaligned.
+    profile = apply_content_density(reportlab_template_profile(template_choice), resume)
+
+    # A ReportLab table holding two complete columns cannot split across pages.
+    # When it is too tall to sit below the header, ReportLab moves the whole
+    # table to page two and leaves a nearly blank first page. For content-rich
+    # resumes, keep the template's colours and typography but stack its
+    # sections so the first page begins directly below the header and pages
+    # break naturally. Concise resumes still use the intended two-column view.
+    if profile["two_column"] and not stacked_content:
+        section_count = sum(
+            len(resume.get(section) or [])
+            for section in (
+                "experience", "projects", "education", "publications",
+                "certifications", "languages", "achievements",
+            )
+        )
+        content_length = len(str(resume.get("summary") or ""))
+        content_length += sum(
+            len(str(item))
+            for section in (
+                "experience", "projects", "education", "publications",
+                "certifications", "languages", "achievements",
+            )
+            for item in (resume.get(section) or [])
+        )
+        stacked_content = section_count > 5 or content_length > 1_600
     accent = colors.HexColor(profile["accent"])
     muted = colors.HexColor("#526070")
     body_color = colors.HexColor("#263942")
@@ -497,8 +528,9 @@ def render_reportlab_analyst_pro_pdf(
         textColor=accent,
         backColor=colors.HexColor(profile["section_background"]),
         alignment=profile["section_alignment"],
-        spaceBefore=7,
+        spaceBefore=profile.get("section_before", 7),
         spaceAfter=3,
+        keepWithNext=1,
         borderColor=colors.HexColor("#cbd5e1"),
         borderPadding=profile["section_padding"],
         borderWidth=profile["section_border_width"],
@@ -607,7 +639,14 @@ def render_reportlab_analyst_pro_pdf(
         add_entries(main, "Experience", [experience_pdf_entry(item) for item in resume.get("experience", [])])
         add_entries(main, "Projects", [project_pdf_entry(item) for item in resume.get("projects", [])])
         add_entries(main, "Publications", [generic_pdf_entry(item) for item in resume.get("publications", [])])
-        add_rl_skills_section(side, resume.get("skills", []), section_style, chip_style, paragraph)
+        add_rl_skills_section(
+            side,
+            resume.get("skills", []),
+            section_style,
+            chip_style,
+            paragraph,
+            compact=stacked_content,
+        )
         add_entries(side, "Education", [education_pdf_entry(item) for item in resume.get("education", [])], stacked=True)
         add_entries(side, "Certifications", [certification_pdf_entry(item) for item in resume.get("certifications", [])], stacked=True)
         add_entries(side, "Languages", [language_pdf_entry(item) for item in resume.get("languages", [])], stacked=True)
@@ -626,7 +665,7 @@ def render_reportlab_analyst_pro_pdf(
         stacked=profile["two_column"],
     )
     declaration_text = resolved_declaration(resume)
-    if profile["two_column"]:
+    if profile["two_column"] and not stacked_content:
         story.append(
             table(
                 [[main, side]],
@@ -664,7 +703,10 @@ def render_reportlab_analyst_pro_pdf(
     else:
         if declaration_text and declaration_text.strip():
             add_rl_declaration_section(
-                main,
+                # In the safe flowing variant, the sidebar content follows
+                # the main content. Keeping the declaration in that final
+                # group preserves the expected end-of-resume placement.
+                side if profile["two_column"] else main,
                 "Declaration",
                 declaration_text,
                 section_style,
@@ -678,7 +720,36 @@ def render_reportlab_analyst_pro_pdf(
         story.extend(main + side)
         story.append(indenter(left=-content_margin, right=-content_margin))
 
-    doc.build(story)
+    try:
+        doc.build(story)
+    except Exception as error:
+        # A ReportLab table cannot split the contents of a single cell across
+        # pages. Long resumes can therefore exceed a two-column table's page
+        # height. Rebuild the same template with its columns stacked so export
+        # and preview remain available instead of returning a 500 error.
+        from reportlab.platypus.doctemplate import LayoutError
+
+        if profile["two_column"] and not stacked_content and isinstance(error, LayoutError):
+            return render_reportlab_analyst_pro_pdf(
+                resume,
+                template_choice,
+                colors,
+                page_size,
+                paragraph_style,
+                get_styles,
+                inch,
+                list_flowable,
+                list_item,
+                paragraph,
+                indenter,
+                document,
+                spacer,
+                table,
+                table_style,
+                keep_together=keep_together,
+                stacked_content=True,
+            )
+        raise
     return buffer.getvalue()
 
 
@@ -732,6 +803,7 @@ def reportlab_template_profile(template_choice):
         "header_bottom": 0.25 if is_mercury or is_slate else 0.18,
         "content_gap": 0.11,
         "content_margin": 1.08 if is_steady else 0.62,
+        "section_before": 7,
     }
     profile_overrides = {
         "ats-standard": {"accent": "#1f2937", "header_alignment": 0, "section_background": "#ffffff", "content_gap": 0.09, "header_rule_width": 1.2},
@@ -885,7 +957,7 @@ def add_rl_declaration_section(story, title, value, section_style, body_style, p
         story.extend(flowables)
 
 
-def add_rl_skills_section(story, skills, section_style, chip_style, paragraph):
+def add_rl_skills_section(story, skills, section_style, chip_style, paragraph, compact=False):
     names = [
         item.get("skill_name")
         for item in skills
@@ -894,7 +966,13 @@ def add_rl_skills_section(story, skills, section_style, chip_style, paragraph):
     if not names:
         return
     story.append(paragraph("TECHNICAL SKILLS", section_style))
-    story.extend(paragraph(pdf_text(name), chip_style) for name in names)
+    if compact:
+        # A flowing two-column theme has the full page width available. Render
+        # skills as a concise, readable line so they do not create an orphaned
+        # final page after a long projects or experience section.
+        story.append(paragraph(pdf_text(", ".join(names)), chip_style))
+    else:
+        story.extend(paragraph(pdf_text(name), chip_style) for name in names)
 
 
 def add_rl_entries_section(

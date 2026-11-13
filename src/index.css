@@ -1152,9 +1152,16 @@ body.glow-off .send-btn:hover{
 
 /* ===================== AGENT DASHBOARD ===================== */
 .agent-dashboard{width:370px;flex:0 0 370px;border-left:1px solid var(--canvas-border);background:var(--canvas-bg);color:var(--canvas-text);padding:20px;overflow-y:auto;animation:dashboardIn .2s ease;}
+.agent-dashboard .dashboard-card{display:flex;flex-direction:column;gap:5px;box-sizing:border-box;width:100%;margin:0 0 10px;padding:12px 14px;color:var(--canvas-text);}
+.agent-dashboard .dashboard-card>span{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--canvas-text-dim);}
+.agent-dashboard .dashboard-card>strong{font-size:13px;line-height:1.35;overflow-wrap:anywhere;}
+.agent-dashboard .dashboard-card select{box-sizing:border-box;width:100%;min-width:0;margin-top:2px;padding:7px 9px;border:1px solid var(--canvas-border);border-radius:8px;background:var(--canvas-bg);color:var(--canvas-text);font:inherit;}
+.agent-dashboard .resume-style-controls{gap:9px;}
+.agent-dashboard .resume-style-controls>label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--canvas-text-dim);}
+.agent-dashboard .resume-style-controls .option-btn{box-sizing:border-box;width:100%;min-height:34px;padding:7px 10px;white-space:normal;}
 .resume-dashboard-preview{margin:14px 0;display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--canvas-text-dim)}
 .resume-dashboard-preview>b{color:var(--canvas-text);font-size:14px}
-.resume-dashboard-preview iframe{width:100%;height:auto;aspect-ratio:210/297;min-height:420px;border:1px solid var(--canvas-border);border-radius:10px;background:#fff}
+.resume-dashboard-preview iframe{display:block;width:100%;height:auto;aspect-ratio:210/297;min-height:420px;box-sizing:border-box;border:1px solid var(--canvas-border);border-radius:10px;background:#fff;overflow:hidden}
 .resume-dashboard-preview p{margin:0;padding:12px;border:1px solid var(--canvas-border);border-radius:10px;background:var(--canvas-bg-soft)}
 @keyframes dashboardIn{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:translateX(0)}}
 .dashboard-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;}
@@ -2626,6 +2633,89 @@ body:has(.modal-overlay.open) .boss-fab{display:none}
 .boss-repair.failed{background:#fff7ed;color:#9a3412}
 .agent-dashboard{box-sizing:border-box;overflow-x:hidden}
 .agent-dashboard .chat-options,.agent-dashboard .chat-option-link{box-sizing:border-box;width:100%;max-width:100%;min-width:0;white-space:normal}
+
+/* Resume Builder dashboard: presentation-only refinements.  The markup and
+   controls stay unchanged; these rules simply make the existing panel easier
+   to scan and keep the floating helper away from its form fields. */
+.agent-dashboard[aria-label="Resume Builder dashboard"]{
+  padding:24px 22px 36px;
+  scroll-padding-bottom:36px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-close{
+  float:right;
+  display:grid;
+  place-items:center;
+  width:34px;
+  height:34px;
+  margin:0 0 18px 14px;
+  padding:0;
+  border:1px solid #cbd3ea;
+  border-radius:10px;
+  background:#fff;
+  color:var(--canvas-text);
+  font-size:20px;
+  line-height:1;
+  cursor:pointer;
+  box-shadow:0 8px 18px -16px rgba(43,55,130,.7);
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-close:hover{
+  border-color:#95a5de;
+  background:#f4f6ff;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>h2{
+  display:flex;
+  align-items:center;
+  min-height:34px;
+  margin:0 0 22px;
+  color:var(--canvas-text);
+  font-size:27px;
+  line-height:1.15;
+  letter-spacing:-.035em;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-card{
+  gap:7px;
+  margin-bottom:12px;
+  padding:15px 17px;
+  border-radius:20px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-card>span{
+  font-size:12px;
+  letter-spacing:.01em;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-card>strong{
+  font-size:15px;
+  line-height:1.4;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"]>.dashboard-card select{
+  min-height:44px;
+  margin-top:4px;
+  padding:9px 12px;
+  border-radius:11px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"] .resume-style-controls{
+  gap:12px;
+  padding:17px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"] .resume-style-controls>label{
+  gap:6px;
+  font-size:13px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"] .resume-dashboard-preview{
+  margin:18px 0 14px;
+  gap:10px;
+}
+.agent-dashboard[aria-label="Resume Builder dashboard"] .resume-dashboard-preview iframe{
+  min-height:0;
+  border-radius:14px;
+}
+body:has(.agent-dashboard[aria-label="Resume Builder dashboard"]) .boss-fab{
+  right:calc(370px + 20px);
+}
+@media(max-width:600px){
+  .agent-dashboard[aria-label="Resume Builder dashboard"]{padding:20px 18px 30px;}
+  .agent-dashboard[aria-label="Resume Builder dashboard"]>h2{font-size:24px;}
+  body:has(.agent-dashboard[aria-label="Resume Builder dashboard"]) .boss-fab{right:12px;}
+}
 
 /* Boss reports: status, team replies */
 .boss-status{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;}

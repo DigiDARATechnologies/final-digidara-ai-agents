@@ -205,6 +205,9 @@ services:
 
   job-worker:
     image: digidara-job-agent:local
+    # This image is built by the job-agent service above.  Without this,
+    # Compose attempts to pull the local-only tag before that build finishes.
+    pull_policy: never
     restart: unless-stopped
     command: ["python", "-m", "job_agent.worker"]
     env_file:
