@@ -89,6 +89,7 @@ export default function App() {
   const [initialQuestionOrder, setInitialQuestionOrder] = useState(1);
   const [initialRealQuestionIndex, setInitialRealQuestionIndex] = useState(1);
   const [initialIsFrequentlyAsked, setInitialIsFrequentlyAsked] = useState(false);
+  const [awaitingReport, setAwaitingReport] = useState(false);
   const [result, setResult] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(getInitialSidebarCollapsed);
@@ -130,6 +131,15 @@ export default function App() {
       .then((session) => {
         if (!isMounted) return;
         setStartupWarning(null);
+        if (session.awaiting_report) {
+          setInterviewId(session.interview_id);
+          setFirstQuestion(null);
+          setInterviewDifficulty(session.difficulty || "intermediate");
+          setTotalQuestions(session.total_questions || 5);
+          setAwaitingReport(true);
+          navigate(SCREEN_ROUTES.interview, { replace: true });
+          return;
+        }
         if (!session.active) return;
         setInterviewId(session.interview_id);
         setFirstQuestion(session.question);
@@ -138,6 +148,7 @@ export default function App() {
         setInitialQuestionOrder(session.question_order || 1);
         setInitialRealQuestionIndex(session.real_question_index || 1);
         setInitialIsFrequentlyAsked(Boolean(session.is_frequently_asked));
+        setAwaitingReport(false);
         navigate(SCREEN_ROUTES.interview, { replace: true });
       })
       .catch((error) => {
@@ -184,15 +195,18 @@ export default function App() {
     setInitialQuestionOrder(session.questionOrder || 1);
     setInitialRealQuestionIndex(session.realQuestionIndex || 1);
     setInitialIsFrequentlyAsked(Boolean(session.isFrequentlyAsked));
+    setAwaitingReport(Boolean(session.awaitingReport));
     navigate(SCREEN_ROUTES.interview);
   }
 
   function handleFinished(finalResult) {
+    setAwaitingReport(false);
     setResult(finalResult);
     navigate(SCREEN_ROUTES.result, { replace: true });
   }
 
   function handleExited() {
+    setAwaitingReport(false);
     setInterviewId(null);
     setFirstQuestion(null);
     setInterviewDifficulty("intermediate");
@@ -204,6 +218,7 @@ export default function App() {
   }
 
   function handleStartAgain() {
+    setAwaitingReport(false);
     setInterviewId(null);
     setFirstQuestion(null);
     setInterviewDifficulty("intermediate");
@@ -253,6 +268,7 @@ export default function App() {
           initialQuestionOrder={initialQuestionOrder}
           initialRealQuestionIndex={initialRealQuestionIndex}
           initialIsFrequentlyAsked={initialIsFrequentlyAsked}
+          awaitingReport={awaitingReport}
           onFinished={handleFinished}
           onExited={handleExited}
         />

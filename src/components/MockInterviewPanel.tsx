@@ -23,6 +23,7 @@ interface Props {
   onAnswer: (answer: string, timing: MockInterviewAnswerTiming) => void;
   /** "inactive": ended automatically because the candidate never answered. */
   onExit: (reason?: "inactive") => void;
+  onRetryReport?: () => void;
   onPracticeWeakTopics?: (subjects: string[]) => void;
 }
 
@@ -53,7 +54,7 @@ function isQuestionEcho(answer: string, question?: string): boolean {
   return Boolean(normalizedAnswer && question && normalizedAnswer === normalize(question));
 }
 
-export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPracticeWeakTopics }: Props) {
+export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onRetryReport, onPracticeWeakTopics }: Props) {
   const speech = useSpeechRecognition();
   const [spokenAnswer, setSpokenAnswer] = useState("");
   const [typedAnswer, setTypedAnswer] = useState("");
@@ -622,7 +623,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
     }
   }
 
-  if (state.step === "completed" && state.summary) {
+  if ((state.step === "completed" || state.step === "report_pending") && state.summary) {
     const summary = state.summary;
     const metrics = [
       ["Overall score", summary.overall_score],
@@ -631,8 +632,14 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       ["Confidence score", summary.confidence],
     ] as const;
     return <section className="mock-interview-panel mock-interview-report" aria-label="Mock interview report">
-      <div className="mock-interview-header"><div><small>INTERVIEW COMPLETE</small><h3>Your interview report</h3></div></div>
+      <div className="mock-interview-header"><div><small>{summary.provisional ? "REPORT PENDING" : "INTERVIEW COMPLETE"}</small><h3>Your interview report</h3></div></div>
+      {summary.provisional && <div className="mock-interview-report-pending" role="status" aria-live="polite">
+        <p>{summary.report_message || "Your saved answer scores are available. The full AI evaluation is still processing."}</p>
+        {onRetryReport && <button type="button" className="btn btn-primary" onClick={onRetryReport} disabled={busy}>Retry full report</button>}
+      </div>}
+      {summary.proctoring_note && <p className="mock-interview-proctoring-note">{summary.proctoring_note}</p>}
       <div className="mock-interview-scores">{metrics.map(([label, value]) => <div key={label} className="mock-interview-score"><span>{label}</span><strong>{score(value)}</strong></div>)}</div>
+      {summary.provisional && <p className="mock-interview-scorecard-total">Provisional score from saved per-question verdicts.</p>}
       {summary.max_marks != null && <p className="mock-interview-scorecard-total">Correct-answer score: {summary.total_marks ?? 0} / {summary.max_marks} ({summary.max_marks} questions)</p>}
       {summary.feedback && <p className="mock-interview-report-feedback">{compactFeedback(summary.feedback)}</p>}
       {(summary.strengths || summary.weaknesses) && <div className="mock-interview-feedback-grid">
@@ -641,7 +648,7 @@ export default function MockInterviewPanel({ state, busy, onAnswer, onExit, onPr
       </div>}
       <div className="mock-interview-report-actions">
         {Boolean(summary.subject_breakdown?.weak_subjects?.length) && onPracticeWeakTopics && <button type="button" className="btn btn-outline mock-interview-weak-topic-action" onClick={() => onPracticeWeakTopics(summary.subject_breakdown?.weak_subjects || [])} disabled={busy}>Practice Weak Skills</button>}
-        <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF..." : "Download PDF report"}</button>
+        {!summary.provisional && <button type="button" className="btn btn-primary" onClick={downloadReport} disabled={downloading}>{downloading ? "Preparing PDF..." : "Download PDF report"}</button>}
       </div>
       {downloadError && <p className="mock-interview-error" role="alert">{downloadError}</p>}
     </section>;

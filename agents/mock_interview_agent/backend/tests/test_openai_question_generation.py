@@ -71,6 +71,23 @@ class OpenAIQuestionGenerationTests(unittest.TestCase):
 
         self.assertNotIn("temperature", completion.call_args.kwargs)
 
+    def test_usage_persistence_failure_does_not_discard_successful_completion(self):
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="valid response"))],
+            usage=SimpleNamespace(prompt_tokens=4, completion_tokens=3),
+        )
+        fake_client = SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=Mock(return_value=response)))
+        )
+
+        with (
+            patch.object(chat_client, "client", fake_client),
+            patch.object(chat_client, "record_provider_usage", side_effect=RuntimeError("db unavailable")),
+        ):
+            result = chat_client.chat([{"role": "user", "content": "hello"}])
+
+        self.assertEqual(result, "valid response")
+
     def test_evaluation_facade_routes_to_eval_model(self):
         captured = Mock(return_value=json.dumps({
             "verdict": "correct", "reason": "Accurate.",

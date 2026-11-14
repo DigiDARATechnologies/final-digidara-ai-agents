@@ -284,7 +284,10 @@ function normalizeLocation(value: string) {
   return [city, country].filter(Boolean).join(", ") || text;
 }
 function optionalProfileUrl(value: string): { value?: string; error?: string } {
-  const raw = clean(value);
+  // Some chat clients escape URL punctuation when they render copied text
+  // (for example, "www\\.linkedin.com"). Treat that as the URL the learner
+  // intended, rather than rejecting a valid profile link.
+  const raw = clean(value).replace(/\\([./:_-])/g, "$1");
   if (isSkip(raw) || /^(?:i\s+)?(?:do not|don't|dont) have (?:a |an )?(?:portfolio|website|profile)$/i.test(raw)) return {};
   if (/\s/.test(raw)) return { error: "Please enter one valid URL without spaces, or type Skip." };
   try {
@@ -1864,15 +1867,26 @@ async function handleResumeBuilderStep(state: ResumeBuilderFlowState, user: User
     }
   }
 
-  // A link replacement is deterministic, so a completed resume does not need
-  // an unnecessary LLM edit proposal just to change its portfolio address.
-  const portfolioEdit = clean(value).match(/(?:portfolio|website)(?:\s+(?:link|url))?\s*(?:is\s+now|is|to)?\s*((?:https?:\/\/|www\.)\S+|[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/\S*)?)/i);
-  if (portfolioEdit && state.resumeId && ["reviewing", "completed"].includes(state.step)) {
-    const result = await saveImportedProfessionalLink(state, user, "Portfolio", portfolioEdit[1], state.step, "");
+  // A profile link replacement is deterministic, so a completed resume does
+  // not need an unnecessary AI proposal just to add or correct LinkedIn,
+  // GitHub, or portfolio information. This also ensures the change is present
+  // in the next preview and PDF immediately.
+  const professionalLinkEdit = clean(value).match(
+    /\b(linked[\s-]?in|github|portfolio|website)\b[\s\S]*?((?:https?:\/\/|www\.)\S+|(?:linkedin\.com|github\.com)\/\S+|[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?:\/\S*)?)/i,
+  );
+  if (professionalLinkEdit && state.resumeId && ["reviewing", "completed"].includes(state.step)) {
+    const label = /linked[\s-]?in/i.test(professionalLinkEdit[1])
+      ? "LinkedIn"
+      : /github/i.test(professionalLinkEdit[1])
+        ? "GitHub"
+        : "Portfolio";
+    const normalized = optionalProfileUrl(professionalLinkEdit[2]);
+    if (normalized.error) return { state, messages: [{ text: normalized.error }] };
+    const result = await saveImportedProfessionalLink(state, user, label, normalized.value || professionalLinkEdit[2], state.step, "");
     if (result.state.step !== state.step) return result;
     return {
       ...result,
-      messages: [{ text: "Your portfolio link was updated. Your resume preview and PDF will use the new link." }],
+      messages: [{ text: `Your ${label} link was updated. Your resume preview and PDF will use the new link.` }],
     };
   }
 

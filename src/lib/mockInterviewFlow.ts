@@ -6,7 +6,7 @@ import {
 import { beginnerToAdvanced, displayRole, learnerGoal } from "./learnerContext";
 import { levelDifficulty, takeAssessmentLaunch, type AssessmentLaunch } from "./proctoring";
 
-export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "choose_question_count" | "in_interview" | "completed" | "error";
+export type MockInterviewStep = "choose_round" | "choose_mode" | "choose_role" | "awaiting_role" | "awaiting_subject" | "choose_difficulty" | "choose_question_count" | "in_interview" | "report_pending" | "completed" | "error";
 export interface MockInterviewFlowState {
   step: MockInterviewStep;
   sessionToken?: string;
@@ -128,7 +128,7 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
       // Every answer of the previous interview is in; only its report failed.
       // Finish it now instead of showing its last question again.
       const done = await finish(next);
-      if (!closedPrevious && done.state.step !== "completed" && /not ready to complete/i.test(done.state.error ?? "")) {
+      if (!closedPrevious && done.state.step !== "completed" && done.state.step !== "report_pending" && /not ready to complete/i.test(done.state.error ?? "")) {
         // That report can never be made, and it must not block the learner: close
         // the old interview (its answers stay scored) and start the one they asked for.
         const exited = await exitMockInterview(state.sessionToken!, q.interview_id, q.question_order).catch(() => null);
@@ -137,7 +137,14 @@ async function begin(state: MockInterviewFlowState, difficulty: "beginner" | "in
           return { ...fresh, messages: [{ text: `Your previous interview could not be continued, so it was closed. ${exitScoreText(exited, q.total_questions)}` }, ...fresh.messages] };
         }
       }
-      return { ...done, messages: [{ text: "Your previous interview was finished but its report wasn't ready. Here it is; you can start a new interview after it." }, ...done.messages] };
+      return {
+        ...done,
+        messages: [{
+          text: done.state.step === "report_pending"
+            ? "Your previous interview's saved answers are ready to review. The full report is still generating; retry it below."
+            : "Your previous interview was finished. Here is the report; you can start a new interview after it.",
+        }, ...done.messages],
+      };
     }
     const intro = q.resumed_existing ? "Resuming your interview in progress." : "Your interview has started. The question will be read aloud; you can speak or type your answer.";
     return { state: next, messages: [{ text: intro }, questionMessage(q.question, q.question_order, q.total_questions, next.realQuestionIndex)] };
@@ -167,12 +174,35 @@ export function exitScoreText(exited: MockInterviewExit, totalQuestions?: number
 async function finish(state: MockInterviewFlowState): Promise<MockInterviewFlowResult> {
   try {
     const summary = await endMockInterview(state.sessionToken!, state.interviewId!);
+    if (summary.provisional || summary.report_status === "provisional") {
+      return {
+        state: { ...state, step: "report_pending", summary, question: undefined, error: undefined },
+        messages: [{
+          text: summary.report_message || "Your saved answers are available in a provisional report. The full AI evaluation is still processing.",
+          options: [{ label: "Retry full report", value: "retry_report" }],
+        }],
+      };
+    }
     return {
       state: { ...state, step: "completed", summary, question: undefined },
       messages: [{ text: "Interview complete. Your scores and answer feedback are below. You can download your PDF report here.", options: restartOption }],
     };
   } catch (error) {
-    return { state: { ...state, step: "in_interview", question: undefined, error: errorText(error) }, messages: [{ text: `Your answers were saved, but the final report is still processing: ${errorText(error)}`, options: [{ label: "Retry final report", value: "retry_report" }, ...exitOption] }] };
+    const hasProvisional = Boolean(state.summary?.provisional);
+    return {
+      state: {
+        ...state,
+        step: hasProvisional ? "report_pending" : "in_interview",
+        question: undefined,
+        error: errorText(error),
+      },
+      messages: [{
+        text: `Your answers are saved, but the full report is still processing: ${errorText(error)}`,
+        options: hasProvisional
+          ? [{ label: "Retry full report", value: "retry_report" }]
+          : [{ label: "Retry final report", value: "retry_report" }, ...exitOption],
+      }],
+    };
   }
 }
 
@@ -302,6 +332,10 @@ export async function handleMockInterviewText(state: MockInterviewFlowState, use
       return begin({ ...state, questionCount }, state.difficulty ?? learnerDifficulty(), questionCount);
     }
     return { state, messages: [{ text: "Choose 5, 10, or 15 questions.", options: questionCountOptions }] };
+  }
+
+  if (state.step === "report_pending" && state.interviewId && value === "retry_report") {
+    return finish(state);
   }
 
   if (state.step === "in_interview" && state.interviewId && state.questionOrder) {

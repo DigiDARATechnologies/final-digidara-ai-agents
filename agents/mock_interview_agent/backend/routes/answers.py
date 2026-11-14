@@ -185,6 +185,7 @@ def submit_answer():
 
 def _submit_answer(data):
     interview_id = data["interview_id"]
+    set_log_context(interview_id=interview_id)
     question_order = data["question_order"]
     answer = data.get("answer") or ""
     time_taken_sec = data.get("time_taken_sec", 0)
@@ -252,6 +253,20 @@ def _submit_answer(data):
         "SELECT * FROM interview_details WHERE interview_id = %s ORDER BY question_order, id",
         (interview_id,), fetch=True,
     )
+    # Batch-evaluation answers are already committed before the learner moves
+    # on. A retry for that same saved answer must replay the next-step response
+    # without running save/quota/count/advance side effects again.
+    if (
+        saved_answer is not None
+        and submitted_answer
+        and " ".join(str(saved_answer).split()) == " ".join(submitted_answer.split())
+        and current.get("processing_status") == "answered"
+        and current.get("verdict") is None
+    ):
+        return _idempotent_batch_answer_response(
+            interview_id, question_order, current, interview_row,
+            rows, next_existing,
+        )
     asked_so_far = [r["question"] for r in rows]
     topic_areas_so_far = [
         row.get("topic_area")
@@ -369,6 +384,20 @@ def _submit_answer(data):
             answered_count = daily_answered_count(
                 interview_row["student_id"], usage_day
             )
+            if (
+                current.get("processing_status") == "answered"
+                and current.get("verdict") is None
+                and " ".join(str(current.get("answer") or "").split())
+                == " ".join(submitted_answer.split())
+            ):
+                fresh_rows, _ = db.query(
+                    "SELECT * FROM interview_details WHERE interview_id = %s ORDER BY question_order, id",
+                    (interview_id,), fetch=True,
+                )
+                return _idempotent_batch_answer_response(
+                    interview_id, question_order, current, interview_row,
+                    fresh_rows, next_existing,
+                )
         else:
             answered_count = usage_result["answered_count"]
     else:
@@ -446,6 +475,8 @@ def _submit_answer(data):
                 logging.ERROR,
                 "answer_evaluation_failed",
                 "Answer evaluation failed",
+                interview_id=interview_id,
+                student_id=interview_row.get("student_id"),
                 question_order=question_order,
                 exc_info=True,
             )
@@ -529,6 +560,59 @@ def _submit_answer(data):
         asked_so_far,
         topic_areas_so_far,
         extra=verdict_payload,
+    )
+
+
+def _idempotent_batch_answer_response(
+    interview_id, question_order, current, interview_row, rows, next_existing,
+):
+    """Return the normal next-step payload for an already-saved identical answer."""
+    question_limit = int(interview_row["num_questions"])
+    real_question_count = sum(
+        1 for row in rows
+        if not row.get("is_followup") and (
+            row.get("verdict") is not None or bool(row.get("timed_out"))
+            or row.get("answer") is not None
+        )
+    )
+    answered_count = daily_answered_count(interview_row["student_id"])
+    payload = {
+        "verdict": current.get("verdict"),
+        "verdict_reason": current.get("verdict_reason"),
+        "zero_marked": bool(current.get("timed_out")),
+        "answered_question_verdict": {
+            "question_order": current["question_order"],
+            "verdict": current.get("verdict"),
+            "reason": current.get("verdict_reason"),
+        },
+        "total_questions": question_limit,
+        **quota_payload(answered_count),
+    }
+    if real_question_count >= question_limit or payload["daily_limit_reached"]:
+        return jsonify({
+            "interview_id": interview_id,
+            "done": True,
+            "message": DAILY_LIMIT_MESSAGE if payload["daily_limit_reached"] else None,
+            **payload,
+        })
+    if next_existing:
+        return jsonify({
+            "interview_id": interview_id,
+            "question_order": next_existing["question_order"],
+            **format_question_for_display(next_existing),
+            "topic_area": next_existing.get("topic_area"),
+            "is_followup": bool(next_existing["is_followup"]),
+            "done": False,
+            **payload,
+        })
+    asked_so_far = [row["question"] for row in rows]
+    topic_areas_so_far = [
+        row.get("topic_area") for row in reversed(rows)
+        if not row.get("is_followup") and row.get("topic_area")
+    ]
+    return _issue_next_question(
+        interview_id, interview_row, question_order,
+        asked_so_far, topic_areas_so_far, extra=payload,
     )
 
 

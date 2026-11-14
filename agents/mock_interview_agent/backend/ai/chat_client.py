@@ -5,12 +5,13 @@ import logging
 import os
 
 from openai import OpenAI
-from services.ai_usage import measure_request, record_provider_usage
+from services.ai_usage import current_usage_context, measure_request, record_provider_usage
 
 
 OPENAI_REQUEST_TIMEOUT_SECONDS = float(
     os.environ.get("OPENAI_REQUEST_TIMEOUT_SECONDS", "20")
 )
+OPENAI_MAX_RETRIES = max(0, int(os.environ.get("OPENAI_MAX_RETRIES", "2")))
 OPENAI_QUESTION_TIMEOUT_SECONDS = float(
     os.environ.get("OPENAI_QUESTION_TIMEOUT_SECONDS", "10")
 )
@@ -73,6 +74,9 @@ def _get_client():
         client = OpenAI(
             api_key=os.environ["OPENAI_API_KEY"],
             timeout=OPENAI_REQUEST_TIMEOUT_SECONDS,
+            # The SDK retries transient network, timeout, 429 and 5xx errors
+            # with backoff. Keep the retry policy explicit and configurable.
+            max_retries=OPENAI_MAX_RETRIES,
         )
     return client
 
@@ -137,11 +141,9 @@ def transcribe_audio(
     transcription, response_time_ms = measure_request(
         lambda: _get_client().audio.transcriptions.create(**request_options)
     )
-    record_provider_usage(
-        transcription,
-        provider="openai",
-        model_name=TRANSCRIPTION_MODEL,
-        response_time_ms=response_time_ms,
+    _record_usage_safely(
+        transcription, model_name=TRANSCRIPTION_MODEL,
+        response_time_ms=response_time_ms, request_kind="audio_transcription",
     )
     text = transcription if isinstance(transcription, str) else transcription.text
     return (text or "").strip()
@@ -174,16 +176,14 @@ def chat(
     if timeout is not None or max_retries is not None:
         request_client = request_client.with_options(
             timeout=timeout if timeout is not None else OPENAI_REQUEST_TIMEOUT_SECONDS,
-            max_retries=max_retries if max_retries is not None else 2,
+            max_retries=max_retries if max_retries is not None else OPENAI_MAX_RETRIES,
         )
     response, response_time_ms = measure_request(
         lambda: request_client.chat.completions.create(**request_options)
     )
-    record_provider_usage(
-        response,
-        provider="openai",
-        model_name=model_name,
-        response_time_ms=response_time_ms,
+    _record_usage_safely(
+        response, model_name=model_name, response_time_ms=response_time_ms,
+        request_kind=request_kind,
     )
     if request_kind == "question_generation" and response_time_ms > 5000:
         usage = getattr(response, "usage", None)
@@ -202,6 +202,23 @@ def chat(
             },
         )
     return response.choices[0].message.content
+
+
+def _record_usage_safely(response, *, model_name, response_time_ms, request_kind):
+    """Usage telemetry must never turn a successful provider response into failure."""
+    try:
+        record_provider_usage(
+            response,
+            provider="openai",
+            model_name=model_name,
+            response_time_ms=response_time_ms,
+        )
+    except Exception:
+        logger.exception(
+            "Could not persist AI usage after successful provider response",
+            extra={"event": "ai_usage_persistence_failed", "request_kind": request_kind,
+                   "model_name": model_name, **current_usage_context()},
+        )
 
 
 def json_object(raw):

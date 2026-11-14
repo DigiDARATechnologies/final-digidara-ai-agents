@@ -476,3 +476,7 @@ html body .topbar .agent-ticker-chip { flex: none; height: 40px; padding: 0 16px
 html body .topbar .agent-ticker-icon { width: 26px; height: 26px; border-radius: 50%; }
 html body .topbar-right { margin-left: 0; flex: none; }
 @media (max-width: 900px) { html body .topbar .agent-ticker { display: none; } }
+
+/* Landing agent cards: the title is a real link to the agent's page (crawlable), looking exactly like the old plain title. */
+html body .lp-card h3 a.lp-card-title-link { color: inherit; text-decoration: none; }
+html body .lp-card h3 a.lp-card-title-link:hover { text-decoration: underline; }

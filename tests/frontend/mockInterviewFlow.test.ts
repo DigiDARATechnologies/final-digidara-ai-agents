@@ -270,3 +270,45 @@ test('Retry on a report that can never be made closes the interview instead of f
   expect(result.messages[0].text).toContain('could not be continued');
   jest.mocked(api.endMockInterview).mockReset();
 });
+
+test('a provisional scorecard remains visible and retry completes the full report', async () => {
+  const state = {
+    step: 'in_interview', sessionToken: 'token', interviewId: 31,
+    question: undefined, questionOrder: 5, totalQuestions: 5,
+  } as MockInterviewFlowState;
+  jest.mocked(api.endMockInterview).mockReset().mockResolvedValueOnce({
+    interview_id: 31, provisional: true, report_status: 'provisional', retryable: true,
+    report_message: 'Saved answers are ready; detailed evaluation is pending.',
+    overall_score: 6, total_marks: 3, max_marks: 5,
+  } as never).mockResolvedValueOnce({
+    interview_id: 31, overall_score: 7, total_marks: 4, max_marks: 5,
+  } as never);
+
+  const provisional = await handleMockInterviewText(state, user, 'retry_report');
+  expect(provisional.state.step).toBe('report_pending');
+  expect(provisional.state.summary?.provisional).toBe(true);
+  expect(provisional.messages[0].options).toEqual([
+    { label: 'Retry full report', value: 'retry_report' },
+  ]);
+
+  const completed = await handleMockInterviewText(provisional.state, user, 'retry_report');
+  expect(completed.state.step).toBe('completed');
+  expect(completed.state.summary?.overall_score).toBe(7);
+  expect(api.endMockInterview).toHaveBeenCalledTimes(2);
+  expect(api.exitMockInterview).not.toHaveBeenCalled();
+});
+
+test('a failed full-report retry keeps the provisional scorecard available', async () => {
+  const pending = {
+    step: 'report_pending', sessionToken: 'token', interviewId: 32,
+    summary: { interview_id: 32, provisional: true, report_status: 'provisional', overall_score: 4 },
+  } as MockInterviewFlowState;
+  jest.mocked(api.endMockInterview).mockReset().mockRejectedValueOnce(new Error('provider timeout'));
+
+  const result = await handleMockInterviewText(pending, user, 'retry_report');
+  expect(result.state.step).toBe('report_pending');
+  expect(result.state.summary).toEqual(pending.summary);
+  expect(result.messages[0].options).toEqual([
+    { label: 'Retry full report', value: 'retry_report' },
+  ]);
+});

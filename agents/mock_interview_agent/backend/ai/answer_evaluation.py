@@ -425,7 +425,11 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs, *, chat_fn):
 
 
 def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn):
-    """Evaluate all submitted answers in one request, preserving input order."""
+    """Evaluate submitted answers in one request.
+
+    Keep usable entries when a model returns a short or partly malformed list;
+    the caller validates and retries only question IDs without a valid verdict.
+    """
     prompt = (
         f"Evaluate all Q&A pairs for a {round_type} interview at {difficulty} difficulty. "
         f"{BEGINNER_TECHNICAL_RUBRIC if round_type == 'technical' and difficulty == 'beginner' else ''}"
@@ -439,13 +443,8 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     )
     value = _json_object(chat_fn([{"role": "system", "content": prompt}], json_mode=True))
     evaluations = value.get("evaluations")
-    if not isinstance(evaluations, list) or len(evaluations) != len(qa_pairs):
+    if not isinstance(evaluations, list):
         raise ValueError("The AI returned an invalid batch evaluation.")
-    for item, pair in zip(evaluations, qa_pairs):
-        if item.get("question_id") is None:
-            raise ValueError("The AI returned an invalid batch verdict.")
-        if not pair.get("unanswered") and item.get("verdict") not in {"correct", "partial", "wrong"}:
-            raise ValueError("The AI returned an invalid batch verdict.")
     return evaluations
 
 

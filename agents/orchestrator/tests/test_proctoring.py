@@ -156,6 +156,42 @@ def test_snapshots_are_checked_for_faces(api, database, monkeypatch):
         assert session.query(ProctorSnapshot).one().faces == 2
 
 
+def test_simulated_camera_is_opt_in_and_development_only(api, database, monkeypatch):
+    monkeypatch.setattr(service.config, "ALLOW_FAKE_CAMERA", True)
+    sid = api.post("/proctoring/sessions", headers=auth(), json={
+        "agent_name": "mock_interview_agent", "ref": "dev-fake-camera", "consent": True,
+    }).json()["id"]
+    assert api.get(f"/proctoring/sessions/{sid}", headers=auth()).json()["fake_camera_allowed"] is True
+
+    present = api.post(f"/proctoring/sessions/{sid}/snapshots", headers=auth(), json={
+        "image": "data:image/jpeg;base64," + JPEG, "simulated_faces": 1,
+    })
+    absent = api.post(f"/proctoring/sessions/{sid}/snapshots", headers=auth(), json={
+        "image": "data:image/jpeg;base64," + JPEG, "simulated_faces": 0,
+    })
+    assert present.status_code == absent.status_code == 200
+    assert absent.json()["integrity"] == 95
+    with database() as session:
+        snapshots = session.query(ProctorSnapshot).order_by(ProctorSnapshot.created_at).all()
+        assert sorted(row.faces for row in snapshots) == [0, 1]
+        assert all("Development-only" in row.note for row in snapshots)
+
+
+def test_production_proctoring_rejects_simulated_camera(api, monkeypatch):
+    monkeypatch.setattr(service.config, "ENV", "production")
+    # Defense in depth: even an accidental in-process override cannot enable it.
+    monkeypatch.setattr(service.config, "ALLOW_FAKE_CAMERA", True)
+    sid = api.post("/proctoring/sessions", headers=auth(), json={
+        "agent_name": "mock_interview_agent", "ref": "prod-no-fake-camera", "consent": True,
+    }).json()["id"]
+    state = api.get(f"/proctoring/sessions/{sid}", headers=auth()).json()
+    assert state["fake_camera_allowed"] is False
+    response = api.post(f"/proctoring/sessions/{sid}/snapshots", headers=auth(), json={
+        "image": "data:image/jpeg;base64," + JPEG, "simulated_faces": 1,
+    })
+    assert response.status_code == 403
+
+
 def test_old_snapshots_are_deleted(api, database):
     sid = api.post("/proctoring/sessions", headers=auth(),
                    json={"agent_name": "mock_interview_agent", "ref": "3", "consent": True}).json()["id"]

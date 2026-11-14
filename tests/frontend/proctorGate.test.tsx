@@ -2,6 +2,7 @@
 jest.mock('../../src/lib/proctorApi', () => ({
   startProctoring: jest.fn(), fetchProctorState: jest.fn(), sendProctorEvents: jest.fn(), sendProctorSnapshot: jest.fn(),
 }));
+jest.mock('../../src/lib/buildFlags', () => ({ IS_VITE_DEV: false }));
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import ProctorGate from '../../src/components/ProctorGate';

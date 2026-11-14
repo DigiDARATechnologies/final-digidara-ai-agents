@@ -93,6 +93,7 @@ export default function ResultScreen({ result, onDone, onStartAgain, onPracticeW
         </div>
       </section>
 
+
       <SectionCard
         className="interview-integrity-section"
         title="Interview Focus"

@@ -693,6 +693,33 @@ Responses API web-search tool restricted to Glassdoor and GeeksforGeeks.
 
 ## Testing and Linting
 
+### Hard/Professional camera testing
+
+Hard and Professional practice interviews require a working camera in normal
+use. If the camera cannot start, the consent gate blocks the questions with a
+clear error; the camera requirement is not disabled in production. Camera and
+integrity observations are recorded separately and are not part of the
+answer-evaluation score or AI prompt. The report states this explicitly.
+
+For local development only, set `ENV=dev` and `ALLOW_FAKE_CAMERA=true` in
+`agents/orchestrator/.env`, then start the app with Vite's development server.
+Open the local page with `?devFakeCamera=1` appended, for example
+`http://localhost:5173/?devFakeCamera=1`. Fake mode requires both the Vite
+development build and the local orchestrator opt-in; production builds always
+use the real camera path, and a production orchestrator rejects simulated face
+metadata. The generated preview cycles through one face, no face, and two face
+frames so the local proctoring flow can be exercised. These synthetic
+observations are not valid evidence and must not be used for assessment.
+
+Another local-only option is Chrome's fake media device:
+
+```text
+chrome.exe --use-fake-device-for-media-stream --use-fake-ui-for-media-stream "http://localhost:5173/"
+```
+
+Phone-as-webcam apps and OBS Virtual Camera are other ways to provide a test
+video input. Do not use fake inputs for a real assessment.
+
 ### Backend tests
 
 From the backend directory:

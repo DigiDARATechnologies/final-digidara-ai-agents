@@ -94,6 +94,113 @@ def get_ai_response_text(prompt, max_tokens=600):
     raise RuntimeError("AI_PROVIDER must be one of: 'openai', 'anthropic', or 'groq'")
 
 
+def ai_provider_is_unconfigured():
+    """True only when local development has no usable remote AI provider.
+
+    This deliberately does not hide remote-provider failures such as rate
+    limits or authentication errors. Those still reach the user unchanged.
+    """
+    provider = os.environ.get("AI_PROVIDER", "").strip().lower()
+    if provider in {"", "local"}:
+        return True
+    required_key = {
+        "openai": "OPENAI_API_KEY",
+        "groq": "GROQ_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+    }.get(provider)
+    return bool(required_key and not os.environ.get(required_key, "").strip())
+
+
+def local_grounded_resume_draft(resume, target_role):
+    """Create a review-only offline draft without fabricating candidate facts."""
+    proposed = dict(resume)
+    role = str(target_role or proposed.get("target_role") or "").strip()
+    summary = re.sub(r"\s+", " ", str(proposed.get("summary") or "")).strip()
+    if summary:
+        proposed["summary"] = ensure_target_role_in_summary(summary, role) if role else summary
+    else:
+        skills = [
+            str(item.get("skill_name") if isinstance(item, dict) else item).strip()
+            for item in (proposed.get("skills") or [])
+        ]
+        skills = [skill for skill in skills if skill][:6]
+        if role and skills:
+            proposed["summary"] = f"Candidate targeting {role} with verified skills in {', '.join(skills)}."
+        elif role:
+            proposed["summary"] = f"Candidate targeting {role}."
+
+    return proposed
+
+
+_EDUCATION_DEGREE = re.compile(
+    r"\b(?:b\.?\s?(?:com|sc|ca|tech|e|ba|bba|pharm|arch|ed|des|voc)|"
+    r"m\.?\s?(?:com|sc|ca|tech|e|ba|phil|pharm|arch|ed)|mba|mca|"
+    r"bachelor(?:'?s)?|master(?:'?s)?|diploma|ph\.?d|doctorate)\b",
+    re.IGNORECASE,
+)
+_EDUCATION_SCHOOL = re.compile(r"\b(?:college|university|institute|institution|school|academy|polytechnic)\b", re.IGNORECASE)
+
+
+def _education_entry_from_edit(edit_request):
+    """Read a concise education edit locally, without inventing any fields.
+
+    The chat UI commonly sends colon-delimited text such as ``PG: MCA: KSR
+    College: 2023-2025: CGPA 9.1``. Treating colons like the documented comma
+    and pipe separators makes the offline proposal path useful too.
+    """
+    request_text = str(edit_request or "").strip()
+    label_match = re.search(r"\b(UG|PG|Diploma|Doctorate)\s*[:\-]", request_text, re.IGNORECASE)
+    if label_match:
+        label = label_match.group(1).upper()
+        content = request_text[label_match.end():]
+    else:
+        label = ""
+        content = request_text
+
+    if not label and "education" not in request_text.lower():
+        return None
+    parts = [part.strip(" .") for part in re.split(r"\s*(?:[|,;:]|\n)\s*", content) if part.strip(" .")]
+    degree = next((part for part in parts if _EDUCATION_DEGREE.search(part)), "")
+    school = next((part for part in parts if _EDUCATION_SCHOOL.search(part)), "")
+    if not degree or not school:
+        return None
+
+    years = re.findall(r"\b(?:19|20)\d{2}\b", content)
+    cgpa_match = re.search(r"\b(?:cgpa|gpa)\s*[:\-]?\s*(\d+(?:\.\d+)?(?:\s*/\s*\d+(?:\.\d+)?)?)", content, re.IGNORECASE)
+    percentage_match = re.search(r"\b(?:percentage|percent)\s*[:\-]?\s*(\d+(?:\.\d+)?%?)", content, re.IGNORECASE)
+    normalized_degree = degree.upper() if re.fullmatch(r"[A-Za-z. ]+", degree) and len(degree) <= 8 else degree
+    entry = {"school": school, "degree": normalized_degree, "level": label}
+    if len(years) > 1:
+        entry["start_date"] = years[0]
+    if years:
+        entry["end_date"] = years[-1]
+    if cgpa_match:
+        entry["cgpa"] = re.sub(r"\s+", "", cgpa_match.group(1))
+    if percentage_match:
+        percentage = percentage_match.group(1)
+        entry["percentage"] = percentage if percentage.endswith("%") else f"{percentage}%"
+    return entry
+
+
+def local_grounded_resume_edit(resume, edit_request):
+    """Apply only explicit, structured facts that can be safely parsed offline."""
+    proposed = local_grounded_resume_draft(resume, resume.get("target_role") or resume.get("title") or "")
+    entry = _education_entry_from_edit(edit_request)
+    if not entry:
+        return proposed, []
+
+    education = [dict(item) for item in (proposed.get("education") or []) if isinstance(item, dict)]
+    identity = (entry["degree"].strip().lower(), entry["school"].strip().lower(), entry.get("end_date", ""))
+    if not any(
+        (str(item.get("degree") or "").strip().lower(), str(item.get("school") or "").strip().lower(), str(item.get("end_date") or "")) == identity
+        for item in education
+    ):
+        education.append(entry)
+    proposed["education"] = education
+    detail = " | ".join(filter(None, [entry["level"], entry["degree"], entry["school"], entry.get("start_date"), entry.get("end_date"), f"CGPA {entry['cgpa']}" if entry.get("cgpa") else ""]))
+    return proposed, [f"Added education: {detail}."]
+
+
 def parse_ai_json(raw_text):
     """Extract the JSON object from an LLM response without accepting invalid data."""
     text = raw_text.strip() if isinstance(raw_text, str) else ""
@@ -950,9 +1057,10 @@ def optimize_resume():
     """Generate a fully AI-optimized version of a resume: summary plus bullets for
     every experience and project entry that has enough raw input to work with.
     Reuses the same prompt builders and truthfulness rules as the single-field AI
-    actions above. Never falls back to canned/template content - any AI failure
-    (missing key, auth failure, invalid response, etc.) returns a specific error
-    instead of partially- or fully-fabricated resume content.
+    actions above. When no provider is configured locally, it returns a clearly
+    labelled, review-only draft based solely on verified candidate data. Remote
+    provider failures still return their specific error instead of fabricated
+    content.
     """
     payload = request.get_json(silent=True) or {}
     resume = payload.get("resume")
@@ -979,6 +1087,30 @@ def optimize_resume():
         return error_response("target_role is required", 400)
     if len(resolved_role) > 255:
         return error_response("target_role must not exceed 255 characters", 413)
+
+    if ai_provider_is_unconfigured():
+        optimized = local_grounded_resume_draft(resume, resolved_role)
+        return jsonify({
+            "resume": optimized,
+            "provider": "local_fallback",
+            "note": "Created a grounded local draft from verified resume details. Review and approve it before saving.",
+            "skipped": [{
+                "section": "ai_generation",
+                "reason": "No AI provider is configured, so no facts or bullet points were invented.",
+            }],
+            "generated": {
+                "summary": bool(optimized.get("summary")),
+                "skills": 0,
+                "education": 0,
+                "certifications": 0,
+                "experience": 0,
+                "projects": 0,
+                "achievements": 0,
+                "declaration": False,
+            },
+            "role_alignment": role_alignment(resume, resolved_role),
+            "role_analysis": role_alignment(resume, resolved_role),
+        }), 200
 
     try:
         optimized = dict(resume)
@@ -1191,6 +1323,24 @@ def suggest_resume_edit():
         return error_response("edit_request is required", 400)
     if not isinstance(resume, dict) or not resume:
         return error_response("Missing required field(s): resume", 400)
+
+    if ai_provider_is_unconfigured():
+        proposed, parsed_changes = local_grounded_resume_edit(resume, edit_request)
+        changes = parsed_changes or [
+            "Prepared a grounded local draft from your verified resume details.",
+            "No facts, achievements, or experience entries were added without an AI provider.",
+        ]
+        warnings = [] if parsed_changes else [
+            "Review the proposal before saving. Connect an AI provider for wording suggestions beyond your existing details.",
+        ]
+        return jsonify({
+            "resume": proposed,
+            "proposed_resume": proposed,
+            "changes": changes,
+            "warnings": warnings,
+            "requires_confirmation": True,
+            "provider": "local_fallback",
+        }), 200
 
     try:
         parsed = get_ai_json_response(

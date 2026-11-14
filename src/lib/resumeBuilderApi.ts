@@ -229,7 +229,8 @@ export async function previewResumePdf(userId: string, resume: Record<string, un
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || "Resume preview failed");
   const blob = await response.blob();
   if (!blob.size) throw new Error("The generated preview was empty. Please try again.");
-  return blob;
+  const pageCount = Number(response.headers.get("X-Resume-Page-Count"));
+  return { blob, pageCount: Number.isInteger(pageCount) && pageCount > 0 ? pageCount : undefined };
 }
 
 export interface ResumeChatTurnInput {

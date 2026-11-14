@@ -55,6 +55,25 @@ test('live interview shows the question, a 60-second timer, and typed-answer fal
   jest.useRealTimers();
 });
 
+test('provisional report shows saved scores, retry action and no PDF download', () => {
+  const onRetryReport = jest.fn();
+  const state: MockInterviewFlowState = {
+    step: 'report_pending', sessionToken: 'session', interviewId: 42,
+    summary: {
+      interview_id: 42, provisional: true, report_status: 'provisional',
+      report_message: 'Saved answers are available while the full report is generating.',
+      overall_score: 6, technical_accuracy: 6, total_marks: 3, max_marks: 5,
+    },
+  };
+  render(<MockInterviewPanel state={state} busy={false} onAnswer={jest.fn()} onExit={jest.fn()} onRetryReport={onRetryReport} />);
+  expect(screen.getByText('REPORT PENDING')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Saved answers are available');
+  expect(screen.getByText('Provisional score from saved per-question verdicts.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Download PDF report' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry full report' }));
+  expect(onRetryReport).toHaveBeenCalledTimes(1);
+});
+
 test('timer expiry submits an unanswered question as timed out', async () => {
   jest.useFakeTimers();
   const onAnswer = jest.fn();

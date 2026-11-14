@@ -30,6 +30,7 @@ from services.interview_state import (
 )
 from services.focus_tracking import finalize_open_focus_events, focus_summary
 from services.ai_usage import track_ai_usage
+from services.interview_evaluation_lock import interview_evaluation_lock
 from services.role_interviews import (
     normalize_weak_topic_areas,
     role_subject_prompt,
@@ -101,15 +102,80 @@ EVALUATION_BUDGET_SECONDS = 100
 FINAL_EVALUATION_LATEST_START_SECONDS = 110
 
 
+def _provisional_report_payload(interview_row, interview_id, rows, reason):
+    """Build a visible, retryable report from persisted per-question scores."""
+    scorecard, total_marks, max_marks = scoring.build_scorecard(rows)
+    score = round((total_marks / max_marks) * 10, 1) if max_marks else 0.0
+    try:
+        role_breakdown = (
+            subject_breakdown(rows)
+            if interview_row.get("interview_mode") in {"role", "weak_topic_practice"}
+            else None
+        )
+    except Exception:
+        log(logging.WARNING, "provisional_subject_breakdown_failed",
+            "Could not calculate provisional role breakdown", exc_info=True)
+        role_breakdown = None
+
+    strengths = (role_breakdown or {}).get("strong_subjects", [])
+    weaknesses = (role_breakdown or {}).get("weak_subjects", [])
+    weaknesses += (role_breakdown or {}).get("not_assessed_subjects", [])
+    if not strengths:
+        strengths = ["Your submitted answers have been saved."]
+    if not weaknesses:
+        weaknesses = ["AI summary and detailed feedback are still pending."]
+    integrity = {}
+    try:
+        integrity = focus_summary(interview_id)
+    except Exception:
+        log(logging.WARNING, "provisional_focus_summary_failed",
+            "Could not calculate provisional interview focus summary", exc_info=True)
+    return {
+        "interview_id": interview_id,
+        "round_type": interview_row["round_type"],
+        "interview_mode": interview_row.get("interview_mode", "course"),
+        "role_name": interview_row.get("role_name"),
+        "overall_score": score,
+        "technical_accuracy": score,
+        "communication_clarity": None,
+        "confidence": None,
+        "strengths": json.dumps(strengths[:4], ensure_ascii=False),
+        "weaknesses": json.dumps(weaknesses[:4], ensure_ascii=False),
+        "feedback": (
+            "This provisional report uses the question scores already saved. "
+            "The detailed AI evaluation is still generating; retry to complete your report."
+        ),
+        "proctoring_note": (
+            "Camera and integrity observations are handled separately and are not part of the interview answer score."
+        ),
+        "question_results": rows,
+        "scorecard": scorecard,
+        "total_marks": total_marks,
+        "max_marks": max_marks,
+        "subject_breakdown": role_breakdown,
+        "provisional": True,
+        "report_status": "provisional",
+        "retryable": True,
+        "report_message": "Your saved answers are shown below. The full report is still generating; you can retry safely.",
+        **integrity,
+    }
+
+
+def _provisional_report_response(interview_row, interview_id, rows, reason):
+    return jsonify(_provisional_report_payload(interview_row, interview_id, rows, reason))
+
+
 def _unanswered(row):
     return bool(row.get("timed_out") or row.get("processing_status") == "skipped")
 
 
 def _evaluate_chunk(interview_row, interview_id, rows):
-    """One evaluator request for these rows: {row id: valid result}. Results
-    are matched to rows by position (the prompt asks for the same order), so
-    a reply that numbers them 1, 2, 3 instead of using the ids still counts;
-    a result without a valid verdict for an answered question is left out."""
+    """Return individually valid results keyed by question row ID.
+
+    Full ordered replies numbered 1..N remain supported for older model
+    responses. Partial replies must carry the actual question IDs, so a result
+    can never accidentally be applied to the wrong answer.
+    """
     with track_ai_usage(
         student_id=interview_row["student_id"],
         interview_id=interview_id,
@@ -128,15 +194,27 @@ def _evaluate_chunk(interview_row, interview_id, rows):
     by_id = {}
     ids = {int(row["id"]) for row in rows}
     returned_ids = [item.get("question_id") for item in evaluations if isinstance(item, dict)]
-    use_ids = len(returned_ids) == len(evaluations) and {_as_int(value) for value in returned_ids} == ids
+    parsed_ids = [_as_int(value) for value in returned_ids]
+    use_ids = len(returned_ids) == len(evaluations) and set(parsed_ids) == ids
+    ordinal_ids = len(evaluations) == len(rows) and parsed_ids == list(range(1, len(rows) + 1))
     for position, item in enumerate(evaluations):
         if not isinstance(item, dict):
+            logger.warning("Ignoring malformed batch evaluation item for interview %s", interview_id)
             continue
         if use_ids:
             row_id = _as_int(item.get("question_id"))
-        elif len(evaluations) == len(rows):
+        elif ordinal_ids:
             row_id = int(rows[position]["id"])
         else:
+            # Partial results can only be safely associated via the actual
+            # database row ID. Missing, duplicate, or out-of-scope IDs are
+            # omitted and retried by _batch_evaluations_or_error.
+            row_id = _as_int(item.get("question_id"))
+            if row_id not in ids:
+                logger.warning("Ignoring unmatched batch evaluation item for interview %s", interview_id)
+                continue
+        if row_id in by_id:
+            logger.warning("Ignoring duplicate batch evaluation for interview %s question %s", interview_id, row_id)
             continue
         row = next((r for r in rows if int(r["id"]) == row_id), None)
         if row is None:
@@ -170,7 +248,13 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
     try:
         results.update(_evaluate_chunk(interview_row, interview_id, pending_rows))
     except Exception:
-        logger.exception("Batch interview evaluation failed for interview %s; retrying in smaller groups", interview_id)
+        logger.exception(
+            "Batch evaluation failed; retrying missing answers in smaller groups",
+            extra={"event": "interview_batch_evaluation_failed",
+                   "interview_id": interview_id,
+                   "student_id": interview_row.get("student_id"),
+                   "difficulty": interview_row.get("difficulty")},
+        )
     for attempt in range(2):
         missing = [row for row in pending_rows if int(row["id"]) not in results]
         if not missing or time.monotonic() - started >= EVALUATION_BUDGET_SECONDS:
@@ -183,7 +267,14 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
             try:
                 results.update(_evaluate_chunk(interview_row, interview_id, missing[start:start + EVALUATION_CHUNK_SIZE]))
             except Exception:
-                logger.exception("Interview evaluation group failed for interview %s", interview_id)
+                logger.exception(
+                    "A batch evaluation retry failed",
+                    extra={"event": "interview_batch_evaluation_group_failed",
+                           "interview_id": interview_id,
+                           "student_id": interview_row.get("student_id"),
+                           "difficulty": interview_row.get("difficulty"),
+                           "attempt": attempt + 1},
+                )
     # An unanswered question needs no verdict: an omitted one gets an empty result.
     for row in pending_rows:
         if int(row["id"]) not in results and _unanswered(row):
@@ -191,7 +282,14 @@ def _batch_evaluations_or_error(interview_row, interview_id, pending_rows):
             results[int(row["id"])] = {"question_id": int(row["id"]), "verdict": None, "reason": None, "ideal_answer": None}
     missing = [row["id"] for row in pending_rows if int(row["id"]) not in results]
     if missing:
-        logger.error("Interview %s: no valid evaluation for question(s) %s", interview_id, missing)
+        logger.error(
+            "Some answer rows still have no valid evaluation after retries",
+            extra={"event": "interview_batch_evaluation_missing_verdicts",
+                   "interview_id": interview_id,
+                   "student_id": interview_row.get("student_id"),
+                   "difficulty": interview_row.get("difficulty"),
+                   "missing_question_ids": missing},
+        )
         # Keep what was graded, so a retry only asks about the rest.
         for row in pending_rows:
             item = results.get(int(row["id"]))
@@ -659,9 +757,74 @@ def daily_usage(student_id):
 
 @interviews_bp.route("/end_interview", methods=["POST"])
 def end_interview():
-    request_started = time.monotonic()
     data = request.get_json(silent=True) or {}
     interview_id = positive_int(data.get("interview_id"), "interview_id")
+    set_log_context(interview_id=interview_id)
+    evaluation_lock = interview_evaluation_lock(interview_id)
+    try:
+        acquired = evaluation_lock.__enter__()
+    except Exception:
+        try:
+            interview_context, _ = db.query(
+                "SELECT student_id FROM interviews WHERE id = %s",
+                (interview_id,), fetchone=True,
+            )
+            if interview_context:
+                set_log_context(student_id=interview_context.get("student_id"))
+        except Exception:
+            logger.exception("Could not retrieve student context for failed evaluation lock; interview_id=%s", interview_id)
+        log(
+            logging.ERROR,
+            "final_interview_evaluation_lock_failed",
+            "Could not safely acquire the final evaluation lock",
+            exc_info=True,
+        )
+        try:
+            context, _ = db.query("SELECT * FROM interviews WHERE id = %s", (interview_id,), fetchone=True)
+            fallback_rows, _ = db.query(
+                "SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, topic_area, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id",
+                (interview_id,), fetch=True,
+            )
+            if context:
+                set_log_context(student_id=context.get("student_id"))
+                return _provisional_report_response(
+                    context, interview_id, fallback_rows,
+                    "The evaluation lock was temporarily unavailable.",
+                )
+        except Exception:
+            logger.exception("Could not build a provisional report after lock failure; interview_id=%s", interview_id)
+        return jsonify({"error": "The report is still processing. Please retry shortly.", "retryable": True, "interview_id": interview_id}), 503
+    if not acquired:
+        evaluation_lock.__exit__(None, None, None)
+        log(
+            logging.WARNING,
+            "final_interview_evaluation_already_running",
+            "A final evaluation for this interview is already running",
+        )
+        try:
+            context, _ = db.query("SELECT * FROM interviews WHERE id = %s", (interview_id,), fetchone=True)
+            fallback_rows, _ = db.query(
+                "SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, topic_area, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id",
+                (interview_id,), fetch=True,
+            )
+            if context:
+                set_log_context(student_id=context.get("student_id"))
+                return _provisional_report_response(
+                    context, interview_id, fallback_rows,
+                    "Another evaluation request is already running.",
+                )
+        except Exception:
+            logger.exception("Could not build a provisional report while another evaluation runs; interview_id=%s", interview_id)
+        return jsonify({"error": "The report is still processing. Please retry shortly.", "retryable": True, "interview_id": interview_id}), 503
+    try:
+        return _end_interview_locked(interview_id)
+    finally:
+        evaluation_lock.__exit__(None, None, None)
+
+
+def _end_interview_locked(interview_id):
+    request_started = time.monotonic()
+    db_started = request_started
     set_log_context(interview_id=interview_id)
 
     interview_row, _ = db.query(
@@ -673,12 +836,26 @@ def end_interview():
 
     rows, _ = db.query(
         """SELECT question_order, id, question, answer, time_taken_sec, is_followup,
-                  answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag,
+                  answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, topic_area,
                   timed_out, processing_status
            FROM interview_details
            WHERE interview_id = %s
            ORDER BY question_order, id""",
         (interview_id,), fetch=True,
+    )
+    db_retrieval_ms = round((time.monotonic() - db_started) * 1000)
+    answer_characters = sum(len(row.get("answer") or "") for row in rows)
+    log(
+        logging.INFO,
+        "final_interview_evaluation_started",
+        "Final report workflow started",
+        difficulty=interview_row.get("difficulty"),
+        round_type=interview_row.get("round_type"),
+        camera_frames_in_evaluation=0,
+        question_count=sum(1 for row in rows if not row.get("is_followup")),
+        answer_characters=answer_characters,
+        db_retrieval_ms=db_retrieval_ms,
+        evaluator_model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
     )
     # Batch-evaluate all submitted answers once, then persist each result by
     # the database question id before building the final scorecard.
@@ -692,13 +869,30 @@ def end_interview():
         # New interviews contain only main questions. Keep this filter for
         # historical interviews that already have follow-up rows.
         pending_rows = batch_rows
+        batch_started = time.monotonic()
         evaluations, evaluation_error = _batch_evaluations_or_error(interview_row, interview_id, pending_rows)
+        log(
+            logging.INFO if not evaluation_error else logging.ERROR,
+            "final_answer_batch_evaluation_finished",
+            "Answer batch evaluation finished",
+            duration_ms=round((time.monotonic() - batch_started) * 1000),
+            pending_question_count=len(pending_rows),
+            answer_characters=answer_characters,
+            succeeded=evaluation_error is None,
+        )
         if evaluation_error:
-            return jsonify({
-                "error": "Interview evaluation is temporarily unavailable. Please retry shortly or contact support.",
-                "retryable": True,
-                "interview_id": interview_id,
-            }), 503
+            log(logging.ERROR, "interview_answer_evaluation_incomplete",
+                "Returning a provisional report because some answer verdicts are missing",
+                reason=evaluation_error, interview_id=interview_id,
+                student_id=interview_row.get("student_id"))
+            rows, _ = db.query(
+                "SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, topic_area, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id",
+                (interview_id,), fetch=True,
+            )
+            return _provisional_report_response(
+                interview_row, interview_id, rows,
+                "Some answer evaluations are not available yet.",
+            )
         by_id = {int(item["question_id"]): item for item in evaluations}
         for row in pending_rows:
             item = by_id[int(row["id"])]
@@ -706,7 +900,7 @@ def end_interview():
                 db.query("UPDATE interview_details SET ideal_answer=%s WHERE id=%s", (item.get("ideal_answer"), row["id"]))
             else:
                 db.query("UPDATE interview_details SET verdict=%s, verdict_reason=%s, ideal_answer=%s, processing_status='evaluated' WHERE id=%s", (item["verdict"], item.get("reason"), item.get("ideal_answer"), row["id"]))
-        rows, _ = db.query("SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id", (interview_id,), fetch=True)
+        rows, _ = db.query("SELECT id, question_order, question, answer, time_taken_sec, is_followup, answer_audio_path, verdict, verdict_reason, ideal_answer, subject_tag, topic_area, timed_out, processing_status FROM interview_details WHERE interview_id=%s ORDER BY question_order, id", (interview_id,), fetch=True)
     scorecard, total_marks, max_marks = scoring.build_scorecard(rows)
     role_breakdown = subject_breakdown(rows) if interview_row.get("interview_mode") in {"role", "weak_topic_practice"} else None
 
@@ -745,7 +939,15 @@ def end_interview():
                 "Could not calculate the post-completion token usage summary",
                 exc_info=True,
             )
-        integrity = focus_summary(interview_id)
+        try:
+            integrity = focus_summary(interview_id)
+        except Exception:
+            log(logging.WARNING, "completed_interview_focus_summary_failed",
+                "Could not load optional focus telemetry for the saved report",
+                exc_info=True, interview_id=interview_id,
+                student_id=interview_row.get("student_id"),
+                difficulty=interview_row.get("difficulty"))
+            integrity = {}
         return jsonify({
             "round_type": interview_row["round_type"],
             "interview_id": interview_id,
@@ -763,6 +965,7 @@ def end_interview():
             "interview_mode": interview_row.get("interview_mode", "course"),
             "role_name": interview_row.get("role_name"),
             "subject_breakdown": role_breakdown,
+            "proctoring_note": "Camera and integrity observations are handled separately and are not part of the interview answer score.",
             **integrity,
         })
     if interview_row["status"] != "in_progress":
@@ -801,32 +1004,61 @@ def end_interview():
         and not row.get("timed_out")
     ]
     if time.monotonic() - request_started >= FINAL_EVALUATION_LATEST_START_SECONDS:
-        log(logging.WARNING, "final_interview_evaluation_deferred", "Evaluation was slow; asking the learner to retry for the report")
-        return jsonify({
-            "error": "Final evaluation is temporarily unavailable. Please retry.",
-            "retryable": True,
-        }), 503
+        log(logging.WARNING, "final_interview_evaluation_deferred", "Evaluation was slow; asking the learner to retry for the report",
+            difficulty=interview_row.get("difficulty"), camera_frames_in_evaluation=0)
+        return _provisional_report_response(
+            interview_row, interview_id, rows,
+            "The final AI evaluation was deferred because the request was near its time limit.",
+        )
     try:
-        with track_ai_usage(
-            student_id=interview_row["student_id"],
-            interview_id=interview_id,
-            request_type="final_interview_evaluation",
-        ):
-            result = groq_client.evaluate_interview(
-                interview_row["round_type"], interview_row["subject"],
-                interview_row["difficulty"], qa_pairs,
-            )
+        final_ai_started = time.monotonic()
+        for attempt in range(2):
+            try:
+                with track_ai_usage(
+                    student_id=interview_row["student_id"],
+                    interview_id=interview_id,
+                    request_type="final_interview_evaluation",
+                ):
+                    result = groq_client.evaluate_interview(
+                        interview_row["round_type"], interview_row["subject"],
+                        interview_row["difficulty"], qa_pairs,
+                    )
+                break
+            except (ValueError, json.JSONDecodeError):
+                if attempt:
+                    raise
+                log(logging.WARNING, "final_interview_evaluation_invalid_response",
+                    "Final evaluation response was malformed; retrying once",
+                    attempt=attempt + 1, interview_id=interview_id,
+                    student_id=interview_row.get("student_id"), exc_info=True)
+        log(
+            logging.INFO,
+            "final_interview_ai_evaluation_finished",
+            "Final scorecard provider request finished",
+            duration_ms=round((time.monotonic() - final_ai_started) * 1000),
+            question_count=len(qa_pairs),
+            answer_characters=sum(len(pair.get("answer") or "") for pair in qa_pairs),
+            provider="openai",
+            model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
+        )
     except Exception:
         log(
             logging.ERROR,
             "final_interview_evaluation_failed",
             "Final interview evaluation failed",
+            duration_ms=round((time.monotonic() - final_ai_started) * 1000) if "final_ai_started" in locals() else None,
+            question_count=len(qa_pairs),
+            answer_characters=sum(len(pair.get("answer") or "") for pair in qa_pairs),
+            provider="openai",
+            model=getattr(groq_client, "EVAL_MODEL", "configured-evaluator"),
+            difficulty=interview_row.get("difficulty"),
+            camera_frames_in_evaluation=0,
             exc_info=True,
         )
-        return jsonify({
-            "error": "Final evaluation is temporarily unavailable. Please retry.",
-            "retryable": True,
-        }), 503
+        return _provisional_report_response(
+            interview_row, interview_id, rows,
+            "The full AI evaluation could not be completed yet.",
+        )
 
     _apply_unanswered_score_adjustment(result, rows)
     scoring.align_scores_with_marks(result, total_marks, max_marks)
@@ -843,10 +1075,17 @@ def end_interview():
             for subject in role_breakdown.get("not_assessed_subjects", [])
         ] or ["No weak role subjects were identified in this session."])
 
-    integrity = finalize_open_focus_events(interview_id)
+    try:
+        integrity = finalize_open_focus_events(interview_id)
+    except Exception:
+        log(logging.WARNING, "final_interview_focus_finalize_failed",
+            "Could not finalize optional focus telemetry", exc_info=True)
+        integrity = {}
 
-    db.query(
-        """UPDATE interviews SET
+    report_save_started = time.monotonic()
+    try:
+        db.query(
+            """UPDATE interviews SET
              status='completed', ended_at = NOW(),
              overall_score=%s, technical_accuracy=%s, communication_clarity=%s,
              confidence=%s, avg_time_taken_sec=%s,
@@ -858,8 +1097,30 @@ def end_interview():
             result["strengths"], result["weaknesses"], result["feedback"],
             interview_id,
         ),
+        )
+    except Exception:
+        log(logging.ERROR, "final_interview_report_persistence_failed",
+            "Could not persist the final AI report; returning provisional scores",
+            exc_info=True, interview_id=interview_id,
+            student_id=interview_row.get("student_id"))
+        return _provisional_report_response(
+            interview_row, interview_id, rows,
+            "The final report could not be saved yet.",
+        )
+    log(
+        logging.INFO,
+        "final_interview_report_persisted",
+        "Final interview report persisted",
+        db_save_ms=round((time.monotonic() - report_save_started) * 1000),
+        total_duration_ms=round((time.monotonic() - request_started) * 1000),
+        question_count=sum(1 for row in rows if not row.get("is_followup")),
+        answer_characters=answer_characters,
     )
-    dashboard_cache.invalidate(interview_row["student_id"])
+    try:
+        dashboard_cache.invalidate(interview_row["student_id"])
+    except Exception:
+        log(logging.WARNING, "final_interview_dashboard_cache_invalidation_failed",
+            "Could not invalidate the dashboard cache after report persistence", exc_info=True)
 
     # Emit a one-line token budget summary immediately after the completion
     # write.  Usage rows may be absent for calls that failed before a provider
@@ -920,6 +1181,9 @@ def end_interview():
     result["scorecard"] = scorecard
     result["total_marks"] = total_marks
     result["max_marks"] = max_marks
+    result["proctoring_note"] = (
+        "Camera and integrity observations are handled separately and are not part of the interview answer score."
+    )
     result.update(integrity)
     return jsonify(result)
 

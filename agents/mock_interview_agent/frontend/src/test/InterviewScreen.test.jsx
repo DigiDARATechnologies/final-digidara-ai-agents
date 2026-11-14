@@ -345,4 +345,57 @@ describe("interview answer submission", () => {
     );
     expect(await screen.findByText("What does a Python tuple guarantee?")).toBeInTheDocument();
   });
+
+  it("retries final report generation without resubmitting the saved answer", async () => {
+    const user = userEvent.setup();
+    apiMocks.submitAnswer.mockResolvedValueOnce({ done: true });
+    apiMocks.endInterview
+      .mockRejectedValueOnce(new Error("Final evaluation is temporarily unavailable"))
+      .mockResolvedValueOnce({ overall_score: 8, question_results: [] });
+    const onFinished = vi.fn();
+    render(
+      <InterviewScreen
+        interviewId={42}
+        firstQuestion="What is a Python list?"
+        difficulty="advanced"
+        totalQuestions={1}
+        onFinished={onFinished}
+        onExited={vi.fn()}
+      />
+    );
+
+    const answerInput = await screen.findByRole("textbox", { name: "Type your answer" });
+    await user.type(answerInput, "A list is an ordered, mutable collection.");
+    await user.click(screen.getByRole("button", { name: "Submit Answer" }));
+
+    await screen.findByRole("button", { name: "Retry final report" });
+    expect(apiMocks.submitAnswer).toHaveBeenCalledTimes(1);
+    expect(apiMocks.endInterview).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Try submitting again" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry final report" }));
+    await waitFor(() => expect(onFinished).toHaveBeenCalledWith({ overall_score: 8, question_results: [] }));
+    expect(apiMocks.submitAnswer).toHaveBeenCalledTimes(1);
+    expect(apiMocks.endInterview).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores a completed-answer session by requesting only its pending report", async () => {
+    apiMocks.endInterview.mockResolvedValueOnce({ overall_score: 7.5, question_results: [] });
+    const onFinished = vi.fn();
+    render(
+      <InterviewScreen
+        interviewId={42}
+        firstQuestion={null}
+        awaitingReport
+        difficulty="advanced"
+        totalQuestions={5}
+        onFinished={onFinished}
+        onExited={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(onFinished).toHaveBeenCalledWith({ overall_score: 7.5, question_results: [] }));
+    expect(apiMocks.endInterview).toHaveBeenCalledTimes(1);
+    expect(apiMocks.submitAnswer).not.toHaveBeenCalled();
+  });
 });

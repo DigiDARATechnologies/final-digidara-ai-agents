@@ -42,6 +42,11 @@ export interface MockInterviewAnswerResult {
 }
 
 export interface MockInterviewSummary {
+  provisional?: boolean;
+  report_status?: "provisional" | "completed";
+  retryable?: boolean;
+  report_message?: string;
+  proctoring_note?: string;
   interview_id?: number;
   total_marks?: number;
   max_marks?: number;
@@ -64,6 +69,8 @@ export interface MockInterviewSummary {
     verdict?: string;
     verdict_reason?: string;
     ideal_answer?: string;
+    marks?: number | null;
+    status?: string;
   }>;
 }
 
