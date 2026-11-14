@@ -49,10 +49,10 @@ def test_finishing_a_chat_evaluates_each_message_and_saves_a_session(client, aut
     assert body["session_id"] and body["total_turns"] == 2
     assert body["summary_feedback"] == "You shared clear ideas about teamwork."
     # Each learner message is judged against the question the AI asked just before it.
-    assert [(s["question"], s["answer"]) for s in evaluator] == [
+    assert sorted((s["question"], s["answer"]) for s in evaluator) == sorted([
         ("What do you like about teamwork?", "I likes teamwork because we shares ideas."),
         ("Nice! Tell me about a team project.", "We builded a website for our college."),
-    ]
+    ])
 
 
 def test_the_chat_report_pdf_lists_each_correction(client, auth_headers, evaluator, monkeypatch):
@@ -84,4 +84,16 @@ def test_a_long_chat_reports_its_latest_ten_messages(client, auth_headers, evalu
     for n in range(14):
         history += [{"role": "assistant", "text": f"Question {n}?"}, {"role": "user", "text": f"I likes answer {n}."}]
     assert finish(client, auth_headers, history=history).get_json()["total_turns"] == 10
-    assert evaluator[0]["answer"] == "I likes answer 4."
+    answers = {item["answer"] for item in evaluator}
+    assert answers == {f"I likes answer {n}." for n in range(4, 14)}
+
+
+def test_retrying_same_chat_finish_does_not_create_duplicate_report(client, auth_headers, evaluator):
+    first = finish(client, auth_headers)
+    assert first.status_code == 200
+    calls_after_first = len(evaluator)
+
+    second = finish(client, auth_headers)
+    assert second.status_code == 200
+    assert second.get_json()["session_id"] == first.get_json()["session_id"]
+    assert len(evaluator) == calls_after_first

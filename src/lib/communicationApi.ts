@@ -2,9 +2,10 @@ import { gatewayInvokeUrl, invokeAgent } from "./gatewayClient";
 import { audioBlobToBase64, baseAudioType } from "./voiceCapture";
 
 const INVOKE_URL = gatewayInvokeUrl(import.meta.env.VITE_COMMUNICATION_AGENT_NAME, "communication_agent");
+const WRITING_CHAT_FINISH_TIMEOUT_MS = Number(import.meta.env.VITE_WRITING_CHAT_FINISH_TIMEOUT_MS) || 180_000;
 
-function invoke<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-  return invokeAgent<T>(INVOKE_URL, action, payload);
+function invoke<T>(action: string, payload: Record<string, unknown> = {}, timeoutMs?: number): Promise<T> {
+  return invokeAgent<T>(INVOKE_URL, action, payload, 1, timeoutMs);
 }
 
 export async function checkCommunicationHealth(): Promise<boolean> {
@@ -121,7 +122,7 @@ export function finishWritingChat(
   history: Array<{ role: "assistant" | "user"; text: string }>,
 ) {
   return invoke<{ session_id: number; overall_score?: number | null; summary_feedback?: string; total_turns: number }>(
-    "writing_chat_finish", { authToken, topic, difficulty, history },
+    "writing_chat_finish", { authToken, topic, difficulty, history }, WRITING_CHAT_FINISH_TIMEOUT_MS,
   );
 }
 

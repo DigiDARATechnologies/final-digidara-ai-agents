@@ -26,9 +26,11 @@ LINE = colors.HexColor("#E2E8F0")
 SOFT = colors.HexColor("#F7FAFC")
 GREEN = colors.HexColor("#167A50")
 ACCENT = colors.HexColor("#4A37D0")
-LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "skilldara-logo.jpg"
-LOGO_WIDTH = 34 * mm
-LOGO_HEIGHT = 19 * mm
+LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "skilldara-logo.png"
+if not LOGO_PATH.is_file():
+    LOGO_PATH = Path(__file__).resolve().parents[2] / "assets" / "skilldara-logo.jpg"
+LOGO_WIDTH = 42 * mm
+LOGO_HEIGHT = 12 * mm
 
 
 IST = timezone(timedelta(hours=5, minutes=30), name="IST")
