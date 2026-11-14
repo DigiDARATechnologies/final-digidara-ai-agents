@@ -12,9 +12,9 @@ PRO_TOPICS = [
     ("Professional Real-World Tasks", "professional-real-world-tasks"),
 ]
 
-PRO_TECHNOLOGIES = ("python", "mysql", "javascript", "pandas", "numpy", "html", "css")
-# HTML and CSS have no code runner: their assessments are multiple-choice.
-MCQ_ASSESSMENT_TECHNOLOGIES = ("html", "css")
+PRO_TECHNOLOGIES = ("python", "mysql", "javascript", "pandas", "numpy", "html", "css", "flask", "react")
+# HTML, CSS, Flask and React have no code runner here: their assessments are multiple-choice.
+MCQ_ASSESSMENT_TECHNOLOGIES = ("html", "css", "flask", "react")
 
 PRO_PROBLEMS = [{'technology': 'python',
   'topic': 'professional-challenges',
