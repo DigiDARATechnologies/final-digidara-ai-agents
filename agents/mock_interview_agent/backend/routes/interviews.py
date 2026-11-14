@@ -91,8 +91,9 @@ def _apply_unanswered_score_adjustment(result, rows):
 
 
 # Answers re-evaluated per request when one request for every answer comes
-# back incomplete (long interviews: 15 answers in one reply).
-EVALUATION_CHUNK_SIZE = 5
+# back incomplete or times out. Smaller than the usual 5-question interview, so
+# the retry is a lighter request instead of the same one that just failed.
+EVALUATION_CHUNK_SIZE = 2
 # The gateway gives end_interview 180 seconds, and one AI call can take a minute
 # when OpenAI is slow (20 seconds, three tries). No new evaluation call starts
 # after EVALUATION_BUDGET_SECONDS, and the final one only starts before

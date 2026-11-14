@@ -15,6 +15,8 @@ from ai.answer_evaluation import (
 )
 from ai.chat_client import (
     OPENAI_REQUEST_TIMEOUT_SECONDS,
+    OPENAI_BATCH_EVALUATION_TIMEOUT_SECONDS,
+    EVAL_REASONING_EFFORT,
     MODEL,
     EVAL_MODEL,
     TRANSCRIPTION_MODEL,
@@ -127,7 +129,13 @@ def evaluate_interview(round_type, subject, difficulty, qa_pairs):
 
 
 def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs):
-    return _evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, chat_fn=_evaluation_chat)
+    # One try with room to finish: the caller re-asks for anything missing in
+    # smaller groups, so SDK retries of the same slow request only burn time.
+    def batch_chat(messages, **kwargs):
+        kwargs.setdefault("timeout", OPENAI_BATCH_EVALUATION_TIMEOUT_SECONDS)
+        kwargs.setdefault("max_retries", 0)
+        return _evaluation_chat(messages, **kwargs)
+    return _evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, chat_fn=batch_chat)
 
 
 
@@ -139,5 +147,6 @@ def _evaluation_chat(messages, json_mode=False, temperature=0.7, **kwargs):
         json_mode=json_mode,
         temperature=temperature,
         model_override=EVAL_MODEL,
+        reasoning_effort=kwargs.pop("reasoning_effort", EVAL_REASONING_EFFORT),
         **kwargs,
     )
