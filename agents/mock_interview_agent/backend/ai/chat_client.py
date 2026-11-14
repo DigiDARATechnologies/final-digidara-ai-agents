@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
 EVAL_MODEL = os.environ.get("OPENAI_EVAL_MODEL", "gpt-5-mini").strip()
+# GPT-5 models think before answering; at their default ("medium") grading five
+# answers took longer than the 20-second request limit, every try timed out and
+# learners only ever got the provisional report. "low" answers in seconds and
+# is plenty for a correct/partial/wrong verdict.
+EVAL_REASONING_EFFORT = os.environ.get("OPENAI_EVAL_REASONING_EFFORT", "low").strip().lower()
+# One answer-grading call may take this long (all answers in one reply).
+OPENAI_BATCH_EVALUATION_TIMEOUT_SECONDS = float(
+    os.environ.get("OPENAI_BATCH_EVALUATION_TIMEOUT_SECONDS", "45")
+)
 TRANSCRIPTION_MODEL = os.environ.get(
     "OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
 ).strip()
@@ -159,6 +168,7 @@ def chat(
     max_retries=None,
     request_kind="chat",
     provider="openai",
+    reasoning_effort=None,
 ):
     model_name = (model_override or MODEL).strip()
     request_options = {
@@ -171,6 +181,8 @@ def chat(
     # omitting the unsupported field lets GPT-5 Mini use its required default.
     if not model_name.casefold().startswith("gpt-5"):
         request_options["temperature"] = temperature
+    elif reasoning_effort:
+        request_options["reasoning_effort"] = reasoning_effort
 
     request_client = _get_client()
     if timeout is not None or max_retries is not None:
