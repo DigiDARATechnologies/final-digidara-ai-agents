@@ -2760,8 +2760,6 @@ body:has(.agent-dashboard[aria-label="Resume Builder dashboard"]) .boss-fab{
 h1,h2,h3,h4{ letter-spacing:-.025em; }
 
 /* ===== Light redesign: Admin, Help pages (release notes, contact, bug report) ===== */
-:root[data-theme="light"] .admin-shell-nav{ background:linear-gradient(180deg,#f3f2ff,#f6f7ff); border-right-color:#e1e5f5; }
-:root[data-theme="light"] .admin-shell-nav-item.active{ background:linear-gradient(135deg,#2851d8,#6d4fe0); color:#fff; border-color:transparent; box-shadow:0 10px 20px -12px rgba(60,70,200,.7); }
 .admin-shell-nav-item{ border-radius:12px; }
 .admin-shell-content-head h2{ font-size:26px; font-weight:700; letter-spacing:-.035em; }
 .admin-kpi,.admin-automation-card,.admin-chart{ border-radius:18px; background:var(--surf-1); border-color:var(--line-1); box-shadow:0 14px 30px -26px rgba(60,70,170,.55); }

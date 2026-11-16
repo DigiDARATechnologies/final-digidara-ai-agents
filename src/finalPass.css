@@ -424,7 +424,8 @@ html body .sidebar .user-plan { font-size: 12.5px; font-weight: 500; letter-spac
 html body .sidebar .plan-badge { font-weight: 700; border-radius: 999px; }
 
 /* ---- Sidebar scrolling like ChatGPT: logo and New Chat stay fixed, everything else scrolls, user card stays at the bottom ---- */
-html body .sidebar { overflow: hidden; }
+/* Visible, not hidden: the profile menu's Help submenu opens to the right of the sidebar and was being clipped. Scrolling is done by .sidebar-scroll. */
+html body .sidebar { overflow: visible; }
 html body .sidebar .sidebar-top, html body .sidebar .sidebar-quickrow { flex: 0 0 auto; }
 html body .sidebar .sidebar-quickrow { padding-bottom: 8px; position: relative; z-index: 2; }
 html body .sidebar .sidebar-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin: 0 -8px; padding: 0 8px 12px;
