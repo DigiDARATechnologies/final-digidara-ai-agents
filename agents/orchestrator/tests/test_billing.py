@@ -101,19 +101,36 @@ def signature(order_id, payment_id):
 
 # --- catalog ---------------------------------------------------------------
 
-def test_catalog_is_399_799_and_999_with_no_custom_plan(env):
+def test_catalog_is_starter_then_399_799_and_999_with_no_custom_plan(env):
     body = env.client.get("/billing/plans").json()
     offered = {plan["id"]: plan for plan in body["plans"]}
-    assert list(offered) == ["basic", "standard", "premium"]
-    assert [offered[i]["amount"] for i in offered] == [39900, 79900, 99900]
+    assert list(offered) == ["starter", "basic", "standard", "premium"]
+    assert [offered[i]["amount"] for i in offered] == [49900, 39900, 79900, 99900]
     assert [i for i in offered if offered[i]["popular"]] == ["standard"]
     assert "custom" not in body
     assert "pro_monthly" not in offered and "pro_yearly" not in offered
-    # Every plan is paid in the in-app checkout (email locked), price + 18% GST.
-    assert [offered[i]["payment_page_url"] for i in offered] == [None, None, None]
-    assert [offered[i]["amount_with_gst"] for i in offered] == [47082, 94282, 117882]
-    assert {offered[i]["gst_percent"] for i in offered} == {18}
+    # The packs are paid in the in-app checkout (email locked), price + 18% GST.
+    packs = ("basic", "standard", "premium")
+    assert [offered[i]["payment_page_url"] for i in packs] == [None, None, None]
+    assert [offered[i]["amount_with_gst"] for i in packs] == [47082, 94282, 117882]
+    assert {offered[i]["gst_percent"] for i in packs} == {18}
+    assert not any(offered[i]["subscription"] for i in packs)
     assert "test_page" not in offered["basic"]
+
+
+def test_starter_is_a_monthly_subscription_sold_on_the_razorpay_button_page(env):
+    starter = {plan["id"]: plan for plan in env.client.get("/billing/plans").json()["plans"]}["starter"]
+    assert starter["subscription"] is True
+    assert starter["payment_page_url"] == "https://pages.razorpay.com/pl_U19NErIGaIJHfz/view"
+    # Razorpay charges INR 499; that is what is shown.
+    assert (starter["amount_with_gst"], starter["gst_percent"], starter["points"]) == (49900, 0, 312)
+    assert starter["features"][0] == "312 coins added after Razorpay confirms the payment"
+
+
+def test_starter_is_not_sold_in_the_in_app_checkout(env, monkeypatch):
+    calls = razorpay_ok(monkeypatch)
+    assert env.client.post("/billing/orders", json={"plan_id": "starter"}).status_code == 400
+    assert calls["orders"] == []
 
 
 def test_plans_sell_fixed_tokens_shown_as_points():
@@ -729,3 +746,40 @@ def test_the_enquiry_email_reaches_support_with_reply_to_the_contact(monkeypatch
     assert "Enterprise enquiry: Anna <University>" == message["Subject"]
     html_part = message.get_body(("html",)).get_content()
     assert "Anna &lt;University&gt;" in html_part           # nothing from the form is rendered as HTML
+
+
+# --- Starter: monthly autopay ------------------------------------------------
+
+@pytest.mark.parametrize("amount", [49900, 58882])
+def test_each_monthly_starter_charge_credits_312_coins(env, amount):
+    # Every month Razorpay charges the subscription and sends payment.captured
+    # with a new payment id; INR 588.82 is INR 499 + GST, should the plan change.
+    set_balance(env, 0)
+    assert page_payment(env, payment_id="pay_month_1", amount=amount).status_code == 200
+    assert balance(env) == 4_880_000 and points(env) == 312
+    page_payment(env, payment_id="pay_month_1", amount=amount)        # webhook retry
+    assert balance(env) == 4_880_000
+    page_payment(env, payment_id="pay_month_2", amount=amount)        # next month
+    assert balance(env) == 9_760_000
+    payment = env.client.get("/billing/summary").json()["payments"][0]
+    assert (payment["plan_id"], payment["points"]) == ("starter", 312)
+
+
+def test_starter_subscribers_get_no_plan_ending_email(env, monkeypatch):
+    from datetime import datetime, timedelta
+
+    from app.account import reminders
+    from app.models import Payment
+
+    sent = []
+    monkeypatch.setattr(reminders, "_send", lambda user, subject, lines, to=None: sent.append(subject) or True)
+    monkeypatch.setattr(reminders.email_verification, "_smtp_settings", lambda: {"host": "x"})
+    monkeypatch.setattr(reminders.db, "get_session", env.database)
+    now = datetime.utcnow()
+    session = env.database()
+    session.add(Payment(user_id=env.user.id, plan_id="starter", amount=49900, currency="INR", status="paid",
+                        razorpay_order_id="order_sub", paid_at=now - timedelta(days=28), created_at=now - timedelta(days=28)))
+    session.commit()
+    session.close()
+    reminders.send_due(now)
+    assert not any("plan ends" in subject for subject in sent)

@@ -7,7 +7,7 @@ export interface BillingSummary { plan: string; plan_name: string; plan_expires_
 /** `payment_page_url`: the plan is paid on SkillDARA's Razorpay payment page
  * (points are added by the server once Razorpay confirms), not in-app.
  * `tokens` is what the plan really credits; learners are only shown `points`. */
-export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; amount_with_gst?: number; gst_percent?: number; payment_page_url?: string | null; }
+export interface PlanOffer { id: string; name: string; amount: number; currency: string; period: string; tokens: number; points: number; bonus_percent: number; description: string; features: string[]; popular: boolean; amount_with_gst?: number; gst_percent?: number; payment_page_url?: string | null; subscription?: boolean; }
 export interface BillingPlans { plans: PlanOffer[]; enterprise?: { contact_email: string }; }
 /** The Enterprise plan: an organization's details, emailed to SkillDARA support. */
 export interface EnterpriseEnquiry {

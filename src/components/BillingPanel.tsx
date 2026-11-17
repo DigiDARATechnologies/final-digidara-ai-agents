@@ -130,7 +130,7 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
         <div>
           <small>Current Plan</small>
           <strong>{hasPlan ? `SkillDARA ${billing?.plan_name}` : "SkillDARA Free"}</strong>
-          <span>{hasPlan ? `Active until ${expires}. Plans are one-time payments; buy again to renew.` : "Pick a plan below for more coins."}</span>
+          <span>{hasPlan ? (catalog?.plans.find((p) => p.id === billing?.plan)?.subscription ? `Renews by monthly autopay. This month runs until ${expires}.` : `Active until ${expires}. Plans are one-time payments; buy again to renew.`) : "Pick a plan below for more coins."}</span>
         </div>
         <span className="plan-badge">{hasPlan ? "Active" : "Free"}</span>
       </div>
@@ -151,12 +151,12 @@ export default function BillingPanel({ open, user, onToast, focusPlanId = null }
             <article key={plan.id} className={[plan.popular ? "recommended" : "", plan.id === focusPlanId ? "chosen" : ""].filter(Boolean).join(" ") || undefined} data-plan={plan.id}>
               {plan.popular && <span>Most Popular</span>}
               <h3>{plan.name}</h3>
-              <strong>{money(plan.amount, plan.currency, true)} <small>one-time</small></strong>
+              <strong>{money(plan.amount, plan.currency, true)} <small>{plan.subscription ? "/ month · autopay" : "one-time"}</small></strong>
               {plan.amount_with_gst && plan.amount_with_gst !== plan.amount && <small className="plan-gst">{money(plan.amount_with_gst, plan.currency)} incl. {plan.gst_percent || 18}% GST</small>}
               <p>{plan.description}</p>
               <ul className="plan-features">{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
-              {plan.payment_page_url && <p className="plan-page-note">Opens Razorpay in a new tab. Pay with <b>{user.email}</b> so the coins reach this account.</p>}
-              <button ref={plan.id === focusPlanId ? focusedPlanRef : undefined} disabled={busy} onClick={() => buyPlan(plan)}>Buy {plan.name}</button>
+              {plan.payment_page_url && <p className="plan-page-note">{plan.subscription ? "Monthly autopay through Razorpay, opens in a new tab. Cancel any time from the link in Razorpay's email. " : "Opens Razorpay in a new tab. "}Pay with <b>{user.email}</b> so the coins reach this account.</p>}
+              <button ref={plan.id === focusPlanId ? focusedPlanRef : undefined} disabled={busy} onClick={() => buyPlan(plan)}>{plan.subscription ? `Subscribe to ${plan.name}` : `Buy ${plan.name}`}</button>
             </article>
           ))}
         </div>

@@ -59,6 +59,26 @@ GST_RATE_PERCENT = 18
 # is set -- a page cannot lock the email, so its payment is matched to an
 # account by whatever email is typed there.
 PLANS: dict[str, dict] = {
+    # Monthly autopay, sold with a Razorpay Subscription Button: each learner
+    # who opens its page gets their own subscription, and every monthly
+    # charge arrives as a payment.captured webhook that credits the account
+    # whose email was entered there (routes.py:_credit_payment_page).
+    "starter": {
+        "name": "Starter",
+        "amount": 49900,
+        "currency": "INR",
+        # Basic's rate: 250 coins / 3.9M tokens for INR 399, so INR 499 buys
+        # 312 coins / 4.88M tokens.
+        "tokens": 4_880_000,
+        "points": 312,
+        "description": "Monthly autopay for steady practice. Coins are added every month.",
+        "subscription": True,
+        "payment_page_url": os.getenv("RAZORPAY_STARTER_PAGE_URL", "https://pages.razorpay.com/pl_U19NErIGaIJHfz/view"),
+        # The Razorpay plan charges INR 499 today. INR 588.82 (499 + 18% GST)
+        # is credited too, in case the Razorpay plan is changed to add GST.
+        "amount_with_gst": int(os.getenv("RAZORPAY_STARTER_PAGE_AMOUNT", "49900")),
+        "also_credited": (58882,),
+    },
     "basic": {
         "name": "Basic",
         "amount": 39900,
@@ -101,7 +121,7 @@ PLANS: dict[str, dict] = {
 
 def is_full_price(plan: dict, amount_paise: int) -> bool:
     """The plan's price, or what is charged for it (price + GST)."""
-    return amount_paise in (plan["amount"], plan.get("amount_with_gst"))
+    return amount_paise in (plan["amount"], plan.get("amount_with_gst"), *plan.get("also_credited", ()))
 
 
 def charge_amount(plan: dict) -> int:
@@ -228,6 +248,8 @@ def offered_plans() -> list[dict]:
             "amount_with_gst": charge_amount(plan),
             "gst_percent": GST_RATE_PERCENT if charge_amount(plan) != plan["amount"] else 0,
             "payment_page_url": page or None,
+            # Renews by itself every month (Razorpay autopay), not a one-time payment.
+            "subscription": bool(plan.get("subscription")),
         })
     return result
 

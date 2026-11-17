@@ -24,7 +24,7 @@ from sqlalchemy import func
 from app import db
 from app.account import preferences
 from app.auth import email_verification
-from app.billing.plans import active_plan, plan_name, points_for_tokens
+from app.billing.plans import PLANS, active_plan, plan_name, points_for_tokens
 from app.models import (Assessment, OrganizationMember, Payment, ProctorSession, TokenUsageEvent, User,
                         UserPreference)
 
@@ -167,6 +167,8 @@ def renewal(run: _Run) -> None:
             return
         plan_id, expires = active_plan(paid, run.now)
         if not expires or expires - run.now > timedelta(days=RENEWAL_DAYS):
+            continue
+        if PLANS.get(plan_id, {}).get("subscription"):
             continue
         prefs = run.prefs(user_id)
         if not (prefs["notifications"]["email"] and prefs["billing"]["renewal_reminder"]):

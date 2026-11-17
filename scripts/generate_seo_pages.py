@@ -126,6 +126,7 @@ AGENTS = [
 
 PLANS = [
     ("Free", "₹0", "25 coins on signup", "Try the agents and see how SkillDARA works."),
+    ("Starter", "₹499/month", "312 coins every month", "Monthly autopay for steady practice. Cancel any time."),
     ("Basic", "₹399", "250 coins", "For getting started and light, occasional use."),
     ("Standard", "₹799", "500 coins", "For regular learners who use several agents each week."),
     ("Premium", "₹999", "750 coins", "For heavy daily use across every agent."),
@@ -134,7 +135,7 @@ PLANS = [
 FAQS = [
     ("What is SkillDARA?", "SkillDARA is a platform of eight AI agents that help students and professionals upgrade their skills and become job-ready: coding practice, aptitude training, communication coaching, mock interviews, a resume builder, a job agent, capstone projects and AI certification, all under one account."),
     ("Who is SkillDARA for?", "Students preparing for placements, fresh graduates, job seekers and working professionals who want to upgrade their skills. Colleges and training institutes can also use it to run assessments and track their learners."),
-    ("Do I need to pay to start?", "No. You can create a free account and get 25 free coins. When you want more usage, you can buy coins in one-time packs inside the app."),
+    ("Do I need to pay to start?", "No. You can create a free account and get 25 free coins. When you want more usage, you can buy one-time coin packs or subscribe to the monthly Starter plan inside the app."),
     ("How do coins work?", "Each agent request uses a few coins. Coins are bought once, never expire, and your balance is shown inside the app. Prices are before GST."),
     ("Which AI agents does SkillDARA have?", "Coding Practice, Aptitude Trainer, Communication Coach, Mock Interview Agent, Resume Builder, Job Agent, Capstone Project Agent and AI Certification Agent."),
     ("Can my college or institute use SkillDARA?", f"Yes. Organizations get an admin dashboard, staff and class management, assessments with proctoring and reports. Contact {SUPPORT} and we will set it up."),
@@ -289,24 +290,24 @@ def agents_index() -> None:
 
 def pricing_page() -> None:
     path = "/pricing/"
-    title = "Pricing: Free to Start, One-Time Coin Packs | SkillDARA"
-    desc = "Start free with 25 coins. Buy one-time coin packs from ₹399. Coins never expire. Prices are before GST."
+    title = "Pricing: Free to Start, Coin Packs and a Monthly Plan | SkillDARA"
+    desc = "Start free with 25 coins. Buy one-time coin packs from ₹399, or subscribe to Starter for ₹499 a month. Coins never expire."
     rows = "".join(
         f'<div class="sp-card"><h3>{e(n)}</h3><p class="sp-price">{e(p)}</p><p><strong>{e(c)}</strong></p><p>{e(t)}</p></div>'
         for n, p, c, t in PLANS
     )
     prod = {
         "@context": "https://schema.org", "@type": "Product", "name": "SkillDARA coins",
-        "description": "One-time coin packs used by SkillDARA AI agents. Coins never expire.",
+        "description": "Coin packs and a monthly plan for SkillDARA AI agents. Coins never expire.",
         "brand": BRAND_REF, "manufacturer": ORG_REF,
         "offers": [
-            {"@type": "Offer", "name": n, "price": p.replace("₹", ""), "priceCurrency": "INR", "url": f"{SITE}/pricing/"}
+            {"@type": "Offer", "name": n, "price": "".join(ch for ch in p if ch.isdigit()), "priceCurrency": "INR", "url": f"{SITE}/pricing/"}
             for n, p, _, _ in PLANS
         ],
     }
     body = f"""      <nav class="sp-crumbs" aria-label="Breadcrumb"><a href="/">Home</a> / Pricing</nav>
-      <h1>Simple, one-time coin packs</h1>
-      <p class="sp-lead">Each agent request uses a few coins. Coins are bought once and never expire. Prices are before GST.</p>
+      <h1>Coin packs and a monthly plan</h1>
+      <p class="sp-lead">Each agent request uses a few coins. Coins never expire. Packs are one-time payments, before GST; Starter renews every month by autopay.</p>
       <div class="sp-grid sp-grid-4">{rows}</div>
 {cta()}"""
     write(path, head(title, desc, path, [prod, crumbs([("Home", "/"), ("Pricing", path)])]) + shell(body))
@@ -421,7 +422,7 @@ def llms() -> None:
 Students preparing for placements, fresh graduates, job seekers and working professionals. Colleges and training institutes as organizations.
 
 ## Pricing
-Free to start (25 coins). One-time coin packs: Basic Rs 399 (250 coins), Standard Rs 799 (500 coins), Premium Rs 999 (750 coins). Coins never expire. Prices are before GST.
+Free to start (25 coins). Monthly plan: Starter Rs 499 a month by autopay (312 coins every month). One-time coin packs: Basic Rs 399 (250 coins), Standard Rs 799 (500 coins), Premium Rs 999 (750 coins). Coins never expire. Prices are before GST.
 
 ## Links
 - Home: {SITE}/

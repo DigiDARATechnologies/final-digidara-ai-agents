@@ -63,7 +63,7 @@ export default function LowPointsModal({ points, outOfPoints, onBuy, onClose }: 
                   onClick={() => setSelected(plan.id)}
                 >
                   <span><b>{plan.name}</b>{plan.popular && <em>Most popular</em>}</span>
-                  <span><strong>{formatPoints(plan.points)} coins</strong><small>{rupees(plan.amount, plan.currency)}</small></span>
+                  <span><strong>{formatPoints(plan.points)} coins</strong><small>{rupees(plan.amount, plan.currency)}{plan.subscription ? " / month" : ""}</small></span>
                 </button>
               ))}
             </div>
