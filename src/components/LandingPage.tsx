@@ -29,7 +29,6 @@ const COLLEGE_FEATURES = [
 
 const PLANS = [
   { name: "Free", price: "₹0", coins: "25 coins on signup", text: "Try the agents and see how SkillDARA works.", cta: "Start free" },
-  { name: "Starter", price: "₹499/mo", coins: "312 coins every month", text: "Monthly autopay for steady practice. Cancel any time.", cta: "Subscribe" },
   { name: "Basic", price: "₹399", coins: "250 coins", text: "For getting started and light, occasional use.", cta: "Get Basic" },
   { name: "Standard", price: "₹799", coins: "500 coins", text: "For regular learners who use several agents each week.", cta: "Get Standard", popular: true },
   { name: "Premium", price: "₹999", coins: "750 coins", text: "For heavy daily use across every agent.", cta: "Get Premium" },
@@ -38,7 +37,7 @@ const PLANS = [
 const FAQS = [
   { q: "What is SkillDARA?", a: "SkillDARA is an AI agent workspace for students and job seekers. Each agent focuses on one part of getting career-ready: coding practice, aptitude, communication, resumes, mock interviews, capstone projects, certification and job search." },
   { q: "Who is SkillDARA for?", a: "Students, fresh graduates and job seekers who want to practise and prepare. Colleges and training institutes can also use it to run assessments and track their learners." },
-  { q: "Do I need to pay to start?", a: "No. You can create a free account and try the agents. When you want more usage, you can buy one-time coin packs or subscribe to the monthly Starter plan under Billing inside the app." },
+  { q: "Do I need to pay to start?", a: "No. You can create a free account and try the agents. When you want more usage, you can buy coins in one-time packs under Billing inside the app." },
   { q: "How do coins work?", a: "Each agent request uses a few coins. Coins are bought once, never expire, and you can see your balance inside the app. Prices are before GST." },
   { q: "Can my college or institute use SkillDARA?", a: "Yes. Organizations get an admin dashboard, staff and class management, assessments with proctoring and reports. Contact us and we will set it up." },
   { q: "Is my data safe?", a: "Sessions are secured, agent requests are signed, and privacy controls follow data-protection principles including data export and account deletion." },
@@ -227,8 +226,8 @@ export default function LandingPage({ onLogin }: LandingPageProps) {
 
         <section id="pricing" className="lp-section lp-section-alt">
           <div className="lp-wrap">
-            <SectionHead eyebrow="Pricing" title="Coin packs and a" hl="monthly plan." text="Each agent request uses a few coins. Coins never expire. Packs are one-time payments, before GST; Starter renews every month by autopay." />
-            <div className="lp-grid lp-grid-5 lp-pricing">
+            <SectionHead eyebrow="Pricing" title="Simple, one-time" hl="coin packs." text="Each agent request uses a few coins. Coins never expire. Prices are before GST." />
+            <div className="lp-grid lp-grid-4 lp-pricing">
               {PLANS.map((p) => (
                 <article key={p.name} className={`lp-plan ${p.popular ? "is-popular" : ""}`}>
                   {p.popular && <span className="lp-plan-badge">Most popular</span>}

@@ -5,13 +5,10 @@ import VoiceConversation from "./VoiceConversation";
 import { Logo } from "./Logo";
 import AttachMenu from "./AttachMenu";
 import { LIVE_AGENTS } from "../data/agents";
-import { pinnedFirst } from "../lib/pinnedAgents";
 import { TopPerformers } from "./Leaderboard";
 
 
 interface NewChatLandingProps {
-  /** Settings > Agent Chats: starred agents come first. */
-  pinnedAgents?: string[];
   onSend: (text: string) => void;
   /** No agent/chat exists yet at this screen, so there's nowhere for an
    * attached file to go -- called when an option in the "+" menu is chosen, so the
@@ -52,8 +49,7 @@ function AgentIcon({ kind, size = 16 }: { kind?: string; size?: number }) {
 
 const agentLabel = (name: string) => name.replace(/ Agent$/, "");
 
-export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice, onOpenLeaderboard, pinnedAgents = [] }: NewChatLandingProps) {
-  const agents = pinnedFirst(LIVE_AGENTS, pinnedAgents);
+export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, userName, onStartVoice, onOpenLeaderboard }: NewChatLandingProps) {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // The microphone opens a spoken conversation with the SkillDARA Assistant;
@@ -151,7 +147,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
               {menuOpen && (
                 <div className="home-agent-menu" role="menu">
                   <div className="home-agent-menu-note">Type a message and SkillDARA picks the agent, or open one:</div>
-                  {agents.map((agent) => (
+                  {LIVE_AGENTS.map((agent) => (
                     <button key={agent.id} type="button" role="menuitem" className="home-agent-option"
                       style={{ ["--agent-color" as string]: agent.color }}
                       onClick={() => { setMenuOpen(false); onOpenAgent(agent.id); }}>
@@ -181,7 +177,7 @@ export default function NewChatLanding({ onSend, onAttachClick, onOpenAgent, use
         </form>
 
         <div className="home-chips">
-          {agents.map((agent) => (
+          {LIVE_AGENTS.map((agent) => (
             <button key={agent.id} type="button" className="home-chip" title={agent.desc}
               style={{ ["--agent-color" as string]: agent.color }}
               onClick={() => onOpenAgent(agent.id)}>

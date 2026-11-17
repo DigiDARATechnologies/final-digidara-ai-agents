@@ -53,70 +53,41 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, session_version: int = 0, session_id: str | None = None) -> str:
+def create_access_token(user_id: str, session_version: int = 0) -> str:
     now = int(time.time())
     payload = {"sub": user_id, "sv": session_version, "iat": now, "exp": now + JWT_EXPIRES_MINUTES * 60}
-    if session_id:
-        # The sign-in this token belongs to (app/models.py:UserSignIn), so
-        # Settings > Security can sign out one device on its own.
-        payload["sid"] = session_id
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def _session_state(user_id: str, session_id: str | None) -> tuple[int | None, bool]:
-    """(session_version, revoked). The version is None when the account
-    doesn't exist; callers already answer that case."""
+def _current_session_version(user_id: str) -> int | None:
+    """None when the account doesn't exist; callers already answer that case."""
     from app import db
-    from app.models import User, UserSignIn
+    from app.models import User
 
     session = db.get_session()
     try:
         user = session.get(User, user_id)
-        if user is None:
-            return None, False
-        revoked = False
-        if session_id:
-            sign_in = session.get(UserSignIn, session_id)
-            revoked = sign_in is not None and (sign_in.revoked_at is not None or sign_in.user_id != user_id)
-        return int(user.session_version or 0), revoked
+        return None if user is None else int(user.session_version or 0)
     finally:
         session.close()
 
 
-def decode_session(token: str) -> tuple[str, str | None]:
-    """(user_id, sign-in id) of a valid, unrevoked session token. Tokens from
-    before sign-ins were recorded have no sign-in id."""
+def decode_access_token(token: str) -> str:
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.") from exc
-    # Other tokens signed with this secret -- the two-step sign-in challenge
-    # ("purpose") and certificate links ("typ") -- are never a session.
-    if payload.get("purpose") or payload.get("typ"):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.")
     user_id = payload["sub"]
-    session_id = payload.get("sid")
     # Tokens issued before "sv" existed count as version 0, so this change
     # logs nobody out; a later bump (see auth/service.py:link_google_id)
     # still revokes them.
-    current, revoked = _session_state(user_id, session_id)
-    if revoked or (current is not None and int(payload.get("sv", 0)) != current):
+    current = _current_session_version(user_id)
+    if current is not None and int(payload.get("sv", 0)) != current:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired session. Please log in again.")
-    return user_id, session_id
-
-
-def decode_access_token(token: str) -> str:
-    return decode_session(token)[0]
+    return user_id
 
 
 def get_current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme)) -> str:
     if credentials is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token.")
     return decode_access_token(credentials.credentials)
-
-
-def get_current_session(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme)) -> tuple[str, str | None]:
-    """(user_id, sign-in id) for routes that act on this device's session."""
-    if credentials is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token.")
-    return decode_session(credentials.credentials)

@@ -8,7 +8,6 @@ import './index.css'
 import './components/Phase2.css'
 import './finalPass.css'
 import './orgAdminUi.css'
-import './settingsPrefs.css'
 import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(

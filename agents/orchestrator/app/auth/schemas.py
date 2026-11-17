@@ -85,20 +85,3 @@ class AccountDeleteRequest(BaseModel):
     # stolen/leaked bearer token can't permanently erase an account on its
     # own. Google-only accounts (no password_hash) have nothing to check.
     password: str | None = None
-
-
-class TwoStepChallenge(BaseModel):
-    """/auth/login's answer when two-step verification is on: no session yet,
-    a code was emailed. Send it back with `challenge` to /auth/login/two-step."""
-    two_step_required: bool = True
-    challenge: str
-    email: str
-
-
-class TwoStepLoginRequest(BaseModel):
-    challenge: str = Field(min_length=1, max_length=2000)
-    code: str = Field(min_length=1, max_length=12)
-
-
-class TwoStepResendRequest(BaseModel):
-    challenge: str = Field(min_length=1, max_length=2000)

@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Chat, User } from "../types";
 import { DEFAULT_AGENT, findAgent } from "../data/agents";
-import { shortcutsEnabled } from "../lib/shortcuts";
 import { Logo } from "./Logo";
 import LegalModal from "./LegalModal";
 import SearchChatsModal from "./SearchChatsModal";
@@ -75,7 +74,7 @@ export default function Sidebar({
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && shortcutsEnabled()) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setSearchOpen(true);
       }

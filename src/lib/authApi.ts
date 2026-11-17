@@ -71,32 +71,9 @@ export async function signup(name: string, email: string, mobile: string, passwo
   return parseAuthResponse<TokenResponse>(response);
 }
 
-/** The login answer when two-step verification is on: a code was emailed. */
-export interface TwoStepChallenge {
-  two_step_required: true;
-  challenge: string;
-  /** The address the code went to, partly hidden. */
-  email: string;
-}
-
-export function isTwoStepChallenge(value: TokenResponse | TwoStepChallenge): value is TwoStepChallenge {
-  return (value as TwoStepChallenge).two_step_required === true;
-}
-
-export async function login(email: string, password: string): Promise<TokenResponse | TwoStepChallenge> {
+export async function login(email: string, password: string): Promise<TokenResponse> {
   const response = await postJson("/auth/login", { email, password });
-  return parseAuthResponse<TokenResponse | TwoStepChallenge>(response);
-}
-
-/** The second step of a sign-in with two-step verification on. */
-export async function loginTwoStep(challenge: string, code: string): Promise<TokenResponse> {
-  const response = await postJson("/auth/login/two-step", { challenge, code });
   return parseAuthResponse<TokenResponse>(response);
-}
-
-export async function resendTwoStepCode(challenge: string): Promise<{ message: string }> {
-  const response = await postJson("/auth/login/two-step/resend", { challenge });
-  return parseAuthResponse<{ message: string }>(response);
 }
 
 /** Where Google redirects the browser back to after consent — must exactly

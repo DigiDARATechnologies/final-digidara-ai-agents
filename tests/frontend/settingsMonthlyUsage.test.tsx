@@ -15,18 +15,6 @@ jest.mock('../../src/lib/usageApi', () => ({
   ]),
 }));
 jest.mock('../../src/lib/billingApi', () => ({ fetchMonthlyUsage: jest.fn() }));
-jest.mock('../../src/lib/accountApi', () => ({
-  DEFAULT_ACCOUNT_PREFS: {
-    notifications: { email: true, in_app: true, assessment_reminders: true, low_coin_warning: true, weekly_progress: false },
-    general: { default_agent: '', time_zone: '', date_format: 'auto' },
-    usage: { warn_percent: 80 },
-    billing: { billing_email: '', renewal_reminder: true },
-    pinned_agents: [],
-  },
-  updateProfile: jest.fn(), fetchSignIns: jest.fn().mockResolvedValue([]), revokeSignIn: jest.fn(), signOutOtherDevices: jest.fn(),
-  fetchTwoStep: jest.fn().mockResolvedValue(null), startTwoStep: jest.fn(), enableTwoStep: jest.fn(), disableTwoStep: jest.fn(),
-  fetchUsageRange: jest.fn().mockResolvedValue({ start: '2026-11-01', end: '2026-11-17', tokens_used: 0, points_used: 0, requests: 0, agents: [], days: [], events: [] }),
-}));
 jest.mock('../../src/components/BillingPanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('../../src/components/SettingsExtras', () => ({ AppearanceSettings: () => null, SecuritySettings: () => null }));
 jest.mock('../../src/lib/communicationApi', () => ({ bridgeIdentity: jest.fn(), getDashboard: jest.fn(), getHistory: jest.fn() }));
