@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
 import type { User } from "../types";
 import { changePassword } from "../lib/authApi";
-import { ACCENTS, type Accent, type AppearancePrefs } from "../lib/appearance";
+import { ACCENTS, BUBBLE_STYLES, THEMES, type Accent, type AppearancePrefs } from "../lib/appearance";
 import { sessionToken } from "../lib/session";
+import { Segmented, SignInSettings, TwoStepSettings } from "./SettingsSections";
 
 interface AppearanceProps {
   appearance: AppearancePrefs;
@@ -15,7 +16,7 @@ export function AppearanceSettings({ appearance, onAppearanceChange, glowOn, onG
   return (
     <>
       <h2>Appearance</h2>
-      <p className="settings-subtitle">Make SkillDARA Agents look and feel the way you like. Changes apply instantly and are remembered on this device.</p>
+      <p className="settings-subtitle">Make SkillDARA Agents look and feel the way you like. Changes apply instantly and are remembered on this device. Text size, contrast and motion are under Accessibility.</p>
 
       <div className="settings-section">
         <div className="setting-row set-stack">
@@ -40,13 +41,29 @@ export function AppearanceSettings({ appearance, onAppearanceChange, glowOn, onG
           </div>
         </div>
 
+        <div className="setting-row set-stack">
+          <div>
+            <b>Theme</b>
+            <p>Light, dark, or follow your device's setting.</p>
+          </div>
+          <Segmented label="Theme" value={appearance.theme} options={THEMES} onChange={(theme) => onAppearanceChange({ ...appearance, theme })} />
+        </div>
+
+        <div className="setting-row set-stack">
+          <div>
+            <b>Chat Bubble Style</b>
+            <p>{BUBBLE_STYLES.find((style) => style.id === appearance.bubbles)?.hint}.</p>
+          </div>
+          <Segmented label="Chat bubble style" value={appearance.bubbles} options={BUBBLE_STYLES} onChange={(bubbles) => onAppearanceChange({ ...appearance, bubbles })} />
+        </div>
+
         <div className="setting-row">
           <div>
-            <b>Reduce Motion</b>
-            <p>Turns off moving effects such as the scrolling agent strip and the animated message-box border.</p>
+            <b>Compact Layout</b>
+            <p>Less space between messages, chats and menu items, so more fits on the screen.</p>
           </div>
           <label className="switch">
-            <input type="checkbox" checked={appearance.reduceMotion} onChange={(e) => onAppearanceChange({ ...appearance, reduceMotion: e.target.checked })} />
+            <input type="checkbox" aria-label="Compact layout" checked={appearance.compact} onChange={(e) => onAppearanceChange({ ...appearance, compact: e.target.checked })} />
             <span className="slider" />
           </label>
         </div>
@@ -133,6 +150,9 @@ export function SecuritySettings({ user, onToast, onLogout }: SecurityProps) {
           {onLogout && <button type="button" className="btn btn-outline" onClick={onLogout}>Log Out</button>}
         </div>
       </div>
+
+      <TwoStepSettings onToast={onToast} />
+      <SignInSettings onToast={onToast} onLogout={onLogout} />
     </>
   );
 }

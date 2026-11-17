@@ -45,7 +45,7 @@ import { interpretTurn, type ConductorDecision } from "./lib/conductorApi";
 import { onLearnerContextRefreshed, setLearnerContext } from "./lib/learnerContext";
 import { onSessionSwitched, sessionToken, setSessionToken } from "./lib/session";
 import RatingPrompt from "./components/RatingPrompt";
-import { fetchBillingSummary } from "./lib/billingApi";
+import { fetchBillingSummary, fetchMonthlyUsage } from "./lib/billingApi";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import { buildPendingNotifications, regradeNotifications } from "./lib/notifications";
@@ -76,7 +76,11 @@ import LowPointsModal from "./components/LowPointsModal";
 import { useLowPointsPrompt } from "./hooks/useLowPointsPrompt";
 import CodeForgePlayground from "./components/CodeForgePlayground";
 import CodeForgeProblemSet from "./components/CodeForgeProblemSet";
-import { applyAppearance, loadAppearance, saveAppearance } from "./lib/appearance";
+import { applyAppearance, loadAppearance, resolveTheme, saveAppearance, watchSystemTheme } from "./lib/appearance";
+import { useAccountPrefs } from "./hooks/useAccountPrefs";
+import { setDatePrefs } from "./lib/dateFormat";
+import { handleShortcut } from "./lib/shortcuts";
+import type { SettingsTab } from "./components/SettingsModal";
 import { avatarThumb, loadProfilePrefs, saveProfilePrefs, type ProfilePrefs } from "./lib/profilePrefs";
 
 /** Sends the profile picture (and a 64px copy for lists) to the server. */
@@ -110,7 +114,7 @@ import { checkJobFetchHealth, clearJobConversations, deleteJobConversation } fro
 import { createInitialMockInterviewState, handleMockInterviewText, openMockInterviewChat, type MockInterviewAnswerTiming, type MockInterviewFlowState } from "./lib/mockInterviewFlow";
 import { startMockInterview } from "./lib/mockInterviewApi";
 import { handleJobFetchText, openJobFetchChat, safeJobApplyUrl, submitJobFetchResume, type JobFetchFlowState } from "./lib/jobFetchFlow";
-import { deleteMyAccount, exportMyData, fetchMe, googleAuth, login as loginApi, normalizeAuthError, signup as signupApi, type AuthUser } from "./lib/authApi";
+import { deleteMyAccount, exportMyData, fetchMe, googleAuth, isTwoStepChallenge, login as loginApi, loginTwoStep, normalizeAuthError, signup as signupApi, type AuthUser, type TokenResponse } from "./lib/authApi";
 import { OutOfPointsError, routeMessage, routeMessageStream, transcribeGeneralAudio, type RouteResult, type RouteTurn } from "./lib/orchestratorApi";
 import { isVoiceConversationOpen, startVoiceGreeting } from "./lib/voiceReply";
 
@@ -158,18 +162,28 @@ function ScreenLoading() {
 const CHAT_REFRESH_MS = 60_000;
 
 export default function App() {
-  // SkillDARA has one theme: light (white). There is no dark mode to switch to.
-  const theme: Theme = "light";
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.removeItem("digidara_theme_v2"); } catch { /* storage unavailable */ }
-  }, [theme]);
+  // Light by default; Settings > Appearance can pick dark or follow the device.
   const [appearance, setAppearance] = useState(loadAppearance);
+  const [systemThemeTick, setSystemThemeTick] = useState(0);
+  const theme: Theme = resolveTheme(appearance.theme);
+  useEffect(() => {
+    try { localStorage.removeItem("digidara_theme_v2"); } catch { /* storage unavailable */ }
+    return watchSystemTheme(() => setSystemThemeTick((tick) => tick + 1));
+  }, []);
   useEffect(() => {
     applyAppearance(appearance);
     saveAppearance(appearance);
-  }, [appearance]);
+  }, [appearance, systemThemeTick]);
   const [user, setUser] = useState<User | null>(() => loadUser());
+  // Settings that follow the account (notifications, default agent, dates, pins).
+  const accountPrefs = useAccountPrefs(user?.id ?? null);
+  useEffect(() => {
+    setDatePrefs(accountPrefs.prefs.general.time_zone, accountPrefs.prefs.general.date_format);
+  }, [accountPrefs.prefs.general.time_zone, accountPrefs.prefs.general.date_format]);
+  // Set on sign-in: once the account's preferences arrive, open its chosen agent.
+  const openDefaultAgentRef = useRef(false);
+  // The keyboard shortcuts' actions, kept current for the one key listener.
+  const shortcutActions = useRef({ newChat: () => {}, openSettings: () => {}, toggleSidebar: () => {}, showShortcuts: () => {} });
   // Phase 2: target role, skills, degree and per-agent levels. Loaded once
   // the account is verified; null while loading, or if the server does not
   // answer -- then onboarding is skipped rather than locking the learner out.
@@ -261,7 +275,7 @@ export default function App() {
   }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => { setMobileOpen(false); }, [view, currentChatId, newChatPending, settingsOpen]);
-  const [settingsTab, setSettingsTab] = useState<"general" | "billing" | "usage" | "agent-chats">("general");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
   // The plan picked in the low-points popup, highlighted when Billing opens.
   const [billingPlanId, setBillingPlanId] = useState<string | null>(null);
   // "Buy points" popup when the balance runs low or out (signed-in users only).
@@ -436,6 +450,7 @@ export default function App() {
         setView("chat");
         setNewChatPending(true);
         setCurrentChatId(null);
+        openDefaultAgentRef.current = true;
         showToast(`Welcome, ${newUser.name.split(" ")[0]}!`);
       })
       .catch((error) => {
@@ -592,6 +607,10 @@ export default function App() {
       setOpenChatMenuId(null);
     }
     function onKeyDown(e: KeyboardEvent) {
+      if (handleShortcut(e, shortcutActions.current)) {
+        e.preventDefault();
+        return;
+      }
       if (e.key === "Escape") {
         setSettingsOpen(false);
         setSelectedAgent(null);
@@ -743,7 +762,7 @@ export default function App() {
   async function handleAuthenticate(
     mode: "login" | "signup",
     details: { name: string; email: string; mobile: string; password: string; consent: boolean },
-  ): Promise<string | null> {
+  ): Promise<string | null | { twoStep: { challenge: string; email: string } }> {
     const email = details.email.trim().toLowerCase();
     try {
       const result = mode === "signup"
@@ -753,25 +772,68 @@ export default function App() {
             return signupApi(details.name.trim(), email, mobile, details.password, details.consent);
           })()
         : await loginApi(email, details.password);
-
-      const newUser = toUser(result.user);
-      setSessionToken(result.access_token);
-      localStorage.setItem("digidara_user", JSON.stringify(newUser));
-      setUser(newUser);
-      // Signed in: the address is the app's own again, not /login (which a
-      // bookmark or a refresh would otherwise keep), and signing out later
-      // returns to the home page.
-      if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
-      setShowLogin(false);
-      setView("chat");
-      setNewChatPending(true);
-      setCurrentChatId(null);
-      showToast(`${mode === "signup" ? "Account created" : "Welcome back"}, ${newUser.name.split(" ")[0]}!`);
+      if (isTwoStepChallenge(result)) return { twoStep: { challenge: result.challenge, email: result.email } };
+      finishSignIn(result, mode);
       return null;
     } catch (error) {
       return normalizeAuthError(error);
     }
   }
+
+  /** The second step of a password sign-in with two-step verification on. */
+  async function handleTwoStep(challenge: string, code: string): Promise<string | null> {
+    try {
+      finishSignIn(await loginTwoStep(challenge, code), "login");
+      return null;
+    } catch (error) {
+      return normalizeAuthError(error);
+    }
+  }
+
+  function finishSignIn(result: TokenResponse, mode: "login" | "signup") {
+    const newUser = toUser(result.user);
+    setSessionToken(result.access_token);
+    localStorage.setItem("digidara_user", JSON.stringify(newUser));
+    setUser(newUser);
+    // Signed in: the address is the app's own again, not /login (which a
+    // bookmark or a refresh would otherwise keep), and signing out later
+    // returns to the home page.
+    if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
+    setShowLogin(false);
+    setView("chat");
+    setNewChatPending(true);
+    setCurrentChatId(null);
+    if (mode === "login") openDefaultAgentRef.current = true;
+    showToast(`${mode === "signup" ? "Account created" : "Welcome back"}, ${newUser.name.split(" ")[0]}!`);
+  }
+
+  // Settings > General > Open After Signing In: once this sign-in's
+  // preferences have arrived from the server, open that agent.
+  useEffect(() => {
+    if (!openDefaultAgentRef.current || !accountPrefs.loaded || !user) return;
+    openDefaultAgentRef.current = false;
+    const agentId = accountPrefs.prefs.general.default_agent;
+    if (agentId && findAgent(agentId)?.kind && !user.needsEmailVerification) openAgentChat(agentId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountPrefs.loaded, user?.id]);
+
+  // Settings > Usage > Warn Me At: once a month, when that share of the
+  // month's coins is used.
+  useEffect(() => {
+    const percent = accountPrefs.prefs.usage.warn_percent;
+    if (!user || !accountPrefs.loaded || !percent) return;
+    let active = true;
+    fetchMonthlyUsage().then((month) => {
+      if (!active || !month.points_limit) return;
+      const used = Math.round((month.points_used / month.points_limit) * 100);
+      const key = `digidara_usage_warned_${user.id}_${month.month_start.slice(0, 7)}`;
+      if (used < percent || localStorage.getItem(key) === String(percent)) return;
+      localStorage.setItem(key, String(percent));
+      showToast(`You've used ${used}% of this month's coins. See Settings > Usage.`);
+    }).catch(() => undefined);
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, accountPrefs.loaded, accountPrefs.prefs.usage.warn_percent]);
 
   function handleLogout() {
     void agentState.flushNow(); // starts saving before the login token is cleared
@@ -872,6 +934,20 @@ export default function App() {
         mobile: profilePrefs.mobile || user.mobile,
       }
     : null;
+
+  /** Settings > General saved a new name or mobile on the account. */
+  function handleProfileSaved(name: string, mobile: string) {
+    if (!user) return;
+    const next: User = { ...user, name, mobile, initial: (name.trim()[0] || user.initial || "?").toUpperCase() };
+    setUser(next);
+    localStorage.setItem("digidara_user", JSON.stringify(next));
+    // The on-device display name / mobile would otherwise keep showing the old values.
+    if (profilePrefs.displayName || profilePrefs.mobile) {
+      const prefs = { ...profilePrefs, displayName: undefined, mobile: undefined };
+      setProfilePrefs(prefs);
+      saveProfilePrefs(user.id, prefs);
+    }
+  }
 
   function handleSaveProfile(next: ProfilePrefs) {
     if (!user) return;
@@ -1337,6 +1413,13 @@ export default function App() {
     setDashboardOpen(false);
     switchView("chat");
   }
+
+  shortcutActions.current = {
+    newChat: () => { if (user) startNewChatLanding(); },
+    openSettings: () => { if (user) { setSettingsTab("general"); setSettingsOpen(true); } },
+    toggleSidebar: () => { if (isMobile) setMobileOpen((open) => !open); else setSidebarCollapsed((collapsed) => !collapsed); },
+    showShortcuts: () => { if (user) { setSettingsTab("accessibility"); setSettingsOpen(true); } },
+  };
 
   /** The microphone on the home page: the chat opens now and Boss greets in it,
    * so the mic, the greeting and the first question all happen in one place. */
@@ -2064,7 +2147,7 @@ export default function App() {
       );
     }
     if (!showLogin) return <LandingPage onLogin={openLogin} />;
-    return <LoginOverlay onAuthenticate={handleAuthenticate} onBack={closeLogin} />;
+    return <LoginOverlay onAuthenticate={handleAuthenticate} onTwoStep={handleTwoStep} onBack={closeLogin} />;
   }
 
   // Password accounts verify their email before anything else; the server
@@ -2334,7 +2417,7 @@ export default function App() {
             onToggleDashboard={() => setDashboardOpen((open) => !open)}
             systemOnline={systemOnline}
             onDismissNotification={(notification) => dismissNotification(notification.key)}
-            notifications={[...regradeNotifications(regradeOffers), ...buildPendingNotifications({
+            notifications={!accountPrefs.prefs.notifications.in_app ? [] : [...regradeNotifications(regradeOffers), ...buildPendingNotifications({
               chats, capstone: capstoneStates, codeforge: codeforgeStates, aptitude: aptitudeStates, communication: communicationStates,
               resumeBuilder: resumeBuilderStates, certificate: certificateStates, mockInterview: mockInterviewStates, jobFetch: jobFetchStates,
             })].filter((notification) => !dismissedNotifs.includes(notification.key))}
@@ -2352,6 +2435,7 @@ export default function App() {
 
           {view === "store" && (
             <StoreView
+              pinnedAgents={accountPrefs.prefs.pinned_agents}
               activeTab={activeTab}
               searchTerm={searchTerm}
               onTabChange={setActiveTab}
@@ -2424,6 +2508,7 @@ export default function App() {
 
           {view === "chat" && newChatPending && (
             <NewChatLanding
+              pinnedAgents={accountPrefs.prefs.pinned_agents}
               onOpenLeaderboard={() => switchView("leaderboard")}
               onSend={startNewChatWithMessage}
               onOpenAgent={openAgentChat}
@@ -2568,7 +2653,7 @@ export default function App() {
         onToast={showToast}
       />
 
-      {lowPoints.open && !settingsOpen && (
+      {lowPoints.open && !settingsOpen && (lowPoints.outOfPoints || accountPrefs.prefs.notifications.low_coin_warning) && (
         <LowPointsModal
           points={lowPoints.points}
           outOfPoints={lowPoints.outOfPoints}
@@ -2578,6 +2663,9 @@ export default function App() {
       )}
 
       <SettingsModal
+        accountPrefs={accountPrefs.prefs}
+        onAccountPrefsChange={accountPrefs.update}
+        onProfileSaved={handleProfileSaved}
         appearance={appearance}
         onAppearanceChange={setAppearance}
         onLogout={handleLogout}

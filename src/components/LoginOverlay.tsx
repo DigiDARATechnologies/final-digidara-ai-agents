@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type FormEvent } from "react";
-import { googleAuthUrl } from "../lib/authApi";
+import { googleAuthUrl, resendTwoStepCode } from "../lib/authApi";
 import LegalModal from "./LegalModal";
 import ForgotPasswordModal from "./ForgotPasswordModal";
 import lightBgLogo from "../assets/skilldara-logo.png";
@@ -13,7 +13,9 @@ interface LoginOverlayProps {
   onAuthenticate: (
     mode: "login" | "signup",
     details: { name: string; email: string; mobile: string; password: string; consent: boolean },
-  ) => Promise<string | null>;
+  ) => Promise<string | null | { twoStep: { challenge: string; email: string } }>;
+  /** Two-step verification is on: finish signing in with the emailed code. */
+  onTwoStep?: (challenge: string, code: string) => Promise<string | null>;
 }
 
 const GOOGLE_OAUTH_STATE_KEY = "digidara_google_oauth_state";
@@ -84,7 +86,7 @@ function BrandPanel() {
   );
 }
 
-export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayProps) {
+export default function LoginOverlay({ onAuthenticate, onTwoStep, onBack }: LoginOverlayProps) {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -99,6 +101,8 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
   const [consent, setConsent] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [twoStep, setTwoStep] = useState<{ challenge: string; email: string } | null>(null);
+  const [code, setCode] = useState("");
 
   function switchMode(next: "login" | "signup") {
     setMode(next);
@@ -123,7 +127,34 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
     setSubmitting(true);
     const result = await onAuthenticate(mode, { name: trimmedName, email: trimmedEmail, mobile: trimmedMobile, password, consent });
     setSubmitting(false);
+    if (result && typeof result === "object") {
+      setTwoStep(result.twoStep);
+      setCode("");
+      setError("");
+      setNotice(`We've emailed a 6-digit code to ${result.twoStep.email}.`);
+      return;
+    }
     setError(result ?? "");
+  }
+
+  async function submitCode(e: FormEvent) {
+    e.preventDefault();
+    if (!twoStep || !onTwoStep || code.length !== 6) return;
+    setSubmitting(true);
+    const result = await onTwoStep(twoStep.challenge, code);
+    setSubmitting(false);
+    if (result) { setError(result); setNotice(""); }
+  }
+
+  async function resendCode() {
+    if (!twoStep) return;
+    setError("");
+    try {
+      const result = await resendTwoStepCode(twoStep.challenge);
+      setNotice(result.message);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   // No consent box needed for Google: a new Google account that has not
@@ -147,6 +178,35 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
         <div className="lg-form-panel">
           <div className="login-card">
 
+            {twoStep ? (
+              <>
+                <h1>Enter your code</h1>
+                <p className="login-sub">Two-step verification is on for this account.</p>
+                <form onSubmit={submitCode}>
+                  <label className="field">
+                    <span>6-Digit Code</span>
+                    <input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="123456"
+                      autoFocus
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    />
+                  </label>
+                  {notice && !error && <p className="form-notice" role="status">{notice}</p>}
+                  {error && <p className="form-error" role="alert">{error}</p>}
+                  <button type="submit" className="btn btn-primary btn-full" disabled={submitting || code.length !== 6}>
+                    {submitting ? "Checking…" : "Verify and Log In"}
+                  </button>
+                </form>
+                <p className="login-switch">
+                  Didn't get it? <button type="button" className="link-btn" onClick={() => void resendCode()}>Send a new code</button>
+                  {" "}or <button type="button" className="link-btn" onClick={() => { setTwoStep(null); setError(""); setNotice(""); }}>go back</button>.
+                </p>
+              </>
+            ) : (<>
             <h1>{mode === "signup" ? "Create your account" : "Welcome back"}</h1>
             <p className="login-sub">
               {mode === "signup"
@@ -282,6 +342,7 @@ export default function LoginOverlay({ onAuthenticate, onBack }: LoginOverlayPro
                 <button type="button" className="link-btn" onClick={() => setLegalTab("privacy")}>Privacy Policy</button>.
               </p>
             )}
+            </>)}
           </div>
         </div>
       </div>

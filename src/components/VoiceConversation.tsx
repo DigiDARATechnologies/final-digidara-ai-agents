@@ -12,6 +12,8 @@ import { releaseWarmMicrophone, warmMicrophone } from "../lib/micWarm";
 import { withoutWakeWords } from "../lib/assistText";
 import type { ChatMessage } from "../types";
 import { Logo } from "./Logo";
+import { loadAppearance } from "../lib/appearance";
+import { messageToSpeech } from "../lib/voiceCaption";
 
 /** A pause this long after the learner has spoken sends what they said --
  * about a natural conversational turn. "Just a minute" keeps it listening. */
@@ -58,6 +60,9 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
   const speech = useSpeechRecognition(recognitionLocale(), transcribeGeneralAudio, transcribeGeneralAudio, true);
   const [phase, setPhase] = useState<Phase>(awaitingReply ? "thinking" : "listening");
   const [sendIn, setSendIn] = useState<number | null>(null);
+  // Settings > Accessibility > Captions for Voice: what Boss says and hears, on screen.
+  const [captions] = useState(() => loadAppearance().captions);
+  const [heard, setHeard] = useState("");
   const orbRef = useRef<HTMLDivElement | null>(null);
   const openRef = useRef(true);
   const messagesRef = useRef(messages);
@@ -104,7 +109,9 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
     stopSpeaking();
     setPhase("listening");
     setSendIn(null);
+    setHeard("");
     speech.start((text, final) => {
+      if (openRef.current) setHeard(text);
       if (!openRef.current || !final) return;
       setSendIn(null);
       setLevel(0);
@@ -295,10 +302,25 @@ export default function VoiceConversation({ messages, typing, onSend, onClose, a
           <Logo variant="icon" size={92} />
         </button>
       </div>
-      {/* No words on screen: the logo shows what is happening, and the status
-          is read out to screen readers only. */}
+      {/* Without captions there are no words on screen: the logo shows what is
+          happening, and the status is read out to screen readers only. */}
       <p className="visually-hidden" aria-live="polite">{status}</p>
+      {captions && <VoiceCaption phase={phase} heard={heard} status={status} messages={messages} />}
       {speech.error && <p className="voice-conversation-error" role="alert">{speech.error}</p>}
     </div>
   </div>;
+}
+
+/** Settings > Accessibility > Captions for Voice. */
+function VoiceCaption({ phase, heard, status, messages }: { phase: Phase; heard: string; status: string; messages: ChatMessage[] }) {
+  const lastAgent = [...messages].reverse().find((message) => message.role === "agent");
+  const lastUser = [...messages].reverse().find((message) => message.role === "user");
+  const boss = phase === "speaking" || phase === "thinking";
+  const text = boss ? (phase === "speaking" ? messageToSpeech(lastAgent?.text ?? "") : "") : heard || "";
+  return (
+    <div className="voice-caption" aria-hidden="true">
+      <small>{boss ? "Boss" : "You"} · {status}</small>
+      <p>{text || (boss ? "…" : lastUser && phase === "listening" && !heard ? "Listening…" : "…")}</p>
+    </div>
+  );
 }

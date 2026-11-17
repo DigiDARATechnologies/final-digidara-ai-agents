@@ -1,5 +1,6 @@
 import { LIVE_AGENTS } from "../data/agents";
 import AgentCard from "./AgentCard";
+import { pinnedFirst } from "../lib/pinnedAgents";
 
 interface StoreViewProps {
   activeTab: string;
@@ -7,9 +8,11 @@ interface StoreViewProps {
   onTabChange: (tab: string) => void;
   onSearchChange: (term: string) => void;
   onOpenAgent: (agentId: string) => void;
+  /** Settings > Agent Chats: starred agents come first. */
+  pinnedAgents?: string[];
 }
 
-export default function StoreView({ activeTab, searchTerm, onTabChange, onSearchChange, onOpenAgent }: StoreViewProps) {
+export default function StoreView({ activeTab, searchTerm, onTabChange, onSearchChange, onOpenAgent, pinnedAgents = [] }: StoreViewProps) {
   // Only agents that are live today, and only the categories they actually belong to.
   const categories = ["All", ...Array.from(new Set(LIVE_AGENTS.flatMap((a) => a.category ?? [])))];
   const term = searchTerm.trim().toLowerCase();
@@ -20,7 +23,7 @@ export default function StoreView({ activeTab, searchTerm, onTabChange, onSearch
   const inSearch = (agent: (typeof LIVE_AGENTS)[number]) =>
     !term || agent.name.toLowerCase().includes(term) || agent.desc!.toLowerCase().includes(term);
 
-  const list = LIVE_AGENTS.filter((a) => tabOk(a) && inSearch(a));
+  const list = pinnedFirst(LIVE_AGENTS.filter((a) => tabOk(a) && inSearch(a)), pinnedAgents);
   const allTitle = searching ? `Results for "${searchTerm}"` : activeTab === "All" ? "All Agents" : `${activeTab} Agents`;
 
   return (

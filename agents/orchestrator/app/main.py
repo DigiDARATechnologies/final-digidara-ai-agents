@@ -33,6 +33,7 @@ from app.courses.routes import router as courses_router  # noqa: E402
 from app.monitoring import service as monitoring_service  # noqa: E402
 from app.monitoring.middleware import IssueMiddleware  # noqa: E402
 from app.monitoring.routes import router as monitoring_router  # noqa: E402
+from app.account.routes import router as account_router  # noqa: E402
 
 app = FastAPI(title="SkillDARA Orchestrator", version="1.0.0")
 
@@ -83,6 +84,7 @@ app.include_router(proctoring_router)
 app.include_router(knowledge_router)
 app.include_router(courses_router)
 app.include_router(monitoring_router)
+app.include_router(account_router)
 
 
 @app.on_event("startup")

@@ -126,6 +126,9 @@ def _purge_phase2(user_id: str) -> None:
     from app import admin_messages
 
     admin_messages.purge(user_id)
+    from app.account import routes as account_routes
+
+    account_routes.purge(user_id)
     session = get_session()
     try:
         session.query(A2ATask).filter_by(user_id=user_id).delete()
@@ -159,6 +162,7 @@ def _export_phase2(user_id: str) -> dict:
     from app.orchestrator import boss_memory
     from app.organizations import service as org_service
     from app.readiness import service as readiness_service
+    from app.account import routes as account_routes
 
     return {
         **learner_service.export_data(user_id),
@@ -169,6 +173,7 @@ def _export_phase2(user_id: str) -> dict:
         "boss_reports": _boss_reports(user_id),
         "team_messages": _team_messages(user_id),
         "career_plan": coach_service.get(user_id),
+        "settings": account_routes.export_data(user_id),
     }
 
 

@@ -80,6 +80,10 @@ def run(lines, label: str) -> None:
         if name != "orchestrator" or severity == service.ERROR and message.startswith("Container"):
             service.save("logs", severity, message, agent=name)
     service.send_alerts(label)
+    # The learners' own reminder emails (Settings > Notifications).
+    from app.account import reminders
+
+    reminders.send_due()
     if label == "production":
         service.send_daily_report(label)
         service.send_jobs_report(label)

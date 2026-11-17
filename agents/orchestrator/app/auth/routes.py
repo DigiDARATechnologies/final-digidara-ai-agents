@@ -13,10 +13,14 @@ from app.auth.schemas import (
     ResetPasswordRequest,
     SignupRequest,
     TokenResponse,
+    TwoStepChallenge,
+    TwoStepLoginRequest,
+    TwoStepResendRequest,
     UserOut,
     VerifyEmailRequest,
 )
-from app.auth.security import create_access_token, get_current_user_id, hash_password, verify_password
+from app.account import sign_ins, two_step
+from app.auth.security import get_current_session, get_current_user_id, hash_password, verify_password
 from app.models import User
 from app.rate_limit import allow_account_attempt, limiter
 from app import agent_data, job_data
@@ -69,7 +73,7 @@ def signup(req: SignupRequest, request: Request) -> TokenResponse:
             email_verification.send_code(user.id)
         except email_verification.VerificationError as exc:
             logger.warning("signup verification email not sent (%s)", exc.status_code)
-    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
+    return TokenResponse(access_token=sign_ins.issue_token(user, request, "signup"), user=_to_out(user))
 
 
 @router.post("/email/send-code")
@@ -124,18 +128,59 @@ def reset_password(req: ResetPasswordRequest, request: Request) -> dict:
     return {"message": "Your password has been changed. Please log in with your new password."}
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse | TwoStepChallenge)
 @limiter.limit(_LOGIN_IP_RATE_LIMIT)
-def login(req: LoginRequest, request: Request) -> TokenResponse:
+def login(req: LoginRequest, request: Request) -> TokenResponse | TwoStepChallenge:
     if not allow_account_attempt("login", req.email, _LOGIN_ACCOUNT_RATE_LIMIT):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
     user = service.get_by_email(req.email.strip().lower())
     if not user or not user.password_hash or not verify_password(req.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password.")
+    if two_step.is_enabled(user.id) and two_step.available():
+        # The password was right; the session waits for the emailed code.
+        try:
+            two_step.send_code(user.id, force=True)
+        except two_step.TwoStepError as exc:
+            raise HTTPException(exc.status_code, exc.message) from exc
+        return TwoStepChallenge(challenge=two_step.challenge_for(user.id), email=two_step.mask_email(user.email))
     # Accounts made for someone (an organization's admin or learners) were
     # never sent a code at sign-up: the verify screen they land on needs one.
     email_verification.send_code_if_none_pending(user)
-    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
+    return TokenResponse(access_token=sign_ins.issue_token(user, request, "password"), user=_to_out(user))
+
+
+@router.post("/login/two-step", response_model=TokenResponse)
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
+def login_two_step(req: TwoStepLoginRequest, request: Request) -> TokenResponse:
+    """The second step of a password sign-in: the code that was emailed."""
+    try:
+        user_id = two_step.user_for_challenge(req.challenge)
+    except two_step.TwoStepError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    if not allow_account_attempt("two-step-login", user_id, _VERIFY_CODE_RATE_LIMIT):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
+    try:
+        two_step.check_code(user_id, req.code)
+    except two_step.TwoStepError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    user = service.get_by_id(user_id)
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
+    email_verification.send_code_if_none_pending(user)
+    return TokenResponse(access_token=sign_ins.issue_token(user, request, "two_step"), user=_to_out(user))
+
+
+@router.post("/login/two-step/resend")
+@limiter.limit(_LOGIN_IP_RATE_LIMIT)
+def login_two_step_resend(req: TwoStepResendRequest, request: Request) -> dict:
+    try:
+        user_id = two_step.user_for_challenge(req.challenge)
+        if not allow_account_attempt("two-step-resend", user_id, _SEND_CODE_RATE_LIMIT):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, _TOO_MANY_ATTEMPTS)
+        two_step.send_code(user_id)
+    except two_step.TwoStepError as exc:
+        raise HTTPException(exc.status_code, exc.message) from exc
+    return {"message": "We've sent a new code."}
 
 
 @router.post("/google", response_model=TokenResponse)
@@ -161,7 +206,7 @@ def google_auth(req: GoogleAuthRequest, request: Request) -> TokenResponse:
                 profile.name, profile.email, profile.sub, CONSENT_POLICY_VERSION if req.consent else None,
             )
 
-    return TokenResponse(access_token=create_access_token(user.id, user.session_version or 0), user=_to_out(user))
+    return TokenResponse(access_token=sign_ins.issue_token(user, request, "google"), user=_to_out(user))
 
 
 @router.get("/me", response_model=UserOut)
@@ -189,16 +234,17 @@ def export_my_data(user_id: str = Depends(get_current_user_id)) -> dict:
 
 @router.put("/password")
 @limiter.limit(_LOGIN_RATE_LIMIT)
-def change_password(req: ChangePasswordRequest, request: Request, user_id: str = Depends(get_current_user_id)) -> dict:
+def change_password(req: ChangePasswordRequest, request: Request, current: tuple[str, str | None] = Depends(get_current_session)) -> dict:
+    user_id, session_id = current
     user = service.get_by_id(user_id)
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "This account no longer exists.")
     if user.password_hash:
         if not req.current_password or not verify_password(req.current_password, user.password_hash):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect.")
-    session_version = service.set_password(user.id, hash_password(req.new_password))
+    service.set_password(user.id, hash_password(req.new_password))
     # Every other device is now signed out; this one gets a fresh token.
-    return {"message": "Password updated", "access_token": create_access_token(user.id, session_version or 0)}
+    return {"message": "Password updated", "access_token": sign_ins.token_for_session(user.id, session_id)}
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
