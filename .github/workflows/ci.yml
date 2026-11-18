@@ -560,8 +560,18 @@ jobs:
       - run: npm ci
       - name: Use an npm that supports the bulk advisory endpoint
         run: npm install -g npm@latest
-      - name: Audit frontend dependencies
-        run: npm audit --audit-level=high --json > npm-audit.json
+      # What ships to users (react, the fonts, jszip, html2canvas-pro ...). A high or
+      # critical finding here fails the build.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high --json > npm-audit.json
+      # Build and test tools (Vite, Jest, the PWA build). They never reach users, and some
+      # advisories have no patched release yet (picomatch, GHSA-fc5q-39xc-vjpf, up to
+      # 4.0.7), so a finding here is reported and does not fail the build. It still shows
+      # up in the artifact below, so it stays visible until a fix is released.
+      - name: Audit all dependencies (report only)
+        if: always()
+        continue-on-error: true
+        run: npm audit --audit-level=high --json > npm-audit-all.json
       - name: Upload npm audit report
         if: always()
         # A full artifact storage quota must not fail the build: these are reports only.
@@ -569,7 +579,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: security-npm
-          path: npm-audit.json
+          path: |
+            npm-audit.json
+            npm-audit-all.json
           if-no-files-found: error
           retention-days: 7
 
