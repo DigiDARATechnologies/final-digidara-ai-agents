@@ -3,6 +3,7 @@
 from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timezone
+import re
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
@@ -14,7 +15,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     CondPageBreak, HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate,
-    Spacer, Table, TableStyle, Image,
+    Spacer, Table, TableStyle, Image, ListFlowable, ListItem,
 )
 
 
@@ -23,9 +24,9 @@ INK = colors.HexColor("#24232E")
 MUTED = colors.HexColor("#626575")
 LINE = colors.HexColor("#DED9F2")
 SOFT = colors.HexColor("#F6F3FF")
-LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "skilldara-logo.jpg"
-LOGO_WIDTH = 38*mm
-LOGO_HEIGHT = 21.375*mm
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "skilldara-logo.png"
+LOGO_WIDTH = 46*mm
+LOGO_HEIGHT = 46*132/737*mm
 
 
 def _logo():
@@ -85,6 +86,7 @@ def _styles():
         "verdict": ParagraphStyle("InterviewVerdict", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=9, leading=13, textColor=colors.white, alignment=TA_RIGHT),
         "field_label": ParagraphStyle("InterviewFieldLabel", parent=base["Normal"], fontName="Helvetica-Bold", fontSize=8.5, leading=11, textColor=PURPLE, leftIndent=8*mm, spaceBefore=8, spaceAfter=3),
         "field_body": ParagraphStyle("InterviewFieldBody", parent=base["Normal"], fontName="Helvetica", fontSize=9.5, leading=14, textColor=INK, leftIndent=8*mm, rightIndent=3*mm, spaceAfter=2, splitLongWords=1),
+        "answer_step": ParagraphStyle("InterviewAnswerStep", parent=base["Normal"], fontName="Helvetica", fontSize=9.5, leading=14, textColor=INK, spaceAfter=2, splitLongWords=1),
     }
 
 
@@ -107,6 +109,34 @@ def _field(story, label, value, style):
     story.append(Paragraph(_html(value) or "Not provided", style["field_body"]))
 
 
+def _recommended_answer_steps(value):
+    """Split stored prose or numbered lines into short report list items."""
+    text = str(value or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    if not text:
+        return []
+    lines = [
+        re.sub(r"^\s*(?:(?:step\s*)?\d+[.):]|[-*•])\s*", "", line, flags=re.IGNORECASE).strip()
+        for line in text.split("\n")
+    ]
+    lines = [line for line in lines if line]
+    if len(lines) > 1:
+        return lines
+    return [part.strip() for part in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", lines[0]) if part.strip()]
+
+
+def _recommended_answer(story, value, style):
+    story.append(Paragraph("Recommended answer", style["field_label"]))
+    steps = _recommended_answer_steps(value)
+    if not steps:
+        story.append(Paragraph("Not provided", style["field_body"]))
+        return
+    story.append(ListFlowable(
+        [ListItem(Paragraph(_html(step), style["answer_step"])) for step in steps],
+        bulletType="1", start="1", leftIndent=16*mm, bulletFontName="Helvetica-Bold",
+        bulletFontSize=9, bulletColor=PURPLE, bulletDedent=5*mm, spaceAfter=2,
+    ))
+
+
 def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     """Return PDF bytes; long answers can flow across pages without moving labels."""
     output = BytesIO()
@@ -117,7 +147,7 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
     )
     style = _styles()
     title_block = [Paragraph("Mock Interview", style["title"]), Paragraph("Interview Report", style["subtitle"])]
-    report_header = Table([[title_block, _logo()]], colWidths=[138*mm, 38*mm], hAlign="LEFT")
+    report_header = Table([[title_block, _logo()]], colWidths=[130*mm, 46*mm], hAlign="LEFT")
     report_header.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -195,7 +225,7 @@ def generate_interview_report_pdf(interview, scorecard, total_marks, max_marks):
             _field(story, "Follow-up answer", item["followup"].get("answer"), style)
         if item.get("verdict_reason"):
             _field(story, "Feedback", item.get("verdict_reason"), style)
-        _field(story, "Recommended answer", item.get("ideal_answer"), style)
+        _recommended_answer(story, item.get("ideal_answer"), style)
         story.extend([Spacer(1, 5*mm), HRFlowable(width="100%", thickness=.5, color=LINE), Spacer(1, 3*mm)])
 
     story.append(Paragraph(

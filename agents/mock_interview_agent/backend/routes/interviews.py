@@ -352,6 +352,7 @@ def start_interview():
 
     raw_subject = data.get("subject")
     subject = raw_subject.strip() if isinstance(raw_subject, str) else None
+    explicit_subject_scope = data.get("resolved_subjects") is not None
     difficulty = text(
         data.get("difficulty"), "difficulty", required=True, max_length=20
     ).lower()
@@ -361,6 +362,10 @@ def start_interview():
         )
 
     role_name = text(data.get("role_name"), "role_name", max_length=150)
+    technical_only_roles = {
+        "python", "sql", "flask", "django", "react", "java", "javascript",
+        "typescript", "c", "c++", "c#",
+    }
     resolved_subjects = data.get("resolved_subjects")
     if interview_mode in {"role", "weak_topic_practice"}:
         if round_type != "technical" or not role_name:
@@ -369,6 +374,9 @@ def start_interview():
             if not isinstance(resolved_subjects, list) or not all(isinstance(item, str) for item in resolved_subjects):
                 raise ValidationError("resolved_subjects must be a list of subjects.")
             resolved_subjects = [item.strip().lower() for item in resolved_subjects if item.strip()]
+        elif role_name.strip().casefold() in technical_only_roles:
+            # A technology-specific role is a deliberate single-skill interview.
+            resolved_subjects = [role_name.strip()]
         else:
             try:
                 role_resolution_started_at = time.perf_counter()
@@ -476,14 +484,35 @@ def start_interview():
             skill_inference_started_at = time.perf_counter()
             if interview_mode == "weak_topic_practice":
                 role_skills = list(resolved_subjects)
+            elif interview_mode == "role" and explicit_subject_scope:
+                # A selected skill interview (for example, Python interview
+                # within a Full Stack role) must stay within that explicit
+                # scope instead of expanding back to every role skill.
+                role_skills = list(resolved_subjects or [])
             elif round_type == "technical" and role_skill_scope:
-                role_skills = groq_client.infer_role_skills(role_skill_scope, difficulty)
-                # The learner's own skills lead a role interview for their
-                # target role; inferred ones only fill the remaining places.
-                own = learner_context.own_skills_for(role_name) if interview_mode == "role" else []
-                if own:
-                    role_skills = own + [skill for skill in (role_skills or []) if str(skill).lower() not in own]
-                    role_skills = role_skills[:max(len(own), 6)]
+                if interview_mode == "role":
+                    inferred = groq_client.infer_role_skills(role_skill_scope, difficulty) or []
+                    # For a role-wide interview, include resolved role subjects
+                    # and the learner's saved skills, deduplicated. A narrowed
+                    # explicit scope takes the branch above and is never widened.
+                    own = learner_context.own_skills_for(role_name)
+                    # Keep the role's core stack first, then add the student's
+                    # saved skills so short interviews still cover the role.
+                    combined = list(inferred) + own + list(resolved_subjects or [])
+                    role_skills = []
+                    seen_skill_keys = set()
+                    for item in combined:
+                        label = str(item).strip()
+                        key = label.casefold()
+                        if label and key not in seen_skill_keys:
+                            seen_skill_keys.add(key)
+                            role_skills.append(label)
+                        if len(role_skills) == 10:
+                            break
+                else:
+                    # A selected course/custom topic (Python, SQL, Flask, etc.)
+                    # is the scope; do not infer unrelated technologies from it.
+                    role_skills = [subject] if subject else None
             else:
                 role_skills = None
             timing["skill_inference_seconds"] = round(

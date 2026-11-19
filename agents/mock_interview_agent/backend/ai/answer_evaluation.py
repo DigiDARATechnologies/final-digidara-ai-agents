@@ -1,4 +1,4 @@
-"""Per-answer evaluation, ideal answers, and interview scorecards."""
+﻿"""Per-answer evaluation, ideal answers, and interview scorecards."""
 
 import json
 
@@ -13,6 +13,17 @@ IDEAL_ANSWER_MAX_WORDS = {
     "intermediate": 90,
     "advanced": 120,
 }
+TECHNICAL_IDEAL_ANSWER_MAX_WORDS = {
+    "beginner": 35,
+    "intermediate": 45,
+    "advanced": 55,
+    "professional": 60,
+}
+
+
+def _ideal_answer_word_limit(difficulty, round_type="technical"):
+    limits = TECHNICAL_IDEAL_ANSWER_MAX_WORDS if round_type == "technical" else IDEAL_ANSWER_MAX_WORDS
+    return limits.get(difficulty, 90)
 
 BEGINNER_TECHNICAL_RUBRIC = (
     "BEGINNER TECHNICAL RUBRIC: Judge whether the answer directly explains the basic "
@@ -46,9 +57,10 @@ TECHNICAL_LEVEL_SCORING = {
     ),
     "professional": (
         "PROFESSIONAL SCORING: Judge as a senior engineer hiring for an industry role. A correct "
-        "verdict needs a specific, production-aware answer: the actual mechanism, the trade-off "
-        "chosen and why, and how failures are handled. A generic or textbook-only answer is at most "
-        "partial; a vague answer without concrete reasoning is wrong. "
+        "verdict needs a specific, production-aware answer to the single concept asked: name the "
+        "relevant mechanism or action and explain why it addresses the stated situation. Expect a "
+        "validation or failure-handling detail only when the question asks for it. Do not require "
+        "unrequested trade-offs or extra concepts. A vague answer without concrete reasoning is wrong. "
     ),
 }
 
@@ -130,18 +142,22 @@ def _ideal_answer_guidance(difficulty, round_type="technical"):
 
     level_guidance = {
         "intermediate": (
-            "Use two or three connected sentences. Explain the concept and add a useful "
-            "practical implication, comparison, or common usage detail. Aim for roughly "
-            "40 to 75 words."
+            "Use at most two concise sentences (about 25 to 40 words). Explain the concept "
+            "and add only one directly relevant practical detail."
         ),
         "advanced": (
-            "Use two to four focused sentences. Include relevant reasoning, trade-offs, "
-            "edge cases, performance implications, or design context. Aim for roughly "
-            "55 to 95 words."
+            "Use at most two concise sentences (about 30 to 50 words). Explain the one "
+            "mechanism or concept asked about and its direct consequence. Add at most one "
+            "practical detail; do not expand into unrelated trade-offs or a broad overview."
+        ),
+        "professional": (
+            "Use at most two concise sentences (about 35 to 55 words). State the production "
+            "action or mechanism, why it addresses the stated issue, and one relevant check or "
+            "limitation. Address only the single concept asked about."
         ),
     }.get(
         difficulty,
-        "Use one or two complete, focused sentences matched to the question's complexity.",
+        "Use one or two short, complete sentences matched to the question's complexity.",
     )
     return (
         f"Write an interview-recommended answer at {difficulty} difficulty. "
@@ -168,6 +184,7 @@ def evaluate_answer(
     chat_fn,
 ):
     """Evaluate one answer without changing the planned question sequence."""
+    difficulty = learner_context.level_key(difficulty) if round_type == "technical" else difficulty
     ideal_answer_guidance = _ideal_answer_guidance(difficulty, round_type)
     beginner_final_rule = (
         "FINAL BEGINNER RULE: Keep the reason and ideal_answer focused on the basic concept. "
@@ -292,13 +309,14 @@ def evaluate_answer(
     result["reason"] = _clip_sentence(result.get("reason", ""), max_words=25)
     result["ideal_answer"] = _clip_sentence(
         result.get("ideal_answer", ""),
-        max_words=IDEAL_ANSWER_MAX_WORDS.get(difficulty, 90),
+        max_words=_ideal_answer_word_limit(difficulty, round_type),
     )
     return {key: result[key] for key in ("verdict", "reason", "ideal_answer")}
 
 
 def generate_ideal_answer(question, difficulty, round_type="technical", *, chat_fn):
     """Generate only a model answer for a deterministic timeout verdict."""
+    difficulty = learner_context.level_key(difficulty) if round_type == "technical" else difficulty
     system_prompt = (
         f"{_ideal_answer_guidance(difficulty, round_type)} "
         "Respond with plain text only, no JSON and no preamble."
@@ -311,7 +329,7 @@ def generate_ideal_answer(question, difficulty, round_type="technical", *, chat_
     ).strip()
     return _clip_sentence(
         result,
-        max_words=IDEAL_ANSWER_MAX_WORDS.get(difficulty, 90),
+        max_words=_ideal_answer_word_limit(difficulty, round_type),
     )
 
 
@@ -430,12 +448,22 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     Keep usable entries when a model returns a short or partly malformed list;
     the caller validates and retries only question IDs without a valid verdict.
     """
+    calibrated_difficulty = (
+        learner_context.level_key(difficulty) if round_type == "technical" else difficulty
+    )
+    ideal_answer_limit = _ideal_answer_word_limit(calibrated_difficulty, round_type)
+    ideal_answer_guidance = (
+        f"For technical interviews, keep each ideal_answer to at most {ideal_answer_limit} words "
+        "and no more than two focused sentences answering only the question. "
+        if round_type == "technical" else ""
+    )
     prompt = (
-        f"Evaluate all Q&A pairs for a {round_type} interview at {difficulty} difficulty. "
+        f"Evaluate all Q&A pairs for a {round_type} interview at {calibrated_difficulty} difficulty. "
         f"{BEGINNER_TECHNICAL_RUBRIC if round_type == 'technical' and difficulty == 'beginner' else ''}"
         f"{(TECHNICAL_LEVEL_SCORING if round_type == 'technical' else HR_LEVEL_SCORING).get(learner_context.level_key(difficulty), '')}"
         "Return one result per pair in the same order. For answered pairs, use verdict correct, partial, or wrong; "
-        "include question_id, a concise reason, and recommended ideal_answer. For pairs marked unanswered=true, "
+        "include question_id, a concise reason, and recommended ideal_answer. "
+        f"{ideal_answer_guidance}For pairs marked unanswered=true, "
         "return only question_id, verdict null, and ideal_answer; do not include feedback or assess the student. "
         "Return ONLY JSON in this shape: "
         '{"evaluations":[{"question_id":1,"verdict":"correct|partial|wrong|null","reason":"...","ideal_answer":"..."}]}\n'
@@ -445,6 +473,12 @@ def evaluate_answers_batch(round_type, subject, difficulty, qa_pairs, *, chat_fn
     evaluations = value.get("evaluations")
     if not isinstance(evaluations, list):
         raise ValueError("The AI returned an invalid batch evaluation.")
+    if round_type == "technical":
+        for item in evaluations:
+            if isinstance(item, dict) and isinstance(item.get("ideal_answer"), str):
+                item["ideal_answer"] = _clip_sentence(
+                    item["ideal_answer"], max_words=ideal_answer_limit
+                )
     return evaluations
 
 
