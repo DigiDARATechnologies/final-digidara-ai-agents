@@ -42,7 +42,7 @@ class QuestionGenerationPromptTests(unittest.TestCase):
     LEVELS = {
         "beginner": ("BEGINNER / FRESHER", 0.65),
         "intermediate": ("INTERMEDIATE: Assume basic definitions", 0.8),
-        "advanced": ("ADVANCED: Test informed judgment", 0.9),
+        "advanced": ("ADVANCED (HARD): Test one well-defined technical concept", 0.9),
     }
 
     def _generate_and_capture(self, difficulty, subject):
@@ -119,9 +119,10 @@ class QuestionGenerationPromptTests(unittest.TestCase):
                 call = self._generate_and_capture("advanced", subject)
                 prompt = call["messages"][0]["content"]
                 self.assertIn(
-                    "Never combine more than 2 distinct technical concepts",
+                    "assess exactly ONE concept",
                     prompt,
                 )
+                self.assertIn("Never ask a trade-off question", prompt)
                 self.assertIn(
                     "pick ONE to focus the question on",
                     prompt,
@@ -136,10 +137,10 @@ class QuestionGenerationPromptTests(unittest.TestCase):
             "beginner", "Docker & Kubernetes"
         )["messages"][0]["content"]
 
-        self.assertIn("marketing, cloud, and systems topics", digital_prompt)
+        self.assertIn("AI/ML, marketing, cloud, and systems topics", digital_prompt)
         self.assertIn("not the most specialized item", digital_prompt)
         self.assertIn("Docker container", systems_prompt)
-        self.assertIn("directly tied to the selected topic", systems_prompt)
+        self.assertIn("Keep the question tied to the selected topic", systems_prompt)
 
     def test_validator_rejects_overly_complex_advanced_question(self):
         errors = groq_client._question_validation_errors(
@@ -495,8 +496,8 @@ class AnswerEvaluationPromptTests(unittest.TestCase):
 class IdealAnswerGenerationPromptTests(unittest.TestCase):
     LEVEL_EXPECTATIONS = {
         "beginner": "Use one or two clear, complete sentences",
-        "intermediate": "Use two or three connected sentences",
-        "advanced": "Use two to four focused sentences",
+        "intermediate": "Use at most two concise sentences",
+        "advanced": "Use at most two concise sentences",
     }
 
     def test_timeout_generator_uses_same_difficulty_matched_guidance(self):
