@@ -1,0 +1,47 @@
+{
+  "slug": "python-projects",
+  "title": "Python Mini Projects",
+  "track": "projects",
+  "level": "Beginner",
+  "icon": "Py",
+  "color": "#2f9e44",
+  "order": 1,
+  "kind": "tutorial",
+  "summary": "Four complete Python projects, from a number game to a marks manager, with testing and polish.",
+  "outcomes": [
+    "Plan and finish a small project",
+    "Separate logic from input and output so code can be tested",
+    "Group, total and save data with dictionaries and CSV files",
+    "Model real things with classes",
+    "Write tests, handle errors, and write a README"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "How projects are built.",
+      "lessons": [
+        "how-to-build-a-project"
+      ]
+    },
+    {
+      "id": "projects",
+      "title": "The projects",
+      "summary": "Four projects, step by step.",
+      "lessons": [
+        "number-guessing-game",
+        "expense-tracker",
+        "password-tools",
+        "student-marks-manager"
+      ]
+    },
+    {
+      "id": "polish",
+      "title": "Polish",
+      "summary": "Tests, errors and a README.",
+      "lessons": [
+        "testing-and-polishing"
+      ]
+    }
+  ]
+}

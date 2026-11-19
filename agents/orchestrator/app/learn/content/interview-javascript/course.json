@@ -1,0 +1,26 @@
+{
+  "slug": "interview-javascript",
+  "title": "JavaScript Interview Questions",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "JS",
+  "color": "#f0b90b",
+  "order": 4,
+  "kind": "qa",
+  "summary": "Core JavaScript and browser questions with clear, short explanations.",
+  "outcomes": [
+    "Explain scope, closures and this",
+    "Describe promises, async code and the DOM"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions and answers",
+      "summary": "",
+      "lessons": [
+        "js-core-qa",
+        "async-and-dom-qa"
+      ]
+    }
+  ]
+}

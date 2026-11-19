@@ -1,0 +1,34 @@
+{
+  "slug": "data-analysis-project",
+  "title": "Data Analysis Project: Retail Sales",
+  "track": "projects",
+  "level": "Intermediate",
+  "icon": "Da",
+  "color": "#0b7285",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "A complete analysis from business question to recommendation: clean messy data, analyse with pandas, chart it, and present it.",
+  "outcomes": [
+    "Turn a vague request into clear questions",
+    "Inspect and clean a messy dataset, and record every decision",
+    "Answer questions with groupby and pivot tables",
+    "Choose and check charts",
+    "Write insights and recommendations with honest limits",
+    "Package the project for a portfolio"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "The project",
+      "summary": "From request to recommendation.",
+      "lessons": [
+        "frame-the-question-and-load-data",
+        "clean-the-data",
+        "explore-and-analyse",
+        "visualise-the-results",
+        "insights-and-recommendations",
+        "present-and-publish"
+      ]
+    }
+  ]
+}

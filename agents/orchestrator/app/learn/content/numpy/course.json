@@ -1,0 +1,59 @@
+{
+  "slug": "numpy",
+  "title": "NumPy",
+  "track": "data-ai",
+  "level": "Beginner",
+  "icon": "Np",
+  "color": "#4dabcf",
+  "order": 1,
+  "kind": "tutorial",
+  "summary": "Fast arrays and maths on whole arrays at once: the foundation under Pandas, scikit-learn and every data tool.",
+  "outcomes": [
+    "Create and reshape arrays",
+    "Select and change values with indexes, slices and masks",
+    "Calculate without loops using vectorisation and broadcasting",
+    "Summarise data with statistics and the axis argument",
+    "Generate repeatable random numbers",
+    "Use matrices for linear algebra"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Arrays, and how to pick values from them.",
+      "lessons": [
+        "what-is-numpy",
+        "creating-arrays",
+        "indexing-and-slicing",
+        "boolean-masks-and-where"
+      ]
+    },
+    {
+      "id": "work",
+      "title": "Working with arrays",
+      "summary": "Maths and summaries without loops.",
+      "lessons": [
+        "array-math-and-broadcasting",
+        "statistics-and-axes"
+      ]
+    },
+    {
+      "id": "shape",
+      "title": "Shapes, randomness and matrices",
+      "summary": "Reshape data, simulate, and use matrices.",
+      "lessons": [
+        "reshaping-and-stacking",
+        "random-numbers",
+        "linear-algebra-basics"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The NumPy questions fresher interviews ask.",
+      "lessons": [
+        "numpy-interview-questions"
+      ]
+    }
+  ]
+}

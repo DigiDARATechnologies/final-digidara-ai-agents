@@ -1,0 +1,14 @@
+{
+  "slug": "mongodb",
+  "title": "MongoDB",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "Mo",
+  "color": "#47a248",
+  "order": 12,
+  "kind": "tutorial",
+  "summary": "Store documents instead of rows.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}

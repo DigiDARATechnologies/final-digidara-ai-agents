@@ -1,0 +1,14 @@
+{
+  "slug": "aptitude-verbal",
+  "title": "Verbal Ability",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "V",
+  "color": "#1098ad",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "Grammar, vocabulary and reading comprehension for campus tests.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}

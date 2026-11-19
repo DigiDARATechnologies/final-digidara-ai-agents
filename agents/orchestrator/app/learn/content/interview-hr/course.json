@@ -1,0 +1,28 @@
+{
+  "slug": "interview-hr",
+  "title": "HR Interview",
+  "track": "interview",
+  "level": "All levels",
+  "icon": "HR",
+  "color": "#0b7285",
+  "order": 1,
+  "kind": "qa",
+  "summary": "The questions every HR round asks, how to think about them, and sample answers to adapt.",
+  "outcomes": [
+    "Introduce yourself clearly",
+    "Talk about strengths, weaknesses and goals",
+    "Answer behavioural questions with the STAR method"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions and answers",
+      "summary": "",
+      "lessons": [
+        "introduction-questions",
+        "career-and-goals",
+        "behavioural-questions"
+      ]
+    }
+  ]
+}

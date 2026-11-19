@@ -1,0 +1,14 @@
+{
+  "slug": "math",
+  "title": "Math for Data and Tech",
+  "track": "data-ai",
+  "level": "Beginner",
+  "icon": "Mt",
+  "color": "#c2255c",
+  "order": 5,
+  "kind": "tutorial",
+  "summary": "The algebra, statistics and probability that technical work leans on.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}

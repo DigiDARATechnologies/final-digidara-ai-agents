@@ -1,0 +1,31 @@
+{
+  "slug": "ml-project",
+  "title": "Machine Learning Project: Student Pass Predictor",
+  "track": "projects",
+  "level": "Intermediate",
+  "icon": "ML",
+  "color": "#862e9c",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "An end-to-end ML project: define the problem, beat a baseline, compare models, test honestly, explain, serve and present it.",
+  "outcomes": [
+    "Define the target, features, metric and baseline",
+    "Compare models fairly with cross-validation",
+    "Evaluate with a confusion matrix and choose a threshold for the real cost",
+    "Explain and save the model",
+    "Serve it with an API and describe its limits and fairness concerns"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "The project",
+      "summary": "From problem to deployed model.",
+      "lessons": [
+        "define-the-problem-and-data",
+        "baseline-and-model-comparison",
+        "evaluate-explain-and-save",
+        "deploy-and-present"
+      ]
+    }
+  ]
+}

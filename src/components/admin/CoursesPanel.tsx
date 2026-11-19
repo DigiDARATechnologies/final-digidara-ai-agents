@@ -4,6 +4,7 @@ import {
   updateCourse, updateLesson, uploadLessonFile, type Course, type CourseInput, type Lesson,
 } from "../../lib/courseApi";
 import { useLoad } from "./useLoad";
+import LearnLicenses from "./LearnLicenses";
 import "../Courses.css";
 
 const EMPTY: CourseInput = { title: "", description: "", category: "", level: "", published: false };
@@ -168,6 +169,7 @@ export default function CoursesPanel() {
             </tbody>
           </table>
         </div>
+        <LearnLicenses />
       </div>
     );
   }

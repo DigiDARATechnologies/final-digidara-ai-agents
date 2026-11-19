@@ -1,0 +1,100 @@
+{
+  "slug": "machine-learning",
+  "title": "Machine Learning",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "ML",
+  "color": "#862e9c",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "Teach a computer to learn from data: regression, classification, trees, clustering and how to tell if a model is any good.",
+  "outcomes": [
+    "Explain what machine learning is and when to use it",
+    "Split data and train a model with scikit-learn",
+    "Build regression and classification models",
+    "Measure a model honestly and avoid overfitting",
+    "Group data with clustering",
+    "Package a model so it can be reused",
+    "Engineer features safely and avoid data leakage",
+    "Diagnose and fix over- and underfitting with regularisation",
+    "Use gradient boosting, handle rare classes and reduce dimensions with PCA",
+    "Interpret models and validate time-series models honestly, and watch for drift"
+  ],
+  "chapters": [
+    {
+      "id": "basics",
+      "title": "The big picture",
+      "summary": "What ML is, and the steps every project follows.",
+      "lessons": [
+        "what-is-machine-learning",
+        "the-ml-workflow"
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Preparing data",
+      "summary": "Scaling, encoding and splitting.",
+      "lessons": [
+        "preparing-data"
+      ]
+    },
+    {
+      "id": "supervised",
+      "title": "Supervised learning",
+      "summary": "Predict a number or a category from examples.",
+      "lessons": [
+        "linear-regression",
+        "logistic-regression",
+        "decision-trees",
+        "knn-and-random-forest"
+      ]
+    },
+    {
+      "id": "evaluate",
+      "title": "Is the model any good?",
+      "summary": "Measure, compare and improve.",
+      "lessons": [
+        "evaluating-classifiers",
+        "cross-validation-and-tuning"
+      ]
+    },
+    {
+      "id": "unsupervised",
+      "title": "Unsupervised learning",
+      "summary": "Find groups with no labels.",
+      "lessons": [
+        "clustering-kmeans"
+      ]
+    },
+    {
+      "id": "ship",
+      "title": "Using a model",
+      "summary": "Make your steps repeatable and save the result.",
+      "lessons": [
+        "pipelines-and-saving"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced machine learning",
+      "summary": "Features, boosting, rare events, interpretation, time and drift.",
+      "lessons": [
+        "feature-engineering",
+        "regularisation-and-bias-variance",
+        "gradient-boosting",
+        "imbalanced-data",
+        "dimensionality-reduction-pca",
+        "interpreting-models",
+        "time-series-and-drift"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The ML questions fresher interviews ask.",
+      "lessons": [
+        "ml-interview-questions"
+      ]
+    }
+  ]
+}

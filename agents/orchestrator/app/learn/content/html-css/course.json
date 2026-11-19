@@ -1,0 +1,43 @@
+{
+  "slug": "html-css",
+  "title": "HTML & CSS",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "</>",
+  "color": "#e44d26",
+  "order": 2,
+  "kind": "tutorial",
+  "summary": "Build web pages that look good on every screen: structure with HTML, style with CSS.",
+  "outcomes": [
+    "Structure a page with HTML",
+    "Add links, images, lists, tables and forms",
+    "Style with selectors, colours and the box model",
+    "Lay out with Flexbox",
+    "Make a page responsive"
+  ],
+  "chapters": [
+    {
+      "id": "html",
+      "title": "HTML: the structure",
+      "summary": "",
+      "lessons": [
+        "what-is-html",
+        "text-links-images",
+        "lists-and-tables",
+        "forms"
+      ]
+    },
+    {
+      "id": "css",
+      "title": "CSS: the style",
+      "summary": "",
+      "lessons": [
+        "what-is-css",
+        "selectors-and-colors",
+        "box-model",
+        "flexbox",
+        "responsive-design"
+      ]
+    }
+  ]
+}
