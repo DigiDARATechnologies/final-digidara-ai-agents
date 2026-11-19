@@ -6,6 +6,22 @@ import { resolveApiAssetUrl } from "../api";
 
 const CorrectIcon = VERDICT_ICONS.correct;
 
+function recommendedAnswerSteps(answer) {
+  const text = String(answer || "").trim();
+  if (!text) return [];
+
+  const lines = text
+    .split(/\n+/)
+    .map((line) => line.replace(/^\s*(?:(?:step\s*)?\d+[.):]|[-*•])\s*/i, "").trim())
+    .filter(Boolean);
+  if (lines.length > 1) return lines;
+
+  return (lines[0] || text)
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map((step) => step.trim())
+    .filter(Boolean);
+}
+
 /**
  * Consolidated marks view: one card per real question, with an optional
  * follow-up nested inside the parent question.
@@ -113,7 +129,11 @@ export default function QuestionScorecard({
                   <CorrectIcon size={16} strokeWidth={2} aria-hidden="true" />
                   INTERVIEW RECOMMENDED ANSWER
                 </span>
-                <p className="ideal-answer-text">{item.ideal_answer}</p>
+                <ol className="ideal-answer-steps">
+                  {recommendedAnswerSteps(item.ideal_answer).map((step, index) => (
+                    <li key={`${item.question_number}-ideal-${index}`}>{step}</li>
+                  ))}
+                </ol>
               </div>
             )}
           </article>

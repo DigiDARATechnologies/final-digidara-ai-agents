@@ -14,6 +14,7 @@ QUESTION_WORD_LIMITS = {
     "beginner": 18,
     "intermediate": 30,
     "advanced": 45,
+    "professional": 32,
 }
 QUESTION_GENERATION_MAX_ATTEMPTS = 3
 TOPIC_AREA_MAX_LENGTH = 100
@@ -66,9 +67,14 @@ SAFE_QUESTION_TEMPLATES = {
         "How would you apply one {subject} concept in practice?",
     ),
     "advanced": (
-        "Which trade-off matters most in {subject}, and why?",
-        "How would you diagnose a subtle reliability problem in {subject}?",
-        "What {subject} failure mode deserves the most attention, and why?",
+        "How would you diagnose one reliability failure in {subject}?",
+        "What evidence would confirm a performance bottleneck in {subject}?",
+        "How would you investigate one security weakness in {subject}?",
+    ),
+    "professional": (
+        "A production {subject} request is failing intermittently. What would you inspect first?",
+        "A {subject} service exceeds its latency target. How would you locate the bottleneck?",
+        "How would you verify that one {subject} security control works in production?",
     ),
 }
 SAFE_HR_QUESTION_TEMPLATES = {
@@ -106,13 +112,21 @@ INTERMEDIATE_SKILL_FALLBACK_QUESTIONS = {
     "git workflows and deployment": "When would you use a feature branch in Git?",
 }
 ADVANCED_SKILL_FALLBACK_QUESTIONS = {
-    "python performance and reliability": "How would you balance Python throughput against reliability during peak load?",
-    "scalable backend architecture": "Which service boundary would you choose for scaling a busy backend, and why?",
-    "api security and versioning": "How would you secure a public API while preserving compatibility for existing clients?",
-    "database design and optimization": "Which database indexing trade-off matters most under heavy writes, and why?",
-    "frontend-backend system design": "How would you deliver real-time updates while controlling backend load?",
-    "ci/cd and cloud deployment": "How would you make cloud deployments safe to roll back after a failure?",
-    "observability and incident debugging": "How would you isolate the cause of a latency spike across services?",
+    "python": "How would you trace a Python exception to the code path that raised it?",
+    "sql": "How would you use EXPLAIN to find the slow operation in a SQL query?",
+    "flask": "How would you validate a request before a Flask route processes it?",
+    "django": "How can Django middleware add latency to each request?",
+    "react": "How would you prevent stale state from replacing newer data in a React component?",
+    "rest api": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "rest apis": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "rest api basics": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "python performance and reliability": "How would you identify a CPU-bound hotspot in a Python service?",
+    "scalable backend architecture": "How would you identify the first backend component limiting request throughput?",
+    "api security and versioning": "How would you prevent unauthorized access to a protected API endpoint?",
+    "database design and optimization": "How would you determine whether a database index is used by a slow query?",
+    "frontend-backend system design": "How would you trace a failed request from a frontend to its backend response?",
+    "ci/cd and cloud deployment": "How would you verify that a failed deployment can be rolled back safely?",
+    "observability and incident debugging": "Which metric would you inspect first during a sudden service-latency spike?",
 }
 HR_AREA_FALLBACK_QUESTIONS = {
     "beginner": {
@@ -187,10 +201,16 @@ def _question_validation_errors(question, difficulty):
         )
 
     interrogatives = QUESTION_INTERROGATIVE_PATTERN.findall(cleaned)
-    if len(interrogatives) > 2:
+    if len(interrogatives) > 1:
         errors.append(
             f"contains {len(interrogatives)} question clauses"
         )
+    if re.search(
+        r"\b(?:trade[- ]offs?|balance between|pros and cons|compare .{1,80} and)\b",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        errors.append("asks a broad comparison instead of one focused concept")
     return errors
 
 
@@ -251,7 +271,7 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
 
     level_specific = (
         INTERMEDIATE_SKILL_FALLBACK_QUESTIONS if difficulty == "intermediate"
-        else ADVANCED_SKILL_FALLBACK_QUESTIONS if difficulty == "advanced"
+        else ADVANCED_SKILL_FALLBACK_QUESTIONS if difficulty in {"advanced", "professional"}
         else {}
     ).get(skill_key)
     generic_templates = SAFE_QUESTION_TEMPLATES.get(
@@ -279,7 +299,8 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
     return {
         "beginner": "What is one core concept in this subject?",
         "intermediate": "How would you apply one practical concept in this subject?",
-        "advanced": "Which trade-off matters most in this subject, and why?",
+        "advanced": "How would you diagnose one specific failure in this subject?",
+        "professional": "A production system has one issue with this subject. What would you inspect first?",
     }.get(difficulty, "How would you apply one practical concept in this subject?")
 
 
