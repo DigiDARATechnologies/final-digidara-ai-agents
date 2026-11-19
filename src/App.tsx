@@ -58,7 +58,7 @@ const OrganizationView = lazy(() => import("./components/OrganizationView"));
 const Leaderboard = lazy(() => import("./components/Leaderboard"));
 const LearningDashboard = lazy(() => import("./components/LearningDashboard"));
 const MyAssessments = lazy(() => import("./components/MyAssessments"));
-const Courses = lazy(() => import("./components/Courses"));
+const Courses = lazy(() => import("./components/learn/CoursesHome"));
 const HelpPage = lazy(() => import("./components/HelpPage"));
 const ProfileView = lazy(() => import("./components/ProfileView"));
 const AgentDashboard = lazy(() => import("./components/AgentDashboard"));
@@ -2401,7 +2401,7 @@ export default function App() {
           )}
 
           {view === "courses" && (
-            <Suspense fallback={<ScreenLoading />}><Courses onBack={startNewChatLanding} /></Suspense>
+            <Suspense fallback={<ScreenLoading />}><Courses onBack={startNewChatLanding} onOpenAgent={openAgentChat} onBuyCoins={() => { setSettingsTab("billing"); setSettingsOpen(true); }} /></Suspense>
           )}
 
           {view === "learning-dashboard" && (

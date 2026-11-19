@@ -1,0 +1,82 @@
+{
+  "slug": "excel",
+  "title": "Excel",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "Xl",
+  "color": "#1d6f42",
+  "order": 13,
+  "kind": "tutorial",
+  "summary": "From your first formula to pivot tables, lookups, dynamic arrays and dashboards: the Excel skills every job asks for.",
+  "outcomes": [
+    "Enter, format and organise data in clean tables",
+    "Write formulas with relative, absolute and mixed references",
+    "Use logical, text, date, lookup and conditional-total functions with confidence",
+    "Sort, filter, validate, clean and highlight data",
+    "Summarise with pivot tables and present with charts and dashboards",
+    "Use dynamic arrays, finance functions, Power Query and error-checking habits"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "The workbook, data types and tidy tables.",
+      "lessons": [
+        "what-is-excel",
+        "entering-data-and-formatting"
+      ]
+    },
+    {
+      "id": "formulas",
+      "title": "Formulas and functions",
+      "summary": "The functions you use every day.",
+      "lessons": [
+        "formulas-and-references",
+        "essential-functions",
+        "logical-functions",
+        "text-functions",
+        "date-and-time",
+        "lookup-functions",
+        "conditional-aggregates"
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Working with data",
+      "summary": "Keep data clean, correct and readable.",
+      "lessons": [
+        "sort-filter-and-validation",
+        "cleaning-data",
+        "conditional-formatting"
+      ]
+    },
+    {
+      "id": "analysis",
+      "title": "Analysis and reporting",
+      "summary": "Summarise, visualise and model.",
+      "lessons": [
+        "pivot-tables",
+        "charts",
+        "dynamic-arrays",
+        "what-if-and-finance"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced Excel",
+      "summary": "Trustworthy models and automation.",
+      "lessons": [
+        "errors-and-auditing",
+        "power-query-and-automation"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The Excel questions interviewers ask.",
+      "lessons": [
+        "excel-interview-questions"
+      ]
+    }
+  ]
+}

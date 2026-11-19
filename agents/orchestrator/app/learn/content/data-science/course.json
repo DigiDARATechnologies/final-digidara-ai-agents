@@ -1,0 +1,74 @@
+{
+  "slug": "data-science",
+  "title": "Data Science",
+  "track": "data-ai",
+  "level": "Beginner",
+  "icon": "DS",
+  "color": "#0b7285",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "Statistics, exploration and storytelling: how to trust a number and turn data into a decision.",
+  "outcomes": [
+    "Describe the data science workflow and roles",
+    "Explore and clean a dataset, and handle outliers",
+    "Use descriptive statistics, probability and distributions",
+    "Tell correlation from causation",
+    "Run and read a hypothesis test and an A/B test",
+    "Complete a small project from question to report"
+  ],
+  "chapters": [
+    {
+      "id": "basics",
+      "title": "Getting started",
+      "summary": "What the work is and how a project runs.",
+      "lessons": [
+        "what-is-data-science"
+      ]
+    },
+    {
+      "id": "eda",
+      "title": "Exploring and cleaning data",
+      "summary": "Get to know the data before modelling it.",
+      "lessons": [
+        "exploring-a-dataset",
+        "cleaning-and-outliers"
+      ]
+    },
+    {
+      "id": "stats",
+      "title": "Statistics you need",
+      "summary": "Know what the numbers really say.",
+      "lessons": [
+        "descriptive-statistics",
+        "probability-basics",
+        "distributions-and-sampling",
+        "correlation",
+        "hypothesis-testing"
+      ]
+    },
+    {
+      "id": "viz",
+      "title": "Communicating results",
+      "summary": "Charts and stories that lead to action.",
+      "lessons": [
+        "choosing-charts-and-telling-the-story"
+      ]
+    },
+    {
+      "id": "project",
+      "title": "Putting it together",
+      "summary": "A full project from start to finish.",
+      "lessons": [
+        "a-mini-project"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The data science questions fresher interviews ask.",
+      "lessons": [
+        "data-science-interview-questions"
+      ]
+    }
+  ]
+}

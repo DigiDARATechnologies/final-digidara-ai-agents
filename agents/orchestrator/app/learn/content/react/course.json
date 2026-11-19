@@ -1,0 +1,68 @@
+{
+  "slug": "react",
+  "title": "React",
+  "track": "technical",
+  "level": "Intermediate",
+  "icon": "Re",
+  "color": "#0aa7c9",
+  "order": 5,
+  "kind": "tutorial",
+  "summary": "Build interfaces from components, then go deeper: hooks, performance, routing, testing, TypeScript and accessibility.",
+  "outcomes": [
+    "Build components with JSX, props, state and forms",
+    "Render lists and conditions, and handle loading, error and empty states",
+    "Use effects, refs, context, reducers and custom hooks correctly",
+    "Find and fix real performance problems with memo, transitions and code splitting",
+    "Build multi-page apps with routing and choose the right state management",
+    "Test components, type them with TypeScript and make them accessible"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Components, props, state and forms.",
+      "lessons": [
+        "what-is-react",
+        "jsx-and-components",
+        "props-and-composition",
+        "state-with-usestate",
+        "events-and-forms",
+        "lists-and-conditional-rendering"
+      ]
+    },
+    {
+      "id": "hooks",
+      "title": "Hooks in depth",
+      "summary": "Effects, refs, context, reducers and your own hooks.",
+      "lessons": [
+        "useeffect-and-data-fetching",
+        "useref-and-the-dom",
+        "usecontext",
+        "usereducer",
+        "custom-hooks"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced React",
+      "summary": "Performance, modern React 19, routing, testing and quality.",
+      "lessons": [
+        "rendering-and-performance",
+        "suspense-lazy-and-transitions",
+        "routing",
+        "state-management-patterns",
+        "testing-react",
+        "typescript-with-react",
+        "patterns-and-accessibility"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The React questions interviewers ask.",
+      "lessons": [
+        "react-interview-questions"
+      ]
+    }
+  ]
+}

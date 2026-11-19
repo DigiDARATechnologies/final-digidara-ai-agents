@@ -1,0 +1,100 @@
+{
+  "slug": "deep-learning",
+  "title": "Deep Learning",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "DL",
+  "color": "#c2255c",
+  "order": 6,
+  "kind": "tutorial",
+  "summary": "Neural networks from the first neuron to transformers: build one from scratch, then master PyTorch, training, CNNs, LSTMs, attention, LLMs and deployment.",
+  "outcomes": [
+    "Explain neurons, layers, activations, loss, backpropagation and gradient descent, and build a network from scratch in NumPy",
+    "Use PyTorch tensors, autograd, nn.Module and the standard training loop with DataLoaders",
+    "Choose optimisers and learning rates, and fight overfitting with dropout, weight decay and early stopping",
+    "Diagnose vanishing gradients and silent training bugs with a practical checklist",
+    "Build convolutional networks for images and apply transfer learning",
+    "Understand RNNs, LSTMs, embeddings, attention and transformers, then LLMs, LoRA fine-tuning, deployment and responsible AI"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "What deep learning is, and your first neuron.",
+      "lessons": [
+        "what-is-deep-learning",
+        "the-artificial-neuron"
+      ]
+    },
+    {
+      "id": "foundations",
+      "title": "Foundations (from scratch)",
+      "summary": "Build and understand every part by hand.",
+      "lessons": [
+        "layers-and-the-forward-pass",
+        "activation-functions",
+        "loss-functions",
+        "gradient-descent-and-backpropagation",
+        "neural-network-from-scratch"
+      ]
+    },
+    {
+      "id": "pytorch",
+      "title": "PyTorch",
+      "summary": "The professional toolkit and the standard training loop.",
+      "lessons": [
+        "tensors-and-autograd",
+        "building-models-with-nn-module",
+        "training-loop-and-data"
+      ]
+    },
+    {
+      "id": "craft",
+      "title": "The craft of training",
+      "summary": "Make training fast, stable and trustworthy.",
+      "lessons": [
+        "optimisers-and-learning-rates",
+        "overfitting-and-regularisation",
+        "initialisation-normalisation-and-vanishing-gradients",
+        "debugging-and-training-checklist"
+      ]
+    },
+    {
+      "id": "images",
+      "title": "Images",
+      "summary": "CNNs and reusing pretrained models.",
+      "lessons": [
+        "convolutional-networks",
+        "transfer-learning-and-augmentation"
+      ]
+    },
+    {
+      "id": "sequences",
+      "title": "Sequences and text",
+      "summary": "From recurrent networks to transformers.",
+      "lessons": [
+        "sequences-rnns-and-lstms",
+        "embeddings-and-text",
+        "attention-and-transformers"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced topics",
+      "summary": "Generative models, LLMs, LoRA, production and responsibility.",
+      "lessons": [
+        "autoencoders-and-generative-models",
+        "large-language-models-and-fine-tuning",
+        "saving-deploying-and-responsible-ai"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The deep learning questions interviewers ask.",
+      "lessons": [
+        "deep-learning-interview-questions"
+      ]
+    }
+  ]
+}

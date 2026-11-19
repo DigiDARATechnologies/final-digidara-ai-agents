@@ -1,0 +1,46 @@
+{
+  "slug": "aptitude-quant",
+  "title": "Quantitative Aptitude",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "Q",
+  "color": "#d9480f",
+  "order": 1,
+  "kind": "tutorial",
+  "summary": "The number topics campus tests repeat every year, with formulas, shortcuts and worked examples.",
+  "outcomes": [
+    "Solve percentage, ratio and average problems quickly",
+    "Handle profit and loss and interest",
+    "Work out time and work, speed and distance"
+  ],
+  "chapters": [
+    {
+      "id": "numbers",
+      "title": "Working with numbers",
+      "summary": "",
+      "lessons": [
+        "percentages",
+        "ratio-and-proportion",
+        "averages"
+      ]
+    },
+    {
+      "id": "money",
+      "title": "Money problems",
+      "summary": "",
+      "lessons": [
+        "profit-and-loss",
+        "interest"
+      ]
+    },
+    {
+      "id": "motion",
+      "title": "Time, work and distance",
+      "summary": "",
+      "lessons": [
+        "time-and-work",
+        "time-speed-distance"
+      ]
+    }
+  ]
+}

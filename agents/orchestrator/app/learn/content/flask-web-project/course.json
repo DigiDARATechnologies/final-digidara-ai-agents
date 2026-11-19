@@ -1,0 +1,48 @@
+{
+  "slug": "flask-web-project",
+  "title": "Web App Project: TaskFlow",
+  "track": "projects",
+  "level": "Intermediate",
+  "icon": "Fl",
+  "color": "#364fc7",
+  "order": 2,
+  "kind": "tutorial",
+  "summary": "Build a full web app with Flask: a database, a JSON API, web pages, login, tests and deployment.",
+  "outcomes": [
+    "Plan and structure a Flask project",
+    "Design models and owner-safe queries",
+    "Build a validated JSON API",
+    "Render pages and forms with Jinja",
+    "Add registration and login with hashed passwords",
+    "Test, containerise and deploy the app"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Plan",
+      "summary": "Idea, data, structure and a working skeleton.",
+      "lessons": [
+        "plan-and-setup"
+      ]
+    },
+    {
+      "id": "develop",
+      "title": "Build",
+      "summary": "Database, API, pages, login.",
+      "lessons": [
+        "database-and-models",
+        "api-endpoints",
+        "web-pages",
+        "login-and-security"
+      ]
+    },
+    {
+      "id": "ship",
+      "title": "Ship",
+      "summary": "Tests, Docker, deployment and your resume.",
+      "lessons": [
+        "tests-and-deployment"
+      ]
+    }
+  ]
+}

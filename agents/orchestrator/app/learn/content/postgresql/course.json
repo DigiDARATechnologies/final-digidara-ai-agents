@@ -1,0 +1,14 @@
+{
+  "slug": "postgresql",
+  "title": "PostgreSQL",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "Pg",
+  "color": "#336791",
+  "order": 11,
+  "kind": "tutorial",
+  "summary": "A powerful open-source relational database.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}

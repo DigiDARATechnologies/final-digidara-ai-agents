@@ -1,0 +1,14 @@
+{
+  "slug": "nodejs",
+  "title": "Node.js",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "No",
+  "color": "#3c873a",
+  "order": 8,
+  "kind": "tutorial",
+  "summary": "Run JavaScript on the server and build APIs.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}
