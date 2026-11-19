@@ -31,7 +31,7 @@ function when(iso: string | null): string {
 function AssessmentPanel({ overview, busy, onStart }: { overview: AssessmentOverview; busy: boolean; onStart: () => void }) {
   const name = overview.technology.name;
   if (!overview.available) {
-    return <section className="ps-assess off"><b>Professional assessment</b><span>Coming soon for {name}. Available for Python, MySQL, JavaScript, Pandas, NumPy, HTML and CSS.</span></section>;
+    return <section className="ps-assess off"><b>Professional assessment</b><span>Coming soon for {name}. Available for Python, MySQL, JavaScript, Pandas, NumPy, HTML, CSS, Flask and React.js.</span></section>;
   }
   const active = overview.active;
   return (

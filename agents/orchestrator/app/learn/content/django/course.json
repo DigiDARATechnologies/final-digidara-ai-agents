@@ -1,0 +1,81 @@
+{
+  "slug": "django",
+  "title": "Django",
+  "track": "technical",
+  "level": "Intermediate",
+  "icon": "Dj",
+  "color": "#0c4b33",
+  "order": 7,
+  "kind": "tutorial",
+  "summary": "The full-stack Python framework: models, admin, forms and authentication, then APIs, testing, security and deployment.",
+  "outcomes": [
+    "Set up a project and apps, and route URLs to views and templates",
+    "Design models, run migrations and query with the ORM",
+    "Link tables and remove N+1 queries with select_related and prefetch_related",
+    "Use the admin, forms, authentication, permissions and class-based views",
+    "Build a REST API with Django REST Framework",
+    "Test, secure, cache, run background jobs and deploy a Django project"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Projects, URLs, views and templates.",
+      "lessons": [
+        "what-is-django",
+        "project-and-apps",
+        "urls-and-views",
+        "templates"
+      ]
+    },
+    {
+      "id": "models",
+      "title": "Models and the ORM",
+      "summary": "Tables as classes, queries, and fast relationships.",
+      "lessons": [
+        "models-and-migrations",
+        "queries",
+        "relationships-and-optimisation"
+      ]
+    },
+    {
+      "id": "features",
+      "title": "Built-in features",
+      "summary": "Admin, forms, login and reusable views.",
+      "lessons": [
+        "admin-site",
+        "forms-and-validation",
+        "authentication-and-permissions",
+        "class-based-views"
+      ]
+    },
+    {
+      "id": "api",
+      "title": "Building APIs",
+      "summary": "JSON APIs with Django REST Framework.",
+      "lessons": [
+        "drf-basics"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced Django",
+      "summary": "Middleware, tests, security, speed and going live.",
+      "lessons": [
+        "middleware-and-signals",
+        "testing",
+        "security",
+        "caching-and-celery",
+        "deployment"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The Django questions interviewers ask.",
+      "lessons": [
+        "django-interview-questions"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "slug": "dsa",
+  "title": "Data Structures & Algorithms",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "DS",
+  "color": "#364fc7",
+  "order": 10,
+  "kind": "tutorial",
+  "summary": "Arrays, linked lists, trees, graphs, sorting and complexity.",
+  "outcomes": [],
+  "chapters": [],
+  "status": "soon"
+}

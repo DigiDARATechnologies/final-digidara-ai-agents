@@ -1,0 +1,26 @@
+{
+  "slug": "interview-sql",
+  "title": "SQL Interview Questions",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "DB",
+  "color": "#2f7d6d",
+  "order": 3,
+  "kind": "qa",
+  "summary": "The SQL questions fresher interviews keep asking, with the query and the reasoning.",
+  "outcomes": [
+    "Explain keys, joins and grouping",
+    "Write the standard queries on the spot"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions and answers",
+      "summary": "",
+      "lessons": [
+        "sql-basics-qa",
+        "joins-and-aggregation-qa"
+      ]
+    }
+  ]
+}

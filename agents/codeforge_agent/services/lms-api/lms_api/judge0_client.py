@@ -34,8 +34,22 @@ def node_wrapper(source_code):
     )
 
 
+def expects_no_output(expected_output):
+    return expected_output is not None and not str(expected_output).strip()
+
+
 class Judge0Client:
     def execute(self, source_code, language_id, stdin_text, expected_output):
+        """Run the code once. A test whose correct answer is no output at all
+        (Woof n times with n = 0) is judged here, not by Judge0: Judge0 stores
+        "printed nothing" as null and compares it with the expected "", so a
+        correct program came back Wrong Answer. Judge0 runs it with no expected
+        output (Accepted if it ran cleanly) and we check nothing was printed."""
+        if expects_no_output(expected_output):
+            result = self.execute(source_code, language_id, stdin_text, None)
+            if result["passed"] and result["stdout"].strip():
+                return {**result, "passed": False, "status": "Wrong Answer"}
+            return result
         language_id = int(language_id)
         memory_limit = 128000
         if language_id == NODE_LANGUAGE_ID:

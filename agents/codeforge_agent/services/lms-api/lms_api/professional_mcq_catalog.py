@@ -1,4 +1,4 @@
-"""Professional HTML and CSS content: expert questions and real-world fix
+"""Professional HTML, CSS, Flask and React content: expert questions and real-world fix
 scenarios, as multiple-choice (these technologies have no code runner).
 Written with the right answer first; the options are shuffled below, the
 same way as every practice MCQ (see problem_catalog._shuffle_mcq_options)."""
@@ -168,4 +168,208 @@ CSS = [
        ":focus-visible shows a focus indicator when the browser decides it is needed, for example keyboard navigation."),
 ]
 
-PRO_MCQ_PROBLEMS = HTML + CSS
+FLASK = [
+    _q("flask", "expert", 1, "Working Outside the Application Context", "flask-pro-app-context",
+       "A script does from app import app, db and then runs db.session.query(User).count() at the top level. It fails with "
+       '"RuntimeError: Working outside of application context." What is the fix?',
+       "Run the code inside with app.app_context(): so Flask knows which app (and its config and extensions) is active",
+       ["Call app.run() before the query", "Import db before app", "Wrap the query in try/except RuntimeError and ignore it"],
+       "Extensions such as Flask-SQLAlchemy look up the current app through the application context. Outside a request, "
+       "push one yourself with app.app_context()."),
+    _q("flask", "expert", 2, "g Versus session", "flask-pro-g-vs-session",
+       "A view stores the logged-in user with g.user = user. On the next page the learner opens, g.user is gone. Why?",
+       "g only lives for one request (one application context); data that must last across requests belongs in session or the database",
+       ["g is cleared only when the server restarts, so this is a bug in Flask", "g is per-browser but needs SECRET_KEY to persist",
+        "g is shared by all users, so another request overwrote it"],
+       "flask.g is created fresh for every request. It is useful for caching things like the current user during one request, "
+       "not for remembering them."),
+    _q("flask", "expert", 3, "Can the User Read the Session?", "flask-pro-session-readable",
+       "A developer stores session['role'] = 'admin' and session['api_token'] = '...' with Flask's default session. What can the user do with their cookie?",
+       "Read the values (the cookie is signed, not encrypted), but not change them without the SECRET_KEY",
+       ["Nothing: the default session cookie is encrypted", "Change the role freely, because cookies are never checked",
+        "Only see a random session ID; the data stays on the server"],
+       "Flask's default session is a signed cookie on the client. Signing stops tampering, but anyone can base64-decode it, "
+       "so never put secrets in it."),
+    _q("flask", "expert", 4, "A before_request That Returns Something", "flask-pro-before-request-return",
+       "@app.before_request\ndef check():\n    if not session.get('user_id'):\n        return redirect(url_for('login'))\n"
+       "What happens for a visitor who is not logged in?",
+       "The redirect is sent as the response and the view function never runs",
+       ["The view runs first, then the redirect replaces its output", "Flask ignores return values from before_request",
+        "Flask raises an error because before_request must return None"],
+       "If a before_request function returns a non-None value, Flask treats it as the response and stops processing the request."),
+    _q("flask", "expert", 5, "Extra Arguments to url_for", "flask-pro-url-for-query",
+       "The route is @app.route('/search'). What does url_for('search', q='flask', page=2) return?",
+       "/search?q=flask&page=2: arguments that are not URL variables become the query string",
+       ["An error, because the route has no q or page variable", "/search/flask/2", "/search, with q and page silently dropped"],
+       "url_for fills the route's variables first; any unknown keyword arguments are added as query parameters."),
+    _q("flask", "expert", 6, "Trailing Slashes", "flask-pro-trailing-slash",
+       "Two routes exist: @app.route('/projects/') and @app.route('/about'). A user visits /projects and /about/. What happens?",
+       "/projects redirects to /projects/; /about/ returns 404",
+       ["Both pages load normally", "Both return 404", "/projects returns 404; /about/ redirects to /about"],
+       "A rule ending in a slash behaves like a folder, so Flask redirects to add it. A rule without one behaves like a file, "
+       "so the extra slash does not match."),
+    _q("flask", "expert", 7, "Decorator Order With login_required", "flask-pro-decorator-order",
+       "@login_required\n@app.route('/dashboard')\ndef dashboard(): ...\n"
+       "Logged-out users can still open /dashboard. Why?",
+       "@app.route must be the top (outermost) decorator; here it registered the unprotected function before login_required wrapped it",
+       ["login_required only works on POST routes", "login_required needs the blueprint to be registered first",
+        "The route needs methods=['GET'] for login_required to apply"],
+       "Decorators apply bottom-up. app.route registers whatever function it receives, so it must come last (on top) to "
+       "register the wrapped, protected version."),
+    _q("flask", "expert", 8, "Uploading a File That Is Too Big", "flask-pro-max-content-length",
+       "The app sets app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024. A learner uploads a 20 MB video. What happens?",
+       "Flask rejects the request with 413 Request Entity Too Large before the view reads the file",
+       ["The file is saved but cut off at 5 MB", "The view runs and request.files is empty with no error",
+        "The upload succeeds, because the limit only applies to JSON"],
+       "MAX_CONTENT_LENGTH caps the request body. Larger requests raise RequestEntityTooLarge (413), which you can "
+       "handle with an error page."),
+    _q("flask", "expert", 9, "A 404 Handler on a Blueprint", "flask-pro-blueprint-404",
+       "An API blueprint has @api.errorhandler(404) returning JSON. Visiting /api/does-not-exist still returns Flask's HTML 404 page. Why?",
+       "No route matched, so Flask never knew the blueprint was involved; register it on the app (app.errorhandler or api.app_errorhandler)",
+       ["Blueprint error handlers only catch 500 errors", "The blueprint must be registered before the app is created",
+        "JSON error handlers need jsonify imported inside the function"],
+       "A blueprint's own 404 handler only runs for abort(404) raised inside its views. Routing failures happen before any "
+       "blueprint is chosen, so they go to app-level handlers."),
+    _q("flask", "expert", 10, "Per-User Data in a Global Variable", "flask-pro-global-state",
+       "To remember the cart, a developer writes cart = [] at module level and appends to it in the view. It runs with gunicorn and 4 workers. What goes wrong?",
+       "Every user in a worker shares the same cart, and each worker has its own separate copy, so carts mix and vanish",
+       ["Nothing, because each request gets its own copy of module variables", "Only the first user's items are saved",
+        "Python raises an error when two requests change a list"],
+       "Module-level data lives in the process, shared by all requests it serves and not shared between processes. "
+       "Per-user data belongs in the session or a database."),
+    _q("flask", "real_world", 11, "Fix the Random Logouts", "flask-pro-fix-secret-key",
+       "Production users are logged out at random and after every deploy. The code has app.secret_key = os.urandom(24), and gunicorn runs 4 workers. What is the right fix?",
+       "Load one fixed SECRET_KEY from an environment variable or secret store, so every worker and restart signs cookies the same way",
+       ["Increase the key length to os.urandom(64)", "Run gunicorn with a single worker", "Set SESSION_COOKIE_SECURE = False"],
+       "Each worker generated its own random key, so a cookie signed by one worker is invalid in another, and every restart "
+       "invalidates them all."),
+    _q("flask", "real_world", 12, "Fix the Slow Course List", "flask-pro-fix-n-plus-one",
+       "A page lists 200 courses and shows course.teacher.name for each. The SQL log shows 201 queries and the page takes 3 seconds. What is the best fix?",
+       "Load the teachers with the courses in one go, for example Course.query.options(selectinload(Course.teacher)) (or joinedload)",
+       ["Add more gunicorn workers", "Cache the HTML page for one second", "Call db.session.commit() after each course"],
+       "This is the N+1 query problem: one query for the list, then one lazy query per row. Eager loading fetches the "
+       "related rows with one or two queries."),
+    _q("flask", "real_world", 13, "Fix the Unsafe File Upload", "flask-pro-fix-upload-filename",
+       "An upload view does file.save(os.path.join('uploads', file.filename)). A tester uploads a file named ../../app.py. What is the right fix?",
+       "Clean the name with werkzeug.utils.secure_filename (or generate your own name), check the extension, and save only inside the upload folder",
+       ["Rename the uploads folder to something hard to guess", "Only allow uploads from logged-in users",
+        "Wrap file.save in try/except"],
+       "The client controls file.filename. Without cleaning, ../ sequences can write outside the upload folder and "
+       "overwrite application files."),
+    _q("flask", "real_world", 14, "Fix the http:// Links Behind nginx", "flask-pro-fix-proxyfix",
+       "The site is served over HTTPS by nginx, which forwards to gunicorn over plain HTTP. url_for('verify', _external=True) in emails produces http:// links. What fixes it?",
+       "Have nginx send X-Forwarded-Proto and wrap the app in werkzeug's ProxyFix, so Flask sees the original https scheme",
+       ["Replace http with https in every template by hand", "Run gunicorn on port 443", "Set DEBUG = False"],
+       "Behind a proxy, Flask only sees the proxy-to-app connection. ProxyFix trusts the X-Forwarded-* headers from a "
+       "known proxy to rebuild the real scheme and host."),
+    _q("flask", "real_world", 15, "Fix the Slow Sign-Up", "flask-pro-fix-background-email",
+       "The sign-up view sends a welcome email through SMTP before returning, so sign-up takes 8 seconds and fails when the mail server is down. What is the right fix?",
+       "Save the user, put the email on a background job queue (such as Celery or RQ), and respond immediately",
+       ["Increase gunicorn's timeout to 60 seconds", "Send the email from the browser with JavaScript",
+        "Retry the SMTP call in a loop until it works"],
+       "Slow or unreliable work should not block the request. A queue lets a worker send the email, retry on failure, and "
+       "keeps sign-up fast."),
+]
+
+REACT = [
+    _q("react", "expert", 1, "The Counter That Stops at 1", "react-pro-stale-closure",
+       "useEffect(() => {\n  const id = setInterval(() => setCount(count + 1), 1000);\n  return () => clearInterval(id);\n}, []);\n"
+       "The counter shows 1 and never goes higher. Why, and what fixes it?",
+       "The interval's function captured count = 0 from the first render; use setCount(c => c + 1)",
+       ["setInterval does not work inside useEffect; use setTimeout", "The cleanup runs every second and clears the interval",
+        "React batches the updates; add count to a ref"],
+       "With an empty dependency array the effect runs once, so its closure keeps the first render's count. "
+       "The updater form always receives the latest value."),
+    _q("react", "expert", 2, "React.memo Still Re-renders", "react-pro-memo-callback",
+       "const Row = React.memo(RowView) is rendered as <Row item={item} onSelect={() => select(item.id)} />. Every Row still re-renders whenever the parent does. Why?",
+       "A new onSelect function is created on every parent render, so the props are never equal; pass a stable function (useCallback) instead",
+       ["React.memo only works on class components", "React.memo compares props deeply and item is too large",
+        "Rows always re-render when they are in a list"],
+       "React.memo skips a render only when every prop is equal by Object.is. An inline arrow function is a new object each render."),
+    _q("react", "expert", 3, "The API Call That Runs Twice", "react-pro-strict-mode",
+       "In development, a useEffect(() => { fetch('/api/visit', { method: 'POST' }) }, []) records two visits per page load. In the production build it records one. What is happening?",
+       "React StrictMode in development mounts, unmounts and re-mounts components to expose effects that lack proper cleanup",
+       ["The browser preloads the page twice", "useEffect always runs twice; production hides the second call",
+        "fetch retries POST requests automatically"],
+       "StrictMode deliberately runs effects twice in development only. The fix is to make effects safe to repeat (cleanup, "
+       "or move one-off actions to an event handler or the server)."),
+    _q("react", "expert", 4, "Changing a Ref", "react-pro-useref-render",
+       "A component keeps const clicks = useRef(0) and runs clicks.current += 1 on each click while also showing {clicks.current} on screen. What does the user see?",
+       "The number on screen does not update, because changing a ref never triggers a re-render",
+       ["The number updates after every click", "React throws an error because refs are read-only",
+        "The number updates, but one click late"],
+       "useRef keeps a mutable value across renders without causing renders. Values that should appear on screen belong in state."),
+    _q("react", "expert", 5, "An Effect That Runs on Every Render", "react-pro-object-dependency",
+       "const options = { page, size: 20 };\nuseEffect(() => { load(options); }, [options]);\n"
+       "The data reloads on every render, even when page has not changed. Why?",
+       "options is a new object each render, so the dependency always looks changed; depend on page (or build options inside the effect)",
+       ["useEffect cannot have objects in its dependency array", "load() changes options while it runs",
+        "Effects always run on every render when the array is not empty"],
+       "React compares dependencies with Object.is. Objects created during render are never equal to the previous render's object."),
+    _q("react", "expert", 6, "Resetting a Form With key", "react-pro-key-reset",
+       "<EditProfile userId={id} /> keeps the previous user's typed text when the admin switches to another user. What is the simplest correct fix?",
+       "Render it as <EditProfile key={id} userId={id} />, so React mounts a fresh component with fresh state for each user",
+       ["Call window.location.reload() when id changes", "Store the form text in a global variable",
+        "Wrap EditProfile in React.memo"],
+       "React keeps state while the same component stays at the same place. A different key tells React it is a different "
+       "component, so its state starts over."),
+    _q("react", "expert", 7, "A Hook Inside an if", "react-pro-rules-of-hooks",
+       "function Panel({ open }) {\n  if (open) {\n    const [tab, setTab] = useState('info');\n  }\n  ...\n}\nWhy is this wrong?",
+       "React identifies hooks by their call order; calling one conditionally changes the order between renders and mixes up state",
+       ["useState must be imported inside the if", "It is fine, as long as open never changes",
+        "Hooks inside if blocks run only once"],
+       "Hooks must be called in the same order on every render (the Rules of Hooks). Call useState at the top level and use "
+       "the condition when rendering."),
+    _q("react", "expert", 8, "The Stray 0 on the Page", "react-pro-zero-and-and",
+       "{notifications.length && <Badge count={notifications.length} />}\nWhen there are no notifications, what appears?",
+       "A 0 is rendered, because && returns the number 0 and React renders numbers",
+       ["Nothing, because React skips falsy values", "An empty Badge", "The text \"false\""],
+       "React skips false, null and undefined, but renders 0. Use notifications.length > 0 && ... or a ternary."),
+    _q("react", "expert", 9, "Search Results From the Wrong Query", "react-pro-fetch-race",
+       "A search box fetches results in useEffect(..., [query]). Typing \"rea\" then \"react\" quickly sometimes shows the results for \"rea\". Why, and what fixes it?",
+       "The slower, older response arrives last and overwrites the newer one; ignore or abort the old request in the effect's cleanup",
+       ["fetch caches the first query; add cache: 'no-store'", "React batches the two queries into one",
+        "useEffect skips updates while the user is typing"],
+       "Responses can arrive out of order. A cleanup that sets an ignore flag or calls AbortController.abort() discards stale results."),
+    _q("react", "expert", 10, "State Copied From a Prop", "react-pro-derived-state",
+       "function Price({ amount }) { const [value, setValue] = useState(amount); return <span>{value}</span>; }\n"
+       "The parent changes amount from 100 to 120, but 100 is still shown. Why?",
+       "The useState argument is only the initial value; later prop changes do not update the state. Render amount directly",
+       ["The parent must call setValue", "Props are read-only, so the parent's change is ignored",
+        "React re-uses the old prop until the page is refreshed"],
+       "useState(initial) reads its argument on the first render only. If a value can be computed from props, compute it "
+       "during render instead of copying it into state."),
+    _q("react", "real_world", 11, "Fix the Laggy Search Box", "react-pro-fix-laggy-typing",
+       "Typing in a search box that filters 20,000 items on every keystroke feels slow: letters appear late. What is the right fix?",
+       "Keep the input's own state updating immediately and filter with a deferred or debounced copy of the query (useDeferredValue or a debounce)",
+       ["Make the input uncontrolled and read it with document.getElementById", "Wrap the input in React.memo",
+        "Move the 20,000 items into useRef"],
+       "The keystroke update must stay cheap. useDeferredValue lets React render the expensive list with a slightly older "
+       "query while the input stays responsive."),
+    _q("react", "real_world", 12, "Fix the Exposed API Key", "react-pro-fix-exposed-key",
+       "A React (Vite) app calls the OpenAI API directly from the browser with import.meta.env.VITE_OPENAI_KEY. What is the problem and the fix?",
+       "The key is built into the JavaScript bundle that every visitor downloads; move the call to a backend endpoint that keeps the key on the server",
+       ["No problem: environment variables are never sent to the browser", "Rename it without the VITE_ prefix and keep calling from the browser",
+        "Minify the bundle so the key cannot be found"],
+       "Anything the front end can read, a user can read. Secrets must stay on a server that calls the API on the user's behalf."),
+    _q("react", "real_world", 13, "Fix the Blank Page on Refresh", "react-pro-fix-spa-refresh",
+       "A React Router app is deployed as static files on nginx. Clicking links works, but refreshing /courses/5 shows nginx's 404 page. What fixes it?",
+       "Configure the server to send index.html for unknown paths (in nginx, try_files $uri /index.html)",
+       ["Use <a href> instead of <Link>", "Add a courses/5 folder to the build", "Turn off the browser cache"],
+       "The routes exist only in JavaScript. On a refresh the server is asked for /courses/5 directly, so it must return the "
+       "app shell and let React Router handle the path."),
+    _q("react", "real_world", 14, "Fix the Crash Before Data Arrives", "react-pro-fix-undefined-map",
+       "const [courses, setCourses] = useState();\nuseEffect(() => { fetch('/api/courses').then(r => r.json()).then(setCourses); }, []);\n"
+       "return courses.map(c => <Course key={c.id} {...c} />);\nThe page crashes with \"Cannot read properties of undefined (reading 'map')\". What is the right fix?",
+       "Start with useState([]) (or show a loading state while courses is undefined), because the first render happens before the fetch finishes",
+       ["Make the useEffect function async", "Move the fetch outside the component", "Add courses to the dependency array"],
+       "Effects run after the first render, so the component must render something valid before the data arrives."),
+    _q("react", "real_world", 15, "Fix the Duplicate Orders", "react-pro-fix-double-submit",
+       "Some users get charged twice: they double-click Pay while the request is still running. What is the right front-end fix?",
+       "Track a submitting state, disable the button while the request runs, and have the backend reject duplicate orders too",
+       ["Add onDoubleClick={e => e.preventDefault()}", "Wrap the button in React.memo", "Use a <div> instead of a <button>"],
+       "Disabling the button stops repeat clicks in the browser; an idempotency check on the server protects against retries "
+       "and other clients."),
+]
+
+PRO_MCQ_PROBLEMS = HTML + CSS + FLASK + REACT

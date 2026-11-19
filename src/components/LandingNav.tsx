@@ -40,7 +40,7 @@ export default function LandingNav({ logo, onNavigate, onLogin, onSignup, onHome
         </nav>
         <div className="lp-nav-actions">
           <button type="button" className="lp-btn lp-btn-ghost lp-hide-sm" onClick={onLogin}>Login</button>
-          <button type="button" className="lp-btn lp-btn-primary" onClick={onSignup}>Get started free</button>
+          <button type="button" className="lp-btn lp-btn-primary" onClick={onSignup}><span className="lp-label-long">Get started free</span><span className="lp-label-short">Start free</span></button>
           <button type="button" className="lp-icon-btn lp-burger" aria-label="Toggle menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((v) => !v)}>
             {menuOpen ? "✕" : "☰"}
           </button>

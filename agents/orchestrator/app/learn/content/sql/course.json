@@ -1,0 +1,41 @@
+{
+  "slug": "sql",
+  "title": "SQL",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "DB",
+  "color": "#2f7d6d",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "Ask questions of a database: read, filter, combine and change data.",
+  "outcomes": [
+    "Read data with SELECT and WHERE",
+    "Sort, group and summarise",
+    "Combine tables with joins",
+    "Insert, update and delete rows",
+    "Design tables with keys"
+  ],
+  "chapters": [
+    {
+      "id": "read",
+      "title": "Reading data",
+      "summary": "",
+      "lessons": [
+        "what-is-sql",
+        "select-and-where",
+        "sorting-and-grouping",
+        "joins"
+      ]
+    },
+    {
+      "id": "write",
+      "title": "Changing and designing",
+      "summary": "",
+      "lessons": [
+        "change-data",
+        "tables-and-keys",
+        "subqueries"
+      ]
+    }
+  ]
+}

@@ -367,6 +367,13 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
     # Aptitude batch creation and mock-interview question planning/final
     # evaluation can outlast ordinary agent calls. Keep their larger budgets
     # scoped to the actions that actually do this work.
+    communication_long_actions = {
+        "writing_chat_finish",
+        "speaking_transcribe",
+        "speaking_respond",
+        "writing_respond",
+        "pronunciation_submit",
+    }
     timeout_seconds = (
         config.APTITUDE_CREATE_TEST_TIMEOUT_SECONDS
         if agent_name == "aptitude_agent" and action_name == "create_test"
@@ -377,6 +384,8 @@ async def _forward(agent, agent_name: str, body: bytes, envelope, user, content_
         if agent_name == "capstone_project_agent" and (is_multipart or action_name == "start_viva_attempt")
         else config.CAPSTONE_LLM_ACTION_TIMEOUT_SECONDS
         if agent_name == "capstone_project_agent" and action_name in CAPSTONE_LLM_ACTIONS
+        else config.COMMUNICATION_LONG_ACTION_TIMEOUT_SECONDS
+        if agent_name == "communication_agent" and action_name in communication_long_actions
         else config.AGENT_CALL_TIMEOUT_SECONDS
     )
     # Sign last, over the final body and the exact identity headers set above,

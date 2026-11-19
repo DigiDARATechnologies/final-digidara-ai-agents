@@ -1,0 +1,68 @@
+{
+  "slug": "python",
+  "title": "Python",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "Py",
+  "color": "#3776ab",
+  "order": 1,
+  "kind": "tutorial",
+  "summary": "Learn Python from zero: write programs, work with data, and read other code with confidence.",
+  "outcomes": [
+    "Write and run Python programs",
+    "Use strings, numbers, lists and dictionaries",
+    "Control a program with conditions and loops",
+    "Organise code in functions and classes",
+    "Handle errors and read and write files"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "What Python is and how to run your first program.",
+      "lessons": [
+        "what-is-python",
+        "first-program"
+      ]
+    },
+    {
+      "id": "basics",
+      "title": "The building blocks",
+      "summary": "Values, text and arithmetic.",
+      "lessons": [
+        "variables-and-types",
+        "strings",
+        "numbers-and-operators"
+      ]
+    },
+    {
+      "id": "flow",
+      "title": "Making decisions",
+      "summary": "Make a program choose and repeat.",
+      "lessons": [
+        "conditions",
+        "loops"
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Working with data",
+      "summary": "Collections of values.",
+      "lessons": [
+        "lists-and-tuples",
+        "dictionaries-and-sets"
+      ]
+    },
+    {
+      "id": "code",
+      "title": "Organising your code",
+      "summary": "Functions, errors, files and objects.",
+      "lessons": [
+        "functions",
+        "errors-and-exceptions",
+        "files",
+        "classes-and-objects"
+      ]
+    }
+  ]
+}

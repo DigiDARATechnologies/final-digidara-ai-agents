@@ -1,5 +1,8 @@
-import json
+import contextvars
 import difflib
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
@@ -640,14 +643,97 @@ def writing_chat():
 
 # A finished chat is evaluated message by message (the newest ones, if long).
 MAX_CHAT_REPORT_TURNS = 10
+CHAT_EVAL_MAX_WORKERS = 5
+CHAT_IDEMPOTENCY_WINDOW_MINUTES = 30
+
+
+def _find_matching_chat_session(user_id, topic, difficulty, pairs):
+    """Return a recent chat session with identical prompt/answer turns to avoid duplicates on retry."""
+    cutoff = datetime.utcnow() - timedelta(minutes=CHAT_IDEMPOTENCY_WINDOW_MINUTES)
+    candidates = (
+        WritingSession.query
+        .filter(
+            WritingSession.user_id == user_id,
+            WritingSession.mode == "chat",
+            WritingSession.topic_title == topic[:200],
+            WritingSession.difficulty == difficulty,
+            WritingSession.created_at >= cutoff,
+        )
+        .order_by(WritingSession.id.desc())
+        .limit(5)
+        .all()
+    )
+    for candidate in candidates:
+        existing_pairs = [(t.ai_prompt, t.user_response) for t in candidate.turns]
+        if existing_pairs == pairs:
+            return candidate
+    return None
+
+
+def _evaluate_chat_turns_concurrently(app, difficulty, topic, turn_items):
+    """Run stateless LLM turn evaluations in bounded parallel threads while preserving Flask/learner context."""
+    if not turn_items:
+        return {}
+
+    def _run_one(turn_number, prompt, answer, ctx):
+        def _invoke():
+            with app.app_context():
+                try:
+                    return groq_service.evaluate_writing_answer("chat", difficulty, topic, prompt, answer)
+                except Exception:
+                    current_app.logger.exception("Writing chat message evaluation failed")
+                    return {}
+
+        return ctx.run(_invoke)
+
+    if len(turn_items) == 1:
+        turn_number, prompt, answer = turn_items[0]
+        return {turn_number: _run_one(turn_number, prompt, answer, contextvars.copy_context())}
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(CHAT_EVAL_MAX_WORKERS, len(turn_items))) as executor:
+        futures = {
+            executor.submit(_run_one, turn_number, prompt, answer, contextvars.copy_context()): turn_number
+            for turn_number, prompt, answer in turn_items
+        }
+        for future, turn_number in futures.items():
+            results[turn_number] = future.result()
+    return results
+
+
+def _chat_finish_response(session, summary_data=None):
+    strengths = summary_data.get("strengths", []) if isinstance(summary_data, dict) else []
+    areas = summary_data.get("areas_to_improve", []) if isinstance(summary_data, dict) else []
+    if not strengths and session.strengths_json:
+        try:
+            strengths = json.loads(session.strengths_json)
+        except ValueError:
+            strengths = []
+    if not areas and session.weaknesses_json:
+        try:
+            areas = json.loads(session.weaknesses_json)
+        except ValueError:
+            areas = []
+    return jsonify({
+        "success": True,
+        "done": True,
+        "session_id": session.id,
+        "overall_score": to_score10(session.overall_score),
+        "summary": session.summary_feedback,
+        "summary_feedback": session.summary_feedback,
+        "strengths": strengths,
+        "areas_to_improve": areas,
+        "total_turns": session.total_turns or len(session.turns),
+    })
 
 
 @writing_bp.post("/chat/finish")
 @jwt_required()
 def finish_writing_chat():
-    """End a "Chat with AI" conversation: evaluate each of the learner's
-    messages like a writing answer (scores, corrections) and save it all as
-    a completed writing session, so it gets the same summary and PDF report."""
+    """End a "Chat with AI" conversation: save turns first, evaluate each
+    learner message with bounded concurrency, and finalize as a completed
+    writing session (idempotent on retries)."""
+    started_at = time.monotonic()
     user_id = int(get_jwt_identity())
     try:
         _ensure_writing_schema()
@@ -681,21 +767,34 @@ def finish_writing_chat():
         return _api_error("Write at least one message in the chat to get a report.", "EMPTY_CHAT")
 
     try:
-        session = WritingSession(
-            user_id=user_id, mode="chat", topic_title=topic[:200],
-            topic_description=f"Chat with AI about {topic}"[:500], difficulty=difficulty,
-            status="in_progress", total_turns=len(pairs),
-        )
-        db.session.add(session)
-        for number, (prompt, answer) in enumerate(pairs, start=1):
-            turn = WritingTurn(turn_number=number, ai_prompt=prompt, user_response=answer, completed_at=datetime.utcnow())
-            session.turns.append(turn)
-            try:
-                feedback = groq_service.evaluate_writing_answer("chat", difficulty, topic, prompt, answer)
-            except Exception:
-                current_app.logger.exception("Writing chat message evaluation failed")
-                feedback = {}
-            _store_turn_feedback(turn, feedback, answer)
+        session = _find_matching_chat_session(user_id, topic, difficulty, pairs)
+        if session is not None and session.status == "completed":
+            return _chat_finish_response(session)
+
+        if session is None:
+            session = WritingSession(
+                user_id=user_id, mode="chat", topic_title=topic[:200],
+                topic_description=f"Chat with AI about {topic}"[:500], difficulty=difficulty,
+                status="in_progress", total_turns=len(pairs),
+            )
+            db.session.add(session)
+            for number, (prompt, answer) in enumerate(pairs, start=1):
+                db.session.add(WritingTurn(
+                    session=session, turn_number=number, ai_prompt=prompt,
+                    user_response=answer, completed_at=datetime.utcnow(),
+                ))
+            # Persist conversation turns before running AI evaluations so timeouts never lose chat history.
+            db.session.commit()
+
+        pending_turns = [t for t in session.turns if not t.feedback_json]
+        turn_items = [(t.turn_number, t.ai_prompt, t.user_response or "") for t in pending_turns]
+        app = current_app._get_current_object()
+        feedback_by_turn = _evaluate_chat_turns_concurrently(app, difficulty, topic, turn_items)
+
+        for turn in pending_turns:
+            feedback = feedback_by_turn.get(turn.turn_number, {})
+            _store_turn_feedback(turn, feedback, turn.user_response or "")
+
         db.session.flush()
         summary = _finalize_writing_session(session)
         db.session.commit()
@@ -704,17 +803,11 @@ def finish_writing_chat():
         current_app.logger.exception("Writing chat report could not be saved")
         return _api_error("Could not save your writing chat. Please try again.", "DATABASE_ERROR", 503)
 
-    return jsonify({
-        "success": True,
-        "done": True,
-        "session_id": session.id,
-        "overall_score": to_score10(session.overall_score),
-        "summary": session.summary_feedback,
-        "summary_feedback": session.summary_feedback,
-        "strengths": summary.get("strengths", []),
-        "areas_to_improve": summary.get("areas_to_improve", []),
-        "total_turns": len(pairs),
-    })
+    current_app.logger.info(
+        "writing_chat_finish completed session_id=%s turns=%s elapsed_s=%.2f",
+        session.id, len(pairs), time.monotonic() - started_at,
+    )
+    return _chat_finish_response(session, summary)
 
 
 @writing_bp.put("/draft")

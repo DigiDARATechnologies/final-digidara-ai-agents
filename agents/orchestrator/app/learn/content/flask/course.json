@@ -1,0 +1,89 @@
+{
+  "slug": "flask",
+  "title": "Flask",
+  "track": "technical",
+  "level": "Intermediate",
+  "icon": "Fl",
+  "color": "#495057",
+  "order": 6,
+  "kind": "tutorial",
+  "summary": "Build web apps and APIs in Python, from your first route to testing, security and deployment.",
+  "outcomes": [
+    "Build routes, templates and forms, and keep users logged in with sessions",
+    "Structure a growing app with the application factory and blueprints",
+    "Store data with SQLAlchemy, relationships and migrations, and avoid the N+1 problem",
+    "Build a validated REST API with consistent JSON errors",
+    "Hash passwords, protect routes and issue JWT tokens",
+    "Test with pytest, secure against common attacks, cache, and deploy with Gunicorn, Nginx and Docker"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Routes, requests and HTML pages.",
+      "lessons": [
+        "what-is-flask",
+        "first-app",
+        "routing-and-requests",
+        "templates-and-jinja"
+      ]
+    },
+    {
+      "id": "forms",
+      "title": "Forms and sessions",
+      "summary": "Take input and remember the user.",
+      "lessons": [
+        "forms-sessions-and-flash"
+      ]
+    },
+    {
+      "id": "structure",
+      "title": "Structuring your app",
+      "summary": "Organise code and settings for growth.",
+      "lessons": [
+        "app-factory-and-blueprints",
+        "configuration"
+      ]
+    },
+    {
+      "id": "data",
+      "title": "Working with data",
+      "summary": "Databases, relationships and safe schema changes.",
+      "lessons": [
+        "models-and-crud",
+        "relationships-and-queries",
+        "migrations"
+      ]
+    },
+    {
+      "id": "api",
+      "title": "Building APIs",
+      "summary": "JSON endpoints, validation and login.",
+      "lessons": [
+        "rest-api-basics",
+        "validation-and-errors",
+        "authentication"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced Flask",
+      "summary": "Hooks, tests, security, speed and going live.",
+      "lessons": [
+        "hooks-and-middleware",
+        "testing",
+        "security",
+        "caching-and-background-jobs",
+        "deployment"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The Flask questions interviewers ask.",
+      "lessons": [
+        "flask-interview-questions"
+      ]
+    }
+  ]
+}

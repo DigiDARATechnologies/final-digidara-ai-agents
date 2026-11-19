@@ -458,6 +458,31 @@ class CourseProgress(Base):
     __table_args__ = (PrimaryKeyConstraint("user_id", "lesson_id"),)
 
 
+class LearnProgress(Base):
+    """A Learning Hub lesson a learner has finished. Lessons are files in the
+    repository (app/learn/content), so there is no lesson row to point at:
+    course and lesson are their slugs."""
+
+    __tablename__ = "learn_progress"
+
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"))
+    course: Mapped[str] = mapped_column(String(80))
+    lesson: Mapped[str] = mapped_column(String(120))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+    __table_args__ = (PrimaryKeyConstraint("user_id", "course", "lesson"),)
+
+
+class LearnLicense(Base):
+    """An organization whose members may read the Learning Hub without spending
+    coins (the college bought a licence). SkillDARA's admin adds and removes it."""
+
+    __tablename__ = "learn_licenses"
+
+    organization_id: Mapped[str] = mapped_column(String(32), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
 class UserAvatar(Base):
     """A learner's profile picture, so others see it (leaderboards). `image`
     is the 256px picture and `thumb` a 64px copy for lists, both as JPEG/PNG

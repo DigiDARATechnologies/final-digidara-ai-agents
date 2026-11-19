@@ -1,0 +1,38 @@
+{
+  "slug": "aptitude-logical",
+  "title": "Logical Reasoning",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "L",
+  "color": "#7048e8",
+  "order": 2,
+  "kind": "tutorial",
+  "summary": "Spot patterns and follow rules: series, codes, relations, directions and syllogisms.",
+  "outcomes": [
+    "Find the pattern in a series",
+    "Decode letter and number codes",
+    "Solve blood-relation and direction puzzles",
+    "Judge syllogism conclusions"
+  ],
+  "chapters": [
+    {
+      "id": "patterns",
+      "title": "Patterns and codes",
+      "summary": "",
+      "lessons": [
+        "number-series",
+        "coding-decoding"
+      ]
+    },
+    {
+      "id": "puzzles",
+      "title": "Puzzles",
+      "summary": "",
+      "lessons": [
+        "blood-relations",
+        "directions",
+        "syllogisms"
+      ]
+    }
+  ]
+}

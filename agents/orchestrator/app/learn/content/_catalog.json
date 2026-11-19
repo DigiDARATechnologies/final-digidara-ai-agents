@@ -1,0 +1,97 @@
+{
+  "tracks": [
+    {
+      "id": "technical",
+      "title": "Technical",
+      "blurb": "Programming and databases, from your first line of code to real projects."
+    },
+    {
+      "id": "data-ai",
+      "title": "Data & AI",
+      "blurb": "Work with data, build models, and understand how AI systems learn."
+    },
+    {
+      "id": "aptitude",
+      "title": "Aptitude",
+      "blurb": "The quantitative and reasoning topics campus tests ask for, with worked examples."
+    },
+    {
+      "id": "interview",
+      "title": "Interview",
+      "blurb": "Questions you will actually be asked, with answers you can say in your own words."
+    },
+    {
+      "id": "communication",
+      "title": "Communication",
+      "blurb": "Write, speak and interview with confidence: the soft skills that decide offers."
+    },
+    {
+      "id": "projects",
+      "title": "Projects",
+      "blurb": "Build real projects step by step, then show them in your portfolio and interviews."
+    }
+  ],
+  "paths": [
+    {
+      "id": "full-stack-python",
+      "title": "Full Stack with Python",
+      "summary": "Build and ship a web app end to end: the page, the logic, the server and the database.",
+      "courses": [
+        "html-css",
+        "javascript",
+        "react",
+        "python",
+        "flask",
+        "sql"
+      ]
+    },
+    {
+      "id": "data-and-ai",
+      "title": "Data Science and AI",
+      "summary": "From Python to data wrangling, statistics and machine learning.",
+      "courses": [
+        "python",
+        "numpy",
+        "pandas",
+        "data-science",
+        "machine-learning",
+        "deep-learning"
+      ]
+    },
+    {
+      "id": "placement-ready",
+      "title": "Placement Ready",
+      "summary": "The aptitude topics and interview answers that decide most campus rounds.",
+      "courses": [
+        "aptitude-quant",
+        "aptitude-logical",
+        "interview-hr",
+        "interview-python",
+        "interview-sql"
+      ]
+    },
+    {
+      "id": "communication-skills",
+      "title": "Communication Skills",
+      "summary": "Write, speak, interview and work with people.",
+      "courses": [
+        "professional-writing",
+        "speaking-and-presentation",
+        "interview-communication",
+        "teamwork-and-workplace-skills"
+      ]
+    },
+    {
+      "id": "build-your-portfolio",
+      "title": "Build Your Portfolio",
+      "summary": "Four projects, then show them to the world.",
+      "courses": [
+        "python-projects",
+        "flask-web-project",
+        "data-analysis-project",
+        "ml-project",
+        "portfolio-and-github"
+      ]
+    }
+  ]
+}

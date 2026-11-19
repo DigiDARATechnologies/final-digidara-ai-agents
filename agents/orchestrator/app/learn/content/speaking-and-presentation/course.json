@@ -1,0 +1,33 @@
+{
+  "slug": "speaking-and-presentation",
+  "title": "Speaking and Presentation",
+  "track": "communication",
+  "level": "Beginner",
+  "icon": "Sp",
+  "color": "#0b7285",
+  "order": 2,
+  "kind": "tutorial",
+  "summary": "Speak with confidence: calm your nerves, introduce yourself, structure a talk, design slides and handle questions.",
+  "outcomes": [
+    "Understand and manage nervousness",
+    "Use voice, body language and eye contact well",
+    "Prepare 30-second and 2-minute self-introductions",
+    "Plan a talk with a clear opening, key points and close",
+    "Design simple slides and handle questions and a viva calmly"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Speaking skills",
+      "summary": "From nerves to confident presentations.",
+      "lessons": [
+        "building-speaking-confidence",
+        "voice-and-body-language",
+        "self-introduction",
+        "structuring-a-talk",
+        "slides-that-work",
+        "handling-questions"
+      ]
+    }
+  ]
+}

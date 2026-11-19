@@ -1,0 +1,30 @@
+{
+  "slug": "portfolio-and-github",
+  "title": "Portfolio and GitHub",
+  "track": "projects",
+  "level": "Beginner",
+  "icon": "Gh",
+  "color": "#495057",
+  "order": 5,
+  "kind": "tutorial",
+  "summary": "Show your work: Git and GitHub, READMEs, deployment, and how to present projects in applications and interviews.",
+  "outcomes": [
+    "Use Git and GitHub with good habits",
+    "Write a README that sells your project",
+    "Deploy a project and make a safe demo",
+    "Present projects on your resume and in interviews"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Show your work",
+      "summary": "From code on your laptop to a portfolio people can see.",
+      "lessons": [
+        "git-and-github-basics",
+        "write-a-great-readme",
+        "deploy-and-share",
+        "present-your-projects"
+      ]
+    }
+  ]
+}
