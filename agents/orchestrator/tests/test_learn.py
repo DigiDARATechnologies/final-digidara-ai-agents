@@ -24,11 +24,13 @@ def api(database):
             User(id="empty", name="Empty", email="e@example.test", email_verified=True, token_balance=0),   # bought, no coins left
             User(id="student", name="Student", email="s@example.test", email_verified=True, token_balance=0),
         ])
+        session.commit()      # real MySQL enforces foreign keys, so parents are saved before the rows that point at them
         session.add_all([
             Payment(id="p1", user_id="buyer", plan_id="basic", amount=399, razorpay_order_id="o1", status="paid"),
             Payment(id="p2", user_id="empty", plan_id="basic", amount=399, razorpay_order_id="o2", status="paid"),
         ])
         session.add(Organization(id="college", name="Test College", join_code="COLLEGE1"))
+        session.commit()
         session.add(OrganizationMember(id="m1", organization_id="college", user_id="student", role="member"))
         session.commit()
     service.reload()
