@@ -5,7 +5,7 @@
   "level": "Intermediate",
   "icon": "ML",
   "color": "#862e9c",
-  "order": 4,
+  "order": 6,
   "kind": "tutorial",
   "summary": "Teach a computer to learn from data: regression, classification, trees, clustering and how to tell if a model is any good.",
   "outcomes": [
@@ -50,6 +50,15 @@
       ]
     },
     {
+      "id": "algorithms",
+      "title": "More algorithms",
+      "summary": "Two more classifiers to know.",
+      "lessons": [
+        "support-vector-machines",
+        "naive-bayes"
+      ]
+    },
+    {
       "id": "evaluate",
       "title": "Is the model any good?",
       "summary": "Measure, compare and improve.",
@@ -64,6 +73,15 @@
       "summary": "Find groups with no labels.",
       "lessons": [
         "clustering-kmeans"
+      ]
+    },
+    {
+      "id": "patterns",
+      "title": "More ways to find patterns",
+      "summary": "Hierarchical clustering, DBSCAN and anomaly detection.",
+      "lessons": [
+        "hierarchical-and-dbscan-clustering",
+        "anomaly-detection"
       ]
     },
     {

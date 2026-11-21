@@ -1,0 +1,30 @@
+{
+  "slug": "data-visualization",
+  "title": "Data Visualization with Matplotlib and Seaborn",
+  "track": "data-ai",
+  "level": "Beginner",
+  "icon": "Dv",
+  "color": "#0b7285",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "Draw clear charts with Matplotlib and Seaborn, explore a new dataset visually, and present results honestly.",
+  "outcomes": [
+    "Draw line, bar, scatter and histogram charts with labels",
+    "Make statistical charts with Seaborn",
+    "Explore missing values, outliers and relationships with EDA",
+    "Choose the right chart and avoid misleading ones"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Charts and exploration",
+      "summary": "From first chart to a data story.",
+      "lessons": [
+        "matplotlib-basics",
+        "seaborn-for-analysis",
+        "exploring-data-visually",
+        "presenting-charts"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "slug": "generative-ai",
+  "title": "Generative AI",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "Ge",
+  "color": "#7048e8",
+  "order": 10,
+  "kind": "tutorial",
+  "summary": "How LLMs work and how to build with them: prompts, APIs, embeddings, RAG, evaluation, safety, and image and speech models.",
+  "outcomes": [
+    "Explain how a language model generates text, and why it can hallucinate",
+    "Estimate tokens, context and cost for an LLM call",
+    "Write reliable prompts with examples and validated structured output",
+    "Call an LLM API safely, with retries and protected keys",
+    "Build a retrieval-augmented generation (RAG) pipeline with citations",
+    "Choose between prompting, RAG and fine-tuning, and test an LLM app",
+    "Spot and reduce the risks: hallucination, privacy, bias and prompt injection"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Generative AI",
+      "summary": "From how LLMs work to RAG, evaluation and safety.",
+      "lessons": [
+        "what-is-generative-ai",
+        "tokens-context-and-cost",
+        "prompt-engineering",
+        "using-llm-apis",
+        "embeddings-and-semantic-search",
+        "rag-retrieval-augmented-generation",
+        "prompting-rag-or-fine-tuning",
+        "responsible-generative-ai",
+        "images-audio-and-multimodal"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The generative AI questions interviewers ask.",
+      "lessons": [
+        "generative-ai-interview-questions"
+      ]
+    }
+  ]
+}

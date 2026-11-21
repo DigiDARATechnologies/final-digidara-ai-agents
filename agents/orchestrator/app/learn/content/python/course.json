@@ -63,6 +63,15 @@
         "files",
         "classes-and-objects"
       ]
+    },
+    {
+      "id": "more",
+      "title": "More Python for data work",
+      "summary": "Comprehensions, modules, pip and virtual environments.",
+      "lessons": [
+        "comprehensions",
+        "modules-and-virtual-environments"
+      ]
     }
   ]
 }

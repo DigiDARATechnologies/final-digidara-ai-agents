@@ -1,14 +1,54 @@
 {
   "slug": "math",
-  "title": "Math for Data and Tech",
+  "title": "Mathematics for Machine Learning",
   "track": "data-ai",
   "level": "Beginner",
   "icon": "Mt",
   "color": "#c2255c",
-  "order": 5,
+  "order": 1,
   "kind": "tutorial",
-  "summary": "The algebra, statistics and probability that technical work leans on.",
-  "outcomes": [],
-  "chapters": [],
-  "status": "soon"
+  "summary": "Only the maths you need: functions, vectors and matrices, statistics, probability, derivatives and gradient descent, all shown with small runnable examples.",
+  "outcomes": [
+    "Read and use functions, lines, exponents and logarithms",
+    "Understand vectors, matrices and the dot product behind every model",
+    "Summarise data with mean, median, variance and standard deviation",
+    "Use probability, the normal distribution, correlation and covariance",
+    "Explain derivatives and gradients, and run gradient descent by hand"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Algebra",
+      "summary": "Functions, lines, exponents and logs.",
+      "lessons": [
+        "algebra-and-functions"
+      ]
+    },
+    {
+      "id": "linear-algebra",
+      "title": "Linear algebra",
+      "summary": "Vectors, matrices and the dot product.",
+      "lessons": [
+        "vectors-and-matrices"
+      ]
+    },
+    {
+      "id": "statistics",
+      "title": "Statistics and probability",
+      "summary": "Describing data and chance.",
+      "lessons": [
+        "statistics-essentials",
+        "probability-and-distributions"
+      ]
+    },
+    {
+      "id": "calculus",
+      "title": "Calculus for learning",
+      "summary": "How models improve step by step.",
+      "lessons": [
+        "derivatives-and-gradients",
+        "gradient-descent-by-hand"
+      ]
+    }
+  ]
 }

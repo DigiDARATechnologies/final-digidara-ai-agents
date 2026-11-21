@@ -5,7 +5,7 @@
   "level": "Beginner",
   "icon": "Np",
   "color": "#4dabcf",
-  "order": 1,
+  "order": 2,
   "kind": "tutorial",
   "summary": "Fast arrays and maths on whole arrays at once: the foundation under Pandas, scikit-learn and every data tool.",
   "outcomes": [

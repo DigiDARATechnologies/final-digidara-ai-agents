@@ -88,6 +88,18 @@ Never shuffle. Train on earlier data and test on later data, using a forward spl
 ### Q [Hard] What is model drift and how do you detect it?
 Data drift is a change in the distribution of the inputs; concept drift is a change in the relationship between inputs and the target. Detect them by comparing recent feature and prediction distributions with the training data (KS test, PSI), tracking real performance once outcomes are known, and retraining when metrics fall.
 
+### Q [Medium] What is an SVM and what does the kernel do?
+A support vector machine finds the boundary with the widest margin between classes; only the points on the margin (the support vectors) matter. A kernel such as RBF lets it draw curved boundaries without creating the extra features by hand. Scale the features, and tune C (how strict) and gamma (how wiggly).
+
+### Q [Medium] Why is Naive Bayes called naive, and why does it still work?
+It assumes the features are independent given the class, which is rarely true. It still ranks the classes well, it is very fast and needs little data, which is why it is a classic baseline for text such as spam filtering.
+
+### Q [Medium] How do K-Means, hierarchical clustering and DBSCAN differ?
+K-Means needs the number of clusters and finds round, similar-sized groups. Hierarchical clustering merges the closest groups step by step, so you can choose the number of clusters afterwards from the dendrogram. DBSCAN groups dense regions, finds clusters of any shape, needs no number of clusters, and marks isolated points as noise.
+
+### Q [Hard] How does Isolation Forest detect anomalies?
+It builds random trees that split the data at random. Anomalies are few and different, so they are isolated after very few splits, while normal points need many. The average path length gives the anomaly score. The contamination setting controls how many points are flagged.
+
 :::practice mock-interview
 Practise explaining these aloud in a Mock Interview. Use a small example for each answer.
 :::

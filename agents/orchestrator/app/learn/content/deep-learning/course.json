@@ -5,7 +5,7 @@
   "level": "Intermediate",
   "icon": "DL",
   "color": "#c2255c",
-  "order": 6,
+  "order": 8,
   "kind": "tutorial",
   "summary": "Neural networks from the first neuron to transformers: build one from scratch, then master PyTorch, training, CNNs, LSTMs, attention, LLMs and deployment.",
   "outcomes": [
