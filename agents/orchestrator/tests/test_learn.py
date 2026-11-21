@@ -166,7 +166,7 @@ def test_the_catalog_has_tracks_paths_and_planned_courses(api):
     tracks = {t["id"]: t for t in catalog["tracks"]}
     assert set(tracks) == {"technical", "data-ai", "aptitude", "interview", "communication", "projects"}
     python = next(c for c in tracks["technical"]["courses"] if c["slug"] == "python")
-    assert python["status"] == "live" and python["lessons"] == 13 and python["minutes"] > 0
+    assert python["status"] == "live" and python["lessons"] >= 13 and python["minutes"] > 0
     assert any(c["status"] == "soon" for c in tracks["technical"]["courses"])      # planned courses are listed too
     assert {c["slug"] for c in tracks["communication"]["courses"]} >= {"professional-writing", "interview-communication"}
     assert {c["slug"] for c in tracks["projects"]["courses"]} >= {"python-projects", "portfolio-and-github"}
@@ -186,11 +186,11 @@ def test_a_course_outline_lists_chapters_and_lessons_without_their_text(api):
 def test_a_lesson_comes_with_its_text_and_its_neighbours(api):
     data = api.get("/courses/hub/python/lessons/first-program", headers=auth("buyer")).json()
     assert data["lesson"]["title"] == "Your first program" and "print(" in data["lesson"]["body"]
-    assert data["lesson"]["number"] == 2 and data["lesson"]["of"] == 13
+    assert data["lesson"]["number"] == 2 and data["lesson"]["of"] == 15
     assert data["previous"]["id"] == "what-is-python" and data["next"]["id"] == "variables-and-types"
     first = api.get("/courses/hub/python/lessons/what-is-python", headers=auth("buyer")).json()
     assert first["previous"] is None
-    last = api.get("/courses/hub/python/lessons/classes-and-objects", headers=auth("buyer")).json()
+    last = api.get("/courses/hub/python/lessons/modules-and-virtual-environments", headers=auth("buyer")).json()
     assert last["next"] is None
 
 

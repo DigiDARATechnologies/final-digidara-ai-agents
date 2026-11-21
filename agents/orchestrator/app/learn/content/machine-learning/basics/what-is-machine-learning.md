@@ -24,6 +24,7 @@ Suppose you want a program that decides whether an email is spam. You could writ
 | --- | --- | --- |
 | **Supervised** | learn from examples that have the right answer | predict a house price; spot spam |
 | **Unsupervised** | find structure in data with no answers | group customers who behave alike |
+| **Semi-supervised** | learn from a few labelled examples and many unlabelled ones | classifying photos when only a few are labelled |
 | **Reinforcement** | learn by trial, reward and penalty | a program that learns to play a game |
 
 This course covers the first two, using Python and the **scikit-learn** library.

@@ -47,15 +47,62 @@
     },
     {
       "id": "data-and-ai",
-      "title": "Data Science and AI",
-      "summary": "From Python to data wrangling, statistics and machine learning.",
+      "title": "AI and Machine Learning",
+      "summary": "From Python and maths to data, machine learning, deep learning and language: the full route, in order.",
       "courses": [
         "python",
+        "math",
         "numpy",
         "pandas",
+        "data-visualization",
         "data-science",
         "machine-learning",
-        "deep-learning"
+        "ml-projects",
+        "deep-learning",
+        "nlp",
+        "generative-ai",
+        "agentic-ai"
+      ]
+    },
+    {
+      "id": "data-analytics",
+      "title": "Data Analytics",
+      "summary": "Become a data analyst: spreadsheets, SQL, Pandas, charts, statistics and a complete project, in order.",
+      "courses": [
+        "excel",
+        "sql",
+        "pandas",
+        "data-visualization",
+        "data-science",
+        "data-analysis-project"
+      ]
+    },
+    {
+      "id": "data-science-career",
+      "title": "Data Science",
+      "summary": "From Python and maths to data wrangling, statistics, charts and machine learning, with projects to show.",
+      "courses": [
+        "python",
+        "math",
+        "numpy",
+        "pandas",
+        "data-visualization",
+        "data-science",
+        "machine-learning",
+        "ml-projects",
+        "data-analysis-project"
+      ]
+    },
+    {
+      "id": "generative-and-agentic-ai",
+      "title": "Generative AI and Agentic AI",
+      "summary": "Build with large language models: prompts, RAG, tools, agents and the safety that goes with them.",
+      "courses": [
+        "python",
+        "nlp",
+        "deep-learning",
+        "generative-ai",
+        "agentic-ai"
       ]
     },
     {

@@ -1,0 +1,45 @@
+{
+  "slug": "agentic-ai",
+  "title": "Agentic AI",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "Ag",
+  "color": "#0b7285",
+  "order": 11,
+  "kind": "tutorial",
+  "summary": "Build AI agents that use tools: the agent loop, tool calling, memory, routing and multi-agent patterns, MCP, and the safety controls that make them trustworthy.",
+  "outcomes": [
+    "Explain what an agent is and when a plain workflow is better",
+    "Describe tools with schemas and run model tool calls safely",
+    "Build the think, act, observe loop with limits and error recovery",
+    "Manage memory and context for long tasks",
+    "Use routing, supervisor and review patterns, and understand MCP",
+    "Add permissions, approvals, budgets and tests to an agent",
+    "Plan a portfolio agent project"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Agentic AI",
+      "summary": "From a model in a loop to safe, useful agents.",
+      "lessons": [
+        "what-are-ai-agents",
+        "tool-calling",
+        "the-agent-loop",
+        "memory-and-context",
+        "planning-and-multi-agent",
+        "mcp-and-tool-ecosystems",
+        "reliable-and-safe-agents",
+        "agent-projects"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The agentic AI questions interviewers ask.",
+      "lessons": [
+        "agentic-ai-interview-questions"
+      ]
+    }
+  ]
+}

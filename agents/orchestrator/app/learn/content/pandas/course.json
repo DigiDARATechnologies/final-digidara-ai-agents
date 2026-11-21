@@ -5,7 +5,7 @@
   "level": "Beginner",
   "icon": "Pd",
   "color": "#5f3dc4",
-  "order": 2,
+  "order": 3,
   "kind": "tutorial",
   "summary": "Load, clean, reshape and analyse tables of data in Python: the skill behind every data science project.",
   "outcomes": [

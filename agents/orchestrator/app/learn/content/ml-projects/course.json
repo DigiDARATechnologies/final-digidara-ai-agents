@@ -1,0 +1,30 @@
+{
+  "slug": "ml-projects",
+  "title": "Machine Learning Projects",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "Mp",
+  "color": "#862e9c",
+  "order": 7,
+  "kind": "tutorial",
+  "summary": "Four complete projects: house prices, loan approval with a fairness check, customer segments and fraud detection.",
+  "outcomes": [
+    "Build and compare regression models and report the error in rupees",
+    "Choose a classification threshold from the cost of mistakes and audit a model for fairness",
+    "Segment customers with RFM and K-Means",
+    "Detect fraud with an anomaly detector and with a supervised model"
+  ],
+  "chapters": [
+    {
+      "id": "projects",
+      "title": "The projects",
+      "summary": "Four projects for your portfolio.",
+      "lessons": [
+        "house-price-prediction",
+        "loan-approval-prediction",
+        "customer-segmentation",
+        "fraud-anomaly-detection"
+      ]
+    }
+  ]
+}
