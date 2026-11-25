@@ -25,8 +25,10 @@ from services.interview_state import (
 from services.media_storage import delete_managed_audio
 from services.ai_usage import track_ai_usage
 from services.role_interviews import role_subject_prompt, subject_for_question
+from ai.validators import _safe_fallback_question
 from services.question_history import (
     get_recent_asked_history,
+    is_repeated_question,
     question_hash,
     record_served_questions,
 )
@@ -724,10 +726,33 @@ def _issue_next_question(
                     role_skills=[next_subject] if next_subject else None,
                     skill_area=next_subject if next_subject else None,
                 )
-                if question_hash(generated_question["question"]) not in already_asked_hashes:
+                repeats_this_interview = is_repeated_question(
+                    generated_question["question"], asked_so_far
+                )
+                if (
+                    not repeats_this_interview
+                    and question_hash(generated_question["question"]) not in already_asked_hashes
+                ):
                     break
-                log(logging.WARNING, "historical_question_collision", "Generated next question matched recent completed history", attempt=attempt + 1)
+                log(
+                    logging.WARNING,
+                    "interview_question_repeat" if repeats_this_interview else "historical_question_collision",
+                    "Generated next question repeated an earlier question",
+                    attempt=attempt + 1,
+                )
                 question_context.append(generated_question["question"])
+            else:
+                # Never serve a repeat inside one interview: use an unasked
+                # fallback for the same subject instead.
+                generated_question = {
+                    "question": _safe_fallback_question(
+                        next_subject or "this subject",
+                        interview_row["difficulty"],
+                        list(asked_so_far) + list(question_context),
+                        round_type=interview_row["round_type"],
+                    ),
+                    "topic_area": generated_question.get("topic_area") or "core concepts",
+                }
         next_question = generated_question["question"]
         next_topic_area = generated_question["topic_area"]
     except Exception as exc:

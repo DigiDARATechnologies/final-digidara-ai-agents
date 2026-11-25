@@ -5,6 +5,8 @@ import logging
 import re
 import unicodedata
 
+from services.question_history import is_repeated_question
+
 from .chat_client import chat as default_chat
 
 
@@ -60,21 +62,69 @@ SAFE_QUESTION_TEMPLATES = {
         "What is one core concept in {subject}?",
         "What purpose does a common {subject} feature serve?",
         "How does one basic {subject} feature behave?",
+        "Why is {subject} useful?",
+        "What problem does {subject} solve?",
+        "What is a simple example of {subject} in use?",
+        "What is a common beginner mistake with {subject}?",
+        "Where would you use {subject} in a small project?",
+        "Which basic {subject} term would you explain to a friend?",
+        "How would you start learning {subject} from scratch?",
+        "What is one everyday use of {subject}?",
+        "What does a {subject} beginner need to know first?",
+        "Which {subject} feature did you learn first?",
+        "What is one {subject} term every beginner should know?",
+        "What is the main goal of {subject}?",
     ),
     "intermediate": (
         "How would you troubleshoot a common issue in {subject}?",
         "When would you use a common {subject} pattern?",
         "How would you apply one {subject} concept in practice?",
+        "What is a common mistake people make with {subject}?",
+        "How would you check that your {subject} work is correct?",
+        "Which {subject} best practice do you always follow?",
+        "How would you explain one key {subject} idea to a new teammate?",
+        "What would you review first in someone else's {subject} work?",
+        "How have you used {subject} in a project?",
+        "Which {subject} feature do you rely on most?",
+        "How would you debug one failing {subject} feature?",
+        "What would you document about one {subject} feature?",
+        "How would you keep one {subject} setup easy to maintain?",
+        "What is one {subject} habit that prevents bugs?",
+        "How would you organize a medium-sized {subject} project?",
     ),
     "advanced": (
         "How would you diagnose one reliability failure in {subject}?",
         "What evidence would confirm a performance bottleneck in {subject}?",
         "How would you investigate one security weakness in {subject}?",
+        "How would you design one {subject} component to scale with growing demand?",
+        "Which {subject} decision is hardest to reverse later?",
+        "How would you set one {subject} standard across a team?",
+        "What would you monitor to know {subject} is healthy in production?",
+        "How would you recover from a serious {subject} mistake in production?",
+        "Which {subject} shortcut would you refuse to take?",
+        "How would you evaluate a new {subject} approach before adopting it?",
+        "What makes one {subject} failure hard to reproduce?",
+        "How would you harden one {subject} feature against misuse?",
+        "What would you automate first in a growing {subject} project?",
+        "How would you review one risky {subject} design decision?",
+        "What makes one {subject} system hard to operate?",
     ),
     "professional": (
         "A production {subject} request is failing intermittently. What would you inspect first?",
         "A {subject} service exceeds its latency target. How would you locate the bottleneck?",
         "How would you verify that one {subject} security control works in production?",
+        "A {subject} deployment broke a feature for some users. What would you check first?",
+        "A {subject} job keeps failing overnight. How would you find the cause?",
+        "How would you roll back one risky {subject} change safely?",
+        "What would you alert on to catch one {subject} outage early?",
+        "A {subject} dependency was found to be vulnerable. What would you do first?",
+        "How would you investigate one memory leak in a {subject} service?",
+        "What would you include in a postmortem for one {subject} incident?",
+        "How would you limit the impact of one failing {subject} component?",
+        "A new {subject} release doubled error rates. Where would you start?",
+        "How would you plan one {subject} migration with zero downtime?",
+        "What would you check before scaling one {subject} service?",
+        "How would you prove one {subject} fix actually worked?",
     ),
 }
 SAFE_HR_QUESTION_TEMPLATES = {
@@ -82,16 +132,37 @@ SAFE_HR_QUESTION_TEMPLATES = {
         "Why are you interested in this opportunity?",
         "How do you respond to constructive feedback?",
         "Tell me about a time you helped a teammate?",
+        "What do you enjoy most about learning something new?",
+        "How do you organize a busy day with several tasks?",
+        "What motivates you to do your best work?",
+        "How do you ask for help on a task you are stuck on?",
+        "What is one goal you are working toward right now?",
+        "How would your friends describe you?",
+        "What did you learn from a group project?",
     ),
     "intermediate": (
         "Tell me about a time you resolved a disagreement with a teammate?",
         "How have you prioritized competing responsibilities under a tight deadline?",
         "Describe a situation where you adapted your communication for someone else?",
+        "Tell me about a time you went beyond what was asked of you?",
+        "How do you handle a task you have never done before?",
+        "Describe a time you had to learn a new skill quickly?",
+        "How do you stay productive during repetitive work?",
+        "Tell me about a goal you set for yourself and how you reached it?",
+        "How do you respond to a teammate who is not doing their share?",
+        "What kind of work environment helps you perform best?",
     ),
     "advanced": (
         "Describe a difficult decision you made with incomplete information and explain your reasoning?",
         "Tell me about a time you took ownership of a serious failure?",
         "How did you influence an important decision without formal authority?",
+        "How did you rebuild trust after a project let people down?",
+        "Describe how you handled a team member who was underperforming?",
+        "Tell me about a time you challenged a decision made by senior leadership?",
+        "How have you managed competing demands from several stakeholders?",
+        "Describe a change you drove that people initially resisted?",
+        "How did you decide on work to pause after a budget cut?",
+        "Tell me about a time you had to deliver difficult news to a client?",
     ),
 }
 SKILL_FALLBACK_QUESTIONS = {
@@ -239,18 +310,17 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
         area_question = HR_AREA_FALLBACK_QUESTIONS.get(difficulty, {}).get(
             str(subject or "").strip().casefold()
         )
-        templates = ((area_question,) if area_question else ()) + SAFE_HR_QUESTION_TEMPLATES.get(
-            difficulty,
-            SAFE_HR_QUESTION_TEMPLATES["intermediate"],
+        level = difficulty if difficulty in SAFE_HR_QUESTION_TEMPLATES else "intermediate"
+        # The area's own question first, then every other question for this
+        # level, so a long HR interview never runs out of unasked questions.
+        templates = (
+            ((area_question,) if area_question else ())
+            + SAFE_HR_QUESTION_TEMPLATES[level]
+            + tuple(HR_AREA_FALLBACK_QUESTIONS.get(level, {}).values())
         )
-        asked_normalized = {
-            question.strip().casefold()
-            for question in asked_so_far
-            if isinstance(question, str)
-        }
         for candidate in templates:
             if (
-                candidate.casefold() not in asked_normalized
+                not is_repeated_question(candidate, asked_so_far)
                 and not _question_validation_errors(candidate, difficulty)
             ):
                 return candidate
@@ -283,15 +353,10 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
         templates = tuple(SKILL_FALLBACK_QUESTIONS[skill_key]) + generic_templates
     else:
         templates = generic_templates
-    asked_normalized = {
-        question.strip().casefold()
-        for question in asked_so_far
-        if isinstance(question, str)
-    }
     for template in templates:
         candidate = template.format(subject=subject_label)
         if (
-            candidate.casefold() not in asked_normalized
+            not is_repeated_question(candidate, asked_so_far)
             and not _question_validation_errors(candidate, difficulty)
         ):
             return candidate
