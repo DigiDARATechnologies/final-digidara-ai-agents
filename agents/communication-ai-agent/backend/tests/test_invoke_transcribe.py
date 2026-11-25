@@ -133,3 +133,29 @@ def test_a_daily_challenge_that_keeps_failing_is_a_clean_503(client, app, token,
     monkeypatch.setattr(daily_challenges, "today_status", Mock(side_effect=OperationalError("SELECT", {}, Exception("gone away"))))
     response = invoke(client, "daily_challenge_today", {"authToken": token})
     assert response.status_code == 503
+
+
+def test_speech_is_transcribed_verbatim_not_tidied(client, app, token, monkeypatch):
+    """A learner who says "I am go to park" must see that, not "I went to the park"."""
+    from app.services.groq_speaking import VERBATIM_TRANSCRIPTION_PROMPT
+
+    post = _provider_replies(monkeypatch, app, (200, {"text": "I am go to park yesterday"}))
+    response = _preview(client, token)
+    assert response.get_json()["transcript"] == "I am go to park yesterday"
+    assert post.call_args.kwargs["data"]["prompt"] == VERBATIM_TRANSCRIPTION_PROMPT
+    assert "language" not in post.call_args.kwargs["data"]
+
+
+def test_the_prompt_read_back_on_silence_is_not_an_answer(client, app, token, monkeypatch):
+    _provider_replies(monkeypatch, app, (200, {"text": "Transcribe exactly what the speaker says, word for word."}))
+    response = _preview(client, token)
+    assert response.get_json().get("transcript", "") == ""
+
+
+def test_corrections_must_keep_the_whole_answer():
+    import inspect
+
+    from app.services import groq_speaking
+
+    source = inspect.getsource(groq_speaking)
+    assert source.count("Never summarize, shorten, merge or drop any part of it.") >= 4
