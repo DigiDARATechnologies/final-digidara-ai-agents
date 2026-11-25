@@ -184,8 +184,8 @@ def test_category_test_is_generated_once_and_navigation_uses_only_stored_rows(
     assert created.status_code == 201, created.get_json()
     test_id = created.get_json()["test_id"]
     assert created.get_json()["status"] == "ready"
-    assert len(calls) == 1
-    assert len(calls[0]["slots"]) == 10
+    # Ten questions are written three per request: 3 + 3 + 3 + 1.
+    assert sorted(len(call["slots"]) for call in calls) == [1, 3, 3, 3]
 
     with app.app_context():
         test = db.session.get(AptitudeTest, test_id)
@@ -216,7 +216,7 @@ def test_category_test_is_generated_once_and_navigation_uses_only_stored_rows(
         assert answer.get_json()["complete"] is (sequence == 10)
 
     # Start, fetch, and answer never invoke generation again.
-    assert len(calls) == 1
+    assert len(calls) == 4
     detail = client.get(f"/api/aptitude/tests/{test_id}", headers=auth_headers)
     assert detail.status_code == 200, detail.get_json()
     assert detail.get_json()["score"] == 10
@@ -235,8 +235,8 @@ def test_mixed_test_batch_has_fixed_weighted_difficulties(
     )
     assert created.status_code == 201, created.get_json()
     test_id = created.get_json()["test_id"]
-    # 21 questions are generated as chunks of 10: 10 + 10 + 1.
-    assert sorted(len(call["slots"]) for call in calls) == [1, 10, 10]
+    # 21 questions are generated three per request: seven chunks of 3.
+    assert sorted(len(call["slots"]) for call in calls) == [3] * 7
 
     with app.app_context():
         questions = AptitudeTestQuestion.query.filter_by(test_id=test_id).all()
@@ -262,7 +262,7 @@ def test_mixed_test_batch_has_fixed_weighted_difficulties(
         assert answered.status_code == 200
         assert answered.get_json()["complete"] is (sequence == 21)
     assert answered.get_json()["is_correct"] is True
-    assert len(calls) == 3
+    assert len(calls) == 7  # answering never generates again
     with app.app_context():
         assert db.session.get(AptitudeTest, test_id).status == "completed"
         current = [
