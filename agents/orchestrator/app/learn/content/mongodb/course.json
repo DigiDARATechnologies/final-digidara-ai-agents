@@ -2,13 +2,53 @@
   "slug": "mongodb",
   "title": "MongoDB",
   "track": "technical",
-  "level": "Beginner",
+  "level": "Intermediate",
   "icon": "Mo",
   "color": "#47a248",
   "order": 12,
   "kind": "tutorial",
-  "summary": "Store documents instead of rows.",
-  "outcomes": [],
-  "chapters": [],
-  "status": "soon"
+  "summary": "Store flexible documents: CRUD, queries, schema design, indexes, aggregation, replication and sharding, and using MongoDB from Python.",
+  "outcomes": [
+    "Explain documents and collections and when MongoDB is the right choice",
+    "Create, read, update and delete documents",
+    "Query with operators, arrays and nested fields",
+    "Design schemas by choosing embed or reference",
+    "Speed up queries with indexes and explain()",
+    "Summarise data with the aggregation pipeline",
+    "Understand transactions, replica sets and sharding",
+    "Use MongoDB from Python safely"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "MongoDB basics",
+      "summary": "Documents, queries, schema design and indexes.",
+      "lessons": [
+        "what-is-mongodb",
+        "crud-operations",
+        "queries-and-projection",
+        "arrays-and-updates",
+        "schema-design",
+        "indexes-and-explain"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced MongoDB",
+      "summary": "Aggregation, scaling and building apps.",
+      "lessons": [
+        "aggregation-pipeline",
+        "transactions-replication-and-sharding",
+        "mongodb-with-python"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The MongoDB questions interviewers ask.",
+      "lessons": [
+        "mongodb-interview-questions"
+      ]
+    }
+  ]
 }

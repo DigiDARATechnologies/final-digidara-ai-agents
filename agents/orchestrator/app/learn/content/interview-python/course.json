@@ -21,7 +21,9 @@
       "lessons": [
         "python-basics-qa",
         "data-structures-qa",
-        "functions-and-oop-qa"
+        "functions-and-oop-qa",
+        "advanced-python-qa",
+        "python-output-and-gotchas-qa"
       ]
     }
   ]

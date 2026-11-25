@@ -19,7 +19,9 @@
       "summary": "",
       "lessons": [
         "sql-basics-qa",
-        "joins-and-aggregation-qa"
+        "joins-and-aggregation-qa",
+        "sql-advanced-qa",
+        "sql-query-practice-qa"
       ]
     }
   ]

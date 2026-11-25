@@ -1,0 +1,31 @@
+{
+  "slug": "interview-coding-problems",
+  "title": "Coding Round: Top Problems",
+  "track": "interview",
+  "level": "Intermediate",
+  "icon": "Cd",
+  "color": "#c2410c",
+  "order": 10,
+  "kind": "tutorial",
+  "summary": "The most common coding interview problems, each with the idea, working Python code, real output and complexity.",
+  "outcomes": [
+    "Solve classic array, string, linked list, tree, graph, DP and backtracking problems",
+    "State the brute force and the improved solution",
+    "Give time and space complexity",
+    "Explain a solution out loud"
+  ],
+  "chapters": [
+    {
+      "id": "problems",
+      "title": "Problems",
+      "summary": "Worked coding problems with solutions.",
+      "lessons": [
+        "array-and-string-problems",
+        "linked-list-and-design-problems",
+        "tree-and-graph-problems",
+        "dynamic-programming-and-backtracking-problems",
+        "sorting-searching-and-heap-problems"
+      ]
+    }
+  ]
+}

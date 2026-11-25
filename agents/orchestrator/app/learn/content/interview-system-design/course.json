@@ -1,0 +1,28 @@
+{
+  "slug": "interview-system-design",
+  "title": "System Design Basics",
+  "track": "interview",
+  "level": "Intermediate",
+  "icon": "SD",
+  "color": "#364fc7",
+  "order": 11,
+  "kind": "tutorial",
+  "summary": "A beginner-friendly guide to system design interviews: an approach, the building blocks and four classic case studies.",
+  "outcomes": [
+    "Answer a design question with a clear five-step approach",
+    "Choose between SQL, NoSQL, cache, queue and CDN",
+    "Design a URL shortener, rate limiter, chat app and news feed",
+    "Discuss scaling and trade-offs"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "System design",
+      "summary": "Approach, building blocks and case studies.",
+      "lessons": [
+        "system-design-approach-and-building-blocks",
+        "system-design-case-studies"
+      ]
+    }
+  ]
+}

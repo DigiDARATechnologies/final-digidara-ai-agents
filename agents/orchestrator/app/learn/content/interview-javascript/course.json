@@ -19,7 +19,9 @@
       "summary": "",
       "lessons": [
         "js-core-qa",
-        "async-and-dom-qa"
+        "async-and-dom-qa",
+        "js-advanced-qa",
+        "js-output-questions-qa"
       ]
     }
   ]

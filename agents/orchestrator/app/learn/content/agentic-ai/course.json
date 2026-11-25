@@ -25,11 +25,24 @@
       "lessons": [
         "what-are-ai-agents",
         "tool-calling",
+        "tool-design-best-practices",
         "the-agent-loop",
+        "reasoning-patterns-react-and-reflection",
         "memory-and-context",
         "planning-and-multi-agent",
+        "multi-agent-systems",
+        "agent-frameworks",
+        "building-an-agent-with-langgraph",
         "mcp-and-tool-ecosystems",
+        "agentic-rag",
+        "coding-and-computer-use-agents",
+        "human-in-the-loop",
         "reliable-and-safe-agents",
+        "agent-security-and-guardrails",
+        "evaluating-and-debugging-agents",
+        "optimizing-agent-cost-and-latency",
+        "agents-in-production",
+        "real-world-agent-use-cases",
         "agent-projects"
       ]
     },
@@ -38,7 +51,8 @@
       "title": "Interview questions",
       "summary": "The agentic AI questions interviewers ask.",
       "lessons": [
-        "agentic-ai-interview-questions"
+        "agentic-ai-interview-questions",
+        "agentic-ai-advanced-interview-questions"
       ]
     }
   ]

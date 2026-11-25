@@ -1,0 +1,28 @@
+{
+  "slug": "interview-backend-python",
+  "title": "Python Backend Interview",
+  "track": "interview",
+  "level": "Intermediate",
+  "icon": "Be",
+  "color": "#2b8a3e",
+  "order": 9,
+  "kind": "tutorial",
+  "summary": "Flask, Django and general backend questions: routing, ORM, middleware, APIs, async, caching, queues and testing.",
+  "outcomes": [
+    "Compare Flask and Django and use each correctly",
+    "Explain ORM, migrations and the N+1 problem",
+    "Describe async, queues, caching and idempotency",
+    "Discuss how to test, deploy and scale a Python backend"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "Python backend interview questions.",
+      "lessons": [
+        "flask-and-django-qa",
+        "python-backend-and-api-qa"
+      ]
+    }
+  ]
+}

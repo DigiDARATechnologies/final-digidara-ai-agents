@@ -1,0 +1,30 @@
+{
+  "slug": "interview-cs-fundamentals",
+  "title": "Core CS Fundamentals Interview",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "CS",
+  "color": "#5f3dc4",
+  "order": 6,
+  "kind": "tutorial",
+  "summary": "The computer science subjects every placement interview covers: operating systems, DBMS, computer networks and OOP concepts.",
+  "outcomes": [
+    "Answer core operating system questions",
+    "Explain keys, normalization, transactions and indexing",
+    "Describe the OSI model, TCP and what happens when you open a URL",
+    "Apply OOP principles, SOLID and common design patterns"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "OS, DBMS, networks and OOP questions.",
+      "lessons": [
+        "operating-systems-qa",
+        "dbms-qa",
+        "computer-networks-qa",
+        "oop-concepts-qa"
+      ]
+    }
+  ]
+}

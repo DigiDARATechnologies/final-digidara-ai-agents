@@ -1,14 +1,96 @@
 {
   "slug": "dsa",
-  "title": "Data Structures & Algorithms",
+  "title": "Data Structures and Algorithms",
   "track": "technical",
-  "level": "Beginner",
+  "level": "Intermediate",
   "icon": "DS",
-  "color": "#364fc7",
+  "color": "#c2410c",
   "order": 10,
   "kind": "tutorial",
-  "summary": "Arrays, linked lists, trees, graphs, sorting and complexity.",
-  "outcomes": [],
-  "chapters": [],
-  "status": "soon"
+  "summary": "The most asked topic in coding interviews, taught in Python: Big-O, arrays, hashing, linked lists, stacks, trees, graphs, sorting, recursion, greedy and dynamic programming.",
+  "outcomes": [
+    "Judge the time and space cost of code with Big-O",
+    "Choose the right structure: list, hash map, stack, queue, heap, tree or graph",
+    "Solve problems with two pointers, sliding window, prefix sums and binary search",
+    "Write recursion and backtracking confidently",
+    "Traverse trees and graphs with DFS and BFS, and find shortest paths",
+    "Recognise greedy and dynamic programming problems and solve them",
+    "Approach any coding interview question step by step"
+  ],
+  "chapters": [
+    {
+      "id": "basics",
+      "title": "Foundations",
+      "summary": "What DSA is, Big-O and Python's built-in structures.",
+      "lessons": [
+        "what-is-dsa",
+        "big-o-and-complexity",
+        "python-data-structures-cost"
+      ]
+    },
+    {
+      "id": "linear",
+      "title": "Arrays, strings and linear structures",
+      "summary": "Arrays, hashing, linked lists, stacks and queues.",
+      "lessons": [
+        "arrays-and-two-pointers",
+        "sliding-window-and-prefix-sums",
+        "strings",
+        "hashing-hash-maps-and-sets",
+        "linked-lists",
+        "stacks",
+        "queues-and-deques"
+      ]
+    },
+    {
+      "id": "search-sort",
+      "title": "Searching and sorting",
+      "summary": "Binary search and the sorting algorithms.",
+      "lessons": [
+        "binary-search",
+        "sorting-algorithms"
+      ]
+    },
+    {
+      "id": "recursion",
+      "title": "Recursion and backtracking",
+      "summary": "Solve problems by calling yourself, and by trying and undoing choices.",
+      "lessons": [
+        "recursion",
+        "backtracking"
+      ]
+    },
+    {
+      "id": "trees-graphs",
+      "title": "Trees, heaps and graphs",
+      "summary": "Trees, heaps, tries, graphs and shortest paths.",
+      "lessons": [
+        "trees-and-binary-search-trees",
+        "heaps-and-priority-queues",
+        "tries",
+        "graphs-bfs-and-dfs",
+        "shortest-paths-and-topological-sort"
+      ]
+    },
+    {
+      "id": "paradigms",
+      "title": "Problem-solving paradigms",
+      "summary": "Greedy, dynamic programming and bit manipulation.",
+      "lessons": [
+        "greedy-algorithms",
+        "dynamic-programming-basics",
+        "dynamic-programming-patterns",
+        "bit-manipulation"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview preparation",
+      "summary": "Patterns and the questions interviewers ask.",
+      "lessons": [
+        "problem-solving-patterns",
+        "dsa-interview-questions"
+      ]
+    }
+  ]
 }

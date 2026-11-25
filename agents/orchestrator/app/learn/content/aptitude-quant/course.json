@@ -21,7 +21,10 @@
       "lessons": [
         "percentages",
         "ratio-and-proportion",
-        "averages"
+        "averages",
+        "number-system-and-divisibility",
+        "hcf-and-lcm",
+        "simplification-and-approximation"
       ]
     },
     {
@@ -39,7 +42,44 @@
       "summary": "",
       "lessons": [
         "time-and-work",
-        "time-speed-distance"
+        "time-speed-distance",
+        "problems-on-trains",
+        "boats-and-streams",
+        "pipes-and-cisterns"
+      ]
+    },
+    {
+      "id": "ages-and-mixtures",
+      "title": "Ages, mixtures and partnership",
+      "summary": "Equations from words, mixing and sharing profit.",
+      "lessons": [
+        "problems-on-ages",
+        "mixtures-and-alligation",
+        "partnership"
+      ]
+    },
+    {
+      "id": "geometry-counting",
+      "title": "Geometry, counting and revision",
+      "summary": "Mensuration, permutations, probability and the formula sheet.",
+      "lessons": [
+        "mensuration",
+        "permutations-and-combinations",
+        "probability",
+        "quant-formula-sheet"
+      ]
+    },
+    {
+      "id": "algebra-and-series",
+      "title": "Algebra and more",
+      "summary": "Equations, progressions, indices, chain rule, races and geometry.",
+      "lessons": [
+        "algebra-equations-and-inequalities",
+        "progressions-ap-and-gp",
+        "surds-indices-and-logarithms",
+        "numbers-and-chain-rule",
+        "races-and-circular-tracks",
+        "triangles-polygons-and-circles"
       ]
     }
   ]
