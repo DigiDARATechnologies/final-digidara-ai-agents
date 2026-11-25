@@ -78,6 +78,11 @@ DAILY_FALLBACK_QUESTIONS = [
 
 
 GPT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+VERBATIM_TRANSCRIPTION_PROMPT = (
+    "Transcribe exactly what the speaker says, word for word. The speaker is an Indian English learner. "
+    "Keep grammar mistakes, wrong tenses, repeated words and filler words such as um and uh exactly as spoken. "
+    "Do not correct, complete, summarize or rephrase anything."
+)
 
 
 # OpenAI answers 429 with these when the account has no credits; retrying never helps.
@@ -95,6 +100,17 @@ def _transcription_error_code(response):
 def _transcription_blip(response):
     return response.status_code >= 500 or (
         response.status_code == 429 and _transcription_error_code(response) not in TRANSCRIPTION_QUOTA_CODES
+    )
+
+
+def _echoes_prompt(transcript):
+    """True when most of the transcript's words come from the verbatim prompt."""
+    words = re.findall(r"[a-z]+", str(transcript or "").casefold())
+    if len(words) < 4:
+        return False
+    prompt_words = set(re.findall(r"[a-z]+", VERBATIM_TRANSCRIPTION_PROMPT.casefold()))
+    return sum(word in prompt_words for word in words) / len(words) >= 0.8 and any(
+        marker in words for marker in ("transcribe", "verbatim", "summarize", "rephrase", "filler")
     )
 
 
@@ -139,6 +155,12 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         clean_prompt = str(prompt).strip()
         post_data["prompt"] = clean_prompt
         post_data["language"] = "en"
+    elif use_openai:
+        # A speaking coach grades the learner's own words, so the transcript
+        # must be verbatim. Unprompted, the model tidies speech: it fixes
+        # grammar ("I am go" -> "I went") and drops repeated or filler words,
+        # and the learner sees a transcript that is not what they said.
+        post_data["prompt"] = VERBATIM_TRANSCRIPTION_PROMPT
 
     for attempt in range(2):
         response = httpx.post(
@@ -183,6 +205,10 @@ def transcribe_speaking_audio(audio_bytes, filename="speaking-answer.webm", cont
         len(audio_bytes),
         latency_ms / 1000,
     )
+    if post_data.get("prompt") == VERBATIM_TRANSCRIPTION_PROMPT and _echoes_prompt(transcript):
+        # On silence a prompted model can read its instructions back.
+        current_app.logger.info("Speaking transcription echoed the verbatim prompt; discarded")
+        transcript = ""
     if is_silence_transcript(transcript):
         current_app.logger.info("Speaking transcription of silence/noise discarded: %r", transcript[:80])
         return ""
@@ -261,7 +287,7 @@ def evaluate_daily_answer(question, answer, previous_turns, next_question, vocab
         f"Recent conversation:\n{recent}\nToday's vocabulary: {', '.join(vocabulary or [])}\n\n"
         "Required structure:\n"
         "1. reaction: one warm friend-like sentence that responds to something specific the student said.\n"
-        "2. corrected_answer/natural_version/short_tip: include only when the answer has a real grammar or phrasing issue; use null/empty tip if already fine.\n"
+        "2. corrected_answer/natural_version/short_tip: include only when the answer has a real grammar or phrasing issue; use null/empty tip if already fine. corrected_answer must be the learner's WHOLE answer with only the mistakes fixed: keep every sentence, every idea and the learner's own words, in the same order and about the same length. Never summarize, shorten, merge or drop any part of it.\n"
         "3. transition: a short bridge toward the next planned question, if useful.\n\n"
         "Examples:\n"
         "Student: \"I visited my grandmother last weekend.\" -> reaction: \"Oh nice, that sounds like a meaningful visit.\" corrected_answer: null transition: \"Let's talk a little more about that.\"\n"
@@ -744,6 +770,7 @@ def repair_speaking_correction(mode, difficulty, topic_title, question, answer):
         f"Question asked: {question}\n"
         f"Student answer: {answer}\n\n"
         "Preserve intended meaning, use the question context, correct clear mistakes, identify fragments, "
+        "corrected_answer must be the learner's WHOLE answer with only the mistakes fixed: keep every sentence, every idea and the learner's own words, in the same order and about the same length. Never summarize, shorten, merge or drop any part of it. "
         "and do not invent unsupported meaning. If meaning is unclear, set transcript_clear false and "
         "correction_available false with no corrected_answer. Put the mistake explanation in mistake_points, "
         "not a long paragraph: 2-4 distinct bullets, under 15 words each. Each bullet should name one problem, "
@@ -908,7 +935,7 @@ def evaluate_speaking_answer(mode, difficulty, topic_title, question, answer):
         "JSON reaction: I'm glad to hear that.\n\n"
         "Classify status as Correct, Mostly Correct, Partially Correct, Needs Improvement, Off Topic, or No Answer. "
         "For grammatical mistakes, set has_errors true, correction_available true, source groq, include specific mistakes, "
-        "and make corrected_answer different from the incorrect transcript. For an already correct answer, set has_errors false, "
+        "and make corrected_answer different from the incorrect transcript. corrected_answer must be the learner's WHOLE answer with only the mistakes fixed: keep every sentence, every idea and the learner's own words, in the same order and about the same length. Never summarize, shorten, merge or drop any part of it. For an already correct answer, set has_errors false, "
         "correction_available true, use an empty mistakes list, and say 'No grammatical correction was needed.' Do not pretend "
         "an unchanged correct sentence is an error correction. If tense is unclear, use the question context; if it remains "
         "unclear, give one primary correction and mention a short alternative in the explanation or better_natural_answer. "
@@ -1154,7 +1181,7 @@ def process_speaking_turn_conversation_engine(
         "   - next_question: null  (STRICT: NEVER ask a question on goodbye!)\n\n"
         "BACKGROUND LANGUAGE ANALYSIS (SILENT - FOR FINAL REPORT ONLY):\n"
         "- Do NOT put grammar corrections in 'reaction' or 'next_question'. Those fields are strictly for live spoken conversation.\n"
-        "- In 'corrected_answer': provide the grammatically correct version (e.g., 'I have been working with Python for two years.'). Set null if already correct.\n"
+        "- In 'corrected_answer': provide the grammatically correct version (e.g., 'I have been working with Python for two years.'). Set null if already correct. corrected_answer must be the learner's WHOLE answer with only the mistakes fixed: keep every sentence, every idea and the learner's own words, in the same order and about the same length. Never summarize, shorten, merge or drop any part of it.\n"
         "- In 'explanation': briefly explain the grammar rule for the final report (e.g., 'Use for with time duration instead of from.').\n"
         "- In 'mistake_points': list specific mistake items.\n"
         "- In 'scores': assign scores { confidence, fluency, grammar, overall (0-100) }.\n\n"

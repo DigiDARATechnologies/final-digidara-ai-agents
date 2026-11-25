@@ -100,11 +100,12 @@ def test_preferred_location_reference_uses_saved_location_and_never_calls_llm_on
 
     assert result["matched_jobs"] == []
     assert "Tiruchirappalli" in result["reply"]
-    assert "won’t substitute" in result["reply"]
-    assert retrieve.call_args.kwargs["location_filter"] == ["Tiruchirappalli"]
-    assert retrieve.call_args.kwargs["strict_location"] is True
-    assert retrieve.call_args.kwargs["title_filter"] == ["AI Engineer"]
-    assert retrieve.call_args.kwargs["strict_titles"] is True
+    assert "no close alternatives" in result["reply"]
+    exact_search = retrieve.call_args_list[0].kwargs  # later calls look for labelled alternatives
+    assert exact_search["location_filter"] == ["Tiruchirappalli"]
+    assert exact_search["strict_location"] is True
+    assert exact_search["title_filter"] == ["AI Engineer"]
+    assert exact_search["strict_titles"] is True
     post.assert_not_called()
 
 

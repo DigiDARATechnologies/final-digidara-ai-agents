@@ -50,27 +50,36 @@ def test_a_small_test_keeps_its_single_request(app, monkeypatch):
     calls = []
     monkeypatch.setattr(service, "generate_questions", fake_generator(calls))
     with app.app_context():
+        questions, _, _ = service.generate_question_set([slot(i) for i in range(3)], avoid_questions=[], deadline=time.monotonic() + 60)
+    assert len(calls) == 1 and len(questions) == 3
+
+
+def test_a_ten_question_test_is_written_three_questions_per_request(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr(service, "generate_questions", fake_generator(calls))
+    with app.app_context():
         questions, _, _ = service.generate_question_set([slot(i) for i in range(10)], avoid_questions=[], deadline=time.monotonic() + 60)
-    assert len(calls) == 1 and len(questions) == 10
+    assert sorted(len(c) for c in calls) == [1, 3, 3, 3]
+    assert [q["question"] for q in questions] == [wording(f"Topic {i}") for i in range(10)]
 
 
-def test_a_sixty_question_test_is_six_parallel_chunks_in_order(app, monkeypatch):
+def test_a_sixty_question_test_is_twenty_parallel_chunks_in_order(app, monkeypatch):
     calls = []
     monkeypatch.setattr(service, "generate_questions", fake_generator(calls))
     with app.app_context():
         questions, model, usage = service.generate_question_set([slot(i) for i in range(60)], avoid_questions=[], deadline=time.monotonic() + 60)
-    assert sorted(len(c) for c in calls) == [10] * 6
+    assert sorted(len(c) for c in calls) == [3] * 20
     assert [q["question"] for q in questions] == [wording(f"Topic {i}") for i in range(60)]
-    assert model == "gpt-test" and usage["total_tokens"] == 180
+    assert model == "gpt-test" and usage["total_tokens"] == 600
 
 
 def test_a_failed_chunk_is_retried_once_instead_of_failing_the_test(app, monkeypatch):
     calls = []
-    monkeypatch.setattr(service, "generate_questions", fake_generator(calls, fail_first_call_for="Topic 20"))
+    monkeypatch.setattr(service, "generate_questions", fake_generator(calls, fail_first_call_for="Topic 21"))
     with app.app_context():
         questions, _, _ = service.generate_question_set([slot(i) for i in range(30)], avoid_questions=[], deadline=time.monotonic() + 60)
     assert len(questions) == 30
-    assert sum(1 for c in calls if c[0] == "Topic 20") == 2
+    assert sum(1 for c in calls if c[0] == "Topic 21") == 2
 
 
 def test_a_chunk_that_fails_twice_still_fails_the_test(app, monkeypatch):

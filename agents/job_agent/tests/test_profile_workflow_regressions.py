@@ -712,7 +712,10 @@ def test_related_roles_are_broader_than_default_matching_and_do_not_change_prefe
     ):
         exact = chat_with_job_agent("user-1", "show my matching jobs")
         related = chat_with_job_agent("user-1", "SEARCH_RELATED_ROLES")
-    assert exact["matched_jobs"] == []
+    # No exact AI Engineer job: the closest real opening is shown, labelled as such.
+    assert exact["matched_jobs"] == [related_job]
+    assert "not an exact match" in exact["reply"]
+    assert "related roles in **Bengaluru**" in exact["reply"]
     assert related["matched_jobs"] == [related_job]
     assert json.loads(database.profile["preferred_titles"]) == ["AI Engineer"]
     assert json.loads(database.profile["preferred_locations"]) == ["Bengaluru"]
