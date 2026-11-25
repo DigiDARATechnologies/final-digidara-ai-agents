@@ -1,0 +1,34 @@
+{
+  "slug": "interview-toolkit",
+  "title": "Interview Toolkit",
+  "track": "interview",
+  "level": "All levels",
+  "icon": "Tk",
+  "color": "#a61e4d",
+  "order": 12,
+  "kind": "tutorial",
+  "summary": "Everything around the questions: resume and project stories, company research, group discussion, tough questions, salary and offers, and interview day.",
+  "outcomes": [
+    "Explain your resume and projects clearly",
+    "Research a company and read a job description",
+    "Take part in a group discussion with structure",
+    "Handle tough questions and what you do not know",
+    "Understand salary, offers and negotiation",
+    "Prepare for the interview day and follow up"
+  ],
+  "chapters": [
+    {
+      "id": "toolkit",
+      "title": "Toolkit",
+      "summary": "Prepare for every part of the interview process.",
+      "lessons": [
+        "resume-and-project-discussion",
+        "company-research-and-job-description",
+        "group-discussion-skills",
+        "handling-tough-and-unknown-questions",
+        "salary-negotiation-and-offers",
+        "interview-day-checklist-and-follow-up"
+      ]
+    }
+  ]
+}

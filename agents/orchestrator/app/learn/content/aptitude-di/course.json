@@ -1,0 +1,39 @@
+{
+  "slug": "aptitude-di",
+  "title": "Data Interpretation",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "DI",
+  "color": "#0b7285",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "Read tables, bar graphs, line graphs, pie charts and caselets, and answer percentage, growth, average and ratio questions quickly.",
+  "outcomes": [
+    "Read and interpret tables and charts",
+    "Calculate percentage, growth, ratio and average from data",
+    "Convert between pie chart angles, percentages and amounts",
+    "Solve caselets and mixed-graph sets",
+    "Use shortcuts to save time"
+  ],
+  "chapters": [
+    {
+      "id": "tables-and-graphs",
+      "title": "Tables and graphs",
+      "summary": "Read tables, bar charts, line graphs and pie charts.",
+      "lessons": [
+        "data-tables",
+        "bar-and-line-graphs",
+        "pie-charts"
+      ]
+    },
+    {
+      "id": "advanced-di",
+      "title": "Caselets and speed",
+      "summary": "Caselets, mixed data and calculation shortcuts.",
+      "lessons": [
+        "caselets-and-mixed-graphs",
+        "calculation-shortcuts-for-di"
+      ]
+    }
+  ]
+}

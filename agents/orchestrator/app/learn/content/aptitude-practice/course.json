@@ -1,0 +1,39 @@
+{
+  "slug": "aptitude-practice",
+  "title": "Aptitude Practice Sets",
+  "track": "aptitude",
+  "level": "Intermediate",
+  "icon": "PS",
+  "color": "#c2255c",
+  "order": 5,
+  "kind": "tutorial",
+  "summary": "A test-day strategy and timed mixed practice sets, each with full worked solutions, for quantitative, logical, verbal and data interpretation questions.",
+  "outcomes": [
+    "Plan preparation and time for a campus aptitude test",
+    "Practise timed mixed questions with solutions",
+    "Find weak topics and revisit the right lesson",
+    "Build speed and accuracy"
+  ],
+  "chapters": [
+    {
+      "id": "strategy",
+      "title": "Strategy",
+      "summary": "How campus aptitude tests work and how to prepare.",
+      "lessons": [
+        "campus-test-patterns-and-strategy"
+      ]
+    },
+    {
+      "id": "practice-sets",
+      "title": "Practice sets",
+      "summary": "Mixed timed sets with full solutions.",
+      "lessons": [
+        "quant-practice-set-1",
+        "quant-practice-set-2",
+        "logical-practice-set",
+        "verbal-practice-set",
+        "data-interpretation-practice-set"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "slug": "interview-web-development",
+  "title": "Web Development Interview",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "Wb",
+  "color": "#e8590c",
+  "order": 8,
+  "kind": "tutorial",
+  "summary": "Front-end and API questions for web roles: HTML and CSS, React, REST, authentication and web security.",
+  "outcomes": [
+    "Explain semantic HTML, the box model, Flexbox and Grid",
+    "Answer React hooks and rendering questions",
+    "Design REST APIs and describe authentication",
+    "Recognise and prevent common web attacks"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "Web development interview questions.",
+      "lessons": [
+        "html-css-qa",
+        "react-and-frontend-qa",
+        "http-rest-and-security-qa"
+      ]
+    }
+  ]
+}

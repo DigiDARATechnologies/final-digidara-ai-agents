@@ -2900,3 +2900,28 @@ html body .lb-page .rd-hero .btn-outline:hover{ background:rgba(255,255,255,.3);
 html body .lb-page .rd-hero .rd-ring{ border:0; box-shadow:0 22px 40px -16px rgba(20,10,90,.55); }
 html body .pv-head .plan-badge{ background:rgba(255,255,255,.9); }
 html body .pv-avatar{ box-shadow:0 0 0 5px rgba(255,255,255,.9), 0 22px 44px -16px rgba(20,10,90,.55); }
+
+/* ---- New chat page on phones: tidy composer bar, 2-column agent grid, balanced spacing ---- */
+@media (max-width:560px){
+  .new-chat-landing.home-landing{ padding:20px 16px 20px; justify-content:flex-start; }
+  .home-landing .landing-center{ margin:0 auto; }
+  .home-logo{ margin-bottom:10px; }
+  .home-logo svg, .home-logo img{ width:56px; height:56px; }
+  .home-landing .landing-center h1{ font-size:27px; line-height:1.18; margin:0 0 8px; text-wrap:balance; }
+  .home-subtitle{ font-size:14.5px; line-height:1.45; margin:0 auto 20px; max-width:300px; }
+  .home-composer{ border-radius:22px; padding:14px 12px 12px; }
+  .home-composer textarea{ font-size:16px; min-height:44px; } /* 16px stops iOS zoom on focus */
+  .home-composer-bar{ gap:8px; }
+  .home-agent-select{ flex:1 1 auto; min-width:0; }
+  .home-agent-trigger{ width:100%; justify-content:flex-start; gap:6px; padding:0 10px; white-space:nowrap; font-size:13px; }
+  .home-agent-trigger span{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; text-align:left; }
+  .home-agent-trigger > svg:last-child{ flex:none; }
+  .home-bar-spacer{ display:none; }
+  .home-send-btn{ width:40px; height:40px; }
+  .home-agent-menu{ width:min(280px, calc(100vw - 64px)); }
+  .home-chips{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:18px 0 0; max-width:none; }
+  .home-chip{ justify-content:flex-start; gap:8px; min-height:44px; padding:8px 10px; font-size:12.5px; line-height:1.2; text-align:left; border-radius:14px; }
+  .home-chip-icon{ flex:none; }
+  .home-hint{ margin:14px 0 0; font-size:12.5px; }
+  .home-disclaimer{ margin:18px 0 0; }
+}

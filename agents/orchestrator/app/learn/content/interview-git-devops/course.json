@@ -1,0 +1,29 @@
+{
+  "slug": "interview-git-devops",
+  "title": "Git, DevOps and Cloud Interview",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "Gt",
+  "color": "#2f9e44",
+  "order": 13,
+  "kind": "tutorial",
+  "summary": "Version control, containers, CI/CD, Linux and cloud basics questions, for developer and DevOps-minded roles.",
+  "outcomes": [
+    "Use Git commands and explain merge, rebase and revert",
+    "Explain containers, Dockerfiles and CI/CD",
+    "Use common Linux commands and permissions",
+    "Describe basic cloud concepts and services"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "Git, Docker, Linux and cloud questions.",
+      "lessons": [
+        "git-and-github-qa",
+        "docker-and-ci-cd-qa",
+        "linux-and-cloud-basics-qa"
+      ]
+    }
+  ]
+}

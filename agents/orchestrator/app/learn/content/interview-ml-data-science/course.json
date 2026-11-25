@@ -1,0 +1,31 @@
+{
+  "slug": "interview-ml-data-science",
+  "title": "Machine Learning and Data Science Interview",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "ML",
+  "color": "#0b7285",
+  "order": 7,
+  "kind": "tutorial",
+  "summary": "ML, statistics, deep learning, NLP and data analysis questions for data and AI roles, with short, confident answers.",
+  "outcomes": [
+    "Explain core ML concepts and avoid common mistakes",
+    "Evaluate models with the right metrics",
+    "Answer statistics and A/B testing questions",
+    "Explain neural networks, transformers and RAG",
+    "Discuss a data project clearly"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "Data and AI interview questions.",
+      "lessons": [
+        "machine-learning-basics-qa",
+        "model-evaluation-and-statistics-qa",
+        "deep-learning-and-nlp-qa",
+        "data-analysis-and-python-qa"
+      ]
+    }
+  ]
+}

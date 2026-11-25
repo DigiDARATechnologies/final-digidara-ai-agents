@@ -42,7 +42,9 @@
         "react",
         "python",
         "flask",
-        "sql"
+        "sql",
+        "postgresql",
+        "mongodb"
       ]
     },
     {
@@ -96,25 +98,52 @@
     {
       "id": "generative-and-agentic-ai",
       "title": "Generative AI and Agentic AI",
-      "summary": "Build with large language models: prompts, RAG, tools, agents and the safety that goes with them.",
+      "summary": "Start from Python and the maths, learn machine learning, deep learning and NLP, then build with LLMs, RAG and agents, and ship them as apps.",
       "courses": [
         "python",
-        "nlp",
+        "math",
+        "numpy",
+        "pandas",
+        "data-visualization",
+        "machine-learning",
+        "ml-projects",
         "deep-learning",
+        "nlp",
         "generative-ai",
-        "agentic-ai"
+        "agentic-ai",
+        "flask",
+        "postgresql"
+      ]
+    },
+    {
+      "id": "campus-aptitude",
+      "title": "Campus Aptitude Test",
+      "summary": "Everything in a placement aptitude round: quantitative, logical, verbal and data interpretation.",
+      "courses": [
+        "aptitude-quant",
+        "aptitude-logical",
+        "aptitude-verbal",
+        "aptitude-di",
+        "aptitude-practice"
       ]
     },
     {
       "id": "placement-ready",
       "title": "Placement Ready",
-      "summary": "The aptitude topics and interview answers that decide most campus rounds.",
+      "summary": "The aptitude, coding and interview preparation that decide most campus rounds.",
       "courses": [
         "aptitude-quant",
         "aptitude-logical",
+        "aptitude-verbal",
+        "aptitude-di",
+        "aptitude-practice",
+        "dsa",
         "interview-hr",
         "interview-python",
-        "interview-sql"
+        "interview-sql",
+        "interview-coding-problems",
+        "interview-cs-fundamentals",
+        "interview-toolkit"
       ]
     },
     {
@@ -138,6 +167,39 @@
         "data-analysis-project",
         "ml-project",
         "portfolio-and-github"
+      ]
+    },
+    {
+      "id": "developer-interview-prep",
+      "title": "Developer Interview Preparation",
+      "summary": "Coding rounds, core CS, languages, web, backend, system design and DevOps: the technical interview in one path.",
+      "courses": [
+        "interview-coding-problems",
+        "interview-cs-fundamentals",
+        "interview-python",
+        "interview-java",
+        "interview-javascript",
+        "interview-sql",
+        "interview-web-development",
+        "interview-backend-python",
+        "interview-git-devops",
+        "interview-system-design",
+        "interview-toolkit",
+        "interview-hr"
+      ]
+    },
+    {
+      "id": "data-ai-interview-prep",
+      "title": "Data and AI Interview Preparation",
+      "summary": "Python, SQL, statistics, machine learning, deep learning, NLP and generative AI questions for data and AI roles.",
+      "courses": [
+        "interview-python",
+        "interview-sql",
+        "interview-ml-data-science",
+        "interview-coding-problems",
+        "interview-system-design",
+        "interview-toolkit",
+        "interview-hr"
       ]
     }
   ]
