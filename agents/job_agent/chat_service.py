@@ -319,6 +319,46 @@ def _normalise_role_text(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9+#.]+", (value or "").lower()))
 
 
+def _closest_alternatives(cursor, profile: Dict[str, Any], user_id: Optional[str],
+                          titles: List[str], locations: List[str]) -> Tuple[List[Dict[str, Any]], str]:
+    """Real portal jobs nearest to a search that found nothing, and what they are.
+
+    Tried in order: the same role in other locations, related roles in the
+    requested location, then the same role as remote work. Nothing is invented:
+    each list is an ordinary portal search, labelled so the learner knows it is
+    not an exact match."""
+    titles = [title for title in titles if str(title).strip()]
+    locations = [location for location in locations if str(location).strip() and str(location).casefold() != "remote"]
+    role_text = ", ".join(titles)
+    location_text = ", ".join(locations)
+    related = sorted({
+        alias
+        for title in titles
+        for alias in RELATED_ROLE_ALIASES.get(_normalise_role_text(title), set())
+    })
+    attempts = []
+    if titles and locations:
+        attempts.append((f"**{role_text}** jobs in other locations", {
+            "title_filter": titles, "strict_titles": True, "excluded_locations": locations,
+        }))
+    if related and locations:
+        attempts.append((f"related roles in **{location_text}**", {
+            "title_filter": related, "strict_titles": True,
+            "location_filter": locations, "strict_location": True,
+        }))
+    if titles:
+        attempts.append((f"remote **{role_text}** jobs", {
+            "title_filter": titles, "strict_titles": True,
+            "location_filter": ["Remote"], "strict_location": True, "work_mode_filter": "remote",
+        }))
+    for label, filters in attempts:
+        jobs, _ = _get_top_matched_jobs(cursor, profile, user_id=user_id, limit=6,
+                                        browse_requested_roles=True, **filters)
+        if jobs:
+            return jobs, label
+    return [], ""
+
+
 def _role_scope(requested_titles: List[str], profile: Dict[str, Any]) -> List[str]:
     """The roles a reply may show: what was asked for, or else the learner's saved
     roles. Any job shown must fit them, whether or not the message said "jobs":
@@ -3041,19 +3081,30 @@ def _search_from_context(cursor, user_id: str, profile: Dict[str, Any], context:
         scope += " in other locations"
     elif context.get("action") == "related":
         scope = "roles related to " + scope
+    alternative_label = ""
     if jobs:
         reply = format_job_listings_markdown(jobs[:4], intro=f"Here are the active portal jobs matching {scope}")
     else:
         qualifier = "further " if context.get("seen_job_ids") else ""
-        reply = (f"I couldn't find any {qualifier}active jobs matching {scope} in the SkillDARA portal right now. "
-                 "I won't substitute jobs from other locations or unrelated roles.")
+        if not context.get("seen_job_ids") and not context.get("action"):
+            jobs, alternative_label = _closest_alternatives(
+                cursor, profile, user_id, context["titles"], context["locations"],
+            )
+        if jobs:
+            reply = format_job_listings_markdown(jobs[:4], intro=(
+                f"I couldn't find any active jobs matching {scope} in the SkillDARA portal right now. "
+                f"These are not an exact match: here are the closest real openings, {alternative_label}"
+            ))
+        else:
+            reply = (f"I couldn't find any {qualifier}active jobs matching {scope} in the SkillDARA portal right now, "
+                     "and no close alternatives either. New jobs are added every day.")
     context = {**context, "seen_job_ids": (list(context.get("seen_job_ids") or []) + [job["id"] for job in jobs[:4]])[-200:]}
     return {
         "reply": reply, "show_jobs": True, "matched_jobs": jobs[:4],
         "updated_profile": _build_profile_response_dict(profile, []), "search_context": context,
         "suggested_actions": [{"label": "Search related roles", "value": "SEARCH_RELATED_ROLES"},
                               {"label": "Search other locations", "value": "SEARCH_OTHER_LOCATIONS"},
-                              {"label": "Search Remote jobs", "value": "SEARCH_REMOTE_JOBS"}] if not jobs else
+                              {"label": "Search Remote jobs", "value": "SEARCH_REMOTE_JOBS"}] if not jobs or alternative_label else
                              [{"label": "More matches", "value": "Show me more jobs"}],
     }
 
@@ -3303,10 +3354,28 @@ def _chat_with_job_agent(
                     ],
                     "matched_jobs": [],
                 }
+            alternatives, alternative_label = _closest_alternatives(
+                cursor, profile, user_id, search_role_labels, requested_locations,
+            )
+            if alternatives:
+                return {
+                    "reply": format_job_listings_markdown(alternatives[:4], intro=(
+                        f"I couldn’t find any active jobs for {scope_text} in the SkillDARA portal right now. "
+                        f"These are not an exact match: here are the closest real openings, {alternative_label}"
+                    )),
+                    "show_jobs": True,
+                    "updated_profile": _build_profile_response_dict(profile, changed_fields),
+                    "suggested_actions": [
+                        {"label": "Search related roles", "value": "SEARCH_RELATED_ROLES"},
+                        {"label": "Search other locations", "value": "SEARCH_OTHER_LOCATIONS"},
+                        {"label": "Search Remote jobs", "value": "SEARCH_REMOTE_JOBS"},
+                    ],
+                    "matched_jobs": alternatives[:4],
+                }
             return {
                 "reply": (
-                    f"I couldn’t find any active jobs for {scope_text} in the SkillDARA portal right now. "
-                    f"I won’t substitute jobs from other locations or unrelated roles.{scope_note}"
+                    f"I couldn’t find any active jobs for {scope_text} in the SkillDARA portal right now, "
+                    f"and no close alternatives either. New jobs are added every day.{scope_note}"
                 ),
                 "show_jobs": True,
                 "updated_profile": _build_profile_response_dict(profile, changed_fields),

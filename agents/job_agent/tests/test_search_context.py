@@ -52,11 +52,19 @@ def test_explicit_ml_city_search_overrides_preferences_without_saving_or_blendin
     assert "4-8 yrs" in result["reply"]
 
 
-def test_no_results_means_no_portal_match_not_invented_or_substituted_jobs():
+def test_no_results_says_so_then_shows_labelled_real_alternatives():
     result = chat("send machine learning jobs in Madurai", profile(), [job(1, city="Chennai")])
-    assert result["matched_jobs"] == []
+    assert [item["location"] for item in result["matched_jobs"]] == ["Chennai"]
+    assert "couldn't find any active jobs matching" in result["reply"]
     assert "**Madurai**" in result["reply"]
-    assert "SkillDARA portal" in result["reply"]
+    assert "not an exact match" in result["reply"]
+    assert "in other locations" in result["reply"]
+
+
+def test_no_results_and_no_alternatives_is_still_honest():
+    result = chat("send machine learning jobs in Madurai", profile(), [])
+    assert result["matched_jobs"] == []
+    assert "no close alternatives" in result["reply"]
 
 
 def test_server_saved_context_survives_restart_and_city_followup_keeps_role():
