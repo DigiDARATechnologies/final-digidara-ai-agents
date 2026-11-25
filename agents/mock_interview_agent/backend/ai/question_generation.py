@@ -11,7 +11,7 @@ from functools import partial
 
 from openai import OpenAI
 import learner_context
-from services.question_history import question_hash
+from services.question_history import is_repeated_question, question_hash
 
 
 from .validators import (
@@ -485,10 +485,22 @@ def build_interview_questions(
     level_guidance = (
         TECHNICAL_LEVEL_GUIDANCE if round_ == "technical" else HR_LEVEL_GUIDANCE
     ).get(difficulty, "")
+    # Spare items replace any slot whose question is rejected or repeats
+    # another one, without a second model request.
+    spare_count = min(5, total_count)
+    spare_slots = (
+        f"After item {total_count}, add {spare_count} spare items that continue the same skill order "
+        f"from item {total_count + 1}. "
+        if round_ == "technical" and assignment_skills
+        else f"After item {total_count}, add {spare_count} spare items. "
+    )
     batch_prompt = (
         f"Generate exactly {total_count} distinct {difficulty}-level {round_} interview questions for role/topic '{role}'. "
         f"{level_guidance} {skill_slots} "
         f"Cover these skill areas in order, cycling if needed: {assignment_skills or ['core concepts']}. "
+        f"{spare_slots}"
+        "Every question in this interview must be different: never ask the same question twice, "
+        "and never reword an earlier question. "
         "Ask one concise question per item. Technical answers must be verbal; never require writing code. "
         f"Do not repeat these previous questions: {initial_asked_context}. "
         f"{learner_context.prompt_block()} "
@@ -512,29 +524,58 @@ def build_interview_questions(
     except Exception:
         parsed_batch = []
 
-    plan = []
-    seen = set(already_asked_hashes)
-    for index in range(total_count):
-        assigned_skill = assignment_skills[index % len(assignment_skills)] if assignment_skills else None
-        item = parsed_batch[index] if index < len(parsed_batch) and isinstance(parsed_batch[index], dict) else {}
+    def usable(item, assigned_skill, planned_questions):
+        """The item's cleaned question, or None when it cannot fill this slot."""
+        if not isinstance(item, dict):
+            return None
         question = " ".join(str(item.get("question", "")).split()).strip()
         returned_topic = " ".join(str(item.get("topic_area", "")).split()).casefold()
         required_topic = " ".join(str(assigned_skill or "").split()).casefold()
-        if not question or not question.endswith("?") or question_hash(question) in seen or (
-            (round_ == "technical" and role_skills and returned_topic != required_topic)
-            or
-            (_question_validation_errors(question, difficulty)
-             or (round_ == "technical" and difficulty == "beginner"
-                 and _beginner_technical_question_errors(question))
-             or (round_ == "technical" and difficulty == "intermediate"
-                 and _intermediate_technical_question_errors(question)))
+        if not question or not question.endswith("?"):
+            return None
+        if question_hash(question) in already_asked_hashes:
+            return None
+        # Within one interview, a reworded repeat is still a repeat.
+        if is_repeated_question(question, planned_questions):
+            return None
+        if round_ == "technical" and role_skills and returned_topic != required_topic:
+            return None
+        if (
+            _question_validation_errors(question, difficulty)
+            or (round_ == "technical" and difficulty == "beginner"
+                and _beginner_technical_question_errors(question))
+            or (round_ == "technical" and difficulty == "intermediate"
+                and _intermediate_technical_question_errors(question))
         ):
+            return None
+        return question
+
+    plan = []
+    used_items = set()
+    for index in range(total_count):
+        assigned_skill = assignment_skills[index % len(assignment_skills)] if assignment_skills else None
+        planned_questions = [p["question"] for p in plan]
+        # The item written for this slot first, then any unused spare.
+        candidate_order = [index] + [
+            position for position in range(len(parsed_batch))
+            if position != index and position not in used_items
+        ]
+        question, item = None, {}
+        for position in candidate_order:
+            if position in used_items or position >= len(parsed_batch):
+                continue
+            question = usable(parsed_batch[position], assigned_skill, planned_questions)
+            if question:
+                item = parsed_batch[position]
+                used_items.add(position)
+                break
+        if not question:
             question = _safe_fallback_question(
                 assigned_skill or role,
                 difficulty,
-                initial_asked_context + [p["question"] for p in plan],
+                initial_asked_context + planned_questions,
+                round_type="hr" if round_ == "hr" else "technical",
             )
-        seen.add(question_hash(question))
         plan.append({
             "question": question,
             "topic_area": assigned_skill or item.get("topic_area") or "core concepts",

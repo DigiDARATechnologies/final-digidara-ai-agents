@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import db
 from ai.question_generation import fetch_live_real_questions
+from services.question_history import is_repeated_question
 
 logger = logging.getLogger(__name__)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="live-question-search")
@@ -31,7 +32,7 @@ def upgrade_unserved_questions_with_real(interview_id, real_questions):
         # The earliest unanswered question is currently visible to the student,
         # so only rows after it are eligible for replacement.
         cursor.execute(
-            """SELECT id, question_order
+            """SELECT id, question_order, question
                FROM interview_details
                WHERE interview_id = %s AND is_followup = FALSE
                  AND answer IS NULL AND verdict IS NULL AND timed_out = FALSE
@@ -41,8 +42,28 @@ def upgrade_unserved_questions_with_real(interview_id, real_questions):
         )
         pending = cursor.fetchall()
         future_slots = pending[1:]
-        replacements = min(len(future_slots), len(real_questions))
-        for slot, real in zip(future_slots, real_questions):
+        cursor.execute(
+            "SELECT id, question FROM interview_details WHERE interview_id = %s",
+            (interview_id,),
+        )
+        # What the interview will hold once the swap is done; a real question
+        # that repeats any of it is skipped, so no question is asked twice.
+        current = {row["id"]: row.get("question") for row in cursor.fetchall()}
+        available = list(real_questions)
+        swaps = []
+        for slot in future_slots:
+            others = [text for row_id, text in current.items() if row_id != slot["id"]]
+            real = next(
+                (item for item in available if not is_repeated_question(item["question"], others)),
+                None,
+            )
+            if real is None:
+                continue
+            available.remove(real)
+            current[slot["id"]] = real["question"]
+            swaps.append((slot, real))
+        replacements = len(swaps)
+        for slot, real in swaps:
             cursor.execute(
                 """UPDATE interview_details
                    SET question = %s, question_source = 'real',

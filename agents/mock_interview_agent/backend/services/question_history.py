@@ -1,7 +1,9 @@
 """Completed-session question history used to prevent exact repeats."""
 
 import hashlib
+import re
 import unicodedata
+from difflib import SequenceMatcher
 
 import db
 
@@ -13,6 +15,52 @@ def normalize_role_or_topic(value):
 def question_hash(question_text):
     normalized = " ".join(unicodedata.normalize("NFKC", str(question_text)).split()).casefold()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+_WORD = re.compile(r"[a-z0-9+#]+")
+# Words that carry no meaning of their own, so "What is a Python list?" and
+# "What's a list in Python?" compare as the same question.
+_FILLER_WORDS = frozenset((
+    "a an the is are was were be been do does did can could would should will "
+    "you your we our i me my it its this that these those of in on at to for "
+    "with by from about into as and or what whats how why when where which who "
+    "explain describe tell define give please briefly s"
+).split())
+
+
+def _content_words(question_text):
+    normalized = unicodedata.normalize("NFKC", str(question_text or "")).casefold()
+    return [word for word in _WORD.findall(normalized) if word not in _FILLER_WORDS]
+
+
+def questions_are_similar(first, second):
+    """True when two questions are the same question, even if reworded."""
+    if question_hash(first) == question_hash(second):
+        return True
+    first_words, second_words = _content_words(first), _content_words(second)
+    if not first_words or not second_words:
+        return False
+    first_set, second_set = set(first_words), set(second_words)
+    if first_set == second_set:
+        return True
+    if min(len(first_set), len(second_set)) >= 3:
+        # One question is the other with a single extra word.
+        smaller, larger = sorted((first_set, second_set), key=len)
+        if smaller <= larger and len(larger - smaller) <= 1:
+            return True
+        overlap = len(first_set & second_set) / len(first_set | second_set)
+        if overlap >= 0.8:
+            return True
+    return SequenceMatcher(None, " ".join(first_words), " ".join(second_words)).ratio() >= 0.9
+
+
+def is_repeated_question(question_text, asked_questions):
+    """True when ``question_text`` repeats any question in ``asked_questions``."""
+    return any(
+        questions_are_similar(question_text, asked)
+        for asked in asked_questions
+        if isinstance(asked, str) and asked.strip()
+    )
 
 
 def get_recent_asked_history(user_id, round_type, role_or_topic, difficulty, window=10):
