@@ -1,0 +1,60 @@
+{
+  "slug": "generative-ai",
+  "title": "Generative AI",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "Ge",
+  "color": "#7048e8",
+  "order": 10,
+  "kind": "tutorial",
+  "summary": "How LLMs work and how to build with them: prompts, APIs, embeddings, RAG, evaluation, safety, and image and speech models.",
+  "outcomes": [
+    "Explain how a language model generates text, and why it can hallucinate",
+    "Estimate tokens, context and cost for an LLM call",
+    "Write reliable prompts with examples and validated structured output",
+    "Call an LLM API safely, with retries and protected keys",
+    "Build a retrieval-augmented generation (RAG) pipeline with citations",
+    "Choose between prompting, RAG and fine-tuning, and test an LLM app",
+    "Spot and reduce the risks: hallucination, privacy, bias and prompt injection"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Generative AI",
+      "summary": "From how LLMs work to RAG, evaluation and safety.",
+      "lessons": [
+        "what-is-generative-ai",
+        "how-transformers-work",
+        "llm-landscape-and-choosing-models",
+        "tokens-context-and-cost",
+        "sampling-temperature-and-decoding",
+        "prompt-engineering",
+        "structured-output-and-function-calling",
+        "using-llm-apis",
+        "embeddings-and-semantic-search",
+        "vector-databases",
+        "rag-retrieval-augmented-generation",
+        "advanced-rag",
+        "prompting-rag-or-fine-tuning",
+        "fine-tuning-lora-and-quantization",
+        "evaluating-llm-applications",
+        "building-and-deploying-llm-apps",
+        "llm-security-and-prompt-injection",
+        "responsible-generative-ai",
+        "images-audio-and-multimodal",
+        "diffusion-models-and-image-generation",
+        "local-and-open-source-models",
+        "generative-ai-project-ideas"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The generative AI questions interviewers ask.",
+      "lessons": [
+        "generative-ai-interview-questions",
+        "generative-ai-advanced-interview-questions"
+      ]
+    }
+  ]
+}

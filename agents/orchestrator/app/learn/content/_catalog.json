@@ -1,0 +1,206 @@
+{
+  "tracks": [
+    {
+      "id": "technical",
+      "title": "Technical",
+      "blurb": "Programming and databases, from your first line of code to real projects."
+    },
+    {
+      "id": "data-ai",
+      "title": "Data & AI",
+      "blurb": "Work with data, build models, and understand how AI systems learn."
+    },
+    {
+      "id": "aptitude",
+      "title": "Aptitude",
+      "blurb": "The quantitative and reasoning topics campus tests ask for, with worked examples."
+    },
+    {
+      "id": "interview",
+      "title": "Interview",
+      "blurb": "Questions you will actually be asked, with answers you can say in your own words."
+    },
+    {
+      "id": "communication",
+      "title": "Communication",
+      "blurb": "Write, speak and interview with confidence: the soft skills that decide offers."
+    },
+    {
+      "id": "projects",
+      "title": "Projects",
+      "blurb": "Build real projects step by step, then show them in your portfolio and interviews."
+    }
+  ],
+  "paths": [
+    {
+      "id": "full-stack-python",
+      "title": "Full Stack with Python",
+      "summary": "Build and ship a web app end to end: the page, the logic, the server and the database.",
+      "courses": [
+        "html-css",
+        "javascript",
+        "react",
+        "python",
+        "flask",
+        "sql",
+        "postgresql",
+        "mongodb"
+      ]
+    },
+    {
+      "id": "data-and-ai",
+      "title": "AI and Machine Learning",
+      "summary": "From Python and maths to data, machine learning, deep learning and language: the full route, in order.",
+      "courses": [
+        "python",
+        "math",
+        "numpy",
+        "pandas",
+        "data-visualization",
+        "data-science",
+        "machine-learning",
+        "ml-projects",
+        "deep-learning",
+        "nlp",
+        "generative-ai",
+        "agentic-ai"
+      ]
+    },
+    {
+      "id": "data-analytics",
+      "title": "Data Analytics",
+      "summary": "Become a data analyst: spreadsheets, SQL, Pandas, charts, statistics and a complete project, in order.",
+      "courses": [
+        "excel",
+        "sql",
+        "pandas",
+        "data-visualization",
+        "data-science",
+        "data-analysis-project"
+      ]
+    },
+    {
+      "id": "data-science-career",
+      "title": "Data Science",
+      "summary": "From Python and maths to data wrangling, statistics, charts and machine learning, with projects to show.",
+      "courses": [
+        "python",
+        "math",
+        "numpy",
+        "pandas",
+        "data-visualization",
+        "data-science",
+        "machine-learning",
+        "ml-projects",
+        "data-analysis-project"
+      ]
+    },
+    {
+      "id": "generative-and-agentic-ai",
+      "title": "Generative AI and Agentic AI",
+      "summary": "Start from Python and the maths, learn machine learning, deep learning and NLP, then build with LLMs, RAG and agents, and ship them as apps.",
+      "courses": [
+        "python",
+        "math",
+        "numpy",
+        "pandas",
+        "data-visualization",
+        "machine-learning",
+        "ml-projects",
+        "deep-learning",
+        "nlp",
+        "generative-ai",
+        "agentic-ai",
+        "flask",
+        "postgresql"
+      ]
+    },
+    {
+      "id": "campus-aptitude",
+      "title": "Campus Aptitude Test",
+      "summary": "Everything in a placement aptitude round: quantitative, logical, verbal and data interpretation.",
+      "courses": [
+        "aptitude-quant",
+        "aptitude-logical",
+        "aptitude-verbal",
+        "aptitude-di",
+        "aptitude-practice"
+      ]
+    },
+    {
+      "id": "placement-ready",
+      "title": "Placement Ready",
+      "summary": "The aptitude, coding and interview preparation that decide most campus rounds.",
+      "courses": [
+        "aptitude-quant",
+        "aptitude-logical",
+        "aptitude-verbal",
+        "aptitude-di",
+        "aptitude-practice",
+        "dsa",
+        "interview-hr",
+        "interview-python",
+        "interview-sql",
+        "interview-coding-problems",
+        "interview-cs-fundamentals",
+        "interview-toolkit"
+      ]
+    },
+    {
+      "id": "communication-skills",
+      "title": "Communication Skills",
+      "summary": "Write, speak, interview and work with people.",
+      "courses": [
+        "professional-writing",
+        "speaking-and-presentation",
+        "interview-communication",
+        "teamwork-and-workplace-skills"
+      ]
+    },
+    {
+      "id": "build-your-portfolio",
+      "title": "Build Your Portfolio",
+      "summary": "Four projects, then show them to the world.",
+      "courses": [
+        "python-projects",
+        "flask-web-project",
+        "data-analysis-project",
+        "ml-project",
+        "portfolio-and-github"
+      ]
+    },
+    {
+      "id": "developer-interview-prep",
+      "title": "Developer Interview Preparation",
+      "summary": "Coding rounds, core CS, languages, web, backend, system design and DevOps: the technical interview in one path.",
+      "courses": [
+        "interview-coding-problems",
+        "interview-cs-fundamentals",
+        "interview-python",
+        "interview-java",
+        "interview-javascript",
+        "interview-sql",
+        "interview-web-development",
+        "interview-backend-python",
+        "interview-git-devops",
+        "interview-system-design",
+        "interview-toolkit",
+        "interview-hr"
+      ]
+    },
+    {
+      "id": "data-ai-interview-prep",
+      "title": "Data and AI Interview Preparation",
+      "summary": "Python, SQL, statistics, machine learning, deep learning, NLP and generative AI questions for data and AI roles.",
+      "courses": [
+        "interview-python",
+        "interview-sql",
+        "interview-ml-data-science",
+        "interview-coding-problems",
+        "interview-system-design",
+        "interview-toolkit",
+        "interview-hr"
+      ]
+    }
+  ]
+}

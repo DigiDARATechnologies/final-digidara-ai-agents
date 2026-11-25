@@ -1,0 +1,30 @@
+{
+  "slug": "interview-java",
+  "title": "Java Interview Questions",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "Jv",
+  "color": "#e76f00",
+  "order": 5,
+  "kind": "tutorial",
+  "summary": "Java questions placement interviews ask: core Java and OOP, collections, exceptions, threads, Java 8 and Spring basics.",
+  "outcomes": [
+    "Explain OOP in Java with examples",
+    "Choose the right collection and explain HashMap",
+    "Answer exception and multithreading questions",
+    "Use lambdas and streams",
+    "Describe the JVM and Spring basics"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions",
+      "summary": "Java interview questions with short answers.",
+      "lessons": [
+        "core-java-and-oop-qa",
+        "collections-and-multithreading-qa",
+        "java-8-jvm-and-spring-qa"
+      ]
+    }
+  ]
+}

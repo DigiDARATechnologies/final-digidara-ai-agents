@@ -79,7 +79,7 @@ class PlanTests(unittest.TestCase):
 
     def test_failed_ai_plans_never_repeat_for_any_length(self):
         for round_type, skills in (("hr", None), ("technical", ["Python", "SQL"])):
-            for level in ("beginner", "intermediate", "advanced"):
+            for level in ("beginner", "intermediate", "advanced", "professional"):
                 for count in (5, 10, 15):
                     with self.subTest(round=round_type, level=level, count=count):
                         plan = build_interview_questions(
@@ -98,7 +98,7 @@ class PlanTests(unittest.TestCase):
                             )
 
     def test_hr_fallback_has_enough_questions_for_the_longest_interview(self):
-        for level in ("beginner", "intermediate", "advanced"):
+        for level in ("beginner", "intermediate", "advanced", "professional"):
             asked = []
             for _ in range(15):
                 asked.append(_safe_fallback_question("HR interview", level, asked, round_type="hr"))

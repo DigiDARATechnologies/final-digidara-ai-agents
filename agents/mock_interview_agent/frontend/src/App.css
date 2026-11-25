@@ -2205,11 +2205,23 @@ label,
   text-transform: uppercase;
 }
 
-.ideal-answer-text {
-  margin-top: 5px;
+.ideal-answer-steps {
+  display: grid;
+  gap: 6px;
+  margin: 7px 0 0;
+  padding-left: 22px;
   color: #166534;
   font-size: var(--font-size-base);
   line-height: var(--line-height-relaxed);
+}
+
+.ideal-answer-steps li {
+  padding-left: 3px;
+}
+
+.ideal-answer-steps li::marker {
+  color: #15803d;
+  font-weight: var(--font-weight-bold);
 }
 
 /* 14. History screen */

@@ -1,0 +1,90 @@
+{
+  "slug": "java",
+  "title": "Java",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "Ja",
+  "color": "#d9480f",
+  "order": 9,
+  "kind": "tutorial",
+  "summary": "Object-oriented programming with the language behind most enterprise code: from your first program to collections, streams and threads.",
+  "outcomes": [
+    "Install the JDK and write, compile and run Java programs",
+    "Use variables, operators, strings, decisions, loops, arrays and methods",
+    "Model real problems with classes, inheritance, interfaces and encapsulation",
+    "Handle errors with exceptions and organise data with collections and generics",
+    "Write modern Java with lambdas, streams, records and enums",
+    "Read and write files, use threads safely, and build and test projects with Maven and JUnit"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Your first programs, data types and decisions.",
+      "lessons": [
+        "what-is-java",
+        "variables-and-types",
+        "operators-and-expressions",
+        "strings",
+        "control-flow"
+      ]
+    },
+    {
+      "id": "arrays-methods",
+      "title": "Arrays and methods",
+      "summary": "Store many values and reuse code.",
+      "lessons": [
+        "arrays",
+        "methods"
+      ]
+    },
+    {
+      "id": "oop",
+      "title": "Object-oriented Java",
+      "summary": "Classes, objects and the four OOP ideas.",
+      "lessons": [
+        "classes-and-objects",
+        "encapsulation-and-constructors",
+        "inheritance-and-polymorphism",
+        "abstract-classes-and-interfaces"
+      ]
+    },
+    {
+      "id": "core",
+      "title": "Core library",
+      "summary": "Exceptions, collections, generics and utilities.",
+      "lessons": [
+        "exceptions",
+        "collections",
+        "generics-and-utilities"
+      ]
+    },
+    {
+      "id": "modern",
+      "title": "Modern Java",
+      "summary": "Lambdas, streams, records and newer features.",
+      "lessons": [
+        "lambdas-and-streams",
+        "records-enums-and-modern-java"
+      ]
+    },
+    {
+      "id": "beyond",
+      "title": "Beyond the basics",
+      "summary": "Files, threads, Maven and testing.",
+      "lessons": [
+        "files-and-io",
+        "concurrency-basics",
+        "build-tools-and-testing"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The Java questions interviewers ask.",
+      "lessons": [
+        "java-interview-questions"
+      ]
+    }
+  ]
+}

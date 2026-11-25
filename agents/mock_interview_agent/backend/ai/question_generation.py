@@ -1,4 +1,4 @@
-"""Planned interview question generation."""
+﻿"""Planned interview question generation."""
 
 import json
 import logging
@@ -62,23 +62,21 @@ TECHNICAL_LEVEL_GUIDANCE = {
         "as context managers, decorators, and list comprehensions are appropriate. "
         "Ask how or why a common choice works, or how the candidate would approach a familiar "
         "problem. Framework configuration means ordinary settings and routing, not production "
-        "deployment planning. Do not require senior architecture, obscure internals, or complex multi-step "
-        "trade-offs. Keep one focused question under 30 words."
+        "deployment planning. Do not require senior architecture, obscure internals, complex multi-step "
+        "scenarios, or comparisons. Keep one focused question under 30 words."
     ),
     "advanced": (
-        "ADVANCED: Test informed judgment through architecture trade-offs, performance and "
-        "optimization, security considerations, component-level system design, reliability, "
-        "or edge cases. A realistic multi-step scenario is appropriate when its parts form one "
-        "coherent decision. Ask the candidate to justify a choice and its consequences, not to "
-        "recite definitions. Keep one focused question under 45 words."
+        "ADVANCED (HARD): Test one well-defined technical concept at deeper-than-intermediate level. "
+        "Use a focused scenario involving ONE mechanism, failure mode, security concern, or "
+        "performance issue. Ask one thing only; do not combine concepts, ask a trade-off question, "
+        "or require a multi-part architecture essay. The candidate should explain the "
+        "relevant mechanism and its direct consequence. Keep it under 35 words."
     ),
     "professional": (
-        "PROFESSIONAL (above advanced): Interview as a senior engineer hiring for an industry role. "
-        "Ask one production scenario: scaling or performance under real load, failure modes and "
-        "recovery, observability and debugging in production, security hardening, testing strategy, "
-        "or choosing between named alternatives with their costs. The candidate must reason about "
-        "consequences in a real system, not explain a concept. Never ask a definition or a textbook "
-        "question. Keep one focused question under 45 words."
+        "PROFESSIONAL: Use a realistic senior-level production scenario to assess ONE technical "
+        "concept (for example, diagnosing one failure or applying one security control). State the "
+        "relevant constraint. Do not combine concepts, ask a trade-off question, or request several "
+        "deliverables. Expect precise, production-aware reasoning about that concept. Keep it under 32 words."
     ),
 }
 
@@ -119,8 +117,10 @@ def _technical_skill_calibration(skill_area, difficulty):
         examples = "define one everyday term, purpose, or basic command"
     elif difficulty == "intermediate":
         examples = "explain a named feature/pattern or a practical troubleshooting scenario"
+    elif difficulty == "advanced":
+        examples = "analyze one specific mechanism, failure mode, security issue, or performance behavior"
     else:
-        examples = "reason through a trade-off, failure mode, security/performance risk, or design decision"
+        examples = "apply one specific production mechanism to one stated constraint or failure"
 
     if any(token in skill for token in ("python", "pandas", "numpy")):
         focus = "stay within Python/data-library concepts named by this skill"
@@ -165,7 +165,7 @@ PRESET_ROLE_SKILLS = {
     "ai engineer": {
         "beginner": ["Python for AI", "machine learning fundamentals", "data preparation", "model evaluation basics", "LLM and prompt basics", "API fundamentals"],
         "intermediate": ["machine learning pipelines", "LLM prompting and evaluation", "RAG systems", "embeddings and vector databases", "model deployment APIs", "testing and monitoring AI systems", "responsible AI"],
-        "advanced": ["production ML system design", "LLM architecture and orchestration", "RAG quality and retrieval optimization", "model evaluation and observability", "scalable inference", "AI safety and governance", "cost and latency trade-offs"],
+        "advanced": ["production ML system design", "LLM architecture and orchestration", "RAG quality and retrieval optimization", "model evaluation and observability", "scalable inference", "AI safety and governance", "inference cost and latency"],
     },
     "prompt engineer": {
         "beginner": ["how LLMs work (tokens, context, temperature)", "clear prompt structure (role, task, context, format)", "zero-shot and few-shot prompting", "using ChatGPT and other AI tools for work", "spotting wrong or made-up answers"],
@@ -173,6 +173,14 @@ PRESET_ROLE_SKILLS = {
         "advanced": ["prompt evaluation frameworks and metrics", "RAG design and retrieval quality", "tool use and AI agents", "prompt injection and AI safety", "cost, latency and model choice", "prompt versioning in production"],
     },
 }
+# The role resolver/UI uses both spellings; keep both on the same reviewed
+# full-stack skill plan rather than falling back to a different inferred list.
+PRESET_ROLE_SKILLS["full stack developer"] = PRESET_ROLE_SKILLS[
+    "python fullstack developer"
+]
+PRESET_ROLE_SKILLS["fullstack developer"] = PRESET_ROLE_SKILLS[
+    "python fullstack developer"
+]
 
 MASTER_FAQ_PROMPT = """You curate real, frequently asked interview questions. Never invent questions.
 
@@ -470,11 +478,12 @@ def build_interview_questions(
     already_asked_hashes = set(already_asked_hashes or ())
     initial_asked_context = list(initial_asked_context or ())
     assignment_skills = list(skill_order or role_skills or [])
+    calibrated_difficulty = learner_context.level_key(difficulty)
     skill_slots = (
         "Assign the output items to these skills in this exact order: "
         + " ".join(
             f"Item {index + 1}: {assignment_skills[index % len(assignment_skills)]}. "
-            f"{_technical_skill_calibration(assignment_skills[index % len(assignment_skills)], difficulty)}"
+            f"{_technical_skill_calibration(assignment_skills[index % len(assignment_skills)], calibrated_difficulty)}"
             for index in range(total_count)
         )
         if round_ == "technical" and assignment_skills else ""
@@ -484,7 +493,7 @@ def build_interview_questions(
     # student-facing sequence and database shape remain unchanged.
     level_guidance = (
         TECHNICAL_LEVEL_GUIDANCE if round_ == "technical" else HR_LEVEL_GUIDANCE
-    ).get(difficulty, "")
+    ).get(calibrated_difficulty, "")
     # Spare items replace any slot whose question is rejected or repeats
     # another one, without a second model request.
     spare_count = min(5, total_count)
@@ -495,13 +504,16 @@ def build_interview_questions(
         else f"After item {total_count}, add {spare_count} spare items. "
     )
     batch_prompt = (
-        f"Generate exactly {total_count} distinct {difficulty}-level {round_} interview questions for role/topic '{role}'. "
+        f"Generate exactly {total_count} distinct {calibrated_difficulty}-level {round_} interview questions for role/topic '{role}'. "
         f"{level_guidance} {skill_slots} "
         f"Cover these skill areas in order, cycling if needed: {assignment_skills or ['core concepts']}. "
         f"{spare_slots}"
         "Every question in this interview must be different: never ask the same question twice, "
         "and never reword an earlier question. "
-        "Ask one concise question per item. Technical answers must be verbal; never require writing code. "
+        "Ask one concise question per item. Each question must assess exactly ONE technical concept; "
+        "do not combine technologies or subtopics, ask trade-off questions, or request multiple explanations. "
+        "Keep recommended answers naturally speakable: one to three focused sentences, answering only "
+        "the question asked. Technical answers must be verbal; never require writing code. "
         f"Do not repeat these previous questions: {initial_asked_context}. "
         f"{learner_context.prompt_block()} "
         "Return ONLY valid JSON as an array of objects in this exact shape: "
@@ -541,10 +553,10 @@ def build_interview_questions(
         if round_ == "technical" and role_skills and returned_topic != required_topic:
             return None
         if (
-            _question_validation_errors(question, difficulty)
-            or (round_ == "technical" and difficulty == "beginner"
+            _question_validation_errors(question, calibrated_difficulty)
+            or (round_ == "technical" and calibrated_difficulty == "beginner"
                 and _beginner_technical_question_errors(question))
-            or (round_ == "technical" and difficulty == "intermediate"
+            or (round_ == "technical" and calibrated_difficulty == "intermediate"
                 and _intermediate_technical_question_errors(question))
         ):
             return None
@@ -572,7 +584,7 @@ def build_interview_questions(
         if not question:
             question = _safe_fallback_question(
                 assigned_skill or role,
-                difficulty,
+                calibrated_difficulty,
                 initial_asked_context + planned_questions,
                 round_type="hr" if round_ == "hr" else "technical",
             )
@@ -955,6 +967,7 @@ def generate_question(
     rng,
 ):
     """Ask OpenAI for the next non-repeated interview question."""
+    calibrated_difficulty = learner_context.level_key(difficulty)
     # Initial-plan calls get an independent, bounded OpenAI request.  The
     # transport has retries disabled so an SDK retry cannot silently exceed
     # the per-question deadline; validators use the deterministic fallback
@@ -1017,12 +1030,12 @@ def generate_question(
             chat_fn=question_chat,
         )(
             [{"role": "system", "content": system_prompt}],
-            difficulty,
+            calibrated_difficulty,
             lambda: {
                 "topic_area": area,
                 "question": _safe_fallback_question(
                     area,
-                    difficulty,
+                    calibrated_difficulty,
                     asked_so_far,
                     round_type="hr",
                 ),
@@ -1094,10 +1107,11 @@ def generate_question(
         if role_context else ""
     )
     system_prompt = (
-        f"You are a strict, fair interviewer for {topic} at {difficulty} difficulty. Ask ONE clear question. "
+        f"You are a strict, fair interviewer for {topic} at {learner_context.level_key(difficulty)} difficulty. Ask ONE clear question. "
         f"Use this experience-level guidance: {difficulty_guidance} "
-        "Never combine more than 2 distinct technical concepts in a single question, "
-        "regardless of difficulty level. If the subject naturally has many sub-concepts "
+        "Never combine technical concepts in a question; assess exactly ONE concept, "
+        "regardless of difficulty. Never ask a trade-off question. "
+        "If the subject naturally has many sub-concepts "
         "(for example, OOP, type hinting, and protocols), pick ONE to focus the question "
         "on. Stay within the "
         "selected difficulty for the entire interview. Questions may vary within that level, "
@@ -1112,8 +1126,9 @@ def generate_question(
         "difficulty, not the most specialized item in the topic. At Beginner ask what a familiar "
         "tool or concept is or does (such as a model, social-media audience, Docker container, or "
         "CI/CD pipeline). At Intermediate ask about a common workflow, pattern, metric, or simple "
-        "troubleshooting choice. At Advanced ask about a consequential design trade-off, failure "
-        "mode, performance, security, or reliability decision. Keep the question directly tied to "
+        "troubleshooting choice. At Advanced ask about one consequential mechanism, failure "
+        "mode, performance behavior, security control, or reliability issue. At Professional "
+        "ask about one production mechanism or diagnostic action. Keep the question tied to "
         "the selected topic; avoid vague questions such as 'What is technology?'. "
         f"Ask one question at a time. {role_priority_guidance} {variety_guidance}{learner_context.prompt_block()} Do not repeat any of these "
         f"already-asked questions (from this and prior attempts): {asked_so_far}. Reply ONLY "
@@ -1127,11 +1142,11 @@ def generate_question(
         chat_fn=question_chat,
     )(
         [{"role": "system", "content": system_prompt}],
-        difficulty,
+        calibrated_difficulty,
         lambda: {
             "topic_area": fallback_topic_area,
             "question": _safe_fallback_question(
-                subject, difficulty, asked_so_far
+                subject, calibrated_difficulty, asked_so_far
             ),
         },
         "technical_main",

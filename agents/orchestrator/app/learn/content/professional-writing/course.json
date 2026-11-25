@@ -1,0 +1,33 @@
+{
+  "slug": "professional-writing",
+  "title": "Professional Writing",
+  "track": "communication",
+  "level": "Beginner",
+  "icon": "Wr",
+  "color": "#1971c2",
+  "order": 1,
+  "kind": "tutorial",
+  "summary": "Emails, chat messages, reports and resumes that people read, understand and act on.",
+  "outcomes": [
+    "Write clear, polite emails with strong subject lines",
+    "Use chat and LinkedIn professionally",
+    "Structure reports and meeting notes so they can be scanned in a minute",
+    "Edit your own writing and fix common grammar mistakes",
+    "Write resume bullets that show results, and a strong LinkedIn headline"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Writing for work",
+      "summary": "Emails, messages, reports and your resume.",
+      "lessons": [
+        "why-writing-matters",
+        "writing-professional-emails",
+        "messages-and-chat",
+        "reports-and-documents",
+        "editing-and-proofreading",
+        "resume-and-linkedin-writing"
+      ]
+    }
+  ]
+}

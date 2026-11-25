@@ -1,0 +1,54 @@
+{
+  "slug": "postgresql",
+  "title": "PostgreSQL",
+  "track": "technical",
+  "level": "Intermediate",
+  "icon": "Pg",
+  "color": "#336791",
+  "order": 11,
+  "kind": "tutorial",
+  "summary": "A powerful open-source relational database: tables and constraints, joins, indexes, transactions, JSONB, window functions and production basics.",
+  "outcomes": [
+    "Create databases and tables with the right types and constraints",
+    "Query, join and summarise data, with upserts and RETURNING",
+    "Speed up queries with indexes and read EXPLAIN",
+    "Use transactions safely and understand ACID, MVCC and locks",
+    "Store flexible data with JSONB and arrays",
+    "Write window functions and CTEs",
+    "Back up, secure and connect to Postgres from Python"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "PostgreSQL basics",
+      "summary": "Install, create tables, and query data.",
+      "lessons": [
+        "what-is-postgresql",
+        "data-types-and-constraints",
+        "querying-and-filtering",
+        "combining-and-summarising-tables"
+      ]
+    },
+    {
+      "id": "advanced",
+      "title": "Advanced PostgreSQL",
+      "summary": "Performance, safety, flexibility and real-world use.",
+      "lessons": [
+        "indexes-and-explain",
+        "transactions-and-acid",
+        "jsonb-and-arrays",
+        "window-functions-and-ctes",
+        "views-functions-and-triggers",
+        "postgresql-security-backup-and-python"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The PostgreSQL questions interviewers ask.",
+      "lessons": [
+        "postgresql-interview-questions"
+      ]
+    }
+  ]
+}

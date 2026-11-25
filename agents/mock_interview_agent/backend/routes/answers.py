@@ -675,11 +675,9 @@ def _issue_next_question(
             return jsonify({"error": "Role interview subjects are unavailable. Please start a new session."}), 409
     history_subject = interview_row.get("role_name") if role_subjects else interview_row["subject"]
     history_scope = history_subject or "hr"
-    role_skills = (
-        groq_client.infer_role_skills(history_scope, interview_row["difficulty"])
-        if interview_row["round_type"] == "technical" and history_scope
-        else None
-    )
+    # The sequenced role subject is the scope for this question. Do not
+    # re-infer the whole role's stack here: that can turn a Python-only slot
+    # into SQL, Flask, or another technology question.
     already_asked_hashes, history_question_texts = get_recent_asked_history(
         interview_row["student_id"], interview_row["round_type"], history_scope,
         interview_row["difficulty"],
@@ -725,7 +723,8 @@ def _issue_next_question(
                     interview_row["difficulty"], question_context,
                     topic_area_context,
                     role_context=role_subject_prompt(interview_row["role_name"], next_subject) if role_subjects else None,
-                    role_skills=role_skills,
+                    role_skills=[next_subject] if next_subject else None,
+                    skill_area=next_subject if next_subject else None,
                 )
                 repeats_this_interview = is_repeated_question(
                     generated_question["question"], asked_so_far

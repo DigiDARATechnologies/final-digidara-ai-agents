@@ -1,0 +1,76 @@
+{
+  "slug": "pandas",
+  "title": "Pandas",
+  "track": "data-ai",
+  "level": "Beginner",
+  "icon": "Pd",
+  "color": "#5f3dc4",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "Load, clean, reshape and analyse tables of data in Python: the skill behind every data science project.",
+  "outcomes": [
+    "Load data from CSV and inspect it",
+    "Select and filter rows and columns",
+    "Clean missing, duplicate and messy values",
+    "Create new columns and sort results",
+    "Summarise with groupby and pivot tables",
+    "Combine tables with merge and concat"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Getting started",
+      "summary": "Your first DataFrame and how to load real data.",
+      "lessons": [
+        "what-is-pandas",
+        "series-and-dataframe",
+        "reading-data"
+      ]
+    },
+    {
+      "id": "select",
+      "title": "Selecting data",
+      "summary": "Pick the columns and rows you need.",
+      "lessons": [
+        "selecting-data",
+        "filtering-rows"
+      ]
+    },
+    {
+      "id": "clean",
+      "title": "Cleaning data",
+      "summary": "Fix the problems real data always has.",
+      "lessons": [
+        "missing-data",
+        "text-and-dates",
+        "duplicates-and-renaming"
+      ]
+    },
+    {
+      "id": "transform",
+      "title": "Transforming data",
+      "summary": "Add columns, apply rules and rank results.",
+      "lessons": [
+        "new-columns-and-sorting"
+      ]
+    },
+    {
+      "id": "summarise",
+      "title": "Summarising and combining",
+      "summary": "Answer questions with groups and joins.",
+      "lessons": [
+        "groupby-and-pivot",
+        "merge-and-concat",
+        "plotting-and-saving"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The Pandas questions fresher interviews ask.",
+      "lessons": [
+        "pandas-interview-questions"
+      ]
+    }
+  ]
+}

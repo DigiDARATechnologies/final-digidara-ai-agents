@@ -1,0 +1,32 @@
+{
+  "slug": "teamwork-and-workplace-skills",
+  "title": "Teamwork and Workplace Skills",
+  "track": "communication",
+  "level": "Beginner",
+  "icon": "Tm",
+  "color": "#e8590c",
+  "order": 4,
+  "kind": "tutorial",
+  "summary": "Group discussions, listening, feedback, conflict, meetings, time management and professional behaviour for your first job.",
+  "outcomes": [
+    "Perform well in group discussions",
+    "Listen actively and give and receive feedback",
+    "Work in teams, handle conflict and be assertive",
+    "Run and attend meetings, and manage your time",
+    "Behave professionally and protect your reputation at work"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Working with people",
+      "summary": "Skills that decide how far you go after you are hired.",
+      "lessons": [
+        "group-discussion",
+        "listening-and-feedback",
+        "teamwork-and-conflict",
+        "meetings-and-time-management",
+        "professional-etiquette"
+      ]
+    }
+  ]
+}

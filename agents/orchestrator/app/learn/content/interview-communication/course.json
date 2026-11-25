@@ -1,0 +1,42 @@
+{
+  "slug": "interview-communication",
+  "title": "Interview Communication",
+  "track": "communication",
+  "level": "Beginner",
+  "icon": "In",
+  "color": "#2b8a3e",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "How to communicate in interviews: opening questions, STAR stories, tricky HR questions, your own questions, offers and online interviews.",
+  "outcomes": [
+    "Understand the interview process and prepare properly",
+    "Answer 'Tell me about yourself' and the opening questions",
+    "Tell clear STAR stories for behavioural questions",
+    "Handle strengths, weaknesses, salary and other tricky questions honestly",
+    "Ask good questions, close well, and handle offers and rejection",
+    "Prepare for phone and video interviews"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Before and during the interview",
+      "summary": "Prepare, answer, close.",
+      "lessons": [
+        "how-interviews-work",
+        "tell-me-about-yourself",
+        "the-star-method",
+        "hr-questions-strengths-weaknesses",
+        "asking-questions-and-closing",
+        "phone-and-video-interviews"
+      ]
+    },
+    {
+      "id": "questions",
+      "title": "Practice answers",
+      "summary": "Twenty HR questions with sample answers.",
+      "lessons": [
+        "hr-interview-sample-answers"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "slug": "interview-python",
+  "title": "Python Interview Questions",
+  "track": "interview",
+  "level": "Beginner to intermediate",
+  "icon": "Py",
+  "color": "#3776ab",
+  "order": 2,
+  "kind": "qa",
+  "summary": "Common Python interview questions grouped by topic, with short answers you can explain.",
+  "outcomes": [
+    "Explain core Python concepts",
+    "Compare lists, tuples, sets and dicts",
+    "Discuss functions, OOP and common pitfalls"
+  ],
+  "chapters": [
+    {
+      "id": "questions",
+      "title": "Questions and answers",
+      "summary": "",
+      "lessons": [
+        "python-basics-qa",
+        "data-structures-qa",
+        "functions-and-oop-qa",
+        "advanced-python-qa",
+        "python-output-and-gotchas-qa"
+      ]
+    }
+  ]
+}

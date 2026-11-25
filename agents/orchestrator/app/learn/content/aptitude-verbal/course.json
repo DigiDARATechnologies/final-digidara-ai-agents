@@ -1,0 +1,63 @@
+{
+  "slug": "aptitude-verbal",
+  "title": "Verbal Ability",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "V",
+  "color": "#1098ad",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "English for campus tests: grammar, error spotting, vocabulary, idioms, reading comprehension and sentence ordering.",
+  "outcomes": [
+    "Use tenses, agreement, articles and prepositions correctly",
+    "Convert voice and speech",
+    "Spot and fix common sentence errors",
+    "Build exam vocabulary with synonyms, roots, idioms and phrasal verbs",
+    "Read passages quickly and answer accurately",
+    "Order jumbled sentences and fill blanks logically"
+  ],
+  "chapters": [
+    {
+      "id": "grammar",
+      "title": "Grammar",
+      "summary": "Parts of speech, tenses, agreement, voice and error spotting.",
+      "lessons": [
+        "parts-of-speech-and-tenses",
+        "subject-verb-agreement",
+        "articles-prepositions-and-conjunctions",
+        "active-passive-and-reported-speech",
+        "sentence-correction-common-errors"
+      ]
+    },
+    {
+      "id": "vocabulary",
+      "title": "Vocabulary",
+      "summary": "Words, idioms, phrasal verbs and confusing pairs.",
+      "lessons": [
+        "synonyms-antonyms-and-word-roots",
+        "idioms-and-phrasal-verbs",
+        "one-word-substitution-and-confused-words"
+      ]
+    },
+    {
+      "id": "comprehension",
+      "title": "Comprehension and sentence skills",
+      "summary": "Passages, para jumbles and fill in the blanks.",
+      "lessons": [
+        "reading-comprehension",
+        "para-jumbles-and-sentence-ordering",
+        "fill-in-the-blanks-and-cloze"
+      ]
+    },
+    {
+      "id": "more-verbal",
+      "title": "More verbal skills",
+      "summary": "Punctuation, critical reasoning and a wordlist.",
+      "lessons": [
+        "punctuation-and-spelling",
+        "critical-reasoning-and-inference",
+        "essential-vocabulary-wordlist"
+      ]
+    }
+  ]
+}

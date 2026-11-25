@@ -1,0 +1,79 @@
+{
+  "slug": "aptitude-logical",
+  "title": "Logical Reasoning",
+  "track": "aptitude",
+  "level": "Beginner",
+  "icon": "L",
+  "color": "#7048e8",
+  "order": 2,
+  "kind": "tutorial",
+  "summary": "Spot patterns and follow rules: series, codes, relations, directions and syllogisms.",
+  "outcomes": [
+    "Find the pattern in a series",
+    "Decode letter and number codes",
+    "Solve blood-relation and direction puzzles",
+    "Judge syllogism conclusions"
+  ],
+  "chapters": [
+    {
+      "id": "patterns",
+      "title": "Patterns and codes",
+      "summary": "",
+      "lessons": [
+        "number-series",
+        "coding-decoding"
+      ]
+    },
+    {
+      "id": "puzzles",
+      "title": "Puzzles",
+      "summary": "",
+      "lessons": [
+        "blood-relations",
+        "directions",
+        "syllogisms"
+      ]
+    },
+    {
+      "id": "arrangements",
+      "title": "Arrangements and order",
+      "summary": "Seating and ranking puzzles.",
+      "lessons": [
+        "seating-arrangement",
+        "ranking-and-order"
+      ]
+    },
+    {
+      "id": "time-reasoning",
+      "title": "Clocks and calendars",
+      "summary": "Time-based reasoning.",
+      "lessons": [
+        "clocks",
+        "calendars"
+      ]
+    },
+    {
+      "id": "verbal-logic",
+      "title": "Verbal and set reasoning",
+      "summary": "Analogies, statements, Venn diagrams and data sufficiency.",
+      "lessons": [
+        "analogies-and-odd-one-out",
+        "statements-and-conclusions",
+        "venn-diagrams",
+        "data-sufficiency"
+      ]
+    },
+    {
+      "id": "more-reasoning",
+      "title": "More reasoning",
+      "summary": "Dice and cubes, alphabet series, symbols, cause and effect, and puzzles.",
+      "lessons": [
+        "dice-and-cubes",
+        "alphabet-and-alphanumeric-series",
+        "mathematical-operations-and-inequalities",
+        "cause-effect-and-assertion-reason",
+        "puzzles-and-brain-teasers"
+      ]
+    }
+  ]
+}

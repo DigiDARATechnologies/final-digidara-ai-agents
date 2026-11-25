@@ -1,0 +1,41 @@
+{
+  "slug": "javascript",
+  "title": "JavaScript",
+  "track": "technical",
+  "level": "Beginner",
+  "icon": "JS",
+  "color": "#f0b90b",
+  "order": 3,
+  "kind": "tutorial",
+  "summary": "Make pages interactive: learn the language, then change the page and talk to servers.",
+  "outcomes": [
+    "Use variables, functions, arrays and objects",
+    "Change a page with the DOM",
+    "React to clicks and typing",
+    "Fetch data from an API"
+  ],
+  "chapters": [
+    {
+      "id": "language",
+      "title": "The language",
+      "summary": "",
+      "lessons": [
+        "what-is-javascript",
+        "variables-and-types",
+        "conditions-and-loops",
+        "functions",
+        "arrays-and-objects"
+      ]
+    },
+    {
+      "id": "browser",
+      "title": "In the browser",
+      "summary": "",
+      "lessons": [
+        "dom",
+        "events",
+        "fetch-and-promises"
+      ]
+    }
+  ]
+}

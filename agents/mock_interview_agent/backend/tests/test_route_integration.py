@@ -364,7 +364,8 @@ class RouteIntegrationTests(unittest.TestCase):
             ["Current question?", "Current second?", "Historical question?"],
             ["collections", "functions", "exceptions"],
             role_context=None,
-            role_skills=[],
+            role_skills=["Python"],
+            skill_area="Python",
         )
         insert_sql, insert_params = next(
             call.args[:2]

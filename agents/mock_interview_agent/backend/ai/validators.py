@@ -16,6 +16,7 @@ QUESTION_WORD_LIMITS = {
     "beginner": 18,
     "intermediate": 30,
     "advanced": 45,
+    "professional": 32,
 }
 QUESTION_GENERATION_MAX_ATTEMPTS = 3
 TOPIC_AREA_MAX_LENGTH = 100
@@ -68,6 +69,11 @@ SAFE_QUESTION_TEMPLATES = {
         "Where would you use {subject} in a small project?",
         "Which basic {subject} term would you explain to a friend?",
         "How would you start learning {subject} from scratch?",
+        "What is one everyday use of {subject}?",
+        "What does a {subject} beginner need to know first?",
+        "Which {subject} feature did you learn first?",
+        "What is one {subject} term every beginner should know?",
+        "What is the main goal of {subject}?",
     ),
     "intermediate": (
         "How would you troubleshoot a common issue in {subject}?",
@@ -75,23 +81,50 @@ SAFE_QUESTION_TEMPLATES = {
         "How would you apply one {subject} concept in practice?",
         "What is a common mistake people make with {subject}?",
         "How would you check that your {subject} work is correct?",
-        "Which {subject} best practice do you follow, and why?",
-        "How would you explain a key {subject} idea to a new teammate?",
+        "Which {subject} best practice do you always follow?",
+        "How would you explain one key {subject} idea to a new teammate?",
         "What would you review first in someone else's {subject} work?",
         "How have you used {subject} in a project?",
-        "Which {subject} tool or feature do you rely on most, and why?",
+        "Which {subject} feature do you rely on most?",
+        "How would you debug one failing {subject} feature?",
+        "What would you document about one {subject} feature?",
+        "How would you keep one {subject} setup easy to maintain?",
+        "What is one {subject} habit that prevents bugs?",
+        "How would you organize a medium-sized {subject} project?",
     ),
     "advanced": (
-        "Which trade-off matters most in {subject}, and why?",
-        "How would you diagnose a subtle reliability problem in {subject}?",
-        "What {subject} failure mode deserves the most attention, and why?",
-        "How would you design {subject} work to scale with growing demand?",
-        "Which {subject} decision is hardest to reverse later, and why?",
-        "How would you set standards for {subject} across a team?",
+        "How would you diagnose one reliability failure in {subject}?",
+        "What evidence would confirm a performance bottleneck in {subject}?",
+        "How would you investigate one security weakness in {subject}?",
+        "How would you design one {subject} component to scale with growing demand?",
+        "Which {subject} decision is hardest to reverse later?",
+        "How would you set one {subject} standard across a team?",
         "What would you monitor to know {subject} is healthy in production?",
         "How would you recover from a serious {subject} mistake in production?",
-        "Which {subject} shortcut would you refuse to take, and why?",
-        "How would you evaluate a new approach to {subject} before adopting it?",
+        "Which {subject} shortcut would you refuse to take?",
+        "How would you evaluate a new {subject} approach before adopting it?",
+        "What makes one {subject} failure hard to reproduce?",
+        "How would you harden one {subject} feature against misuse?",
+        "What would you automate first in a growing {subject} project?",
+        "How would you review one risky {subject} design decision?",
+        "What makes one {subject} system hard to operate?",
+    ),
+    "professional": (
+        "A production {subject} request is failing intermittently. What would you inspect first?",
+        "A {subject} service exceeds its latency target. How would you locate the bottleneck?",
+        "How would you verify that one {subject} security control works in production?",
+        "A {subject} deployment broke a feature for some users. What would you check first?",
+        "A {subject} job keeps failing overnight. How would you find the cause?",
+        "How would you roll back one risky {subject} change safely?",
+        "What would you alert on to catch one {subject} outage early?",
+        "A {subject} dependency was found to be vulnerable. What would you do first?",
+        "How would you investigate one memory leak in a {subject} service?",
+        "What would you include in a postmortem for one {subject} incident?",
+        "How would you limit the impact of one failing {subject} component?",
+        "A new {subject} release doubled error rates. Where would you start?",
+        "How would you plan one {subject} migration with zero downtime?",
+        "What would you check before scaling one {subject} service?",
+        "How would you prove one {subject} fix actually worked?",
     ),
 }
 SAFE_HR_QUESTION_TEMPLATES = {
@@ -100,9 +133,9 @@ SAFE_HR_QUESTION_TEMPLATES = {
         "How do you respond to constructive feedback?",
         "Tell me about a time you helped a teammate?",
         "What do you enjoy most about learning something new?",
-        "How do you organize your day when you have several tasks?",
+        "How do you organize a busy day with several tasks?",
         "What motivates you to do your best work?",
-        "How do you ask for help when you are stuck?",
+        "How do you ask for help on a task you are stuck on?",
         "What is one goal you are working toward right now?",
         "How would your friends describe you?",
         "What did you learn from a group project?",
@@ -114,9 +147,9 @@ SAFE_HR_QUESTION_TEMPLATES = {
         "Tell me about a time you went beyond what was asked of you?",
         "How do you handle a task you have never done before?",
         "Describe a time you had to learn a new skill quickly?",
-        "How do you stay productive when work becomes repetitive?",
+        "How do you stay productive during repetitive work?",
         "Tell me about a goal you set for yourself and how you reached it?",
-        "How do you respond when a teammate is not doing their share?",
+        "How do you respond to a teammate who is not doing their share?",
         "What kind of work environment helps you perform best?",
     ),
     "advanced": (
@@ -128,7 +161,7 @@ SAFE_HR_QUESTION_TEMPLATES = {
         "Tell me about a time you challenged a decision made by senior leadership?",
         "How have you managed competing demands from several stakeholders?",
         "Describe a change you drove that people initially resisted?",
-        "How did you choose which work to pause after a budget cut?",
+        "How did you decide on work to pause after a budget cut?",
         "Tell me about a time you had to deliver difficult news to a client?",
     ),
 }
@@ -150,13 +183,21 @@ INTERMEDIATE_SKILL_FALLBACK_QUESTIONS = {
     "git workflows and deployment": "When would you use a feature branch in Git?",
 }
 ADVANCED_SKILL_FALLBACK_QUESTIONS = {
-    "python performance and reliability": "How would you balance Python throughput against reliability during peak load?",
-    "scalable backend architecture": "Which service boundary would you choose for scaling a busy backend, and why?",
-    "api security and versioning": "How would you secure a public API while preserving compatibility for existing clients?",
-    "database design and optimization": "Which database indexing trade-off matters most under heavy writes, and why?",
-    "frontend-backend system design": "How would you deliver real-time updates while controlling backend load?",
-    "ci/cd and cloud deployment": "How would you make cloud deployments safe to roll back after a failure?",
-    "observability and incident debugging": "How would you isolate the cause of a latency spike across services?",
+    "python": "How would you trace a Python exception to the code path that raised it?",
+    "sql": "How would you use EXPLAIN to find the slow operation in a SQL query?",
+    "flask": "How would you validate a request before a Flask route processes it?",
+    "django": "How can Django middleware add latency to each request?",
+    "react": "How would you prevent stale state from replacing newer data in a React component?",
+    "rest api": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "rest apis": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "rest api basics": "How would you verify an API endpoint rejects requests without valid authentication?",
+    "python performance and reliability": "How would you identify a CPU-bound hotspot in a Python service?",
+    "scalable backend architecture": "How would you identify the first backend component limiting request throughput?",
+    "api security and versioning": "How would you prevent unauthorized access to a protected API endpoint?",
+    "database design and optimization": "How would you determine whether a database index is used by a slow query?",
+    "frontend-backend system design": "How would you trace a failed request from a frontend to its backend response?",
+    "ci/cd and cloud deployment": "How would you verify that a failed deployment can be rolled back safely?",
+    "observability and incident debugging": "Which metric would you inspect first during a sudden service-latency spike?",
 }
 HR_AREA_FALLBACK_QUESTIONS = {
     "beginner": {
@@ -231,10 +272,16 @@ def _question_validation_errors(question, difficulty):
         )
 
     interrogatives = QUESTION_INTERROGATIVE_PATTERN.findall(cleaned)
-    if len(interrogatives) > 2:
+    if len(interrogatives) > 1:
         errors.append(
             f"contains {len(interrogatives)} question clauses"
         )
+    if re.search(
+        r"\b(?:trade[- ]offs?|balance between|pros and cons|compare .{1,80} and)\b",
+        cleaned,
+        re.IGNORECASE,
+    ):
+        errors.append("asks a broad comparison instead of one focused concept")
     return errors
 
 
@@ -294,7 +341,7 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
 
     level_specific = (
         INTERMEDIATE_SKILL_FALLBACK_QUESTIONS if difficulty == "intermediate"
-        else ADVANCED_SKILL_FALLBACK_QUESTIONS if difficulty == "advanced"
+        else ADVANCED_SKILL_FALLBACK_QUESTIONS if difficulty in {"advanced", "professional"}
         else {}
     ).get(skill_key)
     generic_templates = SAFE_QUESTION_TEMPLATES.get(
@@ -317,7 +364,8 @@ def _safe_fallback_question(subject, difficulty, asked_so_far, round_type="techn
     return {
         "beginner": "What is one core concept in this subject?",
         "intermediate": "How would you apply one practical concept in this subject?",
-        "advanced": "Which trade-off matters most in this subject, and why?",
+        "advanced": "How would you diagnose one specific failure in this subject?",
+        "professional": "A production system has one issue with this subject. What would you inspect first?",
     }.get(difficulty, "How would you apply one practical concept in this subject?")
 
 

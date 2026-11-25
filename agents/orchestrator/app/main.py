@@ -30,6 +30,7 @@ from app.links.routes import router as links_router  # noqa: E402
 from app.proctoring.routes import router as proctoring_router  # noqa: E402
 from app.knowledge.routes import router as knowledge_router  # noqa: E402
 from app.courses.routes import router as courses_router  # noqa: E402
+from app.learn.routes import router as learn_router  # noqa: E402
 from app.monitoring import service as monitoring_service  # noqa: E402
 from app.monitoring.middleware import IssueMiddleware  # noqa: E402
 from app.monitoring.routes import router as monitoring_router  # noqa: E402
@@ -82,6 +83,7 @@ app.include_router(links_router)
 app.include_router(proctoring_router)
 app.include_router(knowledge_router)
 app.include_router(courses_router)
+app.include_router(learn_router)
 app.include_router(monitoring_router)
 
 

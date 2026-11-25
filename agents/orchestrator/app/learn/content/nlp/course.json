@@ -1,0 +1,68 @@
+{
+  "slug": "nlp",
+  "title": "Natural Language Processing",
+  "track": "data-ai",
+  "level": "Intermediate",
+  "icon": "Nl",
+  "color": "#1971c2",
+  "order": 9,
+  "kind": "tutorial",
+  "summary": "Teach machines to read text: preprocessing, TF-IDF, embeddings, sentiment analysis, text classification, entity recognition, and two projects.",
+  "outcomes": [
+    "Clean and tokenise text, and choose between stemming and lemmatisation",
+    "Turn text into numbers with Bag of Words and TF-IDF",
+    "Explain word embeddings and when to use them",
+    "Build sentiment and multi-class text classifiers",
+    "Extract entities with patterns and NER",
+    "Build an FAQ chatbot and a Tamil, English and Tanglish classifier",
+    "Compare texts with cosine similarity and build a simple search",
+    "Find topics in unlabelled text",
+    "Use pre-trained transformers such as BERT",
+    "Evaluate NLP models with precision, recall and F1"
+  ],
+  "chapters": [
+    {
+      "id": "start",
+      "title": "Text to numbers",
+      "summary": "Cleaning text and representing it.",
+      "lessons": [
+        "what-is-nlp",
+        "text-preprocessing",
+        "bag-of-words-and-tfidf",
+        "text-similarity-and-search",
+        "word-embeddings",
+        "topic-modeling",
+        "sequence-models-rnn-lstm"
+      ]
+    },
+    {
+      "id": "applications",
+      "title": "Applications",
+      "summary": "Classify text and extract information.",
+      "lessons": [
+        "sentiment-analysis",
+        "text-classification-and-ner",
+        "transformers-and-bert",
+        "summarization-translation-and-qa",
+        "evaluating-nlp-models",
+        "nlp-in-the-real-world"
+      ]
+    },
+    {
+      "id": "interview",
+      "title": "Interview questions",
+      "summary": "The NLP questions interviewers ask.",
+      "lessons": [
+        "nlp-interview-questions"
+      ]
+    },
+    {
+      "id": "projects",
+      "title": "Projects",
+      "summary": "A chatbot and a multilingual classifier.",
+      "lessons": [
+        "faq-chatbot-and-language-classifier"
+      ]
+    }
+  ]
+}
