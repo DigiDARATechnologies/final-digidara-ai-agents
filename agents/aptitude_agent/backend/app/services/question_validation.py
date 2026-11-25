@@ -103,7 +103,25 @@ def _validate_saved_skill_alignment(question, options, explanation, slot):
         alias = re.escape(term.casefold()).replace(r"\ ", r"\s+")
         if re.search(rf"(?<![a-z0-9]){alias}(?![a-z0-9])", content):
             return
+    # A saved skill such as "Data Analysis with Excel" or "Machine Learning
+    # Basics" is rarely repeated word for word; one of its distinctive words
+    # ("Excel", "Machine") is enough evidence. Generic words never count.
+    for word in re.findall(r"[a-z0-9+#.]+", skill.casefold()):
+        word = word.strip(".")
+        if len(word) < 3 or word in _GENERIC_SKILL_WORDS:
+            continue
+        if re.search(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])", content):
+            return
     raise ValueError("question does not explicitly assess its saved technical skill")
+
+
+_GENERIC_SKILL_WORDS = frozenset((
+    "and with for the using basics basic fundamentals fundamental introduction intro skills skill "
+    "advanced intermediate beginner concepts concept principles development developer programming "
+    "data analysis analytics analyst tools tool management design engineering engineer science "
+    "systems system software application applications modeling modelling techniques technology "
+    "power web core practical applied essentials"
+).split())
 
 
 def _validate_assumptions_and_scope(question, options, category, topic):

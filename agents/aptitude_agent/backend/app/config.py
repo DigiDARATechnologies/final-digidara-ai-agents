@@ -62,8 +62,11 @@ class Config:
     # big tests timed out or came back truncated and the learner got a 503.
     # Tests larger than this many questions are generated as chunks of this
     # size, in parallel, each with its own validation retries.
-    QUESTION_GENERATION_CHUNK_SIZE = max(5, min(30, int(os.getenv("QUESTION_GENERATION_CHUNK_SIZE", "10"))))
-    QUESTION_GENERATION_PARALLEL_CHUNKS = max(1, min(8, int(os.getenv("QUESTION_GENERATION_PARALLEL_CHUNKS", "6"))))
+    # Three questions per request: a slot the model gets wrong costs a retry
+    # of three questions, not of ten, and a 21-question test runs as seven
+    # small requests side by side.
+    QUESTION_GENERATION_CHUNK_SIZE = max(3, min(30, int(os.getenv("QUESTION_GENERATION_CHUNK_SIZE", "3"))))
+    QUESTION_GENERATION_PARALLEL_CHUNKS = max(1, min(12, int(os.getenv("QUESTION_GENERATION_PARALLEL_CHUNKS", "8"))))
     HINT_TIMEOUT_SECONDS = float(os.getenv("HINT_TIMEOUT_SECONDS", "5"))
     RECOMMENDATION_TIMEOUT_SECONDS = max(1.0, min(8.0, float(os.getenv("RECOMMENDATION_TIMEOUT_SECONDS", "7"))))
     HINT_MAX_COMPLETION_TOKENS = max(64, min(128, int(os.getenv("HINT_MAX_COMPLETION_TOKENS", "96"))))

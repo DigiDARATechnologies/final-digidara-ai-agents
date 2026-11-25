@@ -881,11 +881,11 @@ def generate_questions(slots, avoid_questions=None, avoid_number_patterns=None, 
         accumulated_usage["validation_attempt_count"]=max_validation_attempts
         return [accepted[index] for index in range(count)],model,accumulated_usage
     # Last resort before failing the whole test (the learner's "could not
-    # prepare a quality assessment" 503): when only a few slots are still
-    # missing, fill them with already-validated questions stored earlier
-    # (see test_question_service.stored_question_filler).
+    # prepare a quality assessment" 503): fill every slot still missing with
+    # already-validated questions stored earlier, even when the model wrote
+    # none of this chunk (see test_question_service.stored_question_filler).
     pending=[index for index in range(count) if index not in accepted]
-    if fill_missing is not None and accepted and len(pending)<=max(2,count//3):
+    if fill_missing is not None and pending:
         try:
             filled=fill_missing([slots[index] for index in pending],[accepted[index]["question"] for index in sorted(accepted)])
         except Exception as exc:  # noqa: BLE001 - the original failure is reported below
