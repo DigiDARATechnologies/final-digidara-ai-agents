@@ -888,3 +888,18 @@ class MonitorState(Base):
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(String(64))
+
+
+class OpenAICreditEntry(Base):
+    """The OpenAI account's prepaid credit as an admin read it off OpenAI's
+    billing page. OpenAI has no API for the balance itself, so the newest entry
+    is the starting point and what was spent after it is taken off (see
+    billing/openai_pool.py). Entries are kept: they are the top-up history."""
+    __tablename__ = "openai_credit_entries"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    balance_usd: Mapped[float] = mapped_column(Float)
+    note: Mapped[str] = mapped_column(String(255), default="")
+    entered_by: Mapped[str] = mapped_column(String(32), default="")
+    # Fractions on MySQL too: the newest entry must win even within one second.
+    created_at: Mapped[datetime] = mapped_column(DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"), default=_utc_now, index=True)

@@ -15,11 +15,14 @@ from sqlalchemy import and_, func, not_, or_
 
 from app import admin_messages, config
 from app.auth.security import get_current_user_id
+from app.billing import openai_pool
 from app.billing.plans import (
     PLANS, active_plan, charge_amount, credited_points, credited_tokens, payment_label, plan_name, points_for_tokens,
 )
 from app.db import get_session
-from app.models import AgentChatState, AgentRegistry, Conversation, ConversationMessage, Payment, TokenUsageEvent, User
+from app.models import (
+    AgentChatState, AgentRegistry, Conversation, ConversationMessage, OpenAICreditEntry, Payment, TokenUsageEvent, User,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/platform-admin", tags=["platform-admin"])
@@ -525,5 +528,80 @@ def list_agents(_admin: str = Depends(require_admin)) -> dict:
                 "online": r.status == "healthy" and bool(r.last_heartbeat and r.last_heartbeat >= cutoff), "actions": list(actions),
             })
         return {"agents": agents, "chat_usage": _chat_usage(session)}
+    finally:
+        session.close()
+
+
+# --- OpenAI credit against users' tokens (billing/openai_pool.py) ----------
+
+class OpenAIBalanceIn(BaseModel):
+    balance_usd: float = Field(ge=0, le=1_000_000)
+    note: str = Field("", max_length=255)
+
+
+def _pool_view(session, figures: dict) -> dict:
+    entries = session.query(OpenAICreditEntry).order_by(OpenAICreditEntry.created_at.desc()).limit(50).all()
+    return {
+        **figures, **openai_pool.alert_state(session), "generated_at": datetime.utcnow().isoformat(),
+        "entries": [{"id": e.id, "balance_usd": round(e.balance_usd, 2), "note": e.note, "created_at": _iso(e.created_at)} for e in entries],
+    }
+
+
+@router.get("/openai-tokens")
+def openai_tokens(_admin: str = Depends(require_admin)) -> dict:
+    session = get_session()
+    try:
+        return _pool_view(session, openai_pool.summary(session))
+    finally:
+        session.close()
+
+
+@router.post("/openai-tokens/balance", status_code=201)
+def set_openai_balance(req: OpenAIBalanceIn, admin_id: str = Depends(require_admin)) -> dict:
+    session = get_session()
+    try:
+        session.add(OpenAICreditEntry(balance_usd=req.balance_usd, note=" ".join(req.note.split()), entered_by=admin_id))
+        session.commit()
+    finally:
+        session.close()
+    logger.info("admin %s entered an OpenAI balance of $%.2f", admin_id, req.balance_usd)
+    # Tell support at once if the new figure does not cover users' tokens.
+    figures = openai_pool.check_and_alert()
+    session = get_session()
+    try:
+        return _pool_view(session, figures)
+    finally:
+        session.close()
+
+
+@router.get("/openai-tokens/users")
+def openai_tokens_by_user(
+    search: str = "", only_short: bool = False,
+    page: int = Query(1, ge=1), limit: int = Query(25, ge=1, le=MAX_PAGE_SIZE), _admin: str = Depends(require_admin),
+) -> dict:
+    """Each user's tokens and whether OpenAI's credit covers them. Credit is
+    counted out to users in the order they joined, so existing users are
+    covered before new ones."""
+    session = get_session()
+    try:
+        available = openai_pool.summary(session)["available_tokens"]
+        used = dict(session.query(TokenUsageEvent.user_id, func.sum(TokenUsageEvent.tokens)).group_by(TokenUsageEvent.user_id).all())
+        rows, running = [], 0
+        for u in session.query(User).order_by(User.created_at.asc(), User.id.asc()):
+            holding = max(0, u.token_balance or 0)
+            running += holding
+            rows.append({
+                "id": u.id, "name": u.name, "email": u.email, "created_at": _iso(u.created_at),
+                "token_balance": u.token_balance or 0, "used_tokens": int(used.get(u.id) or 0),
+                "covered": None if available is None else (holding == 0 or running <= available),
+            })
+        term = search.strip().lower()
+        if term:
+            rows = [r for r in rows if term in (r["name"] or "").lower() or term in (r["email"] or "").lower()]
+        if only_short:
+            rows = [r for r in rows if r["covered"] is False]
+        rows.reverse()   # newest first, as on the Users page
+        start = (page - 1) * limit
+        return {"total": len(rows), "page": page, "limit": limit, "users": rows[start:start + limit]}
     finally:
         session.close()

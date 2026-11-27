@@ -4,6 +4,9 @@ os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET"] = "orchestrator-test-secret-with-at-least-32-characters"
 os.environ["AGENT_SHARED_SECRET"] = "registry-test-secret"
 os.environ["ALLOWED_AGENT_HOSTS"] = "localhost"
+# Tests make users all the time; the OpenAI credit check they would start is tested on its own.
+os.environ["OPENAI_POOL_CHECK_ON_SIGNUP"] = "0"
+os.environ.pop("OPENAI_ADMIN_KEY", None)
 
 import pytest
 from fastapi import FastAPI

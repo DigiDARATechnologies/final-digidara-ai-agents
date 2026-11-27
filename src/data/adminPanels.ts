@@ -14,6 +14,7 @@ export const ADMIN_PANELS: AdminPanelMeta[] = [
   { id: "dashboard", label: "Dashboard", icon: "📊", desc: "Revenue, users, points and agent activity at a glance." },
   { id: "organizations", label: "Organizations", icon: "🏫", desc: "Create colleges and companies with their admin logins, and open any organization's dashboard." },
   { id: "users", label: "Users", icon: "👥", desc: "Every account, and each user's payments, chats and progress from end to end." },
+  { id: "openai-tokens", label: "OpenAI tokens", icon: "🪙", desc: "The OpenAI account's credit left, the tokens given to every user, and whether it covers them all." },
   { id: "payments", label: "Payments", icon: "💳", desc: "Every payment: what was bought, how much was credited, and its status." },
   { id: "boss-reports", label: "Boss reports", icon: "🛟", desc: "Problems learners asked Boss to report, with the ones that keep coming back first." },
   { id: "enterprise", label: "Enterprise", icon: "🏢", desc: "Organizations that asked about the Enterprise plan from the billing page." },

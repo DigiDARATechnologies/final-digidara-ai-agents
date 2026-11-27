@@ -133,3 +133,30 @@ export const setBossReportStatus = (id: string, solved: boolean, message = "") =
 export const messageBossReporter = (id: string, message: string) =>
   send<TeamMessage>("POST", `/boss-reports/${encodeURIComponent(id)}/messages`, { message });
 export const fetchEnterpriseEnquiries = () => get<{ total: number; enquiries: EnterpriseEnquiryRow[] }>("/enterprise-enquiries");
+
+/** The OpenAI account's credit against the tokens every user holds (admin only). */
+export interface OpenAIPool {
+  generated_at: string;
+  status: "enough" | "short" | "not_set";
+  balance_entry: { id: string; balance_usd: number; note: string; created_at: string } | null;
+  /** "openai" = exact, from OpenAI's Costs API (OPENAI_ADMIN_KEY set); "estimate" = from tokens agents reported. */
+  spend_source: "openai" | "estimate" | null;
+  spent_usd: number; remaining_usd: number | null; available_tokens: number | null;
+  allocated_tokens: number; users_holding_tokens: number; users_total: number;
+  spare_tokens: number | null; shortfall_tokens: number | null; new_users_room: number | null;
+  new_user_tokens: number; usd_per_million_tokens: number; support_email: string; exact_costs: boolean;
+  last_alert_at: string | null; new_users_while_short: number;
+  entries: { id: string; balance_usd: number; note: string; created_at: string | null }[];
+  emailed?: boolean;
+}
+export interface OpenAIPoolUser {
+  id: string; name: string; email: string; created_at: string | null; token_balance: number; used_tokens: number;
+  /** null until a balance is entered. */
+  covered: boolean | null;
+}
+export const fetchOpenAIPool = () => get<OpenAIPool>("/openai-tokens");
+export const fetchOpenAIPoolUsers = (params: { search?: string; only_short?: boolean; page?: number; limit?: number }) =>
+  get<{ total: number; page: number; limit: number; users: OpenAIPoolUser[] }>("/openai-tokens/users",
+    { ...params, only_short: params.only_short ? "true" : "" } as Record<string, string | number>);
+export const saveOpenAIBalance = (balanceUsd: number, note: string) =>
+  send<OpenAIPool>("POST", "/openai-tokens/balance", { balance_usd: balanceUsd, note });

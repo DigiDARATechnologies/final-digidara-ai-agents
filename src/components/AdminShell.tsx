@@ -5,6 +5,7 @@ import JobsAdminPanel from "./admin/JobsAdminPanel";
 import DashboardPanel from "./admin/DashboardPanel";
 import UsersPanel from "./admin/UsersPanel";
 import PaymentsPanel from "./admin/PaymentsPanel";
+import OpenAITokensPanel from "./admin/OpenAITokensPanel";
 import AgentsPanel from "./admin/AgentsPanel";
 import OrganizationsPanel from "./admin/OrganizationsPanel";
 import BossReportsPanel from "./admin/BossReportsPanel";
@@ -59,6 +60,7 @@ export default function AdminShell({ user, onBack }: AdminShellProps) {
             {activePanelId === "organizations" && <OrganizationsPanel />}
             {activePanelId === "users" && <UsersPanel />}
             {activePanelId === "payments" && <PaymentsPanel />}
+            {activePanelId === "openai-tokens" && <OpenAITokensPanel />}
             {activePanelId === "boss-reports" && <BossReportsPanel />}
             {activePanelId === "enterprise" && <EnterprisePanel />}
             {activePanelId === "courses" && <CoursesPanel />}
