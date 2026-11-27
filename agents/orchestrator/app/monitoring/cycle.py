@@ -80,6 +80,12 @@ def run(lines, label: str) -> None:
         if name != "orchestrator" or severity == service.ERROR and message.startswith("Container"):
             service.save("logs", severity, message, agent=name)
     service.send_alerts(label)
+    # Emails support while OpenAI's credit does not cover users' tokens.
+    try:
+        from app.billing import openai_pool
+        openai_pool.check_and_alert()
+    except Exception as exc:  # noqa: BLE001 - the rest of the cycle still runs
+        print(f"OpenAI credit check failed: {type(exc).__name__}", file=sys.stderr)
     if label == "production":
         service.send_daily_report(label)
         service.send_jobs_report(label)
