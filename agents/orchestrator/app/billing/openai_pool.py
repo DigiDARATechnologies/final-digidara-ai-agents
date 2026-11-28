@@ -103,6 +103,98 @@ def _openai_costs_since(since: datetime) -> float | None:
     return total
 
 
+USAGE_URL = "https://api.openai.com/v1/organization/usage/completions"
+LIVE_DAYS = 30
+_live_cache: dict = {}
+
+
+def _pages(client: httpx.Client, url: str, params: dict, key: str) -> list[dict]:
+    """Every bucket of a paged organization endpoint (Costs or Usage)."""
+    buckets, page = [], None
+    for _ in range(20):
+        response = client.get(url, params={**params, **({"page": page} if page else {})},
+                              headers={"Authorization": f"Bearer {key}"})
+        response.raise_for_status()
+        body = response.json()
+        buckets += body.get("data", [])
+        page = body.get("next_page")
+        if not body.get("has_more") or not page:
+            break
+    return buckets
+
+
+def live_from_openai(now: datetime | None = None, *, refresh: bool = False) -> dict:
+    """What the OpenAI platform itself reports for the last LIVE_DAYS days:
+    spending (Costs API) and tokens (Usage API), per day and per model. Needs
+    OPENAI_ADMIN_KEY; read at most every COSTS_CACHE_SECONDS. OpenAI has no API
+    for the prepaid credit balance, so that is still entered by an admin."""
+    key = _admin_key()
+    if not key:
+        return {"connected": False, "error": "no_key"}
+    now = now or datetime.now(timezone.utc).replace(tzinfo=None)
+    today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    start = today - timedelta(days=LIVE_DAYS - 1)
+    with _costs_lock:
+        cached = _live_cache.get("live")
+        if not refresh and cached and time.monotonic() - cached[1] < COSTS_CACHE_SECONDS:
+            return cached[0]
+    window = {"start_time": int(start.timestamp()), "bucket_width": "1d"}
+    try:
+        with httpx.Client(timeout=15) as client:
+            costs = _pages(client, COSTS_URL, {**window, "limit": LIVE_DAYS, "group_by": "line_item"}, key)
+            usage = _pages(client, USAGE_URL, {**window, "limit": LIVE_DAYS, "group_by": "model"}, key)
+    except httpx.HTTPStatusError as exc:
+        code = exc.response.status_code
+        logger.warning("OpenAI usage could not be read: HTTP %s", code)
+        return {"connected": False, "error": "rejected" if code in (401, 403) else "unavailable"}
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("OpenAI usage could not be read: %s", type(exc).__name__)
+        return {"connected": False, "error": "unavailable"}
+
+    def day_of(bucket: dict) -> str:
+        return datetime.fromtimestamp(int(bucket.get("start_time") or 0), timezone.utc).date().isoformat()
+
+    days = {(start + timedelta(days=i)).date().isoformat(): {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0}
+            for i in range(LIVE_DAYS)}
+    line_items: dict[str, float] = {}
+    for bucket in costs:
+        day = days.setdefault(day_of(bucket), {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0})
+        for result in bucket.get("results", []):
+            value = float((result.get("amount") or {}).get("value") or 0)
+            day["usd"] += value
+            item = result.get("line_item") or "other"
+            line_items[item] = line_items.get(item, 0.0) + value
+    models: dict[str, dict] = {}
+    for bucket in usage:
+        day = days.setdefault(day_of(bucket), {"usd": 0.0, "input_tokens": 0, "output_tokens": 0, "requests": 0})
+        for result in bucket.get("results", []):
+            inp, out, req = (int(result.get(k) or 0) for k in ("input_tokens", "output_tokens", "num_model_requests"))
+            day["input_tokens"] += inp
+            day["output_tokens"] += out
+            day["requests"] += req
+            row = models.setdefault(result.get("model") or "other", {"input_tokens": 0, "output_tokens": 0, "requests": 0})
+            row["input_tokens"] += inp
+            row["output_tokens"] += out
+            row["requests"] += req
+    month = today.date().isoformat()[:7]
+    daily = [{"date": d, **{k: (round(v, 4) if k == "usd" else v) for k, v in vals.items()}} for d, vals in sorted(days.items())]
+    result = {
+        "connected": True, "error": None, "fetched_at": datetime.utcnow().replace(microsecond=0).isoformat(), "days": LIVE_DAYS,
+        "today_usd": round(days.get(today.date().isoformat(), {}).get("usd", 0.0), 4),
+        "month_usd": round(sum(v["usd"] for d, v in days.items() if d.startswith(month)), 4),
+        "period_usd": round(sum(v["usd"] for v in days.values()), 4),
+        "period_tokens": sum(v["input_tokens"] + v["output_tokens"] for v in days.values()),
+        "period_requests": sum(v["requests"] for v in days.values()),
+        "daily": daily[::-1],   # newest first
+        "by_model": sorted(({"model": m, **v} for m, v in models.items()),
+                           key=lambda r: r["input_tokens"] + r["output_tokens"], reverse=True),
+        "by_line_item": sorted(({"line_item": k, "usd": round(v, 4)} for k, v in line_items.items()), key=lambda r: -r["usd"]),
+    }
+    with _costs_lock:
+        _live_cache["live"] = (result, time.monotonic())
+    return result
+
+
 def _estimated_spend_since(session, since: datetime) -> tuple[float, int]:
     tokens = int(session.query(func.sum(TokenUsageEvent.tokens)).filter(TokenUsageEvent.created_at >= since).scalar() or 0)
     return tokens / 1_000_000 * usd_per_million_tokens(), tokens

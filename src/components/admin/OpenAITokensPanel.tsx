@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fetchOpenAIPool, fetchOpenAIPoolUsers, saveOpenAIBalance } from "../../lib/adminApi";
+import { fetchOpenAILive, fetchOpenAIPool, fetchOpenAIPoolUsers, saveOpenAIBalance } from "../../lib/adminApi";
 import type { OpenAIPool } from "../../lib/adminApi";
 import { formatDate, formatNumber } from "./adminFormat";
 import { useLoad } from "./useLoad";
@@ -123,6 +123,70 @@ function UsersTable({ version }: { version: number }) {
   );
 }
 
+const LIVE_ERRORS: Record<string, string> = {
+  no_key: "Not connected to OpenAI yet. Create an admin key (sk-admin-…) at platform.openai.com → Organization → Admin keys, set it as OPENAI_ADMIN_KEY in the server's .env and restart the orchestrator; spending and tokens then come straight from OpenAI.",
+  rejected: "OpenAI refused the admin key (OPENAI_ADMIN_KEY). Check that it is an admin key (sk-admin-…), not a normal API key, and that it has not been revoked.",
+  unavailable: "OpenAI did not answer just now. The figures below fall back to the agents' own usage; try Refresh in a minute.",
+};
+
+/** Spending and tokens pulled from the OpenAI platform itself, every 10 minutes. */
+function LiveFromOpenAI({ version }: { version: number }) {
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading } = useLoad(() => fetchOpenAILive(refresh > 0), [refresh, version]);
+  return (
+    <>
+      <div className="admin-toolbar">
+        <h4>Live from OpenAI</h4>
+        {data?.fetched_at && <small className="admin-loading">Pulled from OpenAI {formatDate(data.fetched_at)} (every 10 minutes)</small>}
+        <button className="btn btn-outline btn-sm" onClick={() => setRefresh((n) => n + 1)} disabled={loading}>
+          {loading ? "Pulling…" : "Pull now"}
+        </button>
+      </div>
+      {error && <div className="admin-error">{error}</div>}
+      {data && !data.connected && <div className="admin-error">{LIVE_ERRORS[data.error ?? "unavailable"]}</div>}
+      {data?.connected && (
+        <>
+          <div className="admin-kpis">
+            <Kpi label="Spent today" value={usd(data.today_usd)} note="UTC day, from OpenAI" />
+            <Kpi label="Spent this month" value={usd(data.month_usd)} />
+            <Kpi label={`Last ${data.days} days`} value={usd(data.period_usd)}
+              note={`${tokens(data.period_tokens)} tokens · ${formatNumber(data.period_requests ?? 0)} requests`} />
+          </div>
+          {!!data.by_model?.length && (
+            <div className="admin-table-card">
+              <table className="admin-table">
+                <thead><tr><th>Model (last {data.days} days)</th><th>Input tokens</th><th>Output tokens</th><th>Requests</th></tr></thead>
+                <tbody>{data.by_model.map((m) => (
+                  <tr key={m.model}><td className="admin-table-primary">{m.model}</td><td>{tokens(m.input_tokens)}</td><td>{tokens(m.output_tokens)}</td><td>{formatNumber(m.requests)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          {!!data.by_line_item?.length && (
+            <div className="admin-table-card">
+              <table className="admin-table">
+                <thead><tr><th>Charged for (last {data.days} days)</th><th>Cost</th></tr></thead>
+                <tbody>{data.by_line_item.map((l) => <tr key={l.line_item}><td>{l.line_item}</td><td className="admin-table-primary">{usd(l.usd)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          <details>
+            <summary>Day by day</summary>
+            <div className="admin-table-card">
+              <table className="admin-table">
+                <thead><tr><th>Day (UTC)</th><th>Cost</th><th>Tokens</th><th>Requests</th></tr></thead>
+                <tbody>{data.daily?.map((d) => (
+                  <tr key={d.date}><td>{d.date}</td><td className="admin-table-primary">{usd(d.usd)}</td><td>{tokens(d.input_tokens + d.output_tokens)}</td><td>{formatNumber(d.requests)}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </details>
+        </>
+      )}
+    </>
+  );
+}
+
 /** OpenAI's prepaid credit against the tokens SkillDARA has given its users.
  * OpenAI has no API for the balance itself, so an admin enters it after each
  * top-up; the server takes off what was spent since (see billing/openai_pool.py). */
@@ -153,6 +217,8 @@ export default function OpenAITokensPanel() {
           note={pool.spend_source === "openai" ? "exact, from OpenAI" : "estimated from agents' usage"} />
         <Kpi label="Tokens available" value={tokens(pool.available_tokens)} note={`at $${pool.usd_per_million_tokens} per million (gpt-4o-mini)`} />
       </div>
+
+      <LiveFromOpenAI version={version} />
 
       <h4>Given to users</h4>
       <div className="admin-kpis">

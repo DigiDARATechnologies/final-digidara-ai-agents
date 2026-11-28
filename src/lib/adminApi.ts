@@ -160,3 +160,17 @@ export const fetchOpenAIPoolUsers = (params: { search?: string; only_short?: boo
     { ...params, only_short: params.only_short ? "true" : "" } as Record<string, string | number>);
 export const saveOpenAIBalance = (balanceUsd: number, note: string) =>
   send<OpenAIPool>("POST", "/openai-tokens/balance", { balance_usd: balanceUsd, note });
+
+/** Spending and tokens as the OpenAI platform itself reports them (needs OPENAI_ADMIN_KEY on the server). */
+export interface OpenAILive {
+  connected: boolean;
+  /** no_key: OPENAI_ADMIN_KEY not set; rejected: OpenAI refused the key; unavailable: OpenAI did not answer. */
+  error: "no_key" | "rejected" | "unavailable" | null;
+  fetched_at?: string; days?: number;
+  today_usd?: number; month_usd?: number; period_usd?: number; period_tokens?: number; period_requests?: number;
+  daily?: { date: string; usd: number; input_tokens: number; output_tokens: number; requests: number }[];
+  by_model?: { model: string; input_tokens: number; output_tokens: number; requests: number }[];
+  by_line_item?: { line_item: string; usd: number }[];
+}
+export const fetchOpenAILive = (refresh = false) =>
+  get<OpenAILive>("/openai-tokens/live", (refresh ? { refresh: "true" } : {}) as Record<string, string | number>);
