@@ -214,7 +214,9 @@ export default function OpenAITokensPanel() {
         <Kpi label="Credit left" value={usd(pool.remaining_usd)}
           note={entry ? `${usd(entry.balance_usd)} entered ${formatDate(entry.created_at)}` : "no balance entered"} />
         <Kpi label="Spent since then" value={entry ? usd(pool.spent_usd) : "—"}
-          note={pool.spend_source === "openai" ? "exact, from OpenAI" : "estimated from agents' usage"} />
+          note={entry
+            ? (pool.spend_source === "openai" ? "exact, from OpenAI" : "estimated from agents' usage")
+            : (pool.exact_costs ? "OpenAI admin key connected" : "OpenAI admin key not set")} />
         <Kpi label="Tokens available" value={tokens(pool.available_tokens)} note={`at $${pool.usd_per_million_tokens} per million (gpt-4o-mini)`} />
       </div>
 
