@@ -195,3 +195,74 @@ def test_existing_users_are_covered_before_new_ones(api, users):
     assert [r["id"] for r in short["users"]] == ["new"]
     found = api.get("/platform-admin/openai-tokens/users", params={"search": "OLD L"}, headers=bearer("boss")).json()
     assert [r["id"] for r in found["users"]] == ["old"]
+
+
+# --- live figures from the OpenAI platform -------------------------------
+
+_REAL_CLIENT = httpx.Client
+
+
+def _mock_openai(monkeypatch, answer):
+    real_client = _REAL_CLIENT
+    monkeypatch.setattr(openai_pool.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(answer), **kw))
+    openai_pool._live_cache.clear()
+
+
+def test_live_needs_an_admin_key(monkeypatch):
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+    assert openai_pool.live_from_openai() == {"connected": False, "error": "no_key"}
+
+
+def test_live_pulls_spend_and_tokens_from_openai(monkeypatch):
+    now = datetime(2026, 11, 28, 9, 0)
+    today = int(datetime(2026, 11, 28, tzinfo=timezone.utc).timestamp())
+    last_month = int(datetime(2026, 10, 31, tzinfo=timezone.utc).timestamp())
+    seen = []
+
+    def answer(request):
+        seen.append(request)
+        if request.url.path.endswith("/costs"):
+            return httpx.Response(200, json={"data": [
+                {"start_time": last_month, "results": [{"amount": {"value": 2.0}, "line_item": "gpt-4o-mini, input"}]},
+                {"start_time": today, "results": [{"amount": {"value": 1.5}, "line_item": "gpt-4o-mini, input"},
+                                                  {"amount": {"value": 0.5}, "line_item": "tts"}]},
+            ], "has_more": False})
+        return httpx.Response(200, json={"data": [
+            {"start_time": today, "results": [
+                {"model": "gpt-4o-mini", "input_tokens": 1000, "output_tokens": 200, "num_model_requests": 3},
+                {"model": "gpt-4.1-mini", "input_tokens": 50, "output_tokens": 5, "num_model_requests": 1},
+            ]},
+        ], "has_more": False})
+
+    _mock_openai(monkeypatch, answer)
+    monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-test")
+    live = openai_pool.live_from_openai(now)
+    assert live["connected"] and live["error"] is None
+    assert live["today_usd"] == pytest.approx(2.0)
+    assert live["month_usd"] == pytest.approx(2.0)      # October's $2 is not this month
+    assert live["period_usd"] == pytest.approx(4.0)
+    assert live["period_tokens"] == 1255 and live["period_requests"] == 4
+    assert live["by_model"][0] == {"model": "gpt-4o-mini", "input_tokens": 1000, "output_tokens": 200, "requests": 3}
+    assert live["by_line_item"][0] == {"line_item": "gpt-4o-mini, input", "usd": 3.5}
+    assert live["daily"][0]["date"] == "2026-11-28" and len(live["daily"]) == openai_pool.LIVE_DAYS
+    assert all(r.headers["authorization"] == "Bearer sk-admin-test" for r in seen)
+
+    calls = len(seen)
+    openai_pool.live_from_openai(now)                    # cached
+    assert len(seen) == calls
+    openai_pool.live_from_openai(now, refresh=True)
+    assert len(seen) == calls * 2
+
+
+def test_live_says_when_openai_rejects_the_key(monkeypatch):
+    _mock_openai(monkeypatch, lambda r: httpx.Response(401))
+    monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-wrong")
+    assert openai_pool.live_from_openai() == {"connected": False, "error": "rejected"}
+    _mock_openai(monkeypatch, lambda r: httpx.Response(500))
+    assert openai_pool.live_from_openai() == {"connected": False, "error": "unavailable"}
+
+
+def test_only_admins_see_live_figures(api, monkeypatch):
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+    assert api.get("/platform-admin/openai-tokens/live", headers=bearer("old")).status_code == 403
+    assert api.get("/platform-admin/openai-tokens/live", headers=bearer("boss")).json()["error"] == "no_key"

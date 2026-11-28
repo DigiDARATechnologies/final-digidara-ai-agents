@@ -556,6 +556,12 @@ def openai_tokens(_admin: str = Depends(require_admin)) -> dict:
         session.close()
 
 
+@router.get("/openai-tokens/live")
+def openai_tokens_live(refresh: bool = False, _admin: str = Depends(require_admin)) -> dict:
+    """Spending and tokens as the OpenAI platform reports them (needs OPENAI_ADMIN_KEY)."""
+    return openai_pool.live_from_openai(refresh=refresh)
+
+
 @router.post("/openai-tokens/balance", status_code=201)
 def set_openai_balance(req: OpenAIBalanceIn, admin_id: str = Depends(require_admin)) -> dict:
     session = get_session()
