@@ -174,3 +174,12 @@ export interface OpenAILive {
 }
 export const fetchOpenAILive = (refresh = false) =>
   get<OpenAILive>("/openai-tokens/live", (refresh ? { refresh: "true" } : {}) as Record<string, string | number>);
+
+/** Whether OpenAI's admin key is set: only a hint like "sk-admin-…abcd" ever comes back, never the key. */
+export interface OpenAIAdminKey {
+  set: boolean; source: "page" | "env" | null; hint: string; updated_by: string; updated_at: string | null;
+}
+export const fetchOpenAIAdminKey = () => get<OpenAIAdminKey>("/openai-tokens/admin-key");
+/** OpenAI checks the key first; a key it refuses is not saved. */
+export const saveOpenAIAdminKey = (key: string) => send<OpenAIAdminKey>("PUT", "/openai-tokens/admin-key", { key });
+export const removeOpenAIAdminKey = () => send<OpenAIAdminKey>("DELETE", "/openai-tokens/admin-key", {});

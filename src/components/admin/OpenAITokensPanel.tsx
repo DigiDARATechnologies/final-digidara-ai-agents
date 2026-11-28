@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { fetchOpenAILive, fetchOpenAIPool, fetchOpenAIPoolUsers, saveOpenAIBalance } from "../../lib/adminApi";
+import {
+  fetchOpenAIAdminKey, fetchOpenAILive, fetchOpenAIPool, fetchOpenAIPoolUsers, removeOpenAIAdminKey, saveOpenAIAdminKey, saveOpenAIBalance,
+} from "../../lib/adminApi";
 import type { OpenAIPool } from "../../lib/adminApi";
 import { formatDate, formatNumber } from "./adminFormat";
 import { useLoad } from "./useLoad";
@@ -124,13 +126,91 @@ function UsersTable({ version }: { version: number }) {
 }
 
 const LIVE_ERRORS: Record<string, string> = {
-  no_key: "Not connected to OpenAI yet. Create an admin key (sk-admin-…) at platform.openai.com → Organization → Admin keys, set it as OPENAI_ADMIN_KEY in the server's .env and restart the orchestrator; spending and tokens then come straight from OpenAI.",
-  rejected: "OpenAI refused the admin key (OPENAI_ADMIN_KEY). Check that it is an admin key (sk-admin-…), not a normal API key, and that it has not been revoked.",
+  no_key: "Not connected to OpenAI yet. Paste an OpenAI admin key above; spending and tokens then come straight from OpenAI.",
+  rejected: "OpenAI refused the admin key. Check that it is an admin key (sk-admin-…), not a normal API key, and that it has not been revoked; then change it above.",
   unavailable: "OpenAI did not answer just now. The figures below fall back to the agents' own usage; try Refresh in a minute.",
 };
 
+const ADMIN_KEYS_URL = "https://platform.openai.com/settings/organization/admin-keys";
+
+/** Paste OpenAI's admin key here instead of editing the server's .env. The
+ * server checks it with OpenAI, keeps it encrypted, and only ever sends back a
+ * hint such as "sk-admin-…abcd". */
+function AdminKeyForm({ onChanged }: { onChanged: () => void }) {
+  const { data, error: loadError, reload } = useLoad(fetchOpenAIAdminKey, []);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
+  const act = async (run: () => Promise<unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await run();
+      setKey("");
+      setEditing(false);
+      reload();
+      onChanged();
+    } catch (caught) {
+      setError((caught as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const value = key.trim();
+    if (!value.startsWith("sk-admin-")) { setError("Paste an OpenAI admin key: it starts with sk-admin-."); return; }
+    void act(() => saveOpenAIAdminKey(value));
+  };
+  const showForm = editing || (data && !data.set);
+  return (
+    <div className="admin-table-card" style={{ padding: "1rem" }}>
+      <strong>OpenAI admin key</strong>
+      {loadError && <div className="admin-error">{loadError}</div>}
+      {data?.set && (
+        <p className="admin-loading">
+          <span className="admin-badge badge-active">connected</span>{" "}
+          <code>{data.hint}</code>{" "}
+          {data.source === "page"
+            ? `saved on this page${data.updated_at ? ` ${formatDate(data.updated_at)}` : ""}`
+            : "from the server's .env (OPENAI_ADMIN_KEY)"}
+          {!editing && (
+            <>
+              {" "}<button className="btn btn-outline btn-sm" type="button" onClick={() => setEditing(true)}>Change key</button>
+              {data.source === "page" && (
+                <button className="btn btn-outline btn-sm" type="button" disabled={busy}
+                  onClick={() => { if (window.confirm("Remove the OpenAI admin key saved on this page?")) void act(removeOpenAIAdminKey); }}>
+                  Remove
+                </button>
+              )}
+            </>
+          )}
+        </p>
+      )}
+      {showForm && (
+        <>
+          <p className="admin-loading">
+            Create one at <a href={ADMIN_KEYS_URL} target="_blank" rel="noreferrer">OpenAI → Organization → Admin keys</a> (read
+            access is enough) and paste it here. It is checked with OpenAI, stored encrypted, and never shown again.
+          </p>
+          <form className="admin-toolbar" onSubmit={submit}>
+            <input className="admin-search" type="password" autoComplete="off" spellCheck={false} value={key}
+              onChange={(e) => setKey(e.target.value)} placeholder="sk-admin-…" aria-label="OpenAI admin key" />
+            <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !key.trim()}>
+              {busy ? "Checking with OpenAI…" : "Save key"}
+            </button>
+            {editing && <button className="btn btn-outline btn-sm" type="button" onClick={() => { setEditing(false); setError(""); setKey(""); }}>Cancel</button>}
+          </form>
+        </>
+      )}
+      {error && <div className="admin-error">{error}</div>}
+    </div>
+  );
+}
+
 /** Spending and tokens pulled from the OpenAI platform itself, every 10 minutes. */
-function LiveFromOpenAI({ version }: { version: number }) {
+function LiveFromOpenAI({ version, onKeyChanged }: { version: number; onKeyChanged: () => void }) {
   const [refresh, setRefresh] = useState(0);
   const { data, error, loading } = useLoad(() => fetchOpenAILive(refresh > 0), [refresh, version]);
   return (
@@ -142,6 +222,7 @@ function LiveFromOpenAI({ version }: { version: number }) {
           {loading ? "Pulling…" : "Pull now"}
         </button>
       </div>
+      <AdminKeyForm onChanged={() => { setRefresh((n) => n + 1); onKeyChanged(); }} />
       {error && <div className="admin-error">{error}</div>}
       {data && !data.connected && <div className="admin-error">{LIVE_ERRORS[data.error ?? "unavailable"]}</div>}
       {data?.connected && (
@@ -220,7 +301,7 @@ export default function OpenAITokensPanel() {
         <Kpi label="Tokens available" value={tokens(pool.available_tokens)} note={`at $${pool.usd_per_million_tokens} per million (gpt-4o-mini)`} />
       </div>
 
-      <LiveFromOpenAI version={version} />
+      <LiveFromOpenAI version={version} onKeyChanged={reload} />
 
       <h4>Given to users</h4>
       <div className="admin-kpis">
@@ -238,7 +319,7 @@ export default function OpenAITokensPanel() {
         After each top-up, copy the credit balance from the <a href={BILLING_URL} target="_blank" rel="noreferrer">OpenAI billing page</a>.{" "}
         {pool.exact_costs
           ? "Spending after it is read from OpenAI itself."
-          : "Spending after it is estimated from what agents report; set OPENAI_ADMIN_KEY on the server for exact figures from OpenAI."}{" "}
+          : "Spending after it is estimated from what agents report; save an OpenAI admin key under Live from OpenAI for exact figures."}{" "}
         When the credit does not cover users' tokens, {pool.support_email} is emailed at once and every 12 hours until it does.
       </p>
       <BalanceForm onSaved={(next) => { setSaved(next); setVersion((v) => v + 1); }} />

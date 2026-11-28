@@ -903,3 +903,16 @@ class OpenAICreditEntry(Base):
     entered_by: Mapped[str] = mapped_column(String(32), default="")
     # Fractions on MySQL too: the newest entry must win even within one second.
     created_at: Mapped[datetime] = mapped_column(DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"), default=_utc_now, index=True)
+
+
+class AppSecret(Base):
+    """A secret an admin entered on the admin pages (for now only the OpenAI
+    admin key, see billing/openai_pool.py), encrypted with a key derived from
+    JWT_SECRET. It is never sent back to the browser, only a short hint."""
+    __tablename__ = "app_secrets"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
+    hint: Mapped[str] = mapped_column(String(32), default="")
+    updated_by: Mapped[str] = mapped_column(String(32), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now, onupdate=_utc_now)

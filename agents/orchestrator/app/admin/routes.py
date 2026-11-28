@@ -556,6 +556,45 @@ def openai_tokens(_admin: str = Depends(require_admin)) -> dict:
         session.close()
 
 
+class OpenAIAdminKeyIn(BaseModel):
+    key: str = Field(min_length=20, max_length=512)
+
+
+@router.get("/openai-tokens/admin-key")
+def openai_admin_key_status(_admin: str = Depends(require_admin)) -> dict:
+    """Whether OpenAI's admin key is set; only a hint like 'sk-admin-…abcd', never the key."""
+    return openai_pool.admin_key_status()
+
+
+@router.put("/openai-tokens/admin-key")
+def save_openai_admin_key(req: OpenAIAdminKeyIn, admin_id: str = Depends(require_admin)) -> dict:
+    from app import secret_store
+
+    key = req.key.strip()
+    if not key.startswith("sk-admin-"):
+        raise HTTPException(status_code=400, detail="That is not an OpenAI admin key. Admin keys start with sk-admin- "
+                            "(platform.openai.com > Organization > Admin keys); a normal API key cannot read costs.")
+    check = openai_pool.check_admin_key(key)
+    if check == "rejected":
+        raise HTTPException(status_code=400, detail="OpenAI refused this key. Check that it is an active admin key with read access.")
+    if check == "unavailable":
+        raise HTTPException(status_code=502, detail="OpenAI did not answer, so the key could not be checked. Try again in a minute.")
+    secret_store.put(openai_pool.ADMIN_KEY_SECRET, key, updated_by=admin_id)
+    openai_pool.clear_caches()
+    logger.info("admin %s saved the OpenAI admin key", admin_id)
+    return openai_pool.admin_key_status()
+
+
+@router.delete("/openai-tokens/admin-key")
+def remove_openai_admin_key(admin_id: str = Depends(require_admin)) -> dict:
+    from app import secret_store
+
+    secret_store.delete(openai_pool.ADMIN_KEY_SECRET)
+    openai_pool.clear_caches()
+    logger.info("admin %s removed the OpenAI admin key saved on the admin page", admin_id)
+    return openai_pool.admin_key_status()
+
+
 @router.get("/openai-tokens/live")
 def openai_tokens_live(refresh: bool = False, _admin: str = Depends(require_admin)) -> dict:
     """Spending and tokens as the OpenAI platform reports them (needs OPENAI_ADMIN_KEY)."""

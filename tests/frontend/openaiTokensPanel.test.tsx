@@ -2,11 +2,17 @@ const mockPool = jest.fn();
 const mockPoolUsers = jest.fn();
 const mockSave = jest.fn();
 const mockLive = jest.fn();
+const mockKey = jest.fn();
+const mockSaveKey = jest.fn();
+const mockRemoveKey = jest.fn();
 jest.mock('../../src/lib/adminApi', () => ({
   fetchOpenAIPool: (...a: unknown[]) => mockPool(...a),
   fetchOpenAIPoolUsers: (...a: unknown[]) => mockPoolUsers(...a),
   saveOpenAIBalance: (...a: unknown[]) => mockSave(...a),
   fetchOpenAILive: (...a: unknown[]) => mockLive(...a),
+  fetchOpenAIAdminKey: (...a: unknown[]) => mockKey(...a),
+  saveOpenAIAdminKey: (...a: unknown[]) => mockSaveKey(...a),
+  removeOpenAIAdminKey: (...a: unknown[]) => mockRemoveKey(...a),
 }));
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -31,7 +37,8 @@ const users = {
 };
 
 beforeEach(() => {
-  [mockPool, mockPoolUsers, mockSave, mockLive].forEach((m) => m.mockReset());
+  [mockPool, mockPoolUsers, mockSave, mockLive, mockKey, mockSaveKey, mockRemoveKey].forEach((m) => m.mockReset());
+  mockKey.mockResolvedValue({ set: false, source: null, hint: '', updated_by: '', updated_at: null });
   mockPoolUsers.mockResolvedValue(users);
   mockLive.mockResolvedValue({ connected: false, error: 'no_key' });
 });
@@ -88,4 +95,28 @@ test('live from OpenAI: says how to connect when there is no admin key', async (
   mockPool.mockResolvedValue(short);
   render(<OpenAITokensPanel />);
   expect(await screen.findByText(/Not connected to OpenAI yet/)).toBeInTheDocument();
+});
+
+test('an admin pastes the OpenAI admin key on the page; only its hint is shown afterwards', async () => {
+  mockPool.mockResolvedValue(short);
+  mockSaveKey.mockRejectedValueOnce(new Error('OpenAI refused this key. Check that it is an active admin key with read access.'));
+  render(<OpenAITokensPanel />);
+  const input = await screen.findByLabelText('OpenAI admin key');
+  fireEvent.change(input, { target: { value: 'sk-proj-normal-key' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+  expect(await screen.findByText(/it starts with sk-admin-/)).toBeInTheDocument();
+  expect(mockSaveKey).not.toHaveBeenCalled();
+
+  fireEvent.change(input, { target: { value: 'sk-admin-wrong' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+  expect(await screen.findByText(/OpenAI refused this key/)).toBeInTheDocument();
+
+  mockSaveKey.mockResolvedValue({ set: true, source: 'page', hint: 'sk-admin-…abcd', updated_by: 'boss', updated_at: '2026-11-28T10:00:00' });
+  mockKey.mockResolvedValue({ set: true, source: 'page', hint: 'sk-admin-…abcd', updated_by: 'boss', updated_at: '2026-11-28T10:00:00' });
+  fireEvent.change(screen.getByLabelText('OpenAI admin key'), { target: { value: ' sk-admin-goodkeyabcd ' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+  await waitFor(() => expect(mockSaveKey).toHaveBeenCalledWith('sk-admin-goodkeyabcd'));
+  expect(await screen.findByText('sk-admin-…abcd')).toBeInTheDocument();
+  expect(screen.queryByLabelText('OpenAI admin key')).not.toBeInTheDocument();
+  expect(mockLive).toHaveBeenLastCalledWith(true);   // pulls from OpenAI straight away
 });
