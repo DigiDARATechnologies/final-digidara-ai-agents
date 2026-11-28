@@ -208,12 +208,12 @@ def _mock_openai(monkeypatch, answer):
     openai_pool._live_cache.clear()
 
 
-def test_live_needs_an_admin_key(monkeypatch):
+def test_live_needs_an_admin_key(database, monkeypatch):
     monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
     assert openai_pool.live_from_openai() == {"connected": False, "error": "no_key"}
 
 
-def test_live_pulls_spend_and_tokens_from_openai(monkeypatch):
+def test_live_pulls_spend_and_tokens_from_openai(database, monkeypatch):
     now = datetime(2026, 11, 28, 9, 0)
     today = int(datetime(2026, 11, 28, tzinfo=timezone.utc).timestamp())
     last_month = int(datetime(2026, 10, 31, tzinfo=timezone.utc).timestamp())
@@ -254,7 +254,7 @@ def test_live_pulls_spend_and_tokens_from_openai(monkeypatch):
     assert len(seen) == calls * 2
 
 
-def test_live_says_when_openai_rejects_the_key(monkeypatch):
+def test_live_says_when_openai_rejects_the_key(database, monkeypatch):
     _mock_openai(monkeypatch, lambda r: httpx.Response(401))
     monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-wrong")
     assert openai_pool.live_from_openai() == {"connected": False, "error": "rejected"}
@@ -266,3 +266,60 @@ def test_only_admins_see_live_figures(api, monkeypatch):
     monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
     assert api.get("/platform-admin/openai-tokens/live", headers=bearer("old")).status_code == 403
     assert api.get("/platform-admin/openai-tokens/live", headers=bearer("boss")).json()["error"] == "no_key"
+
+
+# --- the admin key entered on the admin page ------------------------------
+
+KEY = "sk-admin-" + "x" * 40 + "abcd"
+
+
+def test_admin_saves_the_key_on_the_page_encrypted_and_never_shown(api, users, monkeypatch):
+    from app.models import AppSecret
+
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+    seen = []
+    _mock_openai(monkeypatch, lambda r: seen.append(r) or httpx.Response(200, json={"data": [], "has_more": False}))
+    assert api.get("/platform-admin/openai-tokens/admin-key", headers=bearer("boss")).json()["set"] is False
+    assert api.put("/platform-admin/openai-tokens/admin-key", json={"key": KEY}, headers=bearer("old")).status_code == 403
+
+    body = api.put("/platform-admin/openai-tokens/admin-key", json={"key": f"  {KEY} "}, headers=bearer("boss")).json()
+    assert body == {**body, "set": True, "source": "page", "hint": "sk-admin-…abcd", "updated_by": "boss"}
+    assert KEY not in str(body)
+    assert seen[0].headers["authorization"] == f"Bearer {KEY}"   # checked with OpenAI before saving
+    with users() as s:
+        stored = s.get(AppSecret, openai_pool.ADMIN_KEY_SECRET).value
+    assert KEY not in stored                                      # encrypted at rest
+    assert openai_pool._admin_key() == KEY
+    assert api.get("/platform-admin/openai-tokens", headers=bearer("boss")).json()["exact_costs"] is True
+
+    # The page's key wins over the .env one; removing it falls back to .env.
+    monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-from-env-9999")
+    assert openai_pool._admin_key() == KEY
+    body = api.delete("/platform-admin/openai-tokens/admin-key", headers=bearer("boss")).json()
+    assert body["source"] == "env" and body["hint"] == "sk-admin-…9999"
+    assert openai_pool._admin_key() == "sk-admin-from-env-9999"
+
+
+def test_a_wrong_key_is_not_saved(api, monkeypatch):
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+    normal = "sk-proj-" + "y" * 40
+    response = api.put("/platform-admin/openai-tokens/admin-key", json={"key": normal}, headers=bearer("boss"))
+    assert response.status_code == 400 and "sk-admin-" in response.json()["detail"]
+
+    _mock_openai(monkeypatch, lambda r: httpx.Response(401))
+    response = api.put("/platform-admin/openai-tokens/admin-key", json={"key": KEY}, headers=bearer("boss"))
+    assert response.status_code == 400 and "refused" in response.json()["detail"]
+    _mock_openai(monkeypatch, lambda r: httpx.Response(503))
+    assert api.put("/platform-admin/openai-tokens/admin-key", json={"key": KEY}, headers=bearer("boss")).status_code == 502
+    assert api.get("/platform-admin/openai-tokens/admin-key", headers=bearer("boss")).json()["set"] is False
+
+
+def test_a_key_saved_under_another_jwt_secret_counts_as_not_set(database, monkeypatch):
+    from app import secret_store
+    from app.auth import security
+
+    secret_store.put(openai_pool.ADMIN_KEY_SECRET, KEY)
+    monkeypatch.setattr(security, "JWT_SECRET", "a-different-secret-with-at-least-32-characters")
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+    assert secret_store.get(openai_pool.ADMIN_KEY_SECRET) is None
+    assert openai_pool.admin_key_status()["set"] is False

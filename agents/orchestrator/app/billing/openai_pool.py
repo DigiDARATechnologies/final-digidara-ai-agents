@@ -62,8 +62,49 @@ def support_email() -> str:
     return os.environ.get("ISSUE_EMAIL", "support@digidaratechnologies.com").strip()
 
 
+ADMIN_KEY_SECRET = "openai_admin_key"
+
+
 def _admin_key() -> str:
-    return os.environ.get("OPENAI_ADMIN_KEY", "").strip()
+    """The key an admin saved on the admin page wins; OPENAI_ADMIN_KEY in the
+    server's .env is the fallback."""
+    from app import secret_store
+
+    return (secret_store.get(ADMIN_KEY_SECRET) or os.environ.get("OPENAI_ADMIN_KEY", "")).strip()
+
+
+def admin_key_status() -> dict:
+    """Whether an admin key is set and where it came from; never the key itself."""
+    from app import secret_store
+
+    saved = secret_store.info(ADMIN_KEY_SECRET)
+    if saved and secret_store.get(ADMIN_KEY_SECRET):
+        return {"set": True, "source": "page", **saved}
+    env = os.environ.get("OPENAI_ADMIN_KEY", "").strip()
+    if env:
+        return {"set": True, "source": "env", "hint": secret_store.hint_for(env), "updated_by": "", "updated_at": None}
+    return {"set": False, "source": None, "hint": "", "updated_by": "", "updated_at": None}
+
+
+def check_admin_key(key: str) -> str:
+    """Asks OpenAI whether `key` can read the organization's costs:
+    "ok", "rejected" (OpenAI refused it) or "unavailable" (no answer)."""
+    start = int((datetime.now(timezone.utc) - timedelta(days=1)).timestamp())
+    try:
+        with httpx.Client(timeout=10) as client:
+            response = client.get(COSTS_URL, params={"start_time": start, "bucket_width": "1d", "limit": 1},
+                                  headers={"Authorization": f"Bearer {key}"})
+    except httpx.HTTPError:
+        return "unavailable"
+    if response.status_code in (401, 403):
+        return "rejected"
+    return "ok" if response.is_success else "unavailable"
+
+
+def clear_caches() -> None:
+    with _costs_lock:
+        _costs_cache.clear()
+        _live_cache.clear()
 
 
 def _openai_costs_since(since: datetime) -> float | None:
